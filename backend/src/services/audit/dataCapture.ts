@@ -31,7 +31,7 @@ export async function instrumentDataLayer(
   sink: DataLayerEvent[],
   stepName: string,
 ): Promise<void> {
-  await (page as { addInitScript: (script: string) => Promise<void> }).addInitScript(`
+  await (page as unknown as { addInitScript: (script: string) => Promise<void> }).addInitScript(`
     (function() {
       window.__atlasDataLayerSink = window.__atlasDataLayerSink || [];
       const _push = window.dataLayer ? window.dataLayer.push.bind(window.dataLayer) : null;
@@ -59,10 +59,10 @@ export async function instrumentDataLayer(
         for (const ev of events) {
           const typed = ev as Record<string, unknown>;
           sink.push({
+            ...(typed as DataLayerEvent),
             event: String(typed['event'] ?? ''),
             timestamp: Number(typed['__timestamp'] ?? Date.now()),
             step: stepName,
-            ...(typed as DataLayerEvent),
           });
         }
       }
