@@ -88,10 +88,10 @@ export async function flushDataLayer(
       for (const ev of events) {
         const typed = ev as Record<string, unknown>;
         sink.push({
+          ...(typed as DataLayerEvent),
           event: String(typed['event'] ?? ''),
           timestamp: Number(typed['__timestamp'] ?? Date.now()),
           step: stepName,
-          ...(typed as DataLayerEvent),
         });
       }
     }
