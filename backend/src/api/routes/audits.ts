@@ -6,6 +6,14 @@ import { auditQueue } from '@/services/queue/jobQueue';
 import type { FunnelType, Region } from '@/types/audit';
 import logger from '@/utils/logger';
 
+interface AuthenticatedRequest extends Request {
+  user: {
+    id: string;
+    email: string;
+    plan: 'free' | 'pro' | 'agency';
+  };
+}
+
 const router = Router();
 
 // All audit routes require authentication
@@ -14,8 +22,9 @@ router.use(authMiddleware);
 // ─── GET /api/audits ─────────────────────────────────────────────────────────
 
 router.get('/', async (req: Request, res: Response) => {
+  const { user } = req as AuthenticatedRequest;
   try {
-    const audits = await listAudits(req.user.id);
+    const audits = await listAudits(user.id);
     res.json(audits);
   } catch (err) {
     logger.error({ err }, 'Failed to list audits');
@@ -26,6 +35,7 @@ router.get('/', async (req: Request, res: Response) => {
 // ─── POST /api/audits/start ───────────────────────────────────────────────────
 
 router.post('/start', auditLimiter, async (req: Request, res: Response) => {
+  const { user } = req as AuthenticatedRequest;
   const { website_url, funnel_type, region, url_map, test_email, test_phone } = req.body;
 
   if (!website_url || !funnel_type || !url_map) {
@@ -41,7 +51,7 @@ router.post('/start', auditLimiter, async (req: Request, res: Response) => {
 
   try {
     const audit = await createAudit({
-      user_id: req.user.id,
+      user_id: user.id,
       website_url,
       funnel_type: funnel_type as FunnelType,
       region: (region ?? 'us') as Region,
@@ -59,7 +69,7 @@ router.post('/start', auditLimiter, async (req: Request, res: Response) => {
       test_phone,
     });
 
-    logger.info({ audit_id: audit.id, user_id: req.user.id }, 'Audit queued');
+    logger.info({ audit_id: audit.id, user_id: user.id }, 'Audit queued');
 
     res.status(202).json({
       audit_id: audit.id,
@@ -75,6 +85,7 @@ router.post('/start', auditLimiter, async (req: Request, res: Response) => {
 // ─── GET /api/audits/:audit_id ────────────────────────────────────────────────
 
 router.get('/:audit_id', async (req: Request, res: Response) => {
+  const { user } = req as AuthenticatedRequest;
   const { audit_id } = req.params;
 
   const audit = await getAudit(audit_id);
@@ -84,7 +95,7 @@ router.get('/:audit_id', async (req: Request, res: Response) => {
     return;
   }
 
-  if (audit.user_id !== req.user.id) {
+  if (audit.user_id !== user.id) {
     res.status(403).json({ error: 'Forbidden' });
     return;
   }
@@ -102,6 +113,7 @@ router.get('/:audit_id', async (req: Request, res: Response) => {
 // ─── GET /api/audits/:audit_id/report ────────────────────────────────────────
 
 router.get('/:audit_id/report', async (req: Request, res: Response) => {
+  const { user } = req as AuthenticatedRequest;
   const { audit_id } = req.params;
 
   const audit = await getAudit(audit_id);
@@ -111,7 +123,7 @@ router.get('/:audit_id/report', async (req: Request, res: Response) => {
     return;
   }
 
-  if (audit.user_id !== req.user.id) {
+  if (audit.user_id !== user.id) {
     res.status(403).json({ error: 'Forbidden' });
     return;
   }
