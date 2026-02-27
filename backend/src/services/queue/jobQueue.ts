@@ -12,8 +12,24 @@ export interface AuditJobData {
   test_phone?: string;
 }
 
+// Parse REDIS_URL into explicit options so ioredis handles TLS correctly
+// (passing a rediss:// URL string to Bull doesn't reliably enable TLS)
+function buildRedisOpts(url: string): object {
+  const parsed = new URL(url);
+  const opts: Record<string, unknown> = {
+    host: parsed.hostname,
+    port: Number(parsed.port) || 6379,
+    password: parsed.password || undefined,
+    username: parsed.username && parsed.username !== 'default' ? parsed.username : undefined,
+  };
+  if (parsed.protocol === 'rediss:') {
+    opts['tls'] = { rejectUnauthorized: false };
+  }
+  return opts;
+}
+
 export const auditQueue = new Bull<AuditJobData>('audit', {
-  redis: env.REDIS_URL,
+  redis: buildRedisOpts(env.REDIS_URL),
   defaultJobOptions: {
     attempts: 2,
     backoff: { type: 'exponential', delay: 5000 },
