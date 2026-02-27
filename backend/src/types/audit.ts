@@ -9,11 +9,39 @@ export type RuleStatus = 'pass' | 'fail' | 'warning';
 
 // ─── Captured data (from Browserbase) ────────────────────────────────────────
 
+export interface DataLayerItem {
+  id: string;
+  name?: string;
+  price?: number;
+  quantity?: number;
+  [key: string]: unknown;
+}
+
+/**
+ * A single push to window.dataLayer captured during journey simulation.
+ * GA4 ecommerce fields are typed explicitly; all other fields accessible via
+ * the index signature.
+ */
 export interface DataLayerEvent {
   event: string;
   timestamp: number;
   step: string;
-  payload: Record<string, unknown>;
+  // GA4 ecommerce purchase parameters
+  transaction_id?: string;
+  value?: number | string;
+  currency?: string;
+  coupon?: string;
+  shipping?: number | null;
+  items?: DataLayerItem[];
+  user_id?: string;
+  event_id?: string;
+  gclid?: string;
+  user_data?: {
+    email?: string;
+    phone?: string;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
 }
 
 export interface NetworkRequest {
@@ -23,6 +51,7 @@ export interface NetworkRequest {
   headers: Record<string, string>;
   timestamp: number;
   step: string;
+  loadTime?: number; // ms — used by GTM_CONTAINER_LOADED rule
 }
 
 export interface CookieSnapshot {
@@ -52,6 +81,37 @@ export interface AuditData {
   };
   test_email?: string;
   test_phone?: string;
+  // Derived fields — flattened by journeySimulator for quick rule access
+  urlParams?: Record<string, string>;      // Landing page URL params
+  storage?: Record<string, string>;        // localStorage at conversion step
+  cookies?: Record<string, string>;        // Merged cookie map (all steps)
+  pageMetadata?: Record<string, unknown>;  // Misc page metadata
+}
+
+// ─── API inputs ───────────────────────────────────────────────────────────────
+
+export interface StartAuditInput {
+  website_url: string;
+  funnel_type: FunnelType;
+  region?: Region;
+  url_map: Record<string, string>;
+  test_email?: string;
+  test_phone?: string;
+}
+
+export interface AuditStartResponse {
+  audit_id: string;
+  status: AuditStatus;
+  created_at: string;
+}
+
+export interface AuditStatusResponse {
+  audit_id: string;
+  status: AuditStatus;
+  progress: number;
+  created_at: string;
+  completed_at: string | null;
+  error: string | null;
 }
 
 // ─── Validation results ───────────────────────────────────────────────────────
