@@ -1,6 +1,6 @@
 import 'dotenv/config';
 
-function require(name: string): string {
+function requireEnv(name: string): string {
   const value = process.env[name];
   if (!value) {
     throw new Error(`Missing required environment variable: ${name}`);
@@ -13,14 +13,14 @@ function optional(name: string, fallback: string): string {
 }
 
 export const env = {
-  SUPABASE_URL: require('SUPABASE_URL'),
-  SUPABASE_ANON_KEY: require('SUPABASE_ANON_KEY'),
-  SUPABASE_SERVICE_ROLE_KEY: require('SUPABASE_SERVICE_ROLE_KEY'),
+  SUPABASE_URL: requireEnv('SUPABASE_URL'),
+  SUPABASE_ANON_KEY: requireEnv('SUPABASE_ANON_KEY'),
+  SUPABASE_SERVICE_ROLE_KEY: requireEnv('SUPABASE_SERVICE_ROLE_KEY'),
 
-  REDIS_URL: require('REDIS_URL'),
+  REDIS_URL: requireEnv('REDIS_URL'),
 
-  BROWSERBASE_API_KEY: require('BROWSERBASE_API_KEY'),
-  BROWSERBASE_PROJECT_ID: require('BROWSERBASE_PROJECT_ID'),
+  BROWSERBASE_API_KEY: requireEnv('BROWSERBASE_API_KEY'),
+  BROWSERBASE_PROJECT_ID: requireEnv('BROWSERBASE_PROJECT_ID'),
 
   STRIPE_SECRET_KEY: optional('STRIPE_SECRET_KEY', ''),
   STRIPE_WEBHOOK_SECRET: optional('STRIPE_WEBHOOK_SECRET', ''),
