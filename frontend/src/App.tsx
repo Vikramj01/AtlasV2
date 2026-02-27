@@ -1,7 +1,9 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ProtectedRoute } from '@/components/layout/ProtectedRoute';
+import { AppLayout } from '@/components/layout/AppLayout';
 import { LoginPage } from '@/pages/LoginPage';
-import { AuditPage } from '@/pages/AuditPage';
+import { DashboardPage } from '@/pages/DashboardPage';
+import { AuditProgressPage } from '@/pages/AuditProgressPage';
 import { ReportPage } from '@/pages/ReportPage';
 
 export default function App() {
@@ -11,15 +13,19 @@ export default function App() {
         {/* Public */}
         <Route path="/login" element={<LoginPage />} />
 
-        {/* Protected */}
+        {/* Protected — wrapped in AppLayout (sidebar + topbar) */}
         <Route element={<ProtectedRoute />}>
-          <Route path="/audit" element={<AuditPage />} />
-          <Route path="/report/:auditId" element={<ReportPage />} />
+          <Route element={<AppLayout />}>
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/report/:auditId" element={<ReportPage />} />
+          </Route>
+          {/* Progress page has its own layout (no sidebar) */}
+          <Route path="/audit/:auditId/progress" element={<AuditProgressPage />} />
         </Route>
 
-        {/* Redirect root to audit */}
-        <Route path="/" element={<Navigate to="/audit" replace />} />
-        <Route path="*" element={<Navigate to="/audit" replace />} />
+        {/* Redirects */}
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </BrowserRouter>
   );

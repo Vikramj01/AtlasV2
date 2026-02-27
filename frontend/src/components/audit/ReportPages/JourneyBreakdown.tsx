@@ -1,0 +1,133 @@
+import { useState } from 'react';
+import type { ReportJSON, JourneyStage, RuleStatus } from '@/types/audit';
+
+const STATUS_CONFIG: Record<RuleStatus, { color: string; bg: string; border: string; dot: string; label: string }> = {
+  pass:    { color: 'text-green-700',  bg: 'bg-green-50',  border: 'border-green-300',  dot: 'bg-green-500',  label: 'Healthy' },
+  warning: { color: 'text-yellow-700', bg: 'bg-yellow-50', border: 'border-yellow-300', dot: 'bg-yellow-400', label: 'Warning' },
+  fail:    { color: 'text-red-700',    bg: 'bg-red-50',    border: 'border-red-300',    dot: 'bg-red-500',    label: 'Critical' },
+};
+
+function StageNode({
+  stage,
+  active,
+  onClick,
+  isLast,
+}: {
+  stage: JourneyStage;
+  active: boolean;
+  onClick: () => void;
+  isLast: boolean;
+}) {
+  const c = STATUS_CONFIG[stage.status];
+  return (
+    <div className="flex items-center">
+      <button
+        onClick={onClick}
+        className={`flex flex-col items-center gap-1.5 transition-transform hover:scale-105 focus:outline-none group`}
+      >
+        <div
+          className={`flex h-14 w-14 items-center justify-center rounded-full border-2 shadow-sm transition-all ${c.bg} ${
+            active ? `${c.border} ring-2 ring-offset-2 ring-brand-400` : c.border
+          }`}
+        >
+          <span className={`h-4 w-4 rounded-full ${c.dot}`} />
+        </div>
+        <span className="text-xs font-medium text-gray-700 group-hover:text-gray-900 text-center w-16 leading-tight">
+          {stage.stage}
+        </span>
+        <span className={`text-xs font-semibold ${c.color}`}>{c.label}</span>
+      </button>
+      {!isLast && (
+        <div className="mx-1 h-0.5 w-8 shrink-0 bg-gray-200 sm:w-12" aria-hidden="true" />
+      )}
+    </div>
+  );
+}
+
+function StagePanel({ stage, onClose }: { stage: JourneyStage; onClose: () => void }) {
+  const c = STATUS_CONFIG[stage.status];
+  return (
+    <div className={`rounded-xl border-2 ${c.border} ${c.bg} p-5 transition-all`}>
+      <div className="flex items-start justify-between">
+        <div>
+          <h3 className={`font-semibold ${c.color}`}>{stage.stage} Stage</h3>
+          <span className={`mt-0.5 text-xs font-medium ${c.color}`}>{c.label}</span>
+        </div>
+        <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none">
+          ×
+        </button>
+      </div>
+
+      {stage.issues.length === 0 ? (
+        <p className="mt-3 text-sm text-green-700">No issues detected at this stage.</p>
+      ) : (
+        <ul className="mt-3 space-y-2">
+          {stage.issues.map((issue, i) => (
+            <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
+              <span className="mt-0.5 shrink-0 text-red-500" aria-hidden="true">✖</span>
+              {issue}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+interface Props {
+  report: ReportJSON;
+}
+
+export function JourneyBreakdown({ report }: Props) {
+  const [activeStage, setActiveStage] = useState<JourneyStage | null>(null);
+  const { journey_stages } = report;
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-lg font-semibold text-gray-900">Conversion Journey</h2>
+        <p className="mt-1 text-sm text-gray-500">
+          Click any stage to see what's happening — and what to fix.
+        </p>
+      </div>
+
+      {/* Desktop: horizontal funnel */}
+      <div className="rounded-xl border border-gray-200 bg-white p-6 overflow-x-auto">
+        <div className="flex items-start justify-start gap-0 min-w-max">
+          {journey_stages.map((stage, i) => (
+            <StageNode
+              key={stage.stage}
+              stage={stage}
+              active={activeStage?.stage === stage.stage}
+              onClick={() => setActiveStage(activeStage?.stage === stage.stage ? null : stage)}
+              isLast={i === journey_stages.length - 1}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Mobile: vertical stepper */}
+      <div className="flex flex-col gap-3 sm:hidden">
+        {journey_stages.map((stage) => {
+          const c = STATUS_CONFIG[stage.status];
+          return (
+            <button
+              key={stage.stage}
+              onClick={() => setActiveStage(activeStage?.stage === stage.stage ? null : stage)}
+              className={`flex items-center gap-3 rounded-xl border-2 p-4 text-left ${c.bg} ${c.border}`}
+            >
+              <span className={`h-3 w-3 rounded-full shrink-0 ${c.dot}`} />
+              <span className="font-medium text-gray-900 text-sm">{stage.stage}</span>
+              <span className={`ml-auto text-xs font-semibold ${c.color}`}>{c.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Stage detail panel */}
+      {activeStage && (
+        <StagePanel stage={activeStage} onClose={() => setActiveStage(null)} />
+      )}
+    </div>
+  );
+}
