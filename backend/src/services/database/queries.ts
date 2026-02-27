@@ -99,3 +99,46 @@ export async function getReport(audit_id: string): Promise<ReportJSON | null> {
   if (error) return null;
   return data.report_json as ReportJSON;
 }
+
+// ─── Audit list (with report scores joined) ───────────────────────────────────
+
+export interface AuditListItem {
+  id: string;
+  website_url: string;
+  created_at: string;
+  status: AuditStatus;
+  signal_health: number | null;
+  attribution_risk: string | null;
+}
+
+export async function listAudits(user_id: string): Promise<AuditListItem[]> {
+  const { data, error } = await supabaseAdmin
+    .from('audits')
+    .select(`
+      id,
+      website_url,
+      created_at,
+      status,
+      audit_reports (
+        report_json
+      )
+    `)
+    .eq('user_id', user_id)
+    .order('created_at', { ascending: false })
+    .limit(50);
+
+  if (error) throw new Error(`Failed to list audits: ${error.message}`);
+
+  return (data ?? []).map((row: Record<string, unknown>) => {
+    const reportRows = row['audit_reports'] as Array<{ report_json: ReportJSON }> | null;
+    const report = reportRows?.[0]?.report_json ?? null;
+    return {
+      id: row['id'] as string,
+      website_url: row['website_url'] as string,
+      created_at: row['created_at'] as string,
+      status: row['status'] as AuditStatus,
+      signal_health: report?.executive_summary?.scores?.conversion_signal_health ?? null,
+      attribution_risk: report?.executive_summary?.scores?.attribution_risk_level ?? null,
+    };
+  });
+}

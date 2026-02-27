@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { authMiddleware } from '@/api/middleware/authMiddleware';
 import { auditLimiter } from '@/api/middleware/auditLimiter';
-import { createAudit, getAudit, getReport } from '@/services/database/queries';
+import { createAudit, getAudit, getReport, listAudits } from '@/services/database/queries';
 import { auditQueue } from '@/services/queue/jobQueue';
 import type { FunnelType, Region } from '@/types/audit';
 import logger from '@/utils/logger';
@@ -10,6 +10,18 @@ const router = Router();
 
 // All audit routes require authentication
 router.use(authMiddleware);
+
+// ─── GET /api/audits ─────────────────────────────────────────────────────────
+
+router.get('/', async (req: Request, res: Response) => {
+  try {
+    const audits = await listAudits(req.user.id);
+    res.json(audits);
+  } catch (err) {
+    logger.error({ err }, 'Failed to list audits');
+    res.status(500).json({ error: 'Failed to fetch audits' });
+  }
+});
 
 // ─── POST /api/audits/start ───────────────────────────────────────────────────
 

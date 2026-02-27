@@ -5,6 +5,7 @@ import type {
   AuditStatusResponse,
   ReportJSON,
 } from '@/types/audit';
+import type { AuditHistoryItem } from '@/components/audit/AuditHistoryTable';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
 
@@ -47,6 +48,10 @@ export const auditApi = {
 
   getReport(audit_id: string): Promise<ReportJSON> {
     return apiFetch(`/api/audits/${audit_id}/report`);
+  },
+
+  list(): Promise<AuditHistoryItem[]> {
+    return apiFetch('/api/audits');
   },
 
   export(audit_id: string, format: 'pdf' | 'json' | 'both'): Promise<Blob> {
