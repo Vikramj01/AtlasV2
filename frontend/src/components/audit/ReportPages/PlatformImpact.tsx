@@ -7,34 +7,34 @@ const PLATFORM_STATUS_CONFIG = {
   broken:   { badge: 'bg-red-100 text-red-700',       label: 'Broken' },
 };
 
-// Map rule_id to human-readable checklist item label
-const RULE_LABELS: Record<string, string> = {
-  GA4_PURCHASE_EVENT_FIRED:          'Purchase event detected',
-  META_PIXEL_PURCHASE_EVENT_FIRED:   'Pixel purchase event detected',
-  GOOGLE_ADS_CONVERSION_EVENT_FIRED: 'Conversion event detected',
-  SGTM_SERVER_EVENT_FIRED:           'Server event detected',
-  DATALAYER_POPULATED:               'Data layer populated',
-  GTM_CONTAINER_LOADED:              'GTM container loaded',
-  PAGE_VIEW_EVENT_FIRED:             'Page view event firing',
-  ADD_TO_CART_EVENT_FIRED:           'Add to cart event firing',
-  TRANSACTION_ID_PRESENT:            'Transaction ID present',
-  VALUE_PARAMETER_PRESENT:           'Value parameter sent',
-  CURRENCY_PARAMETER_PRESENT:        'Currency correct',
-  GCLID_CAPTURED_AT_LANDING:         'Google click ID captured',
-  FBCLID_CAPTURED_AT_LANDING:        'Facebook click ID captured',
-  EVENT_ID_GENERATED:                'Event deduplication ID generated',
-  EMAIL_CAPTURED_FOR_ENHANCED_CONVERSIONS: 'Email captured for enhanced matching',
-  PHONE_CAPTURED_FOR_CAPI:           'Phone captured for server matching',
-  ITEMS_ARRAY_POPULATED:             'Products array populated',
-  USER_ID_PRESENT:                   'User ID present',
-  COUPON_CAPTURED_IF_USED:           'Coupon code captured',
-  SHIPPING_CAPTURED:                 'Shipping value captured',
-  GCLID_PERSISTS_TO_CONVERSION:      'Google click ID persisted to conversion',
-  FBCLID_PERSISTS_TO_CONVERSION:     'Facebook click ID persisted to conversion',
-  TRANSACTION_ID_MATCHES_ORDER_SYSTEM: 'Transaction ID verified',
-  EVENT_ID_CONSISTENCY_CLIENT_TO_SERVER: 'Event deduplication consistent',
-  USER_DATA_NORMALIZED_CONSISTENTLY: 'User data formatted consistently',
-  PII_PROPERLY_HASHED:               'Email formatted for enhanced matching',
+// Map rule_id to pass/fail labels so the text always matches the icon
+const RULE_LABELS: Record<string, { pass: string; fail: string }> = {
+  GA4_PURCHASE_EVENT_FIRED:                { pass: 'Purchase event detected',                  fail: 'Purchase event not detected' },
+  META_PIXEL_PURCHASE_EVENT_FIRED:         { pass: 'Pixel purchase event detected',             fail: 'Pixel purchase event not detected' },
+  GOOGLE_ADS_CONVERSION_EVENT_FIRED:       { pass: 'Conversion event detected',                 fail: 'Conversion event not detected' },
+  SGTM_SERVER_EVENT_FIRED:                 { pass: 'Server event detected',                     fail: 'Server event not detected' },
+  DATALAYER_POPULATED:                     { pass: 'Data layer populated',                      fail: 'Data layer not populated' },
+  GTM_CONTAINER_LOADED:                    { pass: 'GTM container loaded',                      fail: 'GTM container not loaded' },
+  PAGE_VIEW_EVENT_FIRED:                   { pass: 'Page view event firing',                    fail: 'Page view event not firing' },
+  ADD_TO_CART_EVENT_FIRED:                 { pass: 'Add to cart event firing',                  fail: 'Add to cart event not firing' },
+  TRANSACTION_ID_PRESENT:                  { pass: 'Transaction ID present',                    fail: 'Transaction ID missing' },
+  VALUE_PARAMETER_PRESENT:                 { pass: 'Value parameter sent',                      fail: 'Value parameter missing' },
+  CURRENCY_PARAMETER_PRESENT:              { pass: 'Currency correct',                          fail: 'Currency parameter missing' },
+  GCLID_CAPTURED_AT_LANDING:              { pass: 'Google click ID captured',                  fail: 'Google click ID not captured' },
+  FBCLID_CAPTURED_AT_LANDING:             { pass: 'Facebook click ID captured',                fail: 'Facebook click ID not captured' },
+  EVENT_ID_GENERATED:                      { pass: 'Event deduplication ID generated',          fail: 'Event deduplication ID missing' },
+  EMAIL_CAPTURED_FOR_ENHANCED_CONVERSIONS: { pass: 'Email captured for enhanced matching',      fail: 'Email not captured for enhanced matching' },
+  PHONE_CAPTURED_FOR_CAPI:                 { pass: 'Phone captured for server matching',        fail: 'Phone not captured for server matching' },
+  ITEMS_ARRAY_POPULATED:                   { pass: 'Products array populated',                  fail: 'Products array empty or missing' },
+  USER_ID_PRESENT:                         { pass: 'User ID present',                           fail: 'User ID missing' },
+  COUPON_CAPTURED_IF_USED:                 { pass: 'Coupon code captured',                      fail: 'Coupon code not captured' },
+  SHIPPING_CAPTURED:                       { pass: 'Shipping value captured',                   fail: 'Shipping value not captured' },
+  GCLID_PERSISTS_TO_CONVERSION:            { pass: 'Google click ID persisted to conversion',   fail: 'Google click ID lost before conversion' },
+  FBCLID_PERSISTS_TO_CONVERSION:           { pass: 'Facebook click ID persisted to conversion', fail: 'Facebook click ID lost before conversion' },
+  TRANSACTION_ID_MATCHES_ORDER_SYSTEM:     { pass: 'Transaction ID verified',                   fail: 'Transaction ID mismatch with order system' },
+  EVENT_ID_CONSISTENCY_CLIENT_TO_SERVER:   { pass: 'Event deduplication consistent',            fail: 'Event deduplication mismatch' },
+  USER_DATA_NORMALIZED_CONSISTENTLY:       { pass: 'User data formatted consistently',          fail: 'User data formatting inconsistent' },
+  PII_PROPERLY_HASHED:                     { pass: 'Email properly hashed',                     fail: 'Email not properly hashed' },
 };
 
 interface PlatformCardProps {
@@ -109,7 +109,9 @@ function PlatformCard({ platform, validationResults }: PlatformCardProps) {
                   {pass ? '✔' : status === 'warning' ? '⚠' : '✖'}
                 </span>
                 <span className={pass ? 'text-gray-700' : 'text-gray-900 font-medium'}>
-                  {RULE_LABELS[ruleId] ?? ruleId}
+                  {RULE_LABELS[ruleId]
+                    ? (pass ? RULE_LABELS[ruleId].pass : RULE_LABELS[ruleId].fail)
+                    : ruleId}
                 </span>
               </li>
             );
