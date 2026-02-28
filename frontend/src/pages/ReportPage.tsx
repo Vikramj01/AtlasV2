@@ -23,11 +23,12 @@ export function ReportPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `atlas-report-${auditId}.${format === 'json' ? 'json' : 'zip'}`;
+      const ext = format === 'json' ? 'json' : format === 'pdf' ? 'pdf' : 'zip';
+      a.download = `atlas-report-${auditId}.${ext}`;
       a.click();
       URL.revokeObjectURL(url);
     } catch {
-      alert(`Export not yet available. (${label})`);
+      alert(`Export failed for "${label}". Please try again.`);
     } finally {
       setExporting(false);
     }

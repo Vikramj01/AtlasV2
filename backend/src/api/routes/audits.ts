@@ -1,7 +1,9 @@
 import { Router, Request, Response } from 'express';
+import JSZip from 'jszip';
 import { authMiddleware } from '@/api/middleware/authMiddleware';
 import { auditLimiter } from '@/api/middleware/auditLimiter';
 import { createAudit, getAudit, getReport, listAudits } from '@/services/database/queries';
+import { generatePDF } from '@/services/export/pdfGenerator';
 import { auditQueue } from '@/services/queue/jobQueue';
 import type { FunnelType, Region } from '@/types/audit';
 import logger from '@/utils/logger';
@@ -148,10 +150,70 @@ router.get('/:audit_id/report', async (req: Request, res: Response) => {
 });
 
 // ─── POST /api/audits/:audit_id/export ───────────────────────────────────────
-// Stub — implemented in Sprint 6
 
 router.post('/:audit_id/export', async (req: Request, res: Response) => {
-  res.status(501).json({ error: 'Export not yet implemented' });
+  const { user } = req as AuthenticatedRequest;
+  const { audit_id } = req.params;
+  const format: 'pdf' | 'json' | 'both' = req.body.format ?? 'both';
+
+  if (!['pdf', 'json', 'both'].includes(format)) {
+    res.status(400).json({ error: 'format must be pdf, json, or both' });
+    return;
+  }
+
+  const audit = await getAudit(audit_id);
+  if (!audit) {
+    res.status(404).json({ error: 'Audit not found' });
+    return;
+  }
+  if (audit.user_id !== user.id) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+  if (audit.status !== 'completed') {
+    res.status(409).json({ error: 'Report not ready', status: audit.status });
+    return;
+  }
+
+  const report = await getReport(audit_id);
+  if (!report) {
+    res.status(404).json({ error: 'Report not found' });
+    return;
+  }
+
+  try {
+    const filename = `atlas-report-${audit_id}`;
+
+    if (format === 'json') {
+      const json = JSON.stringify(report, null, 2);
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}.json"`);
+      res.send(json);
+      return;
+    }
+
+    if (format === 'pdf') {
+      const pdfBuffer = await generatePDF(report);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}.pdf"`);
+      res.send(pdfBuffer);
+      return;
+    }
+
+    // format === 'both' — bundle PDF + JSON in a ZIP
+    const [pdfBuffer] = await Promise.all([generatePDF(report)]);
+    const zip = new JSZip();
+    zip.file(`${filename}.pdf`, pdfBuffer);
+    zip.file(`${filename}.json`, JSON.stringify(report, null, 2));
+    const zipBuffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}.zip"`);
+    res.send(zipBuffer);
+  } catch (err) {
+    logger.error({ err, audit_id }, 'Export failed');
+    res.status(500).json({ error: 'Export failed' });
+  }
 });
 
 export default router;
