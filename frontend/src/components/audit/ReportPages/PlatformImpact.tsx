@@ -46,13 +46,6 @@ function PlatformCard({ platform, validationResults }: PlatformCardProps) {
   const cfg = PLATFORM_STATUS_CONFIG[platform.status];
   const label = PLATFORM_LABELS[platform.platform] ?? platform.platform;
 
-  // Get relevant rules for this platform
-  const relevantResults = validationResults.filter(
-    (r) => !platform.failed_rules || true // show all rules that have been run
-  );
-  // Filter to rules that mention this platform — use failed_rules as the fail set
-  const failedSet = new Set(platform.failed_rules);
-
   // Show a curated checklist for known platforms
   const platformRuleMap: Record<string, string[]> = {
     google_ads: [
@@ -74,7 +67,7 @@ function PlatformCard({ platform, validationResults }: PlatformCardProps) {
   };
 
   const ruleIds = platformRuleMap[platform.platform] ?? [];
-  const resultMap = new Map(relevantResults.map((r) => [r.rule_id, r]));
+  const resultMap = new Map(validationResults.map((r) => [r.rule_id, r]));
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-5">
@@ -94,23 +87,28 @@ function PlatformCard({ platform, validationResults }: PlatformCardProps) {
         <ul className="mt-4 space-y-2">
           {ruleIds.map((ruleId) => {
             const result = resultMap.get(ruleId);
-            const failed = failedSet.has(ruleId);
-            const status = result?.status;
-            const pass = status === 'pass' && !failed;
+            // Skip rules for which we have no result data at all
+            if (!result) return null;
+
+            const status = result.status;
+            const pass = status === 'pass';
+            const warn = status === 'warning';
+            // Warnings mean the check partially passed, so use the positive label
+            const usePassLabel = pass || warn;
 
             return (
               <li key={ruleId} className="flex items-center gap-2.5 text-sm">
                 <span
                   className={`shrink-0 text-base leading-none ${
-                    pass ? 'text-green-500' : status === 'warning' ? 'text-yellow-500' : 'text-red-500'
+                    pass ? 'text-green-500' : warn ? 'text-yellow-500' : 'text-red-500'
                   }`}
                   aria-hidden="true"
                 >
-                  {pass ? '✔' : status === 'warning' ? '⚠' : '✖'}
+                  {pass ? '✔' : warn ? '⚠' : '✖'}
                 </span>
                 <span className={pass ? 'text-gray-700' : 'text-gray-900 font-medium'}>
                   {RULE_LABELS[ruleId]
-                    ? (pass ? RULE_LABELS[ruleId].pass : RULE_LABELS[ruleId].fail)
+                    ? (usePassLabel ? RULE_LABELS[ruleId].pass : RULE_LABELS[ruleId].fail)
                     : ruleId}
                 </span>
               </li>
