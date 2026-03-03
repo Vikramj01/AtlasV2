@@ -15,24 +15,55 @@ const REGION_OPTIONS: { value: Region; label: string }[] = [
   { value: 'global', label: 'Global' },
 ];
 
+// Step URL fields per funnel type
+const FUNNEL_STEPS: Record<FunnelType, { key: string; label: string; placeholder: string; required: boolean }[]> = {
+  ecommerce: [
+    { key: 'landing',      label: 'Landing / Home URL',      placeholder: 'https://your-store.com',                        required: true },
+    { key: 'product',      label: 'Product Page URL',        placeholder: 'https://your-store.com/products/example',       required: true },
+    { key: 'checkout',     label: 'Checkout Page URL',       placeholder: 'https://your-store.com/checkout',               required: true },
+    { key: 'confirmation', label: 'Order Confirmation URL',  placeholder: 'https://your-store.com/order-confirmation',     required: true },
+  ],
+  saas: [
+    { key: 'landing',     label: 'Landing / Home URL',  placeholder: 'https://your-app.com',                required: true },
+    { key: 'signup',      label: 'Sign-up Page URL',    placeholder: 'https://your-app.com/signup',         required: true },
+    { key: 'onboarding',  label: 'Onboarding Page URL', placeholder: 'https://your-app.com/onboarding',     required: false },
+  ],
+  lead_gen: [
+    { key: 'landing',   label: 'Landing Page URL',   placeholder: 'https://your-site.com/offer',     required: true },
+    { key: 'thank_you', label: 'Thank-You Page URL', placeholder: 'https://your-site.com/thank-you', required: true },
+  ],
+};
+
 export function RunAuditForm() {
   const navigate = useNavigate();
   const { startAudit, loading, error } = useAudit();
 
-  const [url, setUrl] = useState('');
   const [funnelType, setFunnelType] = useState<FunnelType>('ecommerce');
   const [region, setRegion] = useState<Region>('us');
+  const [urlMap, setUrlMap] = useState<Record<string, string>>({});
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [testEmail, setTestEmail] = useState('');
   const [testPhone, setTestPhone] = useState('');
 
+  const steps = FUNNEL_STEPS[funnelType];
+
+  const handleFunnelChange = (next: FunnelType) => {
+    setFunnelType(next);
+    setUrlMap({});
+  };
+
+  const handleUrlChange = (key: string, value: string) => {
+    setUrlMap((prev) => ({ ...prev, [key]: value }));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const websiteUrl = urlMap['landing'] ?? '';
     const auditId = await startAudit({
-      website_url: url,
+      website_url: websiteUrl,
       funnel_type: funnelType,
       region,
-      url_map: { landing: url },
+      url_map: urlMap,
       test_email: testEmail || undefined,
       test_phone: testPhone || undefined,
     });
@@ -47,31 +78,42 @@ export function RunAuditForm() {
       </p>
 
       <form onSubmit={handleSubmit} className="mt-5 space-y-4">
-        {/* Website URL */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Website URL</label>
-          <input
-            type="url"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            required
-            placeholder="https://your-store.com"
-            className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none"
-          />
-        </div>
-
         {/* Funnel Type */}
         <div>
           <label className="block text-sm font-medium text-gray-700">Funnel Type</label>
           <select
             value={funnelType}
-            onChange={(e) => setFunnelType(e.target.value as FunnelType)}
+            onChange={(e) => handleFunnelChange(e.target.value as FunnelType)}
             className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none"
           >
             {FUNNEL_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
+        </div>
+
+        {/* Per-step URLs */}
+        <div className="space-y-3">
+          <p className="text-sm font-medium text-gray-700">Journey URLs</p>
+          <p className="text-xs text-gray-500 -mt-2">
+            Enter each page in the funnel so we can simulate the full user journey.
+          </p>
+          {steps.map((step) => (
+            <div key={step.key}>
+              <label className="block text-sm font-medium text-gray-700">
+                {step.label}
+                {!step.required && <span className="ml-1 text-gray-400">(optional)</span>}
+              </label>
+              <input
+                type="url"
+                value={urlMap[step.key] ?? ''}
+                onChange={(e) => handleUrlChange(step.key, e.target.value)}
+                required={step.required}
+                placeholder={step.placeholder}
+                className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none"
+              />
+            </div>
+          ))}
         </div>
 
         {/* Region */}
