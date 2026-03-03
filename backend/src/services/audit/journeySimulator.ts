@@ -6,6 +6,7 @@
 import type { AuditData, FunnelType, Region, DataLayerEvent, NetworkRequest, CookieSnapshot, LocalStorageSnapshot } from '@/types/audit';
 import { JOURNEY_CONFIGS } from '@/services/browserbase/journeyConfigs';
 import {
+  instrumentDataLayer,
   flushDataLayer,
   interceptNetworkRequests,
   captureCookies,
@@ -77,6 +78,9 @@ export async function simulateJourney(
     userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   });
   const page = await context.newPage();
+
+  // Instrument dataLayer before first navigation so push() is intercepted on every page load
+  await instrumentDataLayer(page as Parameters<typeof instrumentDataLayer>[0], dataLayer, 'init');
 
   // Wire up network interception (runs for all steps)
   let currentStep = 'init';
