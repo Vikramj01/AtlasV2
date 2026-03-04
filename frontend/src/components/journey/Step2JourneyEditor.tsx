@@ -1,3 +1,18 @@
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  arrayMove,
+} from '@dnd-kit/sortable';
 import { useJourneyWizardStore } from '@/store/journeyWizardStore';
 import { StageCard } from './StageCard';
 
@@ -6,22 +21,25 @@ interface Step2Props {
   onBack: () => void;
 }
 
-const PAGE_TYPE_OPTIONS = [
-  { value: 'product', label: 'Product Page' },
-  { value: 'category', label: 'Category Page' },
-  { value: 'form', label: 'Form Page' },
-  { value: 'search_results', label: 'Search Results' },
-  { value: 'landing', label: 'Landing Page' },
-  { value: 'confirmation', label: 'Confirmation Page' },
-  { value: 'checkout', label: 'Checkout Page' },
-  { value: 'custom', label: 'Custom Page' },
-];
-
 export function Step2JourneyEditor({ onNext, onBack }: Step2Props) {
-  const { stages, addStage, canProceedFromStep } = useJourneyWizardStore();
+  const { stages, addStage, reorderStages, canProceedFromStep } = useJourneyWizardStore();
   const canProceed = canProceedFromStep(2);
 
   const noUrls = stages.every((s) => !s.sampleUrl);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = stages.findIndex((s) => s.id === active.id);
+    const newIndex = stages.findIndex((s) => s.id === over.id);
+    reorderStages(arrayMove(stages, oldIndex, newIndex));
+  }
 
   return (
     <div>
@@ -29,7 +47,7 @@ export function Step2JourneyEditor({ onNext, onBack }: Step2Props) {
         Here's your customer journey — adjust it to match your site
       </h2>
       <p className="mt-2 text-center text-gray-500 text-sm">
-        Rename stages, paste your real URLs, and toggle what happens on each page.
+        Rename stages, paste your real URLs, and toggle what happens on each page. Drag to reorder.
       </p>
 
       {noUrls && stages.length > 0 && (
@@ -44,23 +62,26 @@ export function Step2JourneyEditor({ onNext, onBack }: Step2Props) {
         </div>
       )}
 
-      {/* Stages list */}
+      {/* Sortable stages list */}
       <div className="mt-6 space-y-3">
-        {stages.map((stage, i) => (
-          <div key={stage.id}>
-            <StageCard stage={stage} canRemove={stages.length > 1} />
-            {/* Add stage button between stages */}
-            <div className="flex justify-center my-1">
-              <div className="relative flex items-center w-full">
-                <div className="flex-1 border-t border-gray-200" />
-                <AddStageButton onAdd={() => addStage(stage.order)} />
-                <div className="flex-1 border-t border-gray-200" />
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={stages.map((s) => s.id)} strategy={verticalListSortingStrategy}>
+            {stages.map((stage) => (
+              <div key={stage.id}>
+                <StageCard stage={stage} canRemove={stages.length > 1} />
+                {/* Add stage button below each card */}
+                <div className="flex justify-center my-1">
+                  <div className="relative flex items-center w-full">
+                    <div className="flex-1 border-t border-gray-200" />
+                    <AddStageButton onAdd={() => addStage(stage.order)} />
+                    <div className="flex-1 border-t border-gray-200" />
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
-        ))}
+            ))}
+          </SortableContext>
+        </DndContext>
 
-        {/* Add stage at end when list is empty */}
         {stages.length === 0 && (
           <AddStageButton onAdd={() => addStage(0)} label="+ Add First Stage" />
         )}

@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { ActionToggles } from './ActionToggles';
 import { useJourneyWizardStore } from '@/store/journeyWizardStore';
 import type { WizardStage } from '@/types/journey';
@@ -13,6 +15,17 @@ export function StageCard({ stage, canRemove }: StageCardProps) {
   const [editingLabel, setEditingLabel] = useState(false);
   const [labelDraft, setLabelDraft] = useState(stage.label);
 
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: stage.id,
+  });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 10 : undefined,
+  };
+
   function commitLabel() {
     if (labelDraft.trim()) updateStageLabel(stage.id, labelDraft.trim());
     else setLabelDraft(stage.label);
@@ -20,11 +33,18 @@ export function StageCard({ stage, canRemove }: StageCardProps) {
   }
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+    <div ref={setNodeRef} style={style} className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          {/* Drag handle placeholder */}
-          <span className="text-gray-300 cursor-grab select-none">⠿</span>
+          {/* Drag handle */}
+          <span
+            {...attributes}
+            {...listeners}
+            className="text-gray-300 cursor-grab active:cursor-grabbing select-none touch-none"
+            aria-label="Drag to reorder"
+          >
+            ⠿
+          </span>
 
           {/* Stage number badge */}
           <span className="flex-shrink-0 h-6 w-6 rounded-full bg-brand-100 text-brand-700 text-xs font-semibold flex items-center justify-center">
