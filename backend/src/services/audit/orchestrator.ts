@@ -59,14 +59,15 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
           for (const gapResult of stageGaps) {
             const dbStage = dbStages.find((s) => s.stage_order === gapResult.stage_order);
             if (!dbStage) continue;
-            await supabase.from('journey_audit_results').insert({
+            const { error: insertErr } = await supabase.from('journey_audit_results').insert({
               audit_id,
               journey_id: data.journey_id,
               stage_id: dbStage.id,
               stage_status: gapResult.stage_status,
               gaps: gapResult.gaps,
               raw_capture: null,
-            }).catch((e: Error) => logger.warn({ err: e.message }, 'Failed to save gap result'));
+            });
+            if (insertErr) logger.warn({ err: insertErr.message }, 'Failed to save gap result');
           }
         }
 
