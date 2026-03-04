@@ -31,6 +31,7 @@ export function useAudit() {
 // ─── Poll audit status ────────────────────────────────────────────────────────
 
 export function useAuditStatus(auditId: string | undefined) {
+  const setAudit = useAuditStore((s) => s.setAudit);
   const updateAuditStatus = useAuditStore((s) => s.updateAuditStatus);
   const currentAudit = useAuditStore((s) => s.currentAudit);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -43,7 +44,12 @@ export function useAuditStatus(auditId: string | undefined) {
     const poll = async () => {
       try {
         const res = await auditApi.getStatus(auditId);
-        updateAuditStatus(res.status, res.progress, res.error);
+        // If the store has no currentAudit (e.g. page refresh), initialise it
+        if (!useAuditStore.getState().currentAudit) {
+          setAudit({ id: auditId, status: res.status, progress: res.progress ?? 0, error: res.error ?? null });
+        } else {
+          updateAuditStatus(res.status, res.progress, res.error);
+        }
         if (res.status === 'completed' || res.status === 'failed') {
           if (intervalRef.current) clearInterval(intervalRef.current);
         }
@@ -58,7 +64,7 @@ export function useAuditStatus(auditId: string | undefined) {
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [auditId, isDone, updateAuditStatus]);
+  }, [auditId, isDone, setAudit, updateAuditStatus]);
 
   return { status: currentAudit?.status, progress: currentAudit?.progress ?? 0, error: currentAudit?.error };
 }
