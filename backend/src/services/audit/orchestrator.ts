@@ -13,6 +13,7 @@ import { runAllRules } from '@/services/validation/engine';
 import { calculateScores } from '@/services/scoring/engine';
 import { interpretResults } from '@/services/interpretation/engine';
 import { generateReport } from '@/services/reporting/generator';
+import type { JourneyStage, RuleStatus } from '@/types/audit';
 import { getJourneyStages } from '@/services/database/journeyQueries';
 import { supabase } from '@/services/database/supabase';
 import logger from '@/utils/logger';
@@ -96,9 +97,22 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
         await saveValidationResults(audit_id, validationResults);
         await updateAuditStatus(audit_id, 'running', { progress: 80 });
 
+        // Build journey-specific stage breakdown from gap classifier results
+        const stageStatusMap: Record<string, RuleStatus> = {
+          healthy: 'pass',
+          issues_found: 'warning',
+          signals_missing: 'fail',
+          not_checked: 'pass',
+        };
+        const customJourneyStages: JourneyStage[] = stageGaps.map((sg) => ({
+          stage: sg.stage_label,
+          status: stageStatusMap[sg.stage_status] ?? 'pass',
+          issues: sg.gaps.map((g) => `${g.gap_type.replace(/_/g, ' ')} — ${g.business_impact}`),
+        }));
+
         const scores = calculateScores(validationResults);
         const issues = interpretResults(validationResults);
-        const report = generateReport(proxyAuditData, scores, issues, validationResults);
+        const report = generateReport(proxyAuditData, scores, issues, validationResults, customJourneyStages);
         await saveReport(audit_id, report);
 
       } else {

@@ -103,6 +103,7 @@ export function generateReport(
   scores: AuditScores,
   issues: ReportIssue[],
   results: ValidationResult[],
+  customJourneyStages?: JourneyStage[],
 ): ReportJSON {
   const resultMap = new Map(results.map((r) => [r.rule_id, r]));
   const failedRuleIds = results.filter((r) => r.status === 'fail').map((r) => r.rule_id);
@@ -117,7 +118,7 @@ export function generateReport(
       business_summary: businessSummary,
       scores,
     },
-    journey_stages: buildJourneyStages(auditData.funnel_type, resultMap),
+    journey_stages: customJourneyStages ?? buildJourneyStages(auditData.funnel_type, resultMap),
     platform_breakdown: buildPlatformBreakdown(resultMap),
     issues,
     technical_appendix: {
