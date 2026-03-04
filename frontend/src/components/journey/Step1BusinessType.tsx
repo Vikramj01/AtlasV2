@@ -37,9 +37,8 @@ export function Step1BusinessType({ onNext }: Step1Props) {
 
   function handleLoadTemplate(template: SavedTemplate) {
     loadFromTemplate(template);
-    // loadFromTemplate already sets currentStep to 2 via the store,
-    // but we still call onNext so JourneyWizard re-renders the correct step
-    onNext();
+    // loadFromTemplate sets currentStep:2 in the store, which re-renders JourneyWizard
+    // — no need to call onNext() (doing so risks skipping to step 3)
   }
 
   async function handleDelete(templateId: string) {
@@ -84,6 +83,17 @@ export function Step1BusinessType({ onNext }: Step1Props) {
       </div>
 
       {/* My Templates */}
+      {loadingTemplates && (
+        <div className="mt-8 animate-pulse">
+          <div className="h-4 w-32 rounded bg-gray-100 mb-3" />
+          <div className="space-y-2">
+            {[0, 1].map((i) => (
+              <div key={i} className="h-14 rounded-xl bg-gray-100" />
+            ))}
+          </div>
+        </div>
+      )}
+
       {!loadingTemplates && templates.length > 0 && (
         <div className="mt-8">
           <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
