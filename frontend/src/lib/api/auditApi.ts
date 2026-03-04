@@ -63,4 +63,15 @@ export const auditApi = {
       }).then((r) => r.blob())
     );
   },
+
+  startFromJourney(journey_id: string, opts?: { test_email?: string; test_phone?: string }): Promise<{ audit_id: string; journey_id: string; status: string }> {
+    return apiFetch('/api/audits/start-from-journey', {
+      method: 'POST',
+      body: JSON.stringify({ journey_id, ...opts }),
+    });
+  },
+
+  getGaps(audit_id: string): Promise<unknown[]> {
+    return apiFetch(`/api/audits/${audit_id}/gaps`);
+  },
 };

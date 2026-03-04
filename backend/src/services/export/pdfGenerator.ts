@@ -218,6 +218,58 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
 
     doc.addPage();
     pageHeader('Journey Breakdown', 'Page 2 / 5');
+
+    // ── Funnel pipeline diagram ─────────────────────────────────────────
+    const stages = report.journey_stages;
+    if (stages.length > 0) {
+      const PIPE_H = 32;
+      const ARROW_W = 14;
+      const stageCount = stages.length;
+      // Total arrow space between stages
+      const totalArrows = (stageCount - 1) * ARROW_W;
+      const boxW = Math.floor((CONTENT_W - totalArrows) / stageCount);
+      const pipeY = doc.y + 4;
+
+      stages.forEach((s, i) => {
+        const bx = LEFT + i * (boxW + ARROW_W);
+        const sc = statusColor(s.status);
+
+        // Stage box
+        doc.fillColor(sc).roundedRect(bx, pipeY, boxW, PIPE_H, 4).fill();
+
+        // Status icon
+        const icon = s.status === 'pass' ? '✓' : s.status === 'warning' ? '!' : '✗';
+        doc.fillColor(C.white).fontSize(9).font('Helvetica-Bold')
+          .text(icon, bx + 6, pipeY + 5, { width: 14 });
+
+        // Stage label (truncated to fit box)
+        const maxChars = Math.floor((boxW - 22) / 5.2);
+        const label = s.stage.length > maxChars ? s.stage.slice(0, maxChars - 1) + '…' : s.stage;
+        doc.fillColor(C.white).fontSize(8.5).font('Helvetica-Bold')
+          .text(label, bx + 22, pipeY + 9, { width: boxW - 28, lineBreak: false });
+
+        // Arrow connector
+        if (i < stageCount - 1) {
+          const ax = bx + boxW + 2;
+          const ay = pipeY + PIPE_H / 2;
+          doc.fillColor(C.mutedText).fontSize(9).font('Helvetica')
+            .text('›', ax, ay - 6, { width: ARROW_W - 2, align: 'center', lineBreak: false });
+        }
+      });
+
+      // Stage name labels below boxes
+      const labelY = pipeY + PIPE_H + 5;
+      stages.forEach((s, i) => {
+        const bx = LEFT + i * (boxW + ARROW_W);
+        const maxChars = Math.floor(boxW / 5);
+        const label = s.stage.length > maxChars ? s.stage.slice(0, maxChars - 1) + '…' : s.stage;
+        doc.fillColor(C.lightText).fontSize(7.5).font('Helvetica')
+          .text(label, bx, labelY, { width: boxW, align: 'center', lineBreak: false });
+      });
+
+      doc.y = labelY + 16;
+    }
+
     sectionHeading('Funnel Stage Analysis');
 
     for (const stage of report.journey_stages) {

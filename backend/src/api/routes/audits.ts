@@ -3,6 +3,7 @@ import JSZip from 'jszip';
 import { authMiddleware } from '@/api/middleware/authMiddleware';
 import { auditLimiter } from '@/api/middleware/auditLimiter';
 import { createAudit, getAudit, getReport, listAudits } from '@/services/database/queries';
+import { getJourneyWithDetails, getLatestSpec } from '@/services/database/journeyQueries';
 import { generatePDF } from '@/services/export/pdfGenerator';
 import { auditQueue } from '@/services/queue/jobQueue';
 import type { FunnelType, Region } from '@/types/audit';
@@ -147,6 +148,95 @@ router.get('/:audit_id/report', async (req: Request, res: Response) => {
   }
 
   res.json(report);
+});
+
+// ─── POST /api/audits/start-from-journey ─────────────────────────────────────
+// Creates an audit driven by a saved Journey Builder journey + ValidationSpec.
+
+router.post('/start-from-journey', auditLimiter, async (req: Request, res: Response) => {
+  const { user } = req as AuthenticatedRequest;
+  const { journey_id, test_email, test_phone } = req.body as {
+    journey_id?: string;
+    test_email?: string;
+    test_phone?: string;
+  };
+
+  if (!journey_id) {
+    res.status(400).json({ error: 'journey_id is required' });
+    return;
+  }
+
+  try {
+    // Load journey + stages to get the landing URL
+    const details = await getJourneyWithDetails(journey_id, user.id);
+    if (!details) {
+      res.status(404).json({ error: 'Journey not found' });
+      return;
+    }
+
+    // Load the validation spec
+    const specRecord = await getLatestSpec(journey_id, 'validation_spec');
+    if (!specRecord) {
+      res.status(409).json({ error: 'No validation spec found. Call POST /api/journeys/:id/generate first.' });
+      return;
+    }
+
+    // Derive the landing URL from the first stage that has a URL
+    const firstStage = details.stages.find((s) => s.sample_url);
+    const websiteUrl = firstStage?.sample_url ?? 'https://example.com';
+
+    const audit = await createAudit({
+      user_id: user.id,
+      website_url: websiteUrl,
+      funnel_type: 'ecommerce' as FunnelType,
+      region: 'us' as Region,
+      test_email,
+      test_phone,
+    });
+
+    await auditQueue.add({
+      audit_id: audit.id,
+      website_url: websiteUrl,
+      funnel_type: 'ecommerce',
+      region: 'us',
+      url_map: {},
+      test_email,
+      test_phone,
+      journey_id,
+      validation_spec: specRecord.spec_data,
+    });
+
+    logger.info({ audit_id: audit.id, journey_id, user_id: user.id }, 'Journey audit queued');
+
+    res.status(202).json({
+      audit_id: audit.id,
+      journey_id,
+      status: 'queued',
+      created_at: audit.created_at,
+    });
+  } catch (err) {
+    logger.error({ err }, 'Failed to start journey audit');
+    res.status(500).json({ error: 'Failed to start audit' });
+  }
+});
+
+// ─── GET /api/audits/:audit_id/gaps ─────────────────────────────────────────
+// Returns journey gap results for a completed journey-mode audit.
+
+router.get('/:audit_id/gaps', async (req: Request, res: Response) => {
+  const { user } = req as AuthenticatedRequest;
+  const audit = await getAudit(req.params.audit_id);
+  if (!audit) { res.status(404).json({ error: 'Audit not found' }); return; }
+  if (audit.user_id !== user.id) { res.status(403).json({ error: 'Forbidden' }); return; }
+
+  const { data, error } = await (await import('@/services/database/supabase')).supabase
+    .from('journey_audit_results')
+    .select('*')
+    .eq('audit_id', req.params.audit_id)
+    .order('stage_id');
+
+  if (error) { res.status(500).json({ error: error.message }); return; }
+  res.json(data ?? []);
 });
 
 // ─── POST /api/audits/:audit_id/export ───────────────────────────────────────

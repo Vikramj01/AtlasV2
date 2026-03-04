@@ -1,8 +1,9 @@
 import { NavLink } from 'react-router-dom';
 
 const NAV = [
-  { label: 'Audits',    to: '/dashboard', icon: '◈' },
-  { label: 'Settings',  to: '/settings',  icon: '⚙' },
+  { label: 'New Audit',  to: '/journey/new', icon: '✦' },
+  { label: 'History',   to: '/dashboard',    icon: '◈' },
+  { label: 'Settings',  to: '/settings',     icon: '⚙' },
 ];
 
 export function Sidebar() {
