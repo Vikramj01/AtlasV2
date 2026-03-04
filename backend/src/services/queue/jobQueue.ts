@@ -10,6 +10,9 @@ export interface AuditJobData {
   url_map: Record<string, string>;
   test_email?: string;
   test_phone?: string;
+  // Journey Builder fields (present when audit is driven by a saved journey)
+  journey_id?: string;
+  validation_spec?: unknown;
 }
 
 // Parse REDIS_URL into explicit options so ioredis handles TLS correctly

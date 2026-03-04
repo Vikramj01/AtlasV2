@@ -1,17 +1,26 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAuditStatus } from '@/hooks/useAudit';
 import { AuditProgressSteps } from '@/components/audit/AuditProgressSteps';
 
 export function AuditProgressPage() {
   const { auditId } = useParams<{ auditId: string }>();
+  const [searchParams] = useSearchParams();
+  const journeyId = searchParams.get('journeyId');
   const navigate = useNavigate();
   const { status, progress, error } = useAuditStatus(auditId);
   const [showLogs, setShowLogs] = useState(false);
 
   useEffect(() => {
-    if (status === 'completed') navigate(`/report/${auditId}`, { replace: true });
-  }, [status, auditId, navigate]);
+    if (status === 'completed') {
+      // Journey-mode audit → Gap Report; legacy → old report
+      if (journeyId) {
+        navigate(`/journey/${journeyId}/audit/${auditId}`, { replace: true });
+      } else {
+        navigate(`/report/${auditId}`, { replace: true });
+      }
+    }
+  }, [status, auditId, journeyId, navigate]);
 
   return (
     <div className="flex min-h-full flex-col items-center justify-center px-6 py-16">

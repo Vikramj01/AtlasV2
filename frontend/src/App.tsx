@@ -6,6 +6,8 @@ import { DashboardPage } from '@/pages/DashboardPage';
 import { AuditProgressPage } from '@/pages/AuditProgressPage';
 import { ReportPage } from '@/pages/ReportPage';
 import { JourneyBuilderPage } from '@/pages/JourneyBuilderPage';
+import { JourneySpecPage } from '@/pages/JourneySpecPage';
+import { GapReportPage } from '@/pages/GapReportPage';
 
 export default function App() {
   return (
@@ -19,10 +21,12 @@ export default function App() {
           <Route element={<AppLayout />}>
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/report/:auditId" element={<ReportPage />} />
+            <Route path="/journey/new" element={<JourneyBuilderPage />} />
+            <Route path="/journey/:id/spec" element={<JourneySpecPage />} />
+            <Route path="/journey/:id/audit/:auditId" element={<GapReportPage />} />
           </Route>
-          {/* Full-page flows (no sidebar) */}
+          {/* Progress page: full-screen, no sidebar */}
           <Route path="/audit/:auditId/progress" element={<AuditProgressPage />} />
-          <Route path="/journey/new" element={<JourneyBuilderPage />} />
         </Route>
 
         {/* Redirects */}

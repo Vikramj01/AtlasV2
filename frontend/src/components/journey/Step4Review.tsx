@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useJourneyWizardStore } from '@/store/journeyWizardStore';
 import { createJourney, generateSpecs } from '@/lib/api/journeyApi';
+import { auditApi } from '@/lib/api/auditApi';
 import { ACTION_TOGGLES, PLATFORM_OPTIONS } from '@/types/journey';
 
 interface Step4Props {
@@ -49,13 +50,15 @@ export function Step4Review({ onBack }: Step4Props) {
       const result = await createJourney(payload);
       const journeyId = result.journey.id;
 
-      // Always generate the spec
+      // Always generate the spec (needed by both audit and spec-only paths)
       await generateSpecs(journeyId);
 
       reset();
 
       if (mode === 'audit') {
-        navigate(`/audit/start?journeyId=${journeyId}`);
+        // Start the journey-based audit and redirect to the progress screen
+        const auditResult = await auditApi.startFromJourney(journeyId);
+        navigate(`/audit/${auditResult.audit_id}/progress?journeyId=${journeyId}`);
       } else {
         navigate(`/journey/${journeyId}/spec`);
       }
