@@ -5,6 +5,7 @@ import { LoginPage } from '@/pages/LoginPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { AuditProgressPage } from '@/pages/AuditProgressPage';
 import { ReportPage } from '@/pages/ReportPage';
+import { JourneyBuilderPage } from '@/pages/JourneyBuilderPage';
 
 export default function App() {
   return (
@@ -19,13 +20,14 @@ export default function App() {
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/report/:auditId" element={<ReportPage />} />
           </Route>
-          {/* Progress page has its own layout (no sidebar) */}
+          {/* Full-page flows (no sidebar) */}
           <Route path="/audit/:auditId/progress" element={<AuditProgressPage />} />
+          <Route path="/journey/new" element={<JourneyBuilderPage />} />
         </Route>
 
         {/* Redirects */}
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/" element={<Navigate to="/journey/new" replace />} />
+        <Route path="*" element={<Navigate to="/journey/new" replace />} />
       </Routes>
     </BrowserRouter>
   );

@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import auditRoutes from '@/api/routes/audits';
+import { journeysRouter } from '@/api/routes/journeys';
 import logger from '@/utils/logger';
 
 const app = express();
@@ -28,6 +29,9 @@ app.get('/health', (_req, res) => {
 // ─── API routes ───────────────────────────────────────────────────────────────
 
 app.use('/api/audits', auditRoutes);
+app.use('/api/journeys', journeysRouter);
+app.use('/api/templates', journeysRouter);
+app.use('/api/action-primitives', journeysRouter);
 
 // ─── 404 handler ─────────────────────────────────────────────────────────────
 

@@ -1,0 +1,270 @@
+import { Router } from 'express';
+import type { Request, Response } from 'express';
+import { authMiddleware } from '../middleware/authMiddleware';
+import {
+  createJourney,
+  listJourneys,
+  getJourney,
+  getJourneyWithDetails,
+  updateJourney,
+  deleteJourney,
+  getJourneyStages,
+  upsertStage,
+  updateStage,
+  deleteStage,
+  reorderStages,
+  upsertPlatforms,
+  listSpecs,
+  getLatestSpec,
+  listTemplates,
+  getTemplate,
+  saveTemplate,
+  deleteTemplate,
+} from '../../services/database/journeyQueries';
+import { generateAndSaveSpecs } from '../../services/journey/specOrchestrator';
+import { ACTION_PRIMITIVES, getActionPrimitive } from '../../services/journey/actionPrimitives';
+import type { SpecFormat } from '../../types/journey';
+
+const router = Router();
+router.use(authMiddleware);
+
+// ── Journeys CRUD ─────────────────────────────────────────────────────────────
+
+router.post('/', async (req: Request, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const journey = await createJourney(userId, req.body);
+
+    // If stages were provided inline, seed them
+    if (req.body.stages?.length) {
+      for (const stage of req.body.stages) {
+        await upsertStage(journey.id, stage);
+      }
+    }
+
+    // If platforms were provided inline, seed them
+    if (req.body.platforms?.length) {
+      await upsertPlatforms(journey.id, { platforms: req.body.platforms });
+    }
+
+    const details = await getJourneyWithDetails(journey.id, userId);
+    res.status(201).json(details);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+router.get('/', async (req: Request, res: Response) => {
+  try {
+    const journeys = await listJourneys(req.user!.id);
+    res.json(journeys);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+router.get('/:id', async (req: Request, res: Response) => {
+  try {
+    const details = await getJourneyWithDetails(req.params.id, req.user!.id);
+    if (!details) return res.status(404).json({ error: 'Journey not found' });
+    res.json(details);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+router.put('/:id', async (req: Request, res: Response) => {
+  try {
+    const journey = await updateJourney(req.params.id, req.user!.id, req.body);
+    res.json(journey);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+router.delete('/:id', async (req: Request, res: Response) => {
+  try {
+    await deleteJourney(req.params.id, req.user!.id);
+    res.status(204).send();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// ── Stages ────────────────────────────────────────────────────────────────────
+
+router.post('/:id/stages', async (req: Request, res: Response) => {
+  try {
+    const journey = await getJourney(req.params.id, req.user!.id);
+    if (!journey) return res.status(404).json({ error: 'Journey not found' });
+
+    const stage = await upsertStage(req.params.id, req.body);
+    res.status(201).json(stage);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+router.put('/:id/stages/reorder', async (req: Request, res: Response) => {
+  try {
+    const journey = await getJourney(req.params.id, req.user!.id);
+    if (!journey) return res.status(404).json({ error: 'Journey not found' });
+
+    const { stage_ids } = req.body as { stage_ids: string[] };
+    if (!Array.isArray(stage_ids)) return res.status(400).json({ error: 'stage_ids must be an array' });
+
+    await reorderStages(req.params.id, stage_ids);
+    const stages = await getJourneyStages(req.params.id);
+    res.json(stages);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+router.put('/:id/stages/:stageId', async (req: Request, res: Response) => {
+  try {
+    const journey = await getJourney(req.params.id, req.user!.id);
+    if (!journey) return res.status(404).json({ error: 'Journey not found' });
+
+    const stage = await updateStage(req.params.stageId, req.body);
+    res.json(stage);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+router.delete('/:id/stages/:stageId', async (req: Request, res: Response) => {
+  try {
+    const journey = await getJourney(req.params.id, req.user!.id);
+    if (!journey) return res.status(404).json({ error: 'Journey not found' });
+
+    await deleteStage(req.params.stageId, req.params.id);
+    res.status(204).send();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// ── Platforms ─────────────────────────────────────────────────────────────────
+
+router.put('/:id/platforms', async (req: Request, res: Response) => {
+  try {
+    const journey = await getJourney(req.params.id, req.user!.id);
+    if (!journey) return res.status(404).json({ error: 'Journey not found' });
+
+    const platforms = await upsertPlatforms(req.params.id, req.body);
+    res.json(platforms);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// ── Spec Generation ───────────────────────────────────────────────────────────
+
+router.post('/:id/generate', async (req: Request, res: Response) => {
+  try {
+    const journey = await getJourney(req.params.id, req.user!.id);
+    if (!journey) return res.status(404).json({ error: 'Journey not found' });
+
+    const formats = req.body.formats as SpecFormat[] | undefined;
+    const specs = await generateAndSaveSpecs(req.params.id, req.user!.id, formats);
+    res.json({ generated: Object.keys(specs), specs });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+router.get('/:id/specs', async (req: Request, res: Response) => {
+  try {
+    const journey = await getJourney(req.params.id, req.user!.id);
+    if (!journey) return res.status(404).json({ error: 'Journey not found' });
+
+    const specs = await listSpecs(req.params.id);
+    res.json(specs);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+router.get('/:id/specs/:format', async (req: Request, res: Response) => {
+  try {
+    const journey = await getJourney(req.params.id, req.user!.id);
+    if (!journey) return res.status(404).json({ error: 'Journey not found' });
+
+    const format = req.params.format as SpecFormat;
+    const spec = await getLatestSpec(req.params.id, format);
+    if (!spec) return res.status(404).json({ error: 'Spec not found. Run /generate first.' });
+    res.json(spec);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// ── Templates ─────────────────────────────────────────────────────────────────
+
+router.get('/templates', async (req: Request, res: Response) => {
+  try {
+    const templates = await listTemplates(req.user!.id);
+    res.json(templates);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+router.post('/from-template/:templateId', async (req: Request, res: Response) => {
+  try {
+    const template = await getTemplate(req.params.templateId);
+    if (!template) return res.status(404).json({ error: 'Template not found' });
+
+    const userId = req.user!.id;
+    const journey = await createJourney(userId, {
+      name: req.body.name || template.name,
+      business_type: template.business_type as any,
+      implementation_format: req.body.implementation_format || 'gtm',
+    });
+
+    for (const stageTemplate of template.template_data.stages) {
+      await upsertStage(journey.id, {
+        stage_order: stageTemplate.order,
+        label: stageTemplate.label,
+        page_type: stageTemplate.page_type,
+        sample_url: null,
+        actions: stageTemplate.actions,
+      });
+    }
+
+    const details = await getJourneyWithDetails(journey.id, userId);
+    res.status(201).json(details);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// ── Action Primitives (reference) ─────────────────────────────────────────────
+
+router.get('/action-primitives', (_req: Request, res: Response) => {
+  res.json(ACTION_PRIMITIVES);
+});
+
+router.get('/action-primitives/:key', (req: Request, res: Response) => {
+  const primitive = getActionPrimitive(req.params.key);
+  if (!primitive) return res.status(404).json({ error: 'Action primitive not found' });
+  res.json(primitive);
+});
+
+export { router as journeysRouter };
