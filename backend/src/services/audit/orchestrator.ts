@@ -15,7 +15,7 @@ import { interpretResults } from '@/services/interpretation/engine';
 import { generateReport } from '@/services/reporting/generator';
 import type { JourneyStage, RuleStatus } from '@/types/audit';
 import { getJourneyStages } from '@/services/database/journeyQueries';
-import { supabase } from '@/services/database/supabase';
+import { supabaseAdmin as supabase } from '@/services/database/supabase';
 import logger from '@/utils/logger';
 
 export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {

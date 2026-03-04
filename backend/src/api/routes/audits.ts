@@ -229,7 +229,7 @@ router.get('/:audit_id/gaps', async (req: Request, res: Response) => {
   if (!audit) { res.status(404).json({ error: 'Audit not found' }); return; }
   if (audit.user_id !== user.id) { res.status(403).json({ error: 'Forbidden' }); return; }
 
-  const { data, error } = await (await import('@/services/database/supabase')).supabase
+  const { data, error } = await (await import('@/services/database/supabase')).supabaseAdmin
     .from('journey_audit_results')
     .select('*')
     .eq('audit_id', req.params.audit_id)
