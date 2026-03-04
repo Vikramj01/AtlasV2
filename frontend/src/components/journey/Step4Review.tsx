@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useJourneyWizardStore } from '@/store/journeyWizardStore';
-import { createJourney, generateSpecs } from '@/lib/api/journeyApi';
+import { createJourney, generateSpecs, saveTemplate } from '@/lib/api/journeyApi';
 import { auditApi } from '@/lib/api/auditApi';
 import { ACTION_TOGGLES, PLATFORM_OPTIONS } from '@/types/journey';
 
@@ -15,6 +15,10 @@ export function Step4Review({ onBack }: Step4Props) {
 
   const [loading, setLoading] = useState<'audit' | 'spec' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [savingTemplate, setSavingTemplate] = useState(false);
+  const [templateName, setTemplateName] = useState('');
+  const [templateSaved, setTemplateSaved] = useState(false);
+  const [showTemplateSave, setShowTemplateSave] = useState(false);
 
   const activePlatforms = platforms.filter((p) => p.isActive);
   const activeActions = stages.flatMap((s) => s.actions).filter((a) => a !== 'ad_landing');
@@ -66,6 +70,32 @@ export function Step4Review({ onBack }: Step4Props) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
       setLoading(null);
+    }
+  }
+
+  async function handleSaveTemplate() {
+    if (!businessType || !templateName.trim()) return;
+    setSavingTemplate(true);
+    try {
+      await saveTemplate({
+        name: templateName.trim(),
+        business_type: businessType,
+        template_data: {
+          stages: stages.map((s) => ({
+            order: s.order,
+            label: s.label,
+            page_type: s.pageType,
+            actions: s.actions,
+          })),
+        },
+      });
+      setTemplateSaved(true);
+      setShowTemplateSave(false);
+      setTemplateName('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save template');
+    } finally {
+      setSavingTemplate(false);
     }
   }
 
@@ -172,6 +202,48 @@ export function Step4Review({ onBack }: Step4Props) {
         >
           Back
         </button>
+      </div>
+
+      {/* Save as Template */}
+      <div className="mt-4 border-t border-gray-100 pt-4">
+        {templateSaved ? (
+          <p className="text-center text-sm text-green-600">Template saved — it will appear on the first step next time.</p>
+        ) : showTemplateSave ? (
+          <div className="flex gap-2">
+            <input
+              autoFocus
+              type="text"
+              value={templateName}
+              onChange={(e) => setTemplateName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleSaveTemplate(); if (e.key === 'Escape') setShowTemplateSave(false); }}
+              placeholder="Template name…"
+              className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-400 focus:outline-none"
+            />
+            <button
+              type="button"
+              onClick={handleSaveTemplate}
+              disabled={savingTemplate || !templateName.trim()}
+              className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700 disabled:opacity-40"
+            >
+              {savingTemplate ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowTemplateSave(false)}
+              className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowTemplateSave(true)}
+            className="w-full text-center text-xs text-gray-400 hover:text-brand-600 transition-colors"
+          >
+            + Save this journey as a reusable template
+          </button>
+        )}
       </div>
     </div>
   );

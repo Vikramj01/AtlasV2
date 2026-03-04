@@ -92,8 +92,35 @@ export async function getSpec(journeyId: string, format: SpecFormat): Promise<{ 
 
 // ── Templates ─────────────────────────────────────────────────────────────────
 
-export async function listTemplates(): Promise<unknown[]> {
+export interface SavedTemplate {
+  id: string;
+  name: string;
+  description: string | null;
+  business_type: BusinessType;
+  is_system: boolean;
+  template_data: {
+    stages: Array<{ order: number; label: string; page_type: string; actions: string[] }>;
+  };
+  created_at: string;
+}
+
+export async function listTemplates(): Promise<SavedTemplate[]> {
   return apiFetch('/api/templates');
+}
+
+export async function saveTemplate(data: {
+  name: string;
+  description?: string;
+  business_type: BusinessType;
+  template_data: {
+    stages: Array<{ order: number; label: string; page_type: string; actions: string[] }>;
+  };
+}): Promise<SavedTemplate> {
+  return apiFetch('/api/templates', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export async function deleteUserTemplate(templateId: string): Promise<void> {
+  await apiFetch(`/api/templates/${templateId}`, { method: 'DELETE' });
 }
 
 export async function createJourneyFromTemplate(

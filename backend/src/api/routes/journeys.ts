@@ -255,6 +255,36 @@ router.post('/from-template/:templateId', async (req: Request, res: Response) =>
   }
 });
 
+router.post('/templates', async (req: Request, res: Response) => {
+  try {
+    const { name, description, business_type, template_data } = req.body;
+    if (!name || !business_type || !template_data) {
+      return res.status(400).json({ error: 'name, business_type, and template_data are required' });
+    }
+    const template = await saveTemplate(
+      req.user!.id,
+      name,
+      description ?? null,
+      business_type,
+      template_data,
+    );
+    res.status(201).json(template);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+router.delete('/templates/:id', async (req: Request, res: Response) => {
+  try {
+    await deleteTemplate(req.params.id, req.user!.id);
+    res.json({ success: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
 // ── Action Primitives (reference) ─────────────────────────────────────────────
 
 router.get('/action-primitives', (_req: Request, res: Response) => {

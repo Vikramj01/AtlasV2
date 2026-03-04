@@ -1,18 +1,56 @@
+import { useEffect, useState } from 'react';
 import type { BusinessType } from '@/types/journey';
 import { BUSINESS_TYPE_OPTIONS } from '@/types/journey';
 import { useJourneyWizardStore } from '@/store/journeyWizardStore';
+import { listTemplates, deleteUserTemplate } from '@/lib/api/journeyApi';
+import type { SavedTemplate } from '@/lib/api/journeyApi';
 
 interface Step1Props {
   onNext: () => void;
 }
 
+const BUSINESS_TYPE_LABELS: Record<string, string> = {
+  ecommerce: 'E-commerce',
+  saas: 'SaaS',
+  lead_gen: 'Lead Gen',
+  content: 'Content',
+  marketplace: 'Marketplace',
+};
+
 export function Step1BusinessType({ onNext }: Step1Props) {
-  const { businessType, setBusinessType } = useJourneyWizardStore();
+  const { businessType, setBusinessType, loadFromTemplate } = useJourneyWizardStore();
+  const [templates, setTemplates] = useState<SavedTemplate[]>([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    listTemplates()
+      .then((data) => setTemplates(data.filter((t) => !t.is_system)))
+      .catch(() => setTemplates([]))
+      .finally(() => setLoadingTemplates(false));
+  }, []);
 
   function handleSelect(type: BusinessType) {
     setBusinessType(type);
-    // Auto-advance after a brief visual confirmation
     setTimeout(onNext, 150);
+  }
+
+  function handleLoadTemplate(template: SavedTemplate) {
+    loadFromTemplate(template);
+    // loadFromTemplate already sets currentStep to 2 via the store,
+    // but we still call onNext so JourneyWizard re-renders the correct step
+    onNext();
+  }
+
+  async function handleDelete(templateId: string) {
+    if (!window.confirm('Delete this template?')) return;
+    setDeletingId(templateId);
+    try {
+      await deleteUserTemplate(templateId);
+      setTemplates((prev) => prev.filter((t) => t.id !== templateId));
+    } finally {
+      setDeletingId(null);
+    }
   }
 
   return (
@@ -44,6 +82,50 @@ export function Step1BusinessType({ onNext }: Step1Props) {
           </button>
         ))}
       </div>
+
+      {/* My Templates */}
+      {!loadingTemplates && templates.length > 0 && (
+        <div className="mt-8">
+          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
+            My Saved Templates
+          </h3>
+          <div className="space-y-2">
+            {templates.map((template) => (
+              <div
+                key={template.id}
+                className="flex items-center justify-between rounded-xl border border-gray-200 bg-white px-4 py-3 hover:border-brand-300 transition-colors"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-900 truncate">{template.name}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {BUSINESS_TYPE_LABELS[template.business_type] ?? template.business_type}
+                    {' · '}
+                    {template.template_data.stages.length} stages
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 ml-4 flex-shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => handleLoadTemplate(template)}
+                    className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700 transition-colors"
+                  >
+                    Load
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(template.id)}
+                    disabled={deletingId === template.id}
+                    className="rounded-lg border border-gray-200 px-2 py-1.5 text-xs text-gray-400 hover:border-red-300 hover:text-red-500 disabled:opacity-40 transition-colors"
+                    aria-label="Delete template"
+                  >
+                    {deletingId === template.id ? '…' : '×'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

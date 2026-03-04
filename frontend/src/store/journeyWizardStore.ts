@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { BusinessType, ImplementationFormat, Platform, WizardStage, WizardPlatformSelection, WizardState } from '../types/journey';
 import { DEFAULT_STAGES, PLATFORM_OPTIONS } from '../types/journey';
+import type { SavedTemplate } from '../lib/api/journeyApi';
 
 function generateId(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -38,6 +39,9 @@ interface JourneyWizardStore extends WizardState {
   togglePlatform: (platform: Platform) => void;
   setPlatformId: (platform: Platform, id: string) => void;
   setImplementationFormat: (format: ImplementationFormat) => void;
+
+  // Load from saved template (pre-fills stages, jumps to step 2)
+  loadFromTemplate: (template: SavedTemplate) => void;
 
   // Reset
   reset: () => void;
@@ -149,6 +153,22 @@ export const useJourneyWizardStore = create<JourneyWizardStore>((set, get) => ({
 
   setImplementationFormat(format) {
     set({ implementationFormat: format });
+  },
+
+  loadFromTemplate(template) {
+    const stages: WizardStage[] = template.template_data.stages.map((s) => ({
+      id: generateId(),
+      order: s.order,
+      label: s.label,
+      pageType: s.page_type as WizardStage['pageType'],
+      sampleUrl: '',
+      actions: s.actions,
+    }));
+    set({
+      businessType: template.business_type,
+      stages,
+      currentStep: 2,
+    });
   },
 
   reset() {
