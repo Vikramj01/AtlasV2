@@ -30,8 +30,6 @@ app.get('/health', (_req, res) => {
 
 app.use('/api/audits', auditRoutes);
 app.use('/api/journeys', journeysRouter);
-app.use('/api/templates', journeysRouter);
-app.use('/api/action-primitives', journeysRouter);
 
 // ─── 404 handler ─────────────────────────────────────────────────────────────
 
