@@ -105,7 +105,7 @@ export interface SavedTemplate {
 }
 
 export async function listTemplates(): Promise<SavedTemplate[]> {
-  return apiFetch('/api/templates');
+  return apiFetch('/api/journeys/templates');
 }
 
 export async function saveTemplate(data: {
@@ -116,11 +116,11 @@ export async function saveTemplate(data: {
     stages: Array<{ order: number; label: string; page_type: string; actions: string[] }>;
   };
 }): Promise<SavedTemplate> {
-  return apiFetch('/api/templates', { method: 'POST', body: JSON.stringify(data) });
+  return apiFetch('/api/journeys/templates', { method: 'POST', body: JSON.stringify(data) });
 }
 
 export async function deleteUserTemplate(templateId: string): Promise<void> {
-  await apiFetch(`/api/templates/${templateId}`, { method: 'DELETE' });
+  await apiFetch(`/api/journeys/templates/${templateId}`, { method: 'DELETE' });
 }
 
 export async function createJourneyFromTemplate(
