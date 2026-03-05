@@ -46,9 +46,9 @@ const SEVERITY_CONFIG = {
 };
 
 function effortLabel(effort: string) {
-  if (effort === 'low') return 'Low (15 min)';
-  if (effort === 'medium') return 'Medium (1 hour)';
-  return 'High (half day)';
+  if (effort === 'low') return '~15 min';
+  if (effort === 'medium') return '~1 hour';
+  return '~half day';
 }
 
 // ── Gap Card ──────────────────────────────────────────────────────────────────
@@ -71,11 +71,9 @@ function GapCard({ gap }: { gap: Gap }) {
           <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${sev.cls}`}>
             {sev.label}
           </span>
-          <span className="text-xs font-mono text-gray-500">
-            {gap.gap_type} · {gap.sub_type}
-          </span>
+          <span className="text-xs text-gray-500 uppercase tracking-wide">{gap.platform}</span>
         </div>
-        <span className="text-xs text-gray-400 uppercase">{gap.platform}</span>
+        <span className="text-xs text-gray-400">{effortLabel(gap.estimated_effort)} · {gap.fix_owner}</span>
       </div>
 
       <div className="space-y-2 text-sm">
@@ -88,16 +86,13 @@ function GapCard({ gap }: { gap: Gap }) {
           <span className="text-gray-600">{gap.found}</span>
         </div>
         <div className="rounded-lg bg-amber-50 border border-amber-100 px-3 py-2">
-          <span className="text-xs font-semibold text-amber-800">Why this matters: </span>
+          <span className="text-xs font-semibold text-amber-800">Business impact: </span>
           <span className="text-xs text-amber-700">{gap.business_impact}</span>
-        </div>
-        <div>
-          <span className="text-xs text-gray-500">Fix owner: <strong>{gap.fix_owner}</strong> · Effort: {effortLabel(gap.estimated_effort)}</span>
         </div>
         {gap.fix_code && gap.fix_code.length > 10 && (
           <div className="mt-2">
             <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium text-gray-600">How to fix:</span>
+              <span className="text-xs font-medium text-gray-600">Fix:</span>
               <button onClick={copy} className="text-xs text-brand-600 hover:text-brand-700">
                 {copied ? '✓ Copied' : 'Copy code'}
               </button>
@@ -155,6 +150,167 @@ function StageDetailPanel({ label, status, gaps }: { label: string; status: Stag
   );
 }
 
+// ── Results Summary Bar ───────────────────────────────────────────────────────
+
+function ResultsSummaryBar({ allGaps }: { allGaps: Gap[] }) {
+  const critical = allGaps.filter((g) => g.severity === 'critical').length;
+  const high     = allGaps.filter((g) => g.severity === 'high').length;
+  const medium   = allGaps.filter((g) => g.severity === 'medium').length;
+
+  if (allGaps.length === 0) {
+    return (
+      <div className="flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-3 mb-6">
+        <span className="text-green-600 text-lg">✓</span>
+        <span className="text-sm font-semibold text-green-800">All signals healthy</span>
+        <span className="text-sm text-green-600 ml-1">— no tracking gaps detected across your funnel</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 mb-6">
+      <span className="text-sm font-semibold text-gray-800">Issues found:</span>
+      {critical > 0 && (
+        <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-semibold text-red-700">
+          {critical} Critical
+        </span>
+      )}
+      {high > 0 && (
+        <span className="rounded-full bg-orange-100 px-2.5 py-0.5 text-xs font-semibold text-orange-700">
+          {high} High
+        </span>
+      )}
+      {medium > 0 && (
+        <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
+          {medium} Medium
+        </span>
+      )}
+      {critical > 0 && (
+        <span className="text-xs text-red-700 ml-auto">
+          Critical issues mean data is being lost right now
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ── Next Steps Block ──────────────────────────────────────────────────────────
+
+function NextSteps({
+  journeyId,
+  auditId,
+  allGaps,
+  onDownloadPDF,
+}: {
+  journeyId: string;
+  auditId: string;
+  allGaps: Gap[];
+  onDownloadPDF: () => void;
+}) {
+  const criticalGaps = allGaps.filter((g) => g.severity === 'critical');
+  const highGaps     = allGaps.filter((g) => g.severity === 'high');
+  const isHealthy    = allGaps.length === 0;
+
+  // Group priority issues by fix owner
+  const priorityGaps = [...criticalGaps, ...highGaps];
+  const byOwner: Record<string, Gap[]> = {};
+  for (const gap of priorityGaps) {
+    if (!byOwner[gap.fix_owner]) byOwner[gap.fix_owner] = [];
+    byOwner[gap.fix_owner].push(gap);
+  }
+
+  return (
+    <div className="mt-10 rounded-2xl border border-gray-200 bg-white p-6">
+      <h2 className="text-base font-bold text-gray-900 mb-1">What to do next</h2>
+
+      {isHealthy ? (
+        <div>
+          <p className="text-sm text-gray-600 mb-5">
+            Your tracking is firing correctly across all funnel stages. The next step is to hand
+            the <strong>Implementation Spec</strong> to your development team — it documents exactly
+            what each page needs to fire, and what parameters are required.
+          </p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <Link
+              to={`/journey/${journeyId}/spec`}
+              className="flex flex-col gap-1 rounded-xl border-2 border-brand-500 bg-brand-50 px-4 py-3 hover:bg-brand-100 transition-colors"
+            >
+              <span className="text-sm font-semibold text-brand-700">View Implementation Spec</span>
+              <span className="text-xs text-brand-600">
+                Send to your dev team — per-page tracking code and requirements
+              </span>
+            </Link>
+            <button
+              onClick={onDownloadPDF}
+              className="flex flex-col gap-1 rounded-xl border border-gray-200 px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+            >
+              <span className="text-sm font-semibold text-gray-700">Download PDF Report</span>
+              <span className="text-xs text-gray-500">
+                Share the full signal health report with stakeholders
+              </span>
+            </button>
+            <div className="flex flex-col gap-1 rounded-xl border border-gray-200 px-4 py-3 opacity-50 cursor-not-allowed">
+              <span className="text-sm font-semibold text-gray-700">Set Up Monitoring</span>
+              <span className="text-xs text-gray-400">Coming soon — alerts when signals break</span>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div>
+          <p className="text-sm text-gray-600 mb-5">
+            {criticalGaps.length > 0
+              ? `You have ${criticalGaps.length} critical issue${criticalGaps.length !== 1 ? 's' : ''} causing data loss right now. Fix these first, then re-run the audit.`
+              : `You have ${allGaps.length} issues to fix. Use the Implementation Spec to give your developers a reference for the correct tracking setup.`}
+          </p>
+
+          {/* Priority fix list grouped by owner */}
+          {Object.keys(byOwner).length > 0 && (
+            <div className="mb-5 space-y-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+                Priority fixes — assign to your team
+              </h3>
+              {Object.entries(byOwner).map(([owner, gaps]) => (
+                <div key={owner} className="rounded-lg border border-gray-200 p-3">
+                  <p className="text-xs font-semibold text-gray-700 mb-2">{owner}</p>
+                  <ul className="space-y-1">
+                    {gaps.map((g, i) => (
+                      <li key={i} className="flex items-start gap-2 text-xs text-gray-600">
+                        <span className={`mt-0.5 shrink-0 rounded-full w-1.5 h-1.5 ${g.severity === 'critical' ? 'bg-red-500' : 'bg-orange-400'}`} />
+                        <span>{g.fix_description}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Link
+              to={`/journey/${journeyId}/spec`}
+              className="flex flex-col gap-1 rounded-xl border-2 border-brand-500 bg-brand-50 px-4 py-3 hover:bg-brand-100 transition-colors"
+            >
+              <span className="text-sm font-semibold text-brand-700">View Implementation Spec</span>
+              <span className="text-xs text-brand-600">
+                The full per-page tracking code your dev team should implement to fix these gaps
+              </span>
+            </Link>
+            <button
+              onClick={onDownloadPDF}
+              className="flex flex-col gap-1 rounded-xl border border-gray-200 px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+            >
+              <span className="text-sm font-semibold text-gray-700">Download PDF Report</span>
+              <span className="text-xs text-gray-500">
+                Share with your team or client — includes all gaps and fix instructions
+              </span>
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export function GapReportPage() {
@@ -184,6 +340,18 @@ export function GapReportPage() {
       .finally(() => setLoading(false));
   }, [id, auditId]);
 
+  function downloadPDF() {
+    if (!auditId) return;
+    auditApi.export(auditId, 'pdf').then((blob) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `atlas-report-${auditId}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+  }
+
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -212,22 +380,17 @@ export function GapReportPage() {
     if (stage) stageResultMap[stage.stage_order] = result;
   }
 
-  // Compute overall health from gap results
-  const totalGaps = gapResults.flatMap((r) => r.gaps).length;
-  const criticalGaps = gapResults.flatMap((r) => r.gaps).filter((g) => g.severity === 'critical').length;
-
-  const scores = report?.scores;
+  const allGaps = gapResults.flatMap((r) => r.gaps);
+  const scores  = report?.scores;
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
+
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">Your Signal Health Report</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            {stages.length} stages checked · {totalGaps} issue{totalGaps !== 1 ? 's' : ''} found
-            {criticalGaps > 0 && ` (${criticalGaps} critical)`}
-          </p>
+          <h1 className="text-xl font-bold text-gray-900">Signal Health Report</h1>
+          <p className="mt-0.5 text-sm text-gray-500">{journey.name} · {stages.length} stages scanned</p>
         </div>
         <div className="flex gap-2">
           <Link
@@ -237,10 +400,7 @@ export function GapReportPage() {
             View Tracking Spec
           </Link>
           <button
-            onClick={() => auditApi.export(auditId!, 'pdf').then((blob) => {
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a'); a.href = url; a.download = `atlas-report-${auditId}.pdf`; a.click(); URL.revokeObjectURL(url);
-            })}
+            onClick={downloadPDF}
             className="rounded-lg bg-brand-600 px-3 py-2 text-xs font-semibold text-white hover:bg-brand-700"
           >
             Download PDF
@@ -248,18 +408,39 @@ export function GapReportPage() {
         </div>
       </div>
 
+      {/* Results summary bar */}
+      <ResultsSummaryBar allGaps={allGaps} />
+
       {/* Score cards */}
       {scores && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 mb-8">
-          <ScoreCard title="Signal Health" value={`${scores.conversion_signal_health ?? 0}/100`} description="Passing rules out of 26" valueColor={(scores.conversion_signal_health ?? 0) >= 80 ? 'green' : (scores.conversion_signal_health ?? 0) >= 50 ? 'yellow' : 'red'} />
-          <ScoreCard title="Attribution Risk" value={scores.attribution_risk_level ?? '—'} description="Click ID + conversion coverage" valueColor={scores.attribution_risk_level === 'Critical' || scores.attribution_risk_level === 'High' ? 'red' : 'green'} />
-          <ScoreCard title="Optimization" value={scores.optimization_strength ?? '—'} description="User data completeness" />
-          <ScoreCard title="Data Consistency" value={scores.data_consistency_score ?? '—'} description="Event deduplication accuracy" />
+          <ScoreCard
+            title="Signal Health"
+            value={`${scores.conversion_signal_health ?? 0}/100`}
+            description="Rules passing for selected platforms"
+            valueColor={(scores.conversion_signal_health ?? 0) >= 80 ? 'green' : (scores.conversion_signal_health ?? 0) >= 50 ? 'yellow' : 'red'}
+          />
+          <ScoreCard
+            title="Attribution Risk"
+            value={scores.attribution_risk_level ?? '—'}
+            description="Click ID + conversion coverage"
+            valueColor={scores.attribution_risk_level === 'Critical' || scores.attribution_risk_level === 'High' ? 'red' : 'green'}
+          />
+          <ScoreCard
+            title="Optimization"
+            value={scores.optimization_strength ?? '—'}
+            description="User data completeness"
+          />
+          <ScoreCard
+            title="Data Consistency"
+            value={scores.data_consistency_score ?? '—'}
+            description="Event deduplication accuracy"
+          />
         </div>
       )}
 
-      {/* Funnel visualisation with status badges */}
-      <div className="mb-8">
+      {/* Funnel stage results */}
+      <div className="mb-6">
         <h2 className="text-sm font-semibold text-gray-700 mb-3">Journey Stage Results</h2>
 
         {/* Horizontal funnel overview */}
@@ -296,15 +477,13 @@ export function GapReportPage() {
         </div>
       </div>
 
-      {/* No gaps found */}
-      {totalGaps === 0 && (
-        <div className="rounded-xl border border-green-200 bg-green-50 px-6 py-5 text-center">
-          <p className="text-lg font-semibold text-green-800">All signals look healthy!</p>
-          <p className="mt-1 text-sm text-green-700">
-            No gaps were detected across your funnel. Your tracking setup is working correctly.
-          </p>
-        </div>
-      )}
+      {/* Next steps */}
+      <NextSteps
+        journeyId={id!}
+        auditId={auditId!}
+        allGaps={allGaps}
+        onDownloadPDF={downloadPDF}
+      />
     </div>
   );
 }
