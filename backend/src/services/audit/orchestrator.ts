@@ -9,7 +9,7 @@ import { createBrowserbaseSession, getCDPUrl } from '@/services/browserbase/clie
 import { simulateJourney } from './journeySimulator';
 import { simulateJourneyFromSpec } from './stageSimulator';
 import { classifyAllStageGaps } from './gapClassifier';
-import { runAllRules } from '@/services/validation/engine';
+import { runAllRules, runRulesForPlatforms } from '@/services/validation/engine';
 import { calculateScores } from '@/services/scoring/engine';
 import { interpretResults } from '@/services/interpretation/engine';
 import { generateReport } from '@/services/reporting/generator';
@@ -71,10 +71,20 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
           }
         }
 
-        // Run 26 universal rules over the combined capture
+        // Run rules over the combined capture, filtered to selected platforms only
         const combinedDL = stageCaptures.flatMap((c) => c.datalayer_events);
         const combinedNet = stageCaptures.flatMap((c) => c.network_requests);
         const firstCapture = stageCaptures.find((c) => !c.skipped);
+
+        // Extract the active platforms from the ValidationSpec so only
+        // relevant rules are scored (deselected platforms won't count against score)
+        const activePlatforms = [
+          ...new Set(
+            spec.stages
+              .flatMap((s) => s.expected_platforms)
+              .map((p) => p.platform),
+          ),
+        ];
 
         const proxyAuditData = {
           audit_id,
@@ -94,7 +104,9 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
           pageMetadata: { pixel_fbclid: false },
         };
 
-        const validationResults = runAllRules(proxyAuditData);
+        const validationResults = activePlatforms.length > 0
+          ? runRulesForPlatforms(activePlatforms, proxyAuditData)
+          : runAllRules(proxyAuditData);
         await saveValidationResults(audit_id, validationResults);
         await updateAuditStatus(audit_id, 'running', { progress: 80 });
 

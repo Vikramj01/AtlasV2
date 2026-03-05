@@ -8,6 +8,7 @@ export const GA4_PURCHASE_EVENT_FIRED = {
   rule_id: 'GA4_PURCHASE_EVENT_FIRED',
   validation_layer: 'signal_initiation' as const,
   severity: 'critical' as const,
+  affected_platforms: ['ga4'],
 
   test(auditData: AuditData): ValidationResult {
     const hasGA4Event = auditData.dataLayer.some((e) => e.event === 'purchase');
@@ -36,6 +37,7 @@ export const META_PIXEL_PURCHASE_EVENT_FIRED = {
   rule_id: 'META_PIXEL_PURCHASE_EVENT_FIRED',
   validation_layer: 'signal_initiation' as const,
   severity: 'critical' as const,
+  affected_platforms: ['meta'],
 
   test(auditData: AuditData): ValidationResult {
     const hasMetaPixelEvent = auditData.networkRequests.some(
@@ -61,6 +63,7 @@ export const GOOGLE_ADS_CONVERSION_EVENT_FIRED = {
   rule_id: 'GOOGLE_ADS_CONVERSION_EVENT_FIRED',
   validation_layer: 'signal_initiation' as const,
   severity: 'critical' as const,
+  affected_platforms: ['google_ads'],
 
   test(auditData: AuditData): ValidationResult {
     const hasGAdsConversion = auditData.networkRequests.some(
@@ -88,6 +91,7 @@ export const SGTM_SERVER_EVENT_FIRED = {
   rule_id: 'SGTM_SERVER_EVENT_FIRED',
   validation_layer: 'signal_initiation' as const,
   severity: 'high' as const,
+  affected_platforms: ['sgtm'],
 
   test(auditData: AuditData): ValidationResult {
     const hasSGTMEvent = auditData.networkRequests.some(
@@ -115,6 +119,7 @@ export const DATALAYER_POPULATED = {
   rule_id: 'DATALAYER_POPULATED',
   validation_layer: 'signal_initiation' as const,
   severity: 'critical' as const,
+  affected_platforms: ['all'],
 
   test(auditData: AuditData): ValidationResult {
     const eventCount = auditData.dataLayer.length;
@@ -140,6 +145,7 @@ export const GTM_CONTAINER_LOADED = {
   rule_id: 'GTM_CONTAINER_LOADED',
   validation_layer: 'signal_initiation' as const,
   severity: 'critical' as const,
+  affected_platforms: ['all'],
 
   test(auditData: AuditData): ValidationResult {
     const gtmRequest = auditData.networkRequests.find(
@@ -166,6 +172,7 @@ export const PAGE_VIEW_EVENT_FIRED = {
   rule_id: 'PAGE_VIEW_EVENT_FIRED',
   validation_layer: 'signal_initiation' as const,
   severity: 'high' as const,
+  affected_platforms: ['all'],
 
   test(auditData: AuditData): ValidationResult {
     const pageViewEvents = auditData.dataLayer.filter((e) => e.event === 'page_view');
@@ -187,6 +194,7 @@ export const ADD_TO_CART_EVENT_FIRED = {
   rule_id: 'ADD_TO_CART_EVENT_FIRED',
   validation_layer: 'signal_initiation' as const,
   severity: 'medium' as const,
+  affected_platforms: ['all'],
 
   test(auditData: AuditData): ValidationResult {
     const hasAddToCart = auditData.dataLayer.some((e) => e.event === 'add_to_cart');
