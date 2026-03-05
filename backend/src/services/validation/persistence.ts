@@ -8,6 +8,7 @@ export const GCLID_PERSISTS_TO_CONVERSION = {
   rule_id: 'GCLID_PERSISTS_TO_CONVERSION',
   validation_layer: 'persistence' as const,
   severity: 'critical' as const,
+  affected_platforms: ['google_ads'],
 
   test(auditData: AuditData): ValidationResult {
     const landingGclid = auditData.urlParams?.gclid ?? auditData.injected?.gclid;
@@ -36,6 +37,7 @@ export const FBCLID_PERSISTS_TO_CONVERSION = {
   rule_id: 'FBCLID_PERSISTS_TO_CONVERSION',
   validation_layer: 'persistence' as const,
   severity: 'critical' as const,
+  affected_platforms: ['meta'],
 
   test(auditData: AuditData): ValidationResult {
     const hasFBPixelOnLanding = !!(auditData.pageMetadata?.pixel_fbclid);
@@ -62,6 +64,7 @@ export const TRANSACTION_ID_MATCHES_ORDER_SYSTEM = {
   rule_id: 'TRANSACTION_ID_MATCHES_ORDER_SYSTEM',
   validation_layer: 'persistence' as const,
   severity: 'high' as const,
+  affected_platforms: ['all'],
 
   test(auditData: AuditData): ValidationResult {
     const purchaseEvent = auditData.dataLayer.find((e) => e.event === 'purchase');
@@ -93,6 +96,7 @@ export const EVENT_ID_CONSISTENCY_CLIENT_TO_SERVER = {
   rule_id: 'EVENT_ID_CONSISTENCY_CLIENT_TO_SERVER',
   validation_layer: 'persistence' as const,
   severity: 'high' as const,
+  affected_platforms: ['sgtm'],
 
   test(auditData: AuditData): ValidationResult {
     const purchaseEvent = auditData.dataLayer.find((e) => e.event === 'purchase');
@@ -125,6 +129,7 @@ export const USER_DATA_NORMALIZED_CONSISTENTLY = {
   rule_id: 'USER_DATA_NORMALIZED_CONSISTENTLY',
   validation_layer: 'persistence' as const,
   severity: 'medium' as const,
+  affected_platforms: ['all'],
 
   test(auditData: AuditData): ValidationResult {
     const purchaseEvent = auditData.dataLayer.find((e) => e.event === 'purchase');
@@ -155,6 +160,7 @@ export const PII_PROPERLY_HASHED = {
   rule_id: 'PII_PROPERLY_HASHED',
   validation_layer: 'persistence' as const,
   severity: 'high' as const,
+  affected_platforms: ['meta', 'google_ads'],
 
   test(auditData: AuditData): ValidationResult {
     const purchaseEvent = auditData.dataLayer.find((e) => e.event === 'purchase');

@@ -1,10 +1,10 @@
 /**
  * Scoring Engine (Sprint 4)
  * Converts raw ValidationResult[] into 4 business scores.
+ * The denominator for Conversion Signal Health is results.length,
+ * so platform-filtered runs score correctly against their subset of rules.
  */
 import type { AuditScores, ValidationResult } from '@/types/audit';
-
-const TOTAL_RULES = 26;
 
 // Attribution rules
 const ATTRIBUTION_RULES = [
@@ -30,40 +30,58 @@ const CONSISTENCY_RULES = [
 export function calculateScores(results: ValidationResult[]): AuditScores {
   const resultMap = new Map(results.map((r) => [r.rule_id, r]));
   const passingCount = results.filter((r) => r.status === 'pass').length;
+  const totalApplicable = results.length;
 
-  // 1. Conversion Signal Health = (passing / total) * 100
-  const conversionSignalHealth = Math.round((passingCount / TOTAL_RULES) * 100);
+  // 1. Conversion Signal Health = (passing / applicable) * 100
+  //    Uses results.length as denominator so platform-filtered runs
+  //    are scored against their own subset, not always /26.
+  const conversionSignalHealth = totalApplicable > 0
+    ? Math.round((passingCount / totalApplicable) * 100)
+    : 0;
 
-  // 2. Attribution Risk Level
+  // 2. Attribution Risk Level — only count rules that were actually run
   const attributionFailCount = ATTRIBUTION_RULES.filter(
-    (id) => resultMap.get(id)?.status !== 'pass',
+    (id) => resultMap.has(id) && resultMap.get(id)?.status !== 'pass',
   ).length;
+  const attributionApplicable = ATTRIBUTION_RULES.filter((id) => resultMap.has(id)).length;
   const attributionRiskLevel =
-    attributionFailCount === 3
+    attributionApplicable === 0
+      ? 'Low'
+      : attributionFailCount === attributionApplicable
       ? 'Critical'
-      : attributionFailCount === 2
+      : attributionFailCount >= 2
       ? 'High'
       : attributionFailCount === 1
       ? 'Medium'
       : 'Low';
 
-  // 3. Optimization Strength
+  // 3. Optimization Strength — only count rules that were actually run
   const optimizationPassCount = OPTIMIZATION_RULES.filter(
-    (id) => resultMap.get(id)?.status === 'pass',
+    (id) => resultMap.has(id) && resultMap.get(id)?.status === 'pass',
   ).length;
+  const optimizationApplicable = OPTIMIZATION_RULES.filter((id) => resultMap.has(id)).length;
   const optimizationStrength =
-    optimizationPassCount === 4
+    optimizationApplicable === 0
+      ? 'Moderate'
+      : optimizationPassCount === optimizationApplicable
       ? 'Strong'
-      : optimizationPassCount >= 2
+      : optimizationPassCount >= Math.ceil(optimizationApplicable / 2)
       ? 'Moderate'
       : 'Weak';
 
-  // 4. Data Consistency Score
+  // 4. Data Consistency Score — only count rules that were actually run
   const consistencyPassCount = CONSISTENCY_RULES.filter(
-    (id) => resultMap.get(id)?.status === 'pass',
+    (id) => resultMap.has(id) && resultMap.get(id)?.status === 'pass',
   ).length;
+  const consistencyApplicable = CONSISTENCY_RULES.filter((id) => resultMap.has(id)).length;
   const dataConsistencyScore =
-    consistencyPassCount === 2 ? 'High' : consistencyPassCount === 1 ? 'Medium' : 'Low';
+    consistencyApplicable === 0
+      ? 'High'
+      : consistencyPassCount === consistencyApplicable
+      ? 'High'
+      : consistencyPassCount >= 1
+      ? 'Medium'
+      : 'Low';
 
   return {
     conversion_signal_health: conversionSignalHealth,

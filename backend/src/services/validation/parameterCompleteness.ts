@@ -8,6 +8,7 @@ export const TRANSACTION_ID_PRESENT = {
   rule_id: 'TRANSACTION_ID_PRESENT',
   validation_layer: 'parameter_completeness' as const,
   severity: 'critical' as const,
+  affected_platforms: ['all'],
 
   test(auditData: AuditData): ValidationResult {
     const purchaseEvents = auditData.dataLayer.filter((e) => e.event === 'purchase');
@@ -34,6 +35,7 @@ export const VALUE_PARAMETER_PRESENT = {
   rule_id: 'VALUE_PARAMETER_PRESENT',
   validation_layer: 'parameter_completeness' as const,
   severity: 'critical' as const,
+  affected_platforms: ['all'],
 
   test(auditData: AuditData): ValidationResult {
     const purchaseEvents = auditData.dataLayer.filter((e) => e.event === 'purchase');
@@ -61,6 +63,7 @@ export const CURRENCY_PARAMETER_PRESENT = {
   rule_id: 'CURRENCY_PARAMETER_PRESENT',
   validation_layer: 'parameter_completeness' as const,
   severity: 'high' as const,
+  affected_platforms: ['all'],
 
   test(auditData: AuditData): ValidationResult {
     const purchaseEvents = auditData.dataLayer.filter((e) => e.event === 'purchase');
@@ -87,6 +90,7 @@ export const GCLID_CAPTURED_AT_LANDING = {
   rule_id: 'GCLID_CAPTURED_AT_LANDING',
   validation_layer: 'parameter_completeness' as const,
   severity: 'critical' as const,
+  affected_platforms: ['google_ads'],
 
   test(auditData: AuditData): ValidationResult {
     const gclidInUrl = auditData.urlParams?.gclid;
@@ -113,6 +117,7 @@ export const FBCLID_CAPTURED_AT_LANDING = {
   rule_id: 'FBCLID_CAPTURED_AT_LANDING',
   validation_layer: 'parameter_completeness' as const,
   severity: 'critical' as const,
+  affected_platforms: ['meta'],
 
   test(auditData: AuditData): ValidationResult {
     const fbclid = auditData.urlParams?.fbclid;
@@ -139,6 +144,7 @@ export const EVENT_ID_GENERATED = {
   rule_id: 'EVENT_ID_GENERATED',
   validation_layer: 'parameter_completeness' as const,
   severity: 'high' as const,
+  affected_platforms: ['sgtm'],
 
   test(auditData: AuditData): ValidationResult {
     const purchaseEvents = auditData.dataLayer.filter((e) => e.event === 'purchase');
@@ -169,6 +175,7 @@ export const EMAIL_CAPTURED_FOR_ENHANCED_CONVERSIONS = {
   rule_id: 'EMAIL_CAPTURED_FOR_ENHANCED_CONVERSIONS',
   validation_layer: 'parameter_completeness' as const,
   severity: 'high' as const,
+  affected_platforms: ['ga4', 'google_ads'],
 
   test(auditData: AuditData): ValidationResult {
     const purchaseEvents = auditData.dataLayer.filter((e) => e.event === 'purchase');
@@ -198,6 +205,7 @@ export const PHONE_CAPTURED_FOR_CAPI = {
   rule_id: 'PHONE_CAPTURED_FOR_CAPI',
   validation_layer: 'parameter_completeness' as const,
   severity: 'medium' as const,
+  affected_platforms: ['meta'],
 
   test(auditData: AuditData): ValidationResult {
     const purchaseEvents = auditData.dataLayer.filter((e) => e.event === 'purchase');
@@ -226,6 +234,7 @@ export const ITEMS_ARRAY_POPULATED = {
   rule_id: 'ITEMS_ARRAY_POPULATED',
   validation_layer: 'parameter_completeness' as const,
   severity: 'medium' as const,
+  affected_platforms: ['all'],
 
   test(auditData: AuditData): ValidationResult {
     const purchaseEvents = auditData.dataLayer.filter((e) => e.event === 'purchase');
@@ -257,6 +266,7 @@ export const USER_ID_PRESENT = {
   rule_id: 'USER_ID_PRESENT',
   validation_layer: 'parameter_completeness' as const,
   severity: 'high' as const,
+  affected_platforms: ['all'],
 
   test(auditData: AuditData): ValidationResult {
     const purchaseEvents = auditData.dataLayer.filter((e) => e.event === 'purchase');
@@ -283,6 +293,7 @@ export const COUPON_CAPTURED_IF_USED = {
   rule_id: 'COUPON_CAPTURED_IF_USED',
   validation_layer: 'parameter_completeness' as const,
   severity: 'low' as const,
+  affected_platforms: ['all'],
 
   test(auditData: AuditData): ValidationResult {
     const purchaseEvents = auditData.dataLayer.filter((e) => e.event === 'purchase');
@@ -308,6 +319,7 @@ export const SHIPPING_CAPTURED = {
   rule_id: 'SHIPPING_CAPTURED',
   validation_layer: 'parameter_completeness' as const,
   severity: 'low' as const,
+  affected_platforms: ['all'],
 
   test(auditData: AuditData): ValidationResult {
     const purchaseEvents = auditData.dataLayer.filter((e) => e.event === 'purchase');
