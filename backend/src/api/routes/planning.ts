@@ -1,0 +1,311 @@
+/**
+ * Planning Mode API routes — all endpoints under /api/planning
+ *
+ * All routes are protected by authMiddleware.
+ * POST /sessions is additionally protected by planningLimiter.
+ *
+ * Follows the same structure as journeys.ts.
+ */
+import { Router } from 'express';
+import type { Request, Response } from 'express';
+import { authMiddleware } from '../middleware/authMiddleware';
+import { planningLimiter } from '../middleware/planningLimiter';
+import { planningQueue } from '@/services/queue/jobQueue';
+import {
+  createSession,
+  getSession,
+  listSessions,
+  updateSessionStatus,
+  createPage,
+  getPagesBySession,
+  getPageWithSignedUrl,
+  getRecommendationsBySession,
+  getRecommendation,
+  updateRecommendationDecision,
+  getApprovedRecommendations,
+  getOutputs,
+  getOutput,
+} from '@/services/database/planningQueries';
+import { getScreenshotSignedUrl } from '@/services/database/supabase';
+import type { CreateSessionInput, UpdateDecisionInput } from '@/types/planning';
+
+const router = Router();
+router.use(authMiddleware);
+
+// ── POST /api/planning/sessions ───────────────────────────────────────────────
+// Create a planning session, persist pages, enqueue the scan job.
+// Returns immediately with session_id + status.
+
+router.post('/sessions', planningLimiter, async (req: Request, res: Response) => {
+  try {
+    const { website_url, business_type, business_description, selected_platforms, pages } =
+      req.body as CreateSessionInput & { pages?: Array<{ url: string; page_type?: string }> };
+
+    if (!website_url || !business_type) {
+      return res.status(400).json({ error: 'website_url and business_type are required' });
+    }
+    if (!Array.isArray(pages) || pages.length === 0) {
+      return res.status(400).json({ error: 'At least one page URL is required' });
+    }
+    if (pages.length > 10) {
+      return res.status(400).json({ error: 'Maximum 10 pages per session (MVP limit)' });
+    }
+
+    const validBusinessTypes = ['ecommerce', 'saas', 'lead_gen', 'content', 'marketplace', 'custom'];
+    if (!validBusinessTypes.includes(business_type)) {
+      return res.status(400).json({ error: `business_type must be one of: ${validBusinessTypes.join(', ')}` });
+    }
+
+    const userId = req.user!.id;
+
+    // Create session
+    const session = await createSession(userId, {
+      website_url,
+      business_type: business_type as CreateSessionInput['business_type'],
+      business_description,
+      selected_platforms: selected_platforms ?? ['ga4'],
+      pages: [],
+    });
+
+    // Create page records
+    await Promise.all(
+      pages.map((p, idx) =>
+        createPage(session.id, p.url, p.page_type ?? 'custom', idx + 1),
+      ),
+    );
+
+    // Enqueue the scan job
+    await planningQueue.add({ session_id: session.id });
+
+    res.status(201).json({
+      session_id: session.id,
+      status: session.status,
+      website_url: session.website_url,
+      business_type: session.business_type,
+      page_count: pages.length,
+      created_at: session.created_at,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(500).json({ error: message });
+  }
+});
+
+// ── GET /api/planning/sessions ────────────────────────────────────────────────
+
+router.get('/sessions', async (req: Request, res: Response) => {
+  try {
+    const sessions = await listSessions(req.user!.id);
+    res.json(sessions);
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+// ── GET /api/planning/sessions/:id ───────────────────────────────────────────
+// Returns session with its pages and scan progress.
+
+router.get('/sessions/:id', async (req: Request, res: Response) => {
+  try {
+    const session = await getSession(req.params.id, req.user!.id);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    const pages = await getPagesBySession(session.id);
+
+    res.json({ ...session, pages });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+// ── GET /api/planning/sessions/:id/recommendations ───────────────────────────
+// Returns all recommendations for the session, grouped by page.
+
+router.get('/sessions/:id/recommendations', async (req: Request, res: Response) => {
+  try {
+    const session = await getSession(req.params.id, req.user!.id);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    if (session.status === 'scanning' || session.status === 'setup') {
+      return res.status(202).json({
+        message: 'Scan in progress. Poll GET /sessions/:id for status.',
+        status: session.status,
+      });
+    }
+
+    const recs = await getRecommendationsBySession(session.id);
+
+    // Group by page_id for convenience
+    const byPage: Record<string, typeof recs> = {};
+    for (const rec of recs) {
+      if (!byPage[rec.page_id]) byPage[rec.page_id] = [];
+      byPage[rec.page_id].push(rec);
+    }
+
+    res.json({
+      session_id: session.id,
+      total: recs.length,
+      recommendations: recs,
+      by_page: byPage,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+// ── PATCH /api/planning/sessions/:id/recommendations/:recId ──────────────────
+// Record a user decision: approved / skipped / modified
+
+router.patch('/sessions/:id/recommendations/:recId', async (req: Request, res: Response) => {
+  try {
+    const session = await getSession(req.params.id, req.user!.id);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    const rec = await getRecommendation(req.params.recId);
+    if (!rec) return res.status(404).json({ error: 'Recommendation not found' });
+
+    const { user_decision, modified_config } = req.body as UpdateDecisionInput;
+    const validDecisions = ['approved', 'skipped', 'modified'];
+    if (!validDecisions.includes(user_decision)) {
+      return res.status(400).json({ error: `user_decision must be one of: ${validDecisions.join(', ')}` });
+    }
+
+    const updated = await updateRecommendationDecision(
+      req.params.recId,
+      user_decision,
+      modified_config,
+    );
+
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+// ── POST /api/planning/sessions/:id/generate ─────────────────────────────────
+// Trigger output generation (GTM JSON, dataLayer spec, implementation guide).
+// Stub for Sprint PM-3 — marks session as 'generating' and returns a placeholder.
+
+router.post('/sessions/:id/generate', async (req: Request, res: Response) => {
+  try {
+    const session = await getSession(req.params.id, req.user!.id);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    if (session.status !== 'review_ready' && session.status !== 'outputs_ready') {
+      return res.status(409).json({
+        error: `Session must be in review_ready state to generate outputs. Current status: ${session.status}`,
+      });
+    }
+
+    const approved = await getApprovedRecommendations(session.id);
+    if (approved.length === 0) {
+      return res.status(400).json({
+        error: 'No approved recommendations found. Approve at least one recommendation before generating outputs.',
+      });
+    }
+
+    // Mark as generating — Sprint PM-3 will implement the actual generators
+    await updateSessionStatus(session.id, 'generating');
+
+    res.status(202).json({
+      message: 'Output generation queued. Generators will be implemented in Sprint PM-3.',
+      session_id: session.id,
+      approved_count: approved.length,
+      status: 'generating',
+    });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+// ── GET /api/planning/sessions/:id/outputs ────────────────────────────────────
+
+router.get('/sessions/:id/outputs', async (req: Request, res: Response) => {
+  try {
+    const session = await getSession(req.params.id, req.user!.id);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    const outputs = await getOutputs(session.id);
+    res.json(outputs);
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+// ── GET /api/planning/sessions/:id/outputs/:outputId/download ─────────────────
+
+router.get('/sessions/:id/outputs/:outputId/download', async (req: Request, res: Response) => {
+  try {
+    const session = await getSession(req.params.id, req.user!.id);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    const output = await getOutput(req.params.outputId, session.id);
+    if (!output) return res.status(404).json({ error: 'Output not found' });
+
+    if (output.content_text) {
+      res.setHeader('Content-Type', output.mime_type);
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${output.output_type}.${output.mime_type.includes('html') ? 'html' : 'json'}"`,
+      );
+      return res.send(output.content_text);
+    }
+
+    if (output.content) {
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', `attachment; filename="${output.output_type}.json"`);
+      return res.json(output.content);
+    }
+
+    res.status(404).json({ error: 'Output has no content yet' });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+// ── POST /api/planning/sessions/:id/handoff ───────────────────────────────────
+// Create a Journey in the Journey Builder matching the approved recommendations.
+// User reviews the auto-created Journey before running an audit.
+// Stub for Sprint PM-5 — handoff logic needs the output generators from PM-3.
+
+router.post('/sessions/:id/handoff', async (req: Request, res: Response) => {
+  try {
+    const session = await getSession(req.params.id, req.user!.id);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    if (session.status !== 'outputs_ready') {
+      return res.status(409).json({
+        error: `Session must be in outputs_ready state to hand off. Current status: ${session.status}`,
+      });
+    }
+
+    // Sprint PM-5 will implement full Journey creation from approved recommendations
+    res.status(501).json({
+      message: 'Handoff to Journey Builder will be implemented in Sprint PM-5.',
+      session_id: session.id,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+// ── GET /api/planning/sessions/:id/pages/:pageId/screenshot ──────────────────
+// Return a fresh signed URL for a page's screenshot (30-min expiry).
+
+router.get('/sessions/:id/pages/:pageId/screenshot', async (req: Request, res: Response) => {
+  try {
+    const session = await getSession(req.params.id, req.user!.id);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    const page = await getPageWithSignedUrl(req.params.pageId);
+    if (!page.screenshot_signed_url) {
+      return res.status(404).json({ error: 'No screenshot available for this page' });
+    }
+
+    res.json({ signed_url: page.screenshot_signed_url, expires_in_seconds: 1800 });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+export { router as planningRouter };

@@ -3,6 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import auditRoutes from '@/api/routes/audits';
 import { journeysRouter } from '@/api/routes/journeys';
+import { planningRouter } from '@/api/routes/planning';
 import logger from '@/utils/logger';
 
 const app = express();
@@ -30,6 +31,7 @@ app.get('/health', (_req, res) => {
 
 app.use('/api/audits', auditRoutes);
 app.use('/api/journeys', journeysRouter);
+app.use('/api/planning', planningRouter);
 
 // ─── 404 handler ─────────────────────────────────────────────────────────────
 

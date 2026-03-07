@@ -56,3 +56,35 @@ auditQueue.on('failed', (job, err) => {
 auditQueue.on('stalled', (job) => {
   logger.warn({ jobId: job.id, auditId: job.data.audit_id }, 'Audit job stalled');
 });
+
+// ── Planning Queue ────────────────────────────────────────────────────────────
+
+export interface PlanningJobData {
+  session_id: string;
+}
+
+export const planningQueue = new Bull<PlanningJobData>('planning', {
+  redis: buildRedisOpts(env.REDIS_URL),
+  defaultJobOptions: {
+    attempts: 1,                              // No retry — failed sessions must be restarted by user
+    timeout: 10 * 60 * 1000,                 // 10-minute timeout (vs 5 min for audits)
+    removeOnComplete: 100,
+    removeOnFail: 50,
+  },
+});
+
+planningQueue.on('error', (err) => {
+  logger.error({ err }, 'Planning queue error');
+});
+
+planningQueue.on('completed', (job) => {
+  logger.info({ jobId: job.id, sessionId: job.data.session_id }, 'Planning job completed');
+});
+
+planningQueue.on('failed', (job, err) => {
+  logger.error({ jobId: job?.id, sessionId: job?.data?.session_id, err: err.message }, 'Planning job failed');
+});
+
+planningQueue.on('stalled', (job) => {
+  logger.warn({ jobId: job.id, sessionId: job.data.session_id }, 'Planning job stalled');
+});
