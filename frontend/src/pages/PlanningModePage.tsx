@@ -5,6 +5,10 @@ import { planningApi } from '@/lib/api/planningApi';
 import { Step1PlanningSetup } from '@/components/planning/Step1PlanningSetup';
 import { Step2PageDiscovery } from '@/components/planning/Step2PageDiscovery';
 import { Step3ScanningProgress } from '@/components/planning/Step3ScanningProgress';
+import { Step4ReviewRecommendations } from '@/components/planning/Step4ReviewRecommendations';
+import { Step5TrackingPlanSummary } from '@/components/planning/Step5TrackingPlanSummary';
+import { Step6GeneratedOutputs } from '@/components/planning/Step6GeneratedOutputs';
+import { Step7DownloadAndHandoff } from '@/components/planning/Step7DownloadAndHandoff';
 
 // ── Step labels for progress bar ───────────────────────────────────────────────
 
@@ -140,36 +144,16 @@ export function PlanningModePage() {
         </button>
       </header>
 
-      {/* Step content */}
-      <main className="flex-1 overflow-y-auto">
+      {/* Step content — steps 4–7 need full height for their layouts */}
+      <main className={`flex-1 ${currentStep >= 4 ? 'overflow-hidden' : 'overflow-y-auto'}`}>
         {currentStep === 1 && <Step1PlanningSetup />}
         {currentStep === 2 && <Step2PageDiscovery />}
         {currentStep === 3 && <Step3ScanningProgress />}
-        {currentStep === 4 && (
-          <PlaceholderStep step={4} label="Review AI Recommendations" note="Coming in PM-5" />
-        )}
-        {currentStep === 5 && (
-          <PlaceholderStep step={5} label="Tracking Plan Summary" note="Coming in PM-5" />
-        )}
-        {currentStep === 6 && (
-          <PlaceholderStep step={6} label="Generated Outputs" note="Coming in PM-5" />
-        )}
-        {currentStep === 7 && (
-          <PlaceholderStep step={7} label="Download & Handoff" note="Coming in PM-5" />
-        )}
+        {currentStep === 4 && <Step4ReviewRecommendations />}
+        {currentStep === 5 && <Step5TrackingPlanSummary />}
+        {currentStep === 6 && <Step6GeneratedOutputs />}
+        {currentStep === 7 && <Step7DownloadAndHandoff />}
       </main>
-    </div>
-  );
-}
-
-// ── Temporary placeholder for steps 4–7 (implemented in PM-5) ────────────────
-
-function PlaceholderStep({ step, label, note }: { step: number; label: string; note: string }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-32 text-center">
-      <div className="mb-2 text-3xl font-bold text-gray-200">Step {step}</div>
-      <div className="text-lg font-medium text-gray-700">{label}</div>
-      <div className="mt-1 text-sm text-gray-400">{note}</div>
     </div>
   );
 }
