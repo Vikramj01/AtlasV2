@@ -8,6 +8,8 @@ import { ReportPage } from '@/pages/ReportPage';
 import { JourneyBuilderPage } from '@/pages/JourneyBuilderPage';
 import { JourneySpecPage } from '@/pages/JourneySpecPage';
 import { GapReportPage } from '@/pages/GapReportPage';
+import { PlanningDashboard } from '@/pages/PlanningDashboard';
+import { PlanningModePage } from '@/pages/PlanningModePage';
 
 export default function App() {
   return (
@@ -24,9 +26,14 @@ export default function App() {
             <Route path="/journey/new" element={<JourneyBuilderPage />} />
             <Route path="/journey/:id/spec" element={<JourneySpecPage />} />
             <Route path="/journey/:id/audit/:auditId" element={<GapReportPage />} />
+            {/* Planning Mode */}
+            <Route path="/planning" element={<PlanningDashboard />} />
           </Route>
           {/* Progress page: full-screen, no sidebar */}
           <Route path="/audit/:auditId/progress" element={<AuditProgressPage />} />
+          {/* Planning wizard: full-screen, no sidebar */}
+          <Route path="/planning/new" element={<PlanningModePage />} />
+          <Route path="/planning/:sessionId" element={<PlanningModePage />} />
         </Route>
 
         {/* Redirects */}
