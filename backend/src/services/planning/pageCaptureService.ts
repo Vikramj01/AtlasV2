@@ -9,6 +9,7 @@
 import { createBrowserbaseSession, getCDPUrl } from '@/services/browserbase/client';
 import { PLATFORM_SCHEMAS } from '@/services/journey/platformSchemas';
 import { simplifyDOM, extractInteractiveElements, extractForms } from './domSimplifier';
+import { uploadScreenshot } from '@/services/database/supabase';
 import type { PageCapture, ExistingTrackingDetection } from '@/types/planning';
 import logger from '@/utils/logger';
 
@@ -31,17 +32,28 @@ interface PlaywrightPage {
   waitForLoadState(state: string, opts?: object): Promise<void>;
 }
 
+export interface CapturePageOptions {
+  /** If provided, the screenshot will be uploaded to Supabase Storage */
+  upload?: { userId: string; sessionId: string; pageId: string };
+}
+
 /**
  * Visit `url` using a Browserbase-managed Playwright session,
  * extract all data needed for AI analysis, and return a `PageCapture`.
  *
  * The caller is responsible for providing a connected browser instance
  * so that multi-page sessions can reuse the same Browserbase session.
+ *
+ * Pass `options.upload` to persist the screenshot to Supabase Storage.
+ * When provided, `PageCapture.screenshot_base64` is cleared and
+ * `screenshot_storage_path` is set instead (to avoid holding large
+ * base64 buffers in memory across many pages).
  */
 export async function capturePage(
   browser: PlaywrightBrowser,
   url: string,
-): Promise<PageCapture> {
+  options: CapturePageOptions = {},
+): Promise<PageCapture & { screenshot_storage_path?: string }> {
   const startTime = Date.now();
 
   const context = await browser.newContext({
@@ -120,17 +132,37 @@ export async function capturePage(
       'Page capture complete',
     );
 
+    // ── Optional screenshot upload ────────────────────────────────────────────
+    let screenshot_storage_path: string | undefined;
+    let screenshot_base64_out = screenshot_base64;
+
+    if (options.upload) {
+      const { userId, sessionId, pageId } = options.upload;
+      const buffer = Buffer.from(screenshot_base64, 'base64');
+      screenshot_storage_path = await uploadScreenshot(userId, sessionId, pageId, buffer).catch((err) => {
+        logger.warn({ err: err.message, pageId }, 'Screenshot upload failed — continuing without storage path');
+        return undefined;
+      });
+
+      // If upload succeeded, clear base64 from memory — sessionOrchestrator will
+      // re-fetch via signed URL when needed. Keep it only for standalone/test usage.
+      if (screenshot_storage_path) {
+        screenshot_base64_out = '';
+      }
+    }
+
     return {
       url,
       actual_url: actualUrl,
       page_title,
-      screenshot_base64,
+      screenshot_base64: screenshot_base64_out,
       simplified_dom,
       interactive_elements,
       forms,
       existing_tracking,
       meta_tags,
       page_load_time_ms,
+      screenshot_storage_path,
     };
   } finally {
     await context.close().catch(() => {});
