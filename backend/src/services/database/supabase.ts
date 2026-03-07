@@ -32,8 +32,27 @@ export async function uploadScreenshot(
 }
 
 /**
- * Generate a signed URL for a planning screenshot (30-minute expiry).
+ * Upload a generated output file (GTM JSON or HTML guide) to the
+ * private `planning-outputs` bucket.
+ * Path convention: {sessionId}/{filename}
+ * Returns the storage path.
  */
+export async function uploadOutput(
+  sessionId: string,
+  filename: string,
+  content: Buffer | string,
+  contentType: string,
+): Promise<string> {
+  const path = `${sessionId}/${filename}`;
+  const body = typeof content === 'string' ? Buffer.from(content, 'utf-8') : content;
+
+  const { error } = await supabaseAdmin.storage
+    .from('planning-outputs')
+    .upload(path, body, { contentType, upsert: true });
+
+  if (error) throw new Error(`Output upload failed: ${error.message}`);
+  return path;
+}
 export async function getScreenshotSignedUrl(storagePath: string): Promise<string> {
   const { data, error } = await supabaseAdmin.storage
     .from('planning-screenshots')

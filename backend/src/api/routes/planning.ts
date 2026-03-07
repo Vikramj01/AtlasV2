@@ -8,6 +8,7 @@
  */
 import { Router } from 'express';
 import type { Request, Response } from 'express';
+import { generateAllOutputs } from '@/services/planning/generators/outputGenerator';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { planningLimiter } from '../middleware/planningLimiter';
 import { planningQueue } from '@/services/queue/jobQueue';
@@ -204,14 +205,22 @@ router.post('/sessions/:id/generate', async (req: Request, res: Response) => {
       });
     }
 
-    // Mark as generating — Sprint PM-3 will implement the actual generators
+    // Mark as generating before the (synchronous) generation run
     await updateSessionStatus(session.id, 'generating');
 
-    res.status(202).json({
-      message: 'Output generation queued. Generators will be implemented in Sprint PM-3.',
+    const result = await generateAllOutputs(session);
+
+    res.json({
       session_id: session.id,
-      approved_count: approved.length,
-      status: 'generating',
+      status: 'outputs_ready',
+      outputs: result.outputs.map(o => ({
+        id: o.id,
+        type: o.output_type,
+        mime_type: o.mime_type,
+        version: o.version,
+        generated_at: o.generated_at,
+        download_url: `/api/planning/sessions/${session.id}/outputs/${o.id}/download`,
+      })),
     });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
