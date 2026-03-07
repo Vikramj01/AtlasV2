@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { usePlanningStore } from '@/store/planningStore';
 import { planningApi } from '@/lib/api/planningApi';
@@ -31,6 +31,7 @@ export function PlanningModePage() {
   const {
     currentStep,
     currentSession,
+    isLoading,
     setCurrentSession,
     setPages,
     setRecommendations,
@@ -41,12 +42,16 @@ export function PlanningModePage() {
     reset,
   } = usePlanningStore();
 
+  // Local state for fatal load errors (404 / wrong user)
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   // When arriving at /planning/:sessionId, hydrate store from API
   useEffect(() => {
     if (!sessionId) return;
     if (currentSession?.id === sessionId) return; // already loaded
 
     setLoading(true);
+    setLoadError(null);
     planningApi
       .getSession(sessionId)
       .then(({ session, pages }) => {
@@ -81,13 +86,51 @@ export function PlanningModePage() {
             break;
         }
       })
-      .catch((err) => setError(err.message))
+      .catch((err: Error) => {
+        const msg = err.message ?? '';
+        if (msg.includes('404') || msg.toLowerCase().includes('not found')) {
+          setLoadError('This planning session was not found or you don\'t have access to it.');
+        } else {
+          setLoadError(msg || 'Failed to load session.');
+        }
+      })
       .finally(() => setLoading(false));
   }, [sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleExit() {
     reset();
     navigate('/planning');
+  }
+
+  // ── Loading overlay (initial hydration) ──────────────────────────────────
+
+  if (sessionId && isLoading && !currentSession) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-50">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-200 border-t-brand-600" />
+          <p className="text-sm text-gray-500">Loading session…</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Not-found / access-denied error ──────────────────────────────────────
+
+  if (loadError) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center gap-4 bg-gray-50 p-8 text-center">
+        <div className="text-4xl">⚠️</div>
+        <h2 className="text-lg font-bold text-gray-900">Session not found</h2>
+        <p className="max-w-sm text-sm text-gray-500">{loadError}</p>
+        <button
+          onClick={() => { reset(); navigate('/planning'); }}
+          className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700"
+        >
+          Back to Dashboard
+        </button>
+      </div>
+    );
   }
 
   return (

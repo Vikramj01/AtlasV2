@@ -87,8 +87,7 @@ export function Step4ReviewRecommendations() {
     toApprove.forEach((r) => {
       planningApi.updateDecision(sessionId, r.id, 'approved').catch(() => {});
     });
-    const { setRecommendations: setRecs } = usePlanningStore.getState();
-    setRecs(
+    setRecommendations(
       recommendations.map((r) =>
         r.confidence_score >= 0.8 && !r.user_decision
           ? { ...r, user_decision: 'approved' as const, decided_at: new Date().toISOString() }
@@ -114,8 +113,23 @@ export function Step4ReviewRecommendations() {
   if (error) {
     return (
       <div className="mx-auto max-w-2xl px-6 py-10">
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700">
+          <p className="font-medium">Failed to load recommendations</p>
+          <p className="mt-0.5 text-red-600">{error}</p>
+          <button
+            onClick={() => {
+              setError(null);
+              setLoading(true);
+              planningApi
+                .getRecommendations(sessionId)
+                .then(({ recommendations: recs }) => setRecommendations(recs))
+                .catch((err) => setError(err.message))
+                .finally(() => setLoading(false));
+            }}
+            className="mt-3 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+          >
+            Retry
+          </button>
         </div>
       </div>
     );

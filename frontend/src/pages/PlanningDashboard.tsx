@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { planningApi } from '@/lib/api/planningApi';
 import { usePlanningStore } from '@/store/planningStore';
 import type { PlanningSession } from '@/types/planning';
@@ -24,10 +24,15 @@ const STATUS_COLORS: Record<PlanningSession['status'], string> = {
 
 export function PlanningDashboard() {
   const navigate = useNavigate();
+  const location = useLocation();
   const reset = usePlanningStore((s) => s.reset);
   const [sessions, setSessions] = useState<PlanningSession[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Detect plan-limit redirect from Step2 (passed via router state)
+  const limitReached = (location.state as { limitReached?: boolean } | null)?.limitReached ?? false;
+  const limitMessage = (location.state as { limitMessage?: string } | null)?.limitMessage ?? '';
 
   useEffect(() => {
     planningApi
@@ -49,6 +54,28 @@ export function PlanningDashboard() {
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8">
+      {/* Plan-limit upgrade banner */}
+      {limitReached && (
+        <div className="mb-6 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-4">
+          <span className="mt-0.5 text-lg">🔒</span>
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-amber-800">Plan limit reached</p>
+            <p className="mt-0.5 text-xs text-amber-700">
+              {limitMessage || 'You\'ve used all planning sessions included in your current plan.'}
+            </p>
+            <p className="mt-1 text-xs text-amber-700">
+              Upgrade to <strong>Pro</strong> for 10 sessions/month, or <strong>Agency</strong> for unlimited.
+            </p>
+          </div>
+          <a
+            href="/settings"
+            className="flex-shrink-0 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700"
+          >
+            Upgrade plan
+          </a>
+        </div>
+      )}
+
       {/* Header */}
       <div className="mb-8 flex items-center justify-between">
         <div>

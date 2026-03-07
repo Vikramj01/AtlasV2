@@ -179,8 +179,15 @@ export function Step5TrackingPlanSummary() {
 
       {/* Error */}
       {error && (
-        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700">
+          <p className="font-medium">Generation failed</p>
+          <p className="mt-0.5 text-red-600">{error}</p>
+          <button
+            onClick={() => { setError(null); handleGenerate(); }}
+            className="mt-3 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+          >
+            Retry
+          </button>
         </div>
       )}
 

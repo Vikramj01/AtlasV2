@@ -126,7 +126,13 @@ export function Step2PageDiscovery() {
       navigate(`/planning/${session_id}`, { replace: true });
       nextStep();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create session');
+      const msg = err instanceof Error ? err.message : 'Failed to create session';
+      // Detect rate-limit (HTTP 429) — navigate to dashboard with upgrade prompt
+      if (msg.includes('429') || msg.toLowerCase().includes('limit')) {
+        navigate('/planning', { state: { limitReached: true, limitMessage: msg } });
+        return;
+      }
+      setError(msg);
     } finally {
       setLoading(false);
     }

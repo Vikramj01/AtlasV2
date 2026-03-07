@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { usePlanningStore } from '@/store/planningStore';
 import { planningApi } from '@/lib/api/planningApi';
 import type { PlanningPage } from '@/types/planning';
@@ -24,7 +25,10 @@ function PageStatusIcon({ status }: { status: PlanningPage['status'] }) {
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
+const MAX_CONSECUTIVE_FAILURES = 5;
+
 export function Step3ScanningProgress() {
+  const navigate = useNavigate();
   const {
     currentSession,
     pages,
@@ -32,10 +36,12 @@ export function Step3ScanningProgress() {
     updateSessionStatus,
     setStep,
     setError,
+    reset,
     error,
   } = usePlanningStore();
 
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const consecutiveFailuresRef = useRef(0);
   const sessionId = currentSession?.id;
 
   const stopPolling = useCallback(() => {
@@ -49,6 +55,8 @@ export function Step3ScanningProgress() {
     if (!sessionId) return;
     try {
       const { session, pages: freshPages } = await planningApi.getSession(sessionId);
+      consecutiveFailuresRef.current = 0; // reset on success
+
       setPages(freshPages);
       updateSessionStatus(session.status, session.error_message);
 
@@ -60,8 +68,13 @@ export function Step3ScanningProgress() {
         setError(session.error_message ?? 'Scan failed');
       }
     } catch (err) {
-      // Non-fatal — keep polling
-      console.warn('Polling error:', err);
+      consecutiveFailuresRef.current += 1;
+      if (consecutiveFailuresRef.current >= MAX_CONSECUTIVE_FAILURES) {
+        stopPolling();
+        setError('Lost connection to the server. Please check your network and refresh.');
+      } else {
+        console.warn(`Polling error (${consecutiveFailuresRef.current}/${MAX_CONSECUTIVE_FAILURES}):`, err);
+      }
     }
   }, [sessionId, setPages, updateSessionStatus, setStep, setError, stopPolling]);
 
@@ -97,6 +110,20 @@ export function Step3ScanningProgress() {
             <div className="mb-3 text-4xl">⚠️</div>
             <h2 className="text-xl font-bold text-gray-900">Scan failed</h2>
             <p className="mt-1 text-sm text-gray-500">{error ?? 'An unexpected error occurred.'}</p>
+            <div className="mt-4 flex justify-center gap-3">
+              <button
+                onClick={() => { reset(); navigate('/planning/new'); }}
+                className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700"
+              >
+                Try again with a new session
+              </button>
+              <button
+                onClick={() => { reset(); navigate('/planning'); }}
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
+              >
+                Back to Dashboard
+              </button>
+            </div>
           </>
         ) : isDone ? (
           <>

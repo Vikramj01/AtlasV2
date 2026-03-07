@@ -175,8 +175,22 @@ function OutputCard({
 // ── Main step component ────────────────────────────────────────────────────────
 
 export function Step6GeneratedOutputs() {
-  const { currentSession, outputs, nextStep, prevStep } = usePlanningStore();
+  const { currentSession, outputs, setOutputs, nextStep, prevStep } = usePlanningStore();
   const sessionId = currentSession?.id ?? '';
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  async function refreshOutputs() {
+    if (!sessionId) return;
+    setIsRefreshing(true);
+    try {
+      const { outputs: fresh } = await planningApi.listOutputs(sessionId);
+      setOutputs(fresh as Parameters<typeof setOutputs>[0]);
+    } catch {
+      // non-fatal — user can retry
+    } finally {
+      setIsRefreshing(false);
+    }
+  }
 
   // Sort outputs in canonical order
   const ORDER: OutputType[] = ['gtm_container', 'datalayer_spec', 'implementation_guide'];
@@ -200,9 +214,17 @@ export function Step6GeneratedOutputs() {
           <OutputCard key={output.id} output={output} sessionId={sessionId} />
         ))}
         {outputs.length === 0 && (
-          <p className="py-8 text-center text-sm text-gray-400">
-            Outputs are still being generated…
-          </p>
+          <div className="py-10 text-center">
+            <div className="mb-3 inline-block h-6 w-6 animate-spin rounded-full border-2 border-brand-200 border-t-brand-600" />
+            <p className="text-sm text-gray-500">Outputs are still being generated…</p>
+            <button
+              onClick={refreshOutputs}
+              disabled={isRefreshing}
+              className="mt-3 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50"
+            >
+              {isRefreshing ? 'Checking…' : 'Check again'}
+            </button>
+          </div>
         )}
       </div>
 
