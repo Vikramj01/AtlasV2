@@ -348,6 +348,149 @@ STRIPE_WEBHOOK_SECRET=whsec_xxx
 
 ---
 
+## Planning Mode — Feature Overview
+
+Planning Mode is a new upstream workflow that sits *before* Audit Mode. It scans a user's website via Browserbase, uses the Claude API to analyse page structure and recommend what to track, then generates a complete GTM container JSON, dataLayer spec, and implementation guide.
+
+### How Planning Mode Relates to Audit Mode
+
+```
+Planning Mode → (developer implements tracking) → Audit Mode
+"What should I track?"                            "Is my tracking working?"
+```
+
+### Planning Mode Architecture
+
+```
+Frontend (React) — 7-step wizard
+  → Step 1: Site URL + business context + platform selection
+  → Step 2: Manual page URL entry
+  → Step 3: Scanning progress (polls backend)
+  → Step 4: Review AI recommendations (annotated screenshots)
+  → Step 5: Tracking plan summary
+  → Step 6: Generated outputs (preview + download)
+  → Step 7: Download + handoff to Audit Mode
+
+Backend (Node.js/Express)
+  → POST /api/planning/sessions    — Create session, enqueue scan job
+  → GET  /api/planning/sessions/:id — Poll session status
+  → GET  /api/planning/sessions/:id/recommendations — Get AI recommendations
+  → PATCH /api/planning/sessions/:id/recommendations/:id — Record user decision
+  → POST /api/planning/sessions/:id/generate — Generate output files
+  → GET  /api/planning/sessions/:id/outputs — List outputs
+  → POST /api/planning/sessions/:id/handoff — Create Journey + start Audit
+
+Page Capture Engine (Browserbase)
+  → Visit each URL → extract simplified DOM + screenshot
+  → Detect existing tracking (from PLATFORM_SCHEMAS)
+  → Return PageCapture object to AI layer
+
+AI Analysis Layer (Claude API — claude-haiku-4-5-20251001)
+  → Input: screenshot + simplified DOM + business context
+  → Output: RecommendedElement[] with selectors, action types, confidence scores
+
+Output Generators
+  → GTM Container JSON (importable, exportFormatVersion: 2)
+  → DataLayer Spec (per-page code snippets, extends existing gtmDataLayer.ts)
+  → Implementation Guide (standalone HTML, readable by non-technical users)
+  → WalkerOS flow.json (optional)
+```
+
+### Planning Mode Key Files
+
+**Backend:**
+- `backend/src/types/planning.ts` — All Planning Mode TypeScript interfaces
+- `backend/src/services/planning/pageCaptureService.ts` — Page capture (reuses `browserbase/client.ts`)
+- `backend/src/services/planning/domSimplifier.ts` — DOM → ≤15K token simplified tree
+- `backend/src/services/planning/aiAnalysisService.ts` — Claude API client + prompts
+- `backend/src/services/planning/sessionOrchestrator.ts` — Multi-page scan orchestration
+- `backend/src/services/planning/generators/gtmContainerGenerator.ts` — GTM import JSON
+- `backend/src/services/planning/generators/dataLayerSpecGenerator.ts` — Developer spec
+- `backend/src/services/planning/generators/implementationGuideGenerator.ts` — HTML guide
+- `backend/src/services/planning/generators/outputGenerator.ts` — Orchestrates all generators
+- `backend/src/services/database/planningQueries.ts` — All Planning Mode DB CRUD
+- `backend/src/api/routes/planning.ts` — All `/api/planning/*` endpoints
+
+**Frontend:**
+- `frontend/src/types/planning.ts` — Frontend Planning Mode types
+- `frontend/src/store/planningStore.ts` — Zustand state (currentSession, pages, recommendations, outputs, currentStep)
+- `frontend/src/lib/api/planningApi.ts` — Planning API client
+- `frontend/src/pages/PlanningDashboard.tsx` — Session list
+- `frontend/src/pages/PlanningModePage.tsx` — 7-step wizard container
+- `frontend/src/components/planning/AnnotatedScreenshot.tsx` — Screenshot with numbered highlight overlay
+- `frontend/src/components/planning/RecommendationCard.tsx` — Approve/skip/edit card
+- `frontend/src/components/planning/Step1PlanningSetup.tsx` — URL + context + platforms
+- `frontend/src/components/planning/Step2PageDiscovery.tsx` — Manual URL entry
+- `frontend/src/components/planning/Step3ScanningProgress.tsx` — Real-time scan progress
+- `frontend/src/components/planning/Step4ReviewRecommendations.tsx` — Review UI
+- `frontend/src/components/planning/Step5TrackingPlanSummary.tsx` — Pre-generation summary
+- `frontend/src/components/planning/Step6GeneratedOutputs.tsx` — Output preview + download
+- `frontend/src/components/planning/Step7DownloadAndHandoff.tsx` — Final screen + audit handoff
+
+**Database:**
+- `db/migrations/003_create_planning_tables.sql` — planning_sessions, planning_pages, planning_recommendations, planning_outputs
+
+### What Planning Mode Reuses from Existing Code
+
+| Need | Existing Component | How |
+|------|--------------------|-----|
+| Browserbase sessions | `services/browserbase/client.ts` | Direct import |
+| Platform detection | `services/journey/platformSchemas.ts` | Import PLATFORM_SCHEMAS |
+| Action vocabulary | `services/journey/actionPrimitives.ts` | Import ACTION_PRIMITIVES |
+| DataLayer snippets | `services/journey/generators/gtmDataLayer.ts` | Extend for Planning output |
+| WalkerOS output | `services/journey/generators/walkerosFlow.ts` | Adapt for recommendations input |
+| Auth middleware | `api/middleware/authMiddleware.ts` | Direct reuse |
+| Rate limiting | `api/middleware/auditLimiter.ts` | Extend with planning limits |
+| Supabase client | `services/database/supabase.ts` | Direct reuse |
+| Journey creation | `services/database/journeyQueries.ts` | Used in handoff endpoint |
+| Sidebar + Layout | `components/layout/` | Extend with Planning nav item |
+| Common badges | `components/common/` | Direct reuse |
+| Zustand pattern | `store/auditStore.ts` | Mirror for planningStore |
+| API client pattern | `lib/api/auditApi.ts` | Mirror for planningApi |
+
+### Planning Mode Environment Variables
+
+**Backend — add to `backend/.env` and `backend/src/config/env.ts`:**
+```
+ANTHROPIC_API_KEY=sk-ant-xxx
+```
+
+### Planning Mode Sprint Reference
+
+| Sprint | Weeks | Focus |
+|--------|-------|-------|
+| PM-1 | 1–2 | Page Capture Engine + Claude API |
+| PM-2 | 3–4 | Session Orchestration + Backend API |
+| PM-3 | 5–6 | GTM Container + Output Generators |
+| PM-4 | 7–8 | Frontend Steps 1–3 |
+| PM-5 | 9–10 | Frontend Steps 4–7 + Audit Handoff |
+
+Full sprint plan: `docs/planning-mode-sprint-plan.md`
+Task checklist: `docs/planning-mode-tasks.md`
+Migration SQL: `docs/planning-mode-migrations.md`
+
+### Planning Mode Business Rules
+
+- **Rate limits:** Free = 1 planning session/month, Pro = 10/month, Agency = unlimited
+- **Max pages per session:** 10 (MVP)
+- **AI model:** `claude-haiku-4-5-20251001` (cost target: ~$0.13 per session)
+- **Screenshot format:** JPEG at 80% quality, 1280×800 viewport
+- **DOM token limit:** Hard cap at 15,000 tokens for Claude API input
+- **Confidence threshold:** Recommendations with confidence ≥ 0.8 can be batch-approved
+- **GTM format:** `exportFormatVersion: 2` (GTM export format as of 2025)
+- **Annotated screenshots UI:** Desktop-only (≥1024px). Show warning banner on mobile.
+- **Handoff:** Creates a Journey in the Journey Builder matching the approved recommendations; user reviews before running audit
+
+### Common Planning Mode Pitfalls to Avoid
+
+1. **Don't store screenshots as binary in DB** — upload to Supabase Storage `planning-screenshots` bucket; store only the path
+2. **Don't conflate GTM Container JSON with GTM dataLayer snippets** — these are different outputs. The container JSON is the importable file; the dataLayer spec is human-readable code for developers.
+3. **Don't call Claude API synchronously in the route handler** — all page scanning is async (Bull job queue). The route returns a session ID immediately; UI polls for status.
+4. **Don't use `dangerouslySetInnerHTML` for user-supplied content** — the implementation guide HTML is Atlas-generated (safe). Never render user-supplied HTML.
+5. **Don't skip the handoff journey review step** — the auto-created Journey from handoff may have incorrect stage types. Always send users to the Journey Builder to review before running the audit.
+
+---
+
 ## Key Reference Points
 
 | What you need | Where to find it |
@@ -360,3 +503,7 @@ STRIPE_WEBHOOK_SECRET=whsec_xxx
 | File structure with annotations | `claude.md` → "File Structure" section |
 | Sprint-by-sprint task breakdown | `claude.md` → "90-Day Sprint Plan" section |
 | Code pattern examples | `claude.md` → "Code Patterns" section |
+| Planning Mode sprint plan | `docs/planning-mode-sprint-plan.md` |
+| Planning Mode task checklist | `docs/planning-mode-tasks.md` |
+| Planning Mode database migrations | `docs/planning-mode-migrations.md` |
+| Planning Mode PRD | `ATLAS_Planning_Mode_PRD.md` |
