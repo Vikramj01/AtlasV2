@@ -115,7 +115,7 @@ router.post('/sessions', planningLimiter, async (req: Request, res: Response) =>
 router.get('/sessions', async (req: Request, res: Response) => {
   try {
     const sessions = await listSessions(req.user!.id);
-    res.json(sessions);
+    res.json({ sessions });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
   }
