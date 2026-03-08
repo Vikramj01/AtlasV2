@@ -101,22 +101,38 @@ export async function flushDataLayer(
 }
 
 /**
+ * A mutable step-name reference so a single listener registration always
+ * reads the current step without needing to be re-registered per navigation.
+ * journeySimulator uses this; stageSimulator passes plain strings.
+ */
+export interface StepRef {
+  current: string;
+}
+
+/**
  * Set up network request interception on a Playwright page.
- * Returns cleanup function.
+ * Accepts either a plain string (stageSimulator — one listener per stage) or
+ * a StepRef object (journeySimulator — one listener for the whole session).
+ *
+ * KEY FIX: captures POST body via req.postData() so rules that match on
+ * r.body (GA4, Meta, Google Ads) work correctly.
  */
 export function interceptNetworkRequests(
   page: {
     on: (event: string, handler: (req: unknown) => void) => void;
   },
   sink: NetworkRequest[],
-  stepName: string,
+  stepNameOrRef: string | StepRef,
 ): void {
+  const getStep = (): string =>
+    typeof stepNameOrRef === 'string' ? stepNameOrRef : stepNameOrRef.current;
+
   page.on('request', (rawReq: unknown) => {
     const req = rawReq as {
       url(): string;
       method(): string;
       headers(): Record<string, string>;
-      timing?(): { startTime: number };
+      postData?(): string | null;
     };
     const url = req.url();
     if (!shouldCaptureUrl(url)) return;
@@ -124,8 +140,9 @@ export function interceptNetworkRequests(
       url,
       method: req.method(),
       headers: req.headers(),
+      body: req.postData?.() ?? undefined,
       timestamp: Date.now(),
-      step: stepName,
+      step: getStep(),
     };
     sink.push(request);
   });
@@ -137,7 +154,8 @@ export function interceptNetworkRequests(
     };
     const url = res.url();
     if (!shouldCaptureUrl(url)) return;
-    const existing = sink.find((r) => r.url === url && r.step === stepName);
+    const step = getStep();
+    const existing = sink.find((r) => r.url === url && r.step === step);
     if (existing) {
       try {
         const timing = res.request().timing?.();

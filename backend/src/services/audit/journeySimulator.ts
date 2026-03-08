@@ -13,6 +13,7 @@ import {
   captureLocalStorage,
   mergeCookies,
   mergeLocalStorage,
+  type StepRef,
 } from './dataCapture';
 import logger from '@/utils/logger';
 
@@ -82,13 +83,13 @@ export async function simulateJourney(
   // Instrument dataLayer before first navigation so push() is intercepted on every page load
   await instrumentDataLayer(page as Parameters<typeof instrumentDataLayer>[0], dataLayer, 'init');
 
-  // Wire up network interception (runs for all steps)
-  let currentStep = 'init';
-  interceptNetworkRequests(page, networkRequests, currentStep);
+  // Single listener for all steps — uses a mutable ref so step name stays current
+  const stepRef: StepRef = { current: 'init' };
+  interceptNetworkRequests(page, networkRequests, stepRef);
 
   try {
     for (const step of steps) {
-      currentStep = step.name;
+      stepRef.current = step.name;
       let url = opts.url_map[step.urlKey] ?? opts.website_url;
 
       // Inject click IDs on landing page
