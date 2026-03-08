@@ -60,11 +60,11 @@ export function PlanningModePage() {
 
         // Route to the appropriate step based on session status
         switch (session.status) {
-          case 'pending':
+          case 'setup':
           case 'scanning':
             setStep(3);
             break;
-          case 'scan_complete':
+          case 'review_ready':
             setStep(4);
             break;
           case 'generating':
