@@ -131,7 +131,7 @@ router.get('/sessions/:id', async (req: Request, res: Response) => {
 
     const pages = await getPagesBySession(session.id);
 
-    const completed = pages.filter((p) => p.status === 'complete').length;
+    const completed = pages.filter((p) => p.status === 'done').length;
     const failed = pages.filter((p) => p.status === 'failed').length;
 
     res.json({
