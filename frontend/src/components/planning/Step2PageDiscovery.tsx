@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePlanningStore } from '@/store/planningStore';
 import { planningApi } from '@/lib/api/planningApi';
@@ -59,6 +59,9 @@ export function Step2PageDiscovery() {
   } = usePlanningStore();
 
   const baseUrl = draftSetup.website_url ?? '';
+
+  // Clear any stale error from a previous session on mount
+  useEffect(() => { setError(null); }, [setError]);
 
   const [urls, setUrls] = useState<string[]>([baseUrl]);
   const [inputValue, setInputValue] = useState('');
