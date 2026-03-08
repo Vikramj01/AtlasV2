@@ -28,6 +28,12 @@ import {
   getOutput,
 } from '@/services/database/planningQueries';
 import { getScreenshotSignedUrl } from '@/services/database/supabase';
+import {
+  createJourney,
+  upsertStage,
+  upsertPlatforms,
+} from '@/services/database/journeyQueries';
+import type { Platform as JourneyPlatform } from '@/types/journey';
 import type { CreateSessionInput, UpdateDecisionInput } from '@/types/planning';
 
 const router = Router();
@@ -288,11 +294,69 @@ router.post('/sessions/:id/handoff', async (req: Request, res: Response) => {
       });
     }
 
-    // Sprint PM-5 will implement full Journey creation from approved recommendations
-    res.status(501).json({
-      message: 'Handoff to Journey Builder will be implemented in Sprint PM-5.',
-      session_id: session.id,
+    // Load approved recommendations + scanned pages
+    const [approvedRecs, pages] = await Promise.all([
+      getApprovedRecommendations(session.id),
+      getPagesBySession(session.id),
+    ]);
+
+    if (approvedRecs.length === 0) {
+      return res.status(409).json({ error: 'No approved recommendations to hand off.' });
+    }
+
+    // Create a Journey in the Journey Builder
+    const journey = await createJourney(req.user!.id, {
+      name: `Tracking Plan — ${session.website_url}`,
+      business_type: session.business_type as 'ecommerce' | 'saas' | 'lead_gen' | 'custom',
+      implementation_format: 'gtm',
     });
+
+    // Group approved recs by page (preserve page_order for stage_order)
+    const pageMap = new Map(pages.map((p) => [p.id, p]));
+    const recsByPage = new Map<string, typeof approvedRecs>();
+    for (const rec of approvedRecs) {
+      const list = recsByPage.get(rec.page_id) ?? [];
+      list.push(rec);
+      recsByPage.set(rec.page_id, list);
+    }
+
+    // Upsert one stage per page that has approved recs
+    const pagesWithRecs = pages.filter((p) => recsByPage.has(p.id));
+    await Promise.all(
+      pagesWithRecs.map((page, idx) => {
+        const recs = recsByPage.get(page.id) ?? [];
+        return upsertStage(journey.id, {
+          stage_order: idx + 1,
+          label: page.page_title ?? `Page ${idx + 1}`,
+          page_type: page.page_type ?? 'unknown',
+          sample_url: page.url,
+          actions: recs.map((r) => r.action_type),
+        });
+      }),
+    );
+
+    // Map planning platforms to journey platforms
+    const platformMap: Record<string, JourneyPlatform> = {
+      ga4:        'ga4',
+      google_ads: 'google_ads',
+      meta:       'meta',
+      tiktok:     'tiktok',
+      sgtm:       'sgtm',
+    };
+    const journeyPlatforms = (session.selected_platforms as string[])
+      .filter((p) => platformMap[p])
+      .map((p) => ({
+        platform: platformMap[p],
+        is_active: true,
+        measurement_id: null as string | null,
+        config: {} as Record<string, unknown>,
+      }));
+
+    if (journeyPlatforms.length > 0) {
+      await upsertPlatforms(journey.id, { platforms: journeyPlatforms });
+    }
+
+    res.json({ journey_id: journey.id, message: 'Journey created from planning session.' });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
   }
