@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { planningApi } from '@/lib/api/planningApi';
 import { usePlanningStore } from '@/store/planningStore';
 import type { PlanningSession } from '@/types/planning';
@@ -67,12 +67,12 @@ export function PlanningDashboard() {
               Upgrade to <strong>Pro</strong> for 10 sessions/month, or <strong>Agency</strong> for unlimited.
             </p>
           </div>
-          <a
-            href="/settings"
+          <Link
+            to="/settings"
             className="flex-shrink-0 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700"
           >
             Upgrade plan
-          </a>
+          </Link>
         </div>
       )}
 
