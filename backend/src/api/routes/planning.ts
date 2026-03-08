@@ -45,16 +45,28 @@ router.use(authMiddleware);
 
 router.post('/sessions', planningLimiter, async (req: Request, res: Response) => {
   try {
-    const { website_url, business_type, business_description, selected_platforms, pages } =
-      req.body as CreateSessionInput & { pages?: Array<{ url: string; page_type?: string }> };
+    const { website_url, business_type, business_description, selected_platforms, pages, page_urls } =
+      req.body as CreateSessionInput & {
+        pages?: Array<{ url: string; page_type?: string }>;
+        page_urls?: string[];
+      };
 
     if (!website_url || !business_type) {
       return res.status(400).json({ error: 'website_url and business_type are required' });
     }
-    if (!Array.isArray(pages) || pages.length === 0) {
+
+    // Accept either `pages` (array of objects) or `page_urls` (array of strings)
+    const normalizedPages: Array<{ url: string; page_type?: string }> =
+      Array.isArray(pages) && pages.length > 0
+        ? pages
+        : Array.isArray(page_urls) && page_urls.length > 0
+          ? page_urls.map((url) => ({ url }))
+          : [];
+
+    if (normalizedPages.length === 0) {
       return res.status(400).json({ error: 'At least one page URL is required' });
     }
-    if (pages.length > 10) {
+    if (normalizedPages.length > 10) {
       return res.status(400).json({ error: 'Maximum 10 pages per session (MVP limit)' });
     }
 
@@ -76,7 +88,7 @@ router.post('/sessions', planningLimiter, async (req: Request, res: Response) =>
 
     // Create page records
     await Promise.all(
-      pages.map((p, idx) =>
+      normalizedPages.map((p, idx) =>
         createPage(session.id, p.url, p.page_type ?? 'custom', idx + 1),
       ),
     );
@@ -89,7 +101,7 @@ router.post('/sessions', planningLimiter, async (req: Request, res: Response) =>
       status: session.status,
       website_url: session.website_url,
       business_type: session.business_type,
-      page_count: pages.length,
+      page_count: normalizedPages.length,
       created_at: session.created_at,
     });
   } catch (err) {
@@ -119,7 +131,14 @@ router.get('/sessions/:id', async (req: Request, res: Response) => {
 
     const pages = await getPagesBySession(session.id);
 
-    res.json({ ...session, pages });
+    const completed = pages.filter((p) => p.status === 'complete').length;
+    const failed = pages.filter((p) => p.status === 'failed').length;
+
+    res.json({
+      session,
+      pages,
+      progress: { total: pages.length, completed, failed },
+    });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
   }
