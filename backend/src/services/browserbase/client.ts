@@ -20,7 +20,7 @@ export async function createBrowserbaseSession(): Promise<BrowserbaseSessionInfo
   const Browserbase = require('@browserbasehq/sdk').default as {
     new (opts: { apiKey: string }): {
       sessions: {
-        create(opts: { projectId: string; browserSettings?: object }): Promise<{ id: string; debuggerUrl?: string }>;
+        create(opts: { projectId: string; proxies?: boolean; browserSettings?: object }): Promise<{ id: string; debuggerUrl?: string }>;
       };
     };
   };
