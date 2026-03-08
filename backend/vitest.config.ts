@@ -11,6 +11,7 @@ export default defineConfig({
       REDIS_URL: 'redis://localhost:6379',
       BROWSERBASE_API_KEY: 'test-browserbase-key',
       BROWSERBASE_PROJECT_ID: 'test-project-id',
+      ANTHROPIC_API_KEY: 'test-anthropic-key',
       NODE_ENV: 'test',
     },
   },
