@@ -10,6 +10,7 @@ import { JourneySpecPage } from '@/pages/JourneySpecPage';
 import { GapReportPage } from '@/pages/GapReportPage';
 import { PlanningDashboard } from '@/pages/PlanningDashboard';
 import { PlanningModePage } from '@/pages/PlanningModePage';
+import { SettingsPage } from '@/pages/SettingsPage';
 
 export default function App() {
   return (
@@ -28,6 +29,8 @@ export default function App() {
             <Route path="/journey/:id/audit/:auditId" element={<GapReportPage />} />
             {/* Planning Mode */}
             <Route path="/planning" element={<PlanningDashboard />} />
+            {/* Settings */}
+            <Route path="/settings" element={<SettingsPage />} />
           </Route>
           {/* Progress page: full-screen, no sidebar */}
           <Route path="/audit/:auditId/progress" element={<AuditProgressPage />} />
