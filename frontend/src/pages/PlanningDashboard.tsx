@@ -5,18 +5,18 @@ import { usePlanningStore } from '@/store/planningStore';
 import type { PlanningSession } from '@/types/planning';
 
 const STATUS_LABELS: Record<PlanningSession['status'], string> = {
-  pending:       'Pending',
+  setup:         'Setup',
   scanning:      'Scanning…',
-  scan_complete: 'Scan Complete',
+  review_ready:  'Ready to Review',
   generating:    'Generating…',
   outputs_ready: 'Ready',
   failed:        'Failed',
 };
 
 const STATUS_COLORS: Record<PlanningSession['status'], string> = {
-  pending:       'bg-gray-100 text-gray-600',
+  setup:         'bg-gray-100 text-gray-600',
   scanning:      'bg-blue-100 text-blue-700',
-  scan_complete: 'bg-yellow-100 text-yellow-700',
+  review_ready:  'bg-yellow-100 text-yellow-700',
   generating:    'bg-blue-100 text-blue-700',
   outputs_ready: 'bg-green-100 text-green-700',
   failed:        'bg-red-100 text-red-700',

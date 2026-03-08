@@ -10,7 +10,7 @@ const POLL_INTERVAL_MS = 3000;
 
 function PageStatusIcon({ status }: { status: PlanningPage['status'] }) {
   switch (status) {
-    case 'complete':
+    case 'done':
       return <span className="text-green-500">✓</span>;
     case 'failed':
       return <span className="text-red-400">✗</span>;
@@ -60,7 +60,7 @@ export function Step3ScanningProgress() {
       setPages(freshPages);
       updateSessionStatus(session.status, session.error_message);
 
-      if (session.status === 'scan_complete' || session.status === 'outputs_ready') {
+      if (session.status === 'review_ready' || session.status === 'outputs_ready') {
         stopPolling();
         setStep(4); // Advance to Review step
       } else if (session.status === 'failed') {
@@ -93,12 +93,12 @@ export function Step3ScanningProgress() {
   // ── Derived progress ────────────────────────────────────────────────────────
 
   const total = pages.length;
-  const completed = pages.filter((p) => p.status === 'complete' || p.status === 'failed').length;
+  const completed = pages.filter((p) => p.status === 'done' || p.status === 'failed').length;
   const failed = pages.filter((p) => p.status === 'failed').length;
   const progressPct = total > 0 ? Math.round((completed / total) * 100) : 0;
 
   const sessionStatus = currentSession?.status ?? 'scanning';
-  const isDone = sessionStatus === 'scan_complete' || sessionStatus === 'outputs_ready';
+  const isDone = sessionStatus === 'review_ready' || sessionStatus === 'outputs_ready';
   const isFailed = sessionStatus === 'failed';
 
   return (
@@ -199,7 +199,7 @@ export function Step3ScanningProgress() {
                     Error
                   </span>
                 )}
-                {page.status === 'complete' && page.page_type && (
+                {page.status === 'done' && page.page_type && (
                   <span className="flex-shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-xs capitalize text-gray-500">
                     {page.page_type.replace('_', ' ')}
                   </span>

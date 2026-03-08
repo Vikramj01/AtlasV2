@@ -1,14 +1,14 @@
 // ── Planning Mode — Frontend TypeScript types ─────────────────────────────────
 
 export type PlanningSessionStatus =
-  | 'pending'
+  | 'setup'
   | 'scanning'
-  | 'scan_complete'
+  | 'review_ready'
   | 'generating'
   | 'outputs_ready'
   | 'failed';
 
-export type PlanningPageStatus = 'pending' | 'scanning' | 'complete' | 'failed';
+export type PlanningPageStatus = 'pending' | 'scanning' | 'done' | 'failed';
 
 export type UserDecision = 'approved' | 'skipped' | 'edited';
 
