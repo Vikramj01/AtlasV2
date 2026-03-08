@@ -28,8 +28,15 @@ export async function createBrowserbaseSession(): Promise<BrowserbaseSessionInfo
   const bb = new Browserbase({ apiKey: env.BROWSERBASE_API_KEY });
   const session = await bb.sessions.create({
     projectId: env.BROWSERBASE_PROJECT_ID,
+    proxies: true,   // residential proxies — bypasses IP-based blocking
     browserSettings: {
       viewport: { width: 1280, height: 800 },
+      fingerprint: {
+        // Randomise device fingerprint so each session looks like a real user
+        devices: ['desktop'],
+        locales: ['en-US', 'en-GB'],
+        operatingSystems: ['windows', 'macos'],
+      },
     },
   });
 

@@ -56,11 +56,12 @@ export async function capturePage(
 ): Promise<PageCapture & { screenshot_storage_path?: string }> {
   const startTime = Date.now();
 
+  // Do NOT override userAgent — let Browserbase's fingerprint setting supply a
+  // realistic Windows/macOS Chrome UA. Overriding with a Linux string is a
+  // common bot signal and defeats the stealth proxy configuration.
   const context = await browser.newContext({
     locale: 'en-US',
     viewport: { width: 1280, height: 800 },
-    userAgent:
-      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   });
 
   const page = await context.newPage();
@@ -75,9 +76,12 @@ export async function capturePage(
   let actualUrl = url;
 
   try {
-    // Navigate — prefer networkidle, fall back to domcontentloaded
+    // Navigate — try networkidle first (all XHR settled), then degrade gracefully.
+    // 'load' is used as the final fallback because 'domcontentloaded' fires before
+    // JS-rendered content appears, which produces poor screenshots on SPAs.
     await page
-      .goto(url, { waitUntil: 'networkidle', timeout: 15000 })
+      .goto(url, { waitUntil: 'networkidle', timeout: 20000 })
+      .catch(() => page.goto(url, { waitUntil: 'load', timeout: 15000 }))
       .catch(() => page.goto(url, { waitUntil: 'domcontentloaded', timeout: 10000 }));
 
     actualUrl = page.url();
