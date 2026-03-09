@@ -140,7 +140,7 @@ export interface GetRecommendationsResponse {
 }
 
 export interface UpdateDecisionInput {
-  decision: UserDecision;
+  user_decision: UserDecision;
   modified_config?: Record<string, unknown>;
 }
 
