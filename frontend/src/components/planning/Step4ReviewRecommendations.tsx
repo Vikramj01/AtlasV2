@@ -76,7 +76,8 @@ export function Step4ReviewRecommendations() {
 
   const totalRecs = recommendations.length;
   const decidedRecs = recommendations.filter((r) => r.user_decision !== null).length;
-  const allDecided = decidedRecs === totalRecs && totalRecs > 0;
+  const approvedRecs = recommendations.filter((r) => r.user_decision === 'approved' || r.user_decision === 'modified').length;
+  const canContinue = approvedRecs > 0;
 
   // ── Batch approve high-confidence ─────────────────────────────────────────
 
@@ -249,13 +250,13 @@ export function Step4ReviewRecommendations() {
           <div className="border-t border-gray-100 bg-white px-4 py-3">
             <div className="flex items-center justify-between">
               <span className="text-xs text-gray-500">
-                {decidedRecs} of {totalRecs} recommendations reviewed
+                {decidedRecs} of {totalRecs} reviewed · {approvedRecs} approved
               </span>
               <button
                 onClick={nextStep}
-                disabled={!allDecided}
+                disabled={!canContinue}
                 className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-40"
-                title={allDecided ? undefined : 'Review all recommendations to continue'}
+                title={canContinue ? undefined : 'Approve at least one recommendation to continue'}
               >
                 Continue to Summary →
               </button>
@@ -265,7 +266,7 @@ export function Step4ReviewRecommendations() {
             <div className="mt-2 h-1 overflow-hidden rounded-full bg-gray-100">
               <div
                 className="h-full rounded-full bg-brand-400 transition-all duration-300"
-                style={{ width: totalRecs > 0 ? `${(decidedRecs / totalRecs) * 100}%` : '0%' }}
+                style={{ width: totalRecs > 0 ? `${(approvedRecs / totalRecs) * 100}%` : '0%' }}
               />
             </div>
           </div>
