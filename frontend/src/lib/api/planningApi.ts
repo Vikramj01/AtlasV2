@@ -87,7 +87,7 @@ export const planningApi = {
     decision: UserDecision,
     modified_config?: Record<string, unknown>,
   ): Promise<{ recommendation_id: string; decision: UserDecision }> {
-    const body: UpdateDecisionInput = { decision };
+    const body: UpdateDecisionInput = { user_decision: decision };
     if (modified_config) body.modified_config = modified_config;
     return apiFetch(`/api/planning/sessions/${sessionId}/recommendations/${recId}`, {
       method: 'PATCH',
