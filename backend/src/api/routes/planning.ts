@@ -382,7 +382,7 @@ router.post('/sessions/:id/handoff', async (req: Request, res: Response) => {
         return upsertStage(journey.id, {
           stage_order: idx + 1,
           label: page.page_title ?? `Page ${idx + 1}`,
-          page_type: page.page_type ?? 'unknown',
+          page_type: page.page_type ?? 'custom',
           sample_url: page.url,
           actions: recs.map((r) => r.action_type),
         });
