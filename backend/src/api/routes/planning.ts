@@ -22,11 +22,13 @@ import {
   getPageWithSignedUrl,
   getRecommendationsBySession,
   getRecommendation,
+  createRecommendations,
   updateRecommendationDecision,
   getApprovedRecommendations,
   getOutputs,
   getOutput,
 } from '@/services/database/planningQueries';
+import type { CreateRecommendationInput } from '@/services/database/planningQueries';
 import { getScreenshotSignedUrl } from '@/services/database/supabase';
 import {
   createJourney,
@@ -174,6 +176,39 @@ router.get('/sessions/:id/recommendations', async (req: Request, res: Response) 
       recommendations: recs,
       by_page: byPage,
     });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+// ── POST /api/planning/sessions/:id/recommendations ───────────────────────────
+// Create a single custom (manually-added) recommendation and mark it approved.
+
+router.post('/sessions/:id/recommendations', async (req: Request, res: Response) => {
+  try {
+    const session = await getSession(req.params.id, req.user!.id);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    const body = req.body as Omit<CreateRecommendationInput, 'source'>;
+    if (!body.page_id || !body.action_type || !body.event_name) {
+      return res.status(400).json({ error: 'page_id, action_type, and event_name are required' });
+    }
+
+    const [rec] = await createRecommendations([
+      {
+        ...body,
+        required_params: body.required_params ?? [],
+        optional_params: body.optional_params ?? [],
+        confidence_score: body.confidence_score ?? 1,
+        business_justification: body.business_justification ?? `Manually added: ${body.event_name}`,
+        affected_platforms: body.affected_platforms ?? [],
+        source: 'manual',
+      },
+    ]);
+
+    // Auto-approve manual recommendations
+    const approved = await updateRecommendationDecision(rec.id, 'approved', undefined);
+    res.status(201).json(approved);
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
   }

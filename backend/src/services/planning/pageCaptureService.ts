@@ -80,9 +80,9 @@ export async function capturePage(
     // 'load' is used as the final fallback because 'domcontentloaded' fires before
     // JS-rendered content appears, which produces poor screenshots on SPAs.
     await page
-      .goto(url, { waitUntil: 'networkidle', timeout: 20000 })
-      .catch(() => page.goto(url, { waitUntil: 'load', timeout: 15000 }))
-      .catch(() => page.goto(url, { waitUntil: 'domcontentloaded', timeout: 10000 }));
+      .goto(url, { waitUntil: 'networkidle', timeout: 45000 })
+      .catch(() => page.goto(url, { waitUntil: 'load', timeout: 30000 }))
+      .catch(() => page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 }));
 
     actualUrl = page.url();
 
