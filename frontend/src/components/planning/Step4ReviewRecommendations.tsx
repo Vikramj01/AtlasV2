@@ -136,6 +136,7 @@ export function Step4ReviewRecommendations() {
   }
 
   if (pagesWithRecs.length === 0) {
+    const fallbackPageId = pages[0]?.id ?? null;
     return (
       <div className="mx-auto max-w-xl px-6 py-20 text-center">
         <p className="text-lg font-medium text-gray-700">No recommendations found</p>
@@ -144,11 +145,21 @@ export function Step4ReviewRecommendations() {
           and rescan.
         </p>
         <button
-          onClick={() => setShowCustomForm(true)}
+          onClick={() => {
+            if (fallbackPageId) setActivePageId(fallbackPageId);
+            setShowCustomForm(true);
+          }}
           className="mt-4 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700"
         >
           + Add Custom Element
         </button>
+        {showCustomForm && fallbackPageId && (
+          <CustomElementForm
+            sessionId={sessionId}
+            pageId={fallbackPageId}
+            onClose={() => setShowCustomForm(false)}
+          />
+        )}
       </div>
     );
   }

@@ -165,24 +165,21 @@ export async function analysePageWithAI(
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
+      const userContent: Anthropic.ContentBlockParam[] = [];
+      if (req.screenshot_base64) {
+        userContent.push({
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: 'image/jpeg',
+            data: req.screenshot_base64,
+          },
+        });
+      }
+      userContent.push({ type: 'text', text: buildUserPrompt(req) });
+
       const messages: Anthropic.MessageParam[] = [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'image',
-              source: {
-                type: 'base64',
-                media_type: 'image/jpeg',
-                data: req.screenshot_base64,
-              },
-            },
-            {
-              type: 'text',
-              text: buildUserPrompt(req),
-            },
-          ],
-        },
+        { role: 'user', content: userContent },
       ];
 
       const response = await client.messages.create({
