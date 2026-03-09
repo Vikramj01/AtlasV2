@@ -148,11 +148,8 @@ export async function capturePage(
         return undefined;
       });
 
-      // If upload succeeded, clear base64 from memory — sessionOrchestrator will
-      // re-fetch via signed URL when needed. Keep it only for standalone/test usage.
-      if (screenshot_storage_path) {
-        screenshot_base64_out = '';
-      }
+      // Keep base64 in memory — sessionOrchestrator needs it for the AI vision call
+      // that happens immediately after capture in the same scanOnePage() invocation.
     }
 
     return {
