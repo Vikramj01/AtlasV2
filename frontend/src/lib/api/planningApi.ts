@@ -9,6 +9,7 @@ import type {
   ListSessionsResponse,
   HandoffResponse,
   UserDecision,
+  PlanningRecommendation,
 } from '@/types/planning';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
@@ -60,6 +61,24 @@ export const planningApi = {
 
   getRecommendations(sessionId: string): Promise<GetRecommendationsResponse> {
     return apiFetch(`/api/planning/sessions/${sessionId}/recommendations`);
+  },
+
+  createRecommendation(
+    sessionId: string,
+    body: {
+      page_id: string;
+      action_type: string;
+      event_name: string;
+      element_selector?: string;
+      element_text?: string;
+      business_justification?: string;
+      affected_platforms?: string[];
+    },
+  ): Promise<PlanningRecommendation> {
+    return apiFetch(`/api/planning/sessions/${sessionId}/recommendations`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
   },
 
   updateDecision(

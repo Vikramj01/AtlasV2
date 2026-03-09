@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { planningApi } from '@/lib/api/planningApi';
 import { usePlanningStore } from '@/store/planningStore';
-import type { PlanningRecommendation } from '@/types/planning';
 
 interface CustomElementFormProps {
   sessionId: string;
@@ -50,42 +49,17 @@ export function CustomElementForm({ sessionId, pageId, onClose }: CustomElementF
     setIsSaving(true);
     setError('');
     try {
-      // Record as a pre-approved manual recommendation via the decision endpoint.
-      // We first use the generate endpoint pattern — but since there's no dedicated
-      // "add custom recommendation" endpoint yet, we create it client-side and
-      // immediately record a decision via PATCH.
-      //
-      // For MVP: create a synthetic recommendation object locally and mark it approved.
-      // The backend will treat manually-sourced recs just like AI ones in the generator.
-      //
-      // A proper implementation would POST to /recommendations to persist first;
-      // for now we optimistically add to store and record a decision.
-      const syntheticId = `manual-${Date.now()}`;
-      const newRec: PlanningRecommendation = {
-        id: syntheticId,
+      const savedRec = await planningApi.createRecommendation(sessionId, {
         page_id: pageId,
-        element_selector: selector || null,
-        element_text: elementText || null,
-        element_type: null,
         action_type: actionType,
         event_name: eventName.trim(),
-        required_params: [],
-        optional_params: [],
-        bbox_x: null,
-        bbox_y: null,
-        bbox_width: null,
-        bbox_height: null,
-        confidence_score: 1,
+        element_selector: selector || undefined,
+        element_text: elementText || undefined,
         business_justification: justification || `Manually added: ${eventName.trim()}`,
         affected_platforms: [],
-        user_decision: 'approved',
-        modified_config: null,
-        decided_at: new Date().toISOString(),
-        source: 'manual',
-        created_at: new Date().toISOString(),
-      };
+      });
 
-      setRecommendations([...recommendations, newRec]);
+      setRecommendations([...recommendations, savedRec]);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add element');
