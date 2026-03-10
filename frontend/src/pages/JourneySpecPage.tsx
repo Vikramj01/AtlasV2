@@ -105,10 +105,17 @@ export function JourneySpecPage() {
 
   if (error || !details) {
     return (
-      <div className="mx-auto max-w-3xl px-6 py-10">
-        <p className="text-sm text-red-600">{error ?? 'Journey not found'}</p>
-        <Link to="/journey/new" className="mt-4 inline-block text-sm text-brand-600 hover:underline">
-          Start a new journey
+      <div className="mx-auto max-w-2xl px-6 py-20 text-center">
+        <div className="mb-4 text-5xl">🔍</div>
+        <h2 className="mb-2 text-lg font-bold text-gray-900">No audit found</h2>
+        <p className="mb-6 text-sm text-gray-500">
+          No audit exists for this journey yet. Would you like to start one?
+        </p>
+        <Link
+          to="/journey/new"
+          className="inline-block rounded-lg bg-brand-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-brand-700"
+        >
+          Start a New Audit
         </Link>
       </div>
     );
