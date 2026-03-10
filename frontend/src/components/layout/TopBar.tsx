@@ -1,10 +1,14 @@
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
 
-const PLAN_BADGE: Record<string, string> = {
-  free:   'bg-gray-100 text-gray-600',
-  pro:    'bg-brand-100 text-brand-700',
-  agency: 'bg-purple-100 text-purple-700',
+const PLAN_BADGE_CLASS: Record<string, string> = {
+  free:   'bg-gray-100 text-gray-600 hover:bg-gray-100',
+  pro:    'bg-brand-100 text-brand-700 hover:bg-brand-100',
+  agency: 'bg-purple-100 text-purple-700 hover:bg-purple-100',
 };
 
 interface Props {
@@ -21,27 +25,24 @@ export function TopBar({ email, plan = 'free' }: Props) {
   };
 
   return (
-    <header className="flex h-14 items-center justify-between border-b border-gray-200 bg-white px-6">
+    <header className="flex h-14 items-center justify-between border-b bg-background px-6">
       <div />
 
-      <div className="flex items-center gap-4">
-        {/* Plan badge */}
-        <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${PLAN_BADGE[plan] ?? PLAN_BADGE.free}`}>
+      <div className="flex items-center gap-3">
+        <Badge className={cn('capitalize', PLAN_BADGE_CLASS[plan] ?? PLAN_BADGE_CLASS.free)}>
           {plan}
-        </span>
+        </Badge>
 
-        {/* User email */}
         {email && (
-          <span className="text-sm text-gray-500 hidden sm:block">{email}</span>
+          <>
+            <Separator orientation="vertical" className="h-4" />
+            <span className="text-sm text-muted-foreground hidden sm:block">{email}</span>
+          </>
         )}
 
-        {/* Sign out */}
-        <button
-          onClick={handleSignOut}
-          className="text-sm text-gray-400 hover:text-gray-700 transition-colors"
-        >
+        <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-muted-foreground">
           Sign out
-        </button>
+        </Button>
       </div>
     </header>
   );

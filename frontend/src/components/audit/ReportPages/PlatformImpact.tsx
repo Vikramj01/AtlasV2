@@ -1,13 +1,16 @@
+import { cn } from '@/lib/utils';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Separator } from '@/components/ui/separator';
 import type { ReportJSON, PlatformBreakdown, ValidationResult } from '@/types/audit';
 import { PLATFORM_LABELS } from '@/utils/languageMap';
 
 const PLATFORM_STATUS_CONFIG = {
-  healthy:  { badge: 'bg-green-100 text-green-700',  label: 'Healthy' },
-  at_risk:  { badge: 'bg-yellow-100 text-yellow-700', label: 'At Risk' },
-  broken:   { badge: 'bg-red-100 text-red-700',       label: 'Broken' },
+  healthy:  { badge: 'bg-green-100 text-green-700 hover:bg-green-100',  label: 'Healthy' },
+  at_risk:  { badge: 'bg-yellow-100 text-yellow-700 hover:bg-yellow-100', label: 'At Risk' },
+  broken:   { badge: 'bg-red-100 text-red-700 hover:bg-red-100',         label: 'Broken' },
 };
 
-// Map rule_id to pass/fail labels so the text always matches the icon
 const RULE_LABELS: Record<string, { pass: string; fail: string }> = {
   GA4_PURCHASE_EVENT_FIRED:                { pass: 'Purchase event detected',                  fail: 'Purchase event not detected' },
   META_PIXEL_PURCHASE_EVENT_FIRED:         { pass: 'Pixel purchase event detected',             fail: 'Pixel purchase event not detected' },
@@ -46,7 +49,6 @@ function PlatformCard({ platform, validationResults }: PlatformCardProps) {
   const cfg = PLATFORM_STATUS_CONFIG[platform.status];
   const label = PLATFORM_LABELS[platform.platform] ?? platform.platform;
 
-  // Show a curated checklist for known platforms
   const platformRuleMap: Record<string, string[]> = {
     google_ads: [
       'GOOGLE_ADS_CONVERSION_EVENT_FIRED', 'GCLID_CAPTURED_AT_LANDING',
@@ -70,62 +72,58 @@ function PlatformCard({ platform, validationResults }: PlatformCardProps) {
   const resultMap = new Map(validationResults.map((r) => [r.rule_id, r]));
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h3 className="text-base font-semibold text-gray-900">{label}</h3>
-        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${cfg.badge}`}>
-          {cfg.label}
-        </span>
-      </div>
-
-      {/* Risk summary */}
-      <p className="mt-2 text-sm text-gray-600">{platform.risk_explanation}</p>
-
-      {/* Checklist */}
-      {ruleIds.length > 0 && (
-        <ul className="mt-4 space-y-2">
-          {ruleIds.map((ruleId) => {
-            const result = resultMap.get(ruleId);
-            // Skip rules for which we have no result data at all
-            if (!result) return null;
-
-            const status = result.status;
-            const pass = status === 'pass';
-            const warn = status === 'warning';
-            // Warnings mean the check partially passed, so use the positive label
-            const usePassLabel = pass || warn;
-
-            return (
-              <li key={ruleId} className="flex items-center gap-2.5 text-sm">
-                <span
-                  className={`shrink-0 text-base leading-none ${
-                    pass ? 'text-green-500' : warn ? 'text-yellow-500' : 'text-red-500'
-                  }`}
-                  aria-hidden="true"
-                >
-                  {pass ? '✔' : warn ? '⚠' : '✖'}
-                </span>
-                <span className={pass ? 'text-gray-700' : 'text-gray-900 font-medium'}>
-                  {RULE_LABELS[ruleId]
-                    ? (usePassLabel ? RULE_LABELS[ruleId].pass : RULE_LABELS[ruleId].fail)
-                    : ruleId}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-
-      {/* CTA if there are issues */}
-      {platform.failed_rules.length > 0 && (
-        <div className="mt-4 pt-3 border-t border-gray-100">
-          <a href="#issues" className="text-sm font-medium text-brand-600 hover:text-brand-700">
-            View fixes for {label} →
-          </a>
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base">{label}</CardTitle>
+          <Badge className={cfg.badge}>{cfg.label}</Badge>
         </div>
+        <p className="text-sm text-muted-foreground">{platform.risk_explanation}</p>
+      </CardHeader>
+
+      {ruleIds.length > 0 && (
+        <CardContent>
+          <ul className="space-y-2">
+            {ruleIds.map((ruleId) => {
+              const result = resultMap.get(ruleId);
+              if (!result) return null;
+
+              const pass = result.status === 'pass';
+              const warn = result.status === 'warning';
+              const usePassLabel = pass || warn;
+
+              return (
+                <li key={ruleId} className="flex items-center gap-2.5 text-sm">
+                  <span
+                    className={cn(
+                      'shrink-0 text-base leading-none',
+                      pass ? 'text-green-500' : warn ? 'text-yellow-500' : 'text-red-500'
+                    )}
+                    aria-hidden="true"
+                  >
+                    {pass ? '✔' : warn ? '⚠' : '✖'}
+                  </span>
+                  <span className={pass ? 'text-muted-foreground' : 'font-medium'}>
+                    {RULE_LABELS[ruleId]
+                      ? (usePassLabel ? RULE_LABELS[ruleId].pass : RULE_LABELS[ruleId].fail)
+                      : ruleId}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+
+          {platform.failed_rules.length > 0 && (
+            <>
+              <Separator className="mt-4" />
+              <a href="#issues" className="mt-3 block text-sm font-medium text-brand-600 hover:text-brand-700">
+                View fixes for {label} →
+              </a>
+            </>
+          )}
+        </CardContent>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -140,8 +138,8 @@ export function PlatformImpact({ report }: Props) {
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="text-lg font-semibold text-gray-900">Platform Impact</h2>
-        <p className="mt-1 text-sm text-gray-500">
+        <h2 className="text-lg font-semibold">Platform Impact</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
           How signal issues affect each advertising platform.
         </p>
       </div>
@@ -155,9 +153,11 @@ export function PlatformImpact({ report }: Props) {
       ))}
 
       {platform_breakdown.length === 0 && (
-        <div className="rounded-xl border border-gray-200 bg-white p-8 text-center">
-          <p className="text-sm text-gray-400">No platform data available.</p>
-        </div>
+        <Card>
+          <CardContent className="p-8 text-center">
+            <p className="text-sm text-muted-foreground">No platform data available.</p>
+          </CardContent>
+        </Card>
       )}
     </div>
   );

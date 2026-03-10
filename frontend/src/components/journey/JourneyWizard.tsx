@@ -1,3 +1,4 @@
+import { Card, CardContent } from '@/components/ui/card';
 import { WizardProgress } from './WizardProgress';
 import { Step1BusinessType } from './Step1BusinessType';
 import { Step2JourneyEditor } from './Step2JourneyEditor';
@@ -20,12 +21,14 @@ export function JourneyWizard() {
     <div className="mx-auto max-w-2xl px-4 py-10">
       <WizardProgress currentStep={currentStep} />
 
-      <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-        {currentStep === 1 && <Step1BusinessType onNext={next} />}
-        {currentStep === 2 && <Step2JourneyEditor onNext={next} onBack={back} />}
-        {currentStep === 3 && <Step3PlatformSelector onNext={next} onBack={back} />}
-        {currentStep === 4 && <Step4Review onBack={back} />}
-      </div>
+      <Card>
+        <CardContent className="p-6">
+          {currentStep === 1 && <Step1BusinessType onNext={next} />}
+          {currentStep === 2 && <Step2JourneyEditor onNext={next} onBack={back} />}
+          {currentStep === 3 && <Step3PlatformSelector onNext={next} onBack={back} />}
+          {currentStep === 4 && <Step4Review onBack={back} />}
+        </CardContent>
+      </Card>
     </div>
   );
 }

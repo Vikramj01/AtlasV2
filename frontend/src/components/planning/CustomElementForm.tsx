@@ -1,4 +1,9 @@
 import { useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { planningApi } from '@/lib/api/planningApi';
 import { usePlanningStore } from '@/store/planningStore';
 
@@ -34,12 +39,9 @@ export function CustomElementForm({ sessionId, pageId, onClose }: CustomElementF
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
 
-  // Derive a sensible default event name when action type changes
   function handleActionTypeChange(value: string) {
     setActionType(value);
-    if (!eventName) {
-      setEventName(value.replace('_', ''));
-    }
+    if (!eventName) setEventName(value.replace('_', ''));
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -69,117 +71,96 @@ export function CustomElementForm({ sessionId, pageId, onClose }: CustomElementF
   }
 
   return (
-    /* Backdrop */
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
       onClick={onClose}
     >
-      {/* Modal */}
       <div
-        className="w-full max-w-md overflow-hidden rounded-xl bg-white shadow-2xl"
+        className="w-full max-w-md overflow-hidden rounded-xl bg-background shadow-2xl border"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="border-b border-gray-100 px-5 py-4">
-          <h3 className="text-base font-bold text-gray-900">Add Custom Tracking Element</h3>
-          <p className="mt-0.5 text-xs text-gray-500">
+        <div className="border-b px-5 py-4">
+          <h3 className="text-base font-bold">Add Custom Tracking Element</h3>
+          <p className="mt-0.5 text-xs text-muted-foreground">
             Manually specify an element the AI didn't detect.
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4 px-5 py-5">
-          {/* Action type */}
-          <div>
-            <label className="mb-1 block text-xs font-medium text-gray-700">
-              Action type <span className="text-red-500">*</span>
-            </label>
-            <select
-              value={actionType}
-              onChange={(e) => handleActionTypeChange(e.target.value)}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-            >
-              {ACTION_TYPES.map(({ value, label }) => (
-                <option key={value} value={value}>{label}</option>
-              ))}
-            </select>
+          <div className="space-y-1.5">
+            <Label>Action type <span className="text-destructive">*</span></Label>
+            <Select value={actionType} onValueChange={handleActionTypeChange}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ACTION_TYPES.map(({ value, label }) => (
+                  <SelectItem key={value} value={value}>{label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
-          {/* Event name */}
-          <div>
-            <label className="mb-1 block text-xs font-medium text-gray-700">
-              Event name <span className="text-red-500">*</span>
-            </label>
-            <input
+          <div className="space-y-1.5">
+            <Label>Event name <span className="text-destructive">*</span></Label>
+            <Input
               type="text"
               value={eventName}
               onChange={(e) => setEventName(e.target.value)}
               placeholder="e.g. cta_click"
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
             />
           </div>
 
-          {/* CSS selector (optional) */}
-          <div>
-            <label className="mb-1 block text-xs font-medium text-gray-700">
-              CSS selector{' '}
-              <span className="text-xs font-normal text-gray-400">(optional)</span>
-            </label>
-            <input
+          <div className="space-y-1.5">
+            <Label>
+              CSS selector <span className="text-xs font-normal text-muted-foreground">(optional)</span>
+            </Label>
+            <Input
               type="text"
               value={selector}
               onChange={(e) => setSelector(e.target.value)}
               placeholder="#submit-btn or .cta-button"
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+              className="font-mono"
             />
           </div>
 
-          {/* Element text (optional) */}
-          <div>
-            <label className="mb-1 block text-xs font-medium text-gray-700">
-              Element text{' '}
-              <span className="text-xs font-normal text-gray-400">(optional)</span>
-            </label>
-            <input
+          <div className="space-y-1.5">
+            <Label>
+              Element text <span className="text-xs font-normal text-muted-foreground">(optional)</span>
+            </Label>
+            <Input
               type="text"
               value={elementText}
               onChange={(e) => setElementText(e.target.value)}
               placeholder="e.g. Get Started Free"
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
             />
           </div>
 
-          {/* Business justification (optional) */}
-          <div>
-            <label className="mb-1 block text-xs font-medium text-gray-700">
-              Why track this?{' '}
-              <span className="text-xs font-normal text-gray-400">(optional)</span>
-            </label>
-            <textarea
+          <div className="space-y-1.5">
+            <Label>
+              Why track this? <span className="text-xs font-normal text-muted-foreground">(optional)</span>
+            </Label>
+            <Textarea
               value={justification}
               onChange={(e) => setJustification(e.target.value)}
               rows={2}
               placeholder="e.g. This CTA drives demo bookings which are our top conversion goal."
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
             />
           </div>
 
-          {error && <p className="text-xs text-red-600">{error}</p>}
+          {error && <p className="text-xs text-destructive">{error}</p>}
 
-          {/* Actions */}
           <div className="flex justify-end gap-2 pt-1">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
-            >
+            <Button type="button" variant="outline" onClick={onClose}>
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
               disabled={isSaving || !eventName.trim()}
-              className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+              className="bg-brand-600 hover:bg-brand-700"
             >
               {isSaving ? 'Adding…' : 'Add Element'}
-            </button>
+            </Button>
           </div>
         </form>
       </div>

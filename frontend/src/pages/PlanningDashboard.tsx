@@ -3,6 +3,9 @@ import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { planningApi } from '@/lib/api/planningApi';
 import { usePlanningStore } from '@/store/planningStore';
 import type { PlanningSession } from '@/types/planning';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 const STATUS_LABELS: Record<PlanningSession['status'], string> = {
   setup:         'Setup',
@@ -14,12 +17,12 @@ const STATUS_LABELS: Record<PlanningSession['status'], string> = {
 };
 
 const STATUS_COLORS: Record<PlanningSession['status'], string> = {
-  setup:         'bg-gray-100 text-gray-600',
-  scanning:      'bg-blue-100 text-blue-700',
-  review_ready:  'bg-yellow-100 text-yellow-700',
-  generating:    'bg-blue-100 text-blue-700',
-  outputs_ready: 'bg-green-100 text-green-700',
-  failed:        'bg-red-100 text-red-700',
+  setup:         'bg-gray-100 text-gray-600 hover:bg-gray-100',
+  scanning:      'bg-blue-100 text-blue-700 hover:bg-blue-100',
+  review_ready:  'bg-yellow-100 text-yellow-700 hover:bg-yellow-100',
+  generating:    'bg-blue-100 text-blue-700 hover:bg-blue-100',
+  outputs_ready: 'bg-green-100 text-green-700 hover:bg-green-100',
+  failed:        'bg-red-100 text-red-700 hover:bg-red-100',
 };
 
 export function PlanningDashboard() {
@@ -30,7 +33,6 @@ export function PlanningDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Detect plan-limit redirect from Step2 (passed via router state)
   const limitReached = (location.state as { limitReached?: boolean } | null)?.limitReached ?? false;
   const limitMessage = (location.state as { limitMessage?: string } | null)?.limitMessage ?? '';
 
@@ -67,103 +69,90 @@ export function PlanningDashboard() {
               Upgrade to <strong>Pro</strong> for 10 sessions/month, or <strong>Agency</strong> for unlimited.
             </p>
           </div>
-          <Link
-            to="/settings"
-            className="flex-shrink-0 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700"
-          >
-            Upgrade plan
-          </Link>
+          <Button asChild size="sm" className="flex-shrink-0 bg-amber-600 hover:bg-amber-700">
+            <Link to="/settings">Upgrade plan</Link>
+          </Button>
         </div>
       )}
 
       {/* Header */}
       <div className="mb-8 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Planning Mode</h1>
-          <p className="mt-1 text-sm text-gray-500">
+          <h1 className="text-2xl font-bold text-foreground">Planning Mode</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             Scan your website and get a ready-to-import GTM container with AI-recommended tracking.
           </p>
         </div>
-        <button
-          onClick={handleNew}
-          className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2"
-        >
+        <Button onClick={handleNew} className="bg-brand-600 hover:bg-brand-700">
           + New Plan
-        </button>
+        </Button>
       </div>
 
       {/* Body */}
       {isLoading && (
-        <div className="flex items-center justify-center py-20 text-sm text-gray-400">
+        <div className="flex items-center justify-center py-20 text-sm text-muted-foreground">
           Loading sessions…
         </div>
       )}
 
       {!isLoading && error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {error}
         </div>
       )}
 
       {!isLoading && !error && sessions.length === 0 && (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-gray-200 py-20 text-center">
-          <div className="mb-3 text-4xl text-gray-300">◎</div>
-          <p className="text-sm font-medium text-gray-500">No planning sessions yet</p>
-          <p className="mt-1 text-xs text-gray-400">
+        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-20 text-center">
+          <div className="mb-3 text-4xl text-muted-foreground/40">◎</div>
+          <p className="text-sm font-medium text-muted-foreground">No planning sessions yet</p>
+          <p className="mt-1 text-xs text-muted-foreground/60">
             Create your first plan to generate a GTM container and implementation guide.
           </p>
-          <button
-            onClick={handleNew}
-            className="mt-5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700"
-          >
+          <Button onClick={handleNew} className="mt-5 bg-brand-600 hover:bg-brand-700">
             Get Started
-          </button>
+          </Button>
         </div>
       )}
 
       {!isLoading && !error && sessions.length > 0 && (
-        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-                <th className="px-4 py-3">Website</th>
-                <th className="px-4 py-3">Type</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Created</th>
-                <th className="px-4 py-3"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
+        <div className="overflow-hidden rounded-xl border bg-background">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Website</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Created</TableHead>
+                <TableHead></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {sessions.map((s) => (
-                <tr key={s.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium text-gray-900">
-                    {s.website_url}
-                  </td>
-                  <td className="px-4 py-3 capitalize text-gray-500">
+                <TableRow key={s.id}>
+                  <TableCell className="font-medium">{s.website_url}</TableCell>
+                  <TableCell className="capitalize text-muted-foreground">
                     {s.business_type.replace('_', ' ')}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[s.status]}`}
-                    >
+                  </TableCell>
+                  <TableCell>
+                    <Badge className={STATUS_COLORS[s.status]}>
                       {STATUS_LABELS[s.status]}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-gray-500">
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
                     {new Date(s.created_at).toLocaleDateString()}
-                  </td>
-                  <td className="px-4 py-3 text-right">
+                  </TableCell>
+                  <TableCell className="text-right">
                     <button
                       onClick={() => handleOpen(s)}
                       className="text-xs font-medium text-brand-600 hover:text-brand-700"
                     >
                       Open →
                     </button>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
     </div>

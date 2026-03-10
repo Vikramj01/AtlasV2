@@ -9,6 +9,8 @@ import { Step4ReviewRecommendations } from '@/components/planning/Step4ReviewRec
 import { Step5TrackingPlanSummary } from '@/components/planning/Step5TrackingPlanSummary';
 import { Step6GeneratedOutputs } from '@/components/planning/Step6GeneratedOutputs';
 import { Step7DownloadAndHandoff } from '@/components/planning/Step7DownloadAndHandoff';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 // ── Step labels for progress bar ───────────────────────────────────────────────
 
@@ -42,13 +44,11 @@ export function PlanningModePage() {
     reset,
   } = usePlanningStore();
 
-  // Local state for fatal load errors (404 / wrong user)
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // When arriving at /planning/:sessionId, hydrate store from API
   useEffect(() => {
     if (!sessionId) return;
-    if (currentSession?.id === sessionId) return; // already loaded
+    if (currentSession?.id === sessionId) return;
 
     setLoading(true);
     setLoadError(null);
@@ -58,7 +58,6 @@ export function PlanningModePage() {
         setCurrentSession(session);
         setPages(pages);
 
-        // Route to the appropriate step based on session status
         switch (session.status) {
           case 'setup':
           case 'scanning':
@@ -72,7 +71,6 @@ export function PlanningModePage() {
             break;
           case 'outputs_ready':
             setStep(6);
-            // Prefetch recommendations + outputs
             planningApi.getRecommendations(sessionId).then(({ recommendations }) => {
               setRecommendations(recommendations);
             }).catch(() => {});
@@ -102,14 +100,14 @@ export function PlanningModePage() {
     navigate('/planning');
   }
 
-  // ── Loading overlay (initial hydration) ──────────────────────────────────
+  // ── Loading overlay ──────────────────────────────────────────────────────
 
   if (sessionId && isLoading && !currentSession) {
     return (
-      <div className="flex h-screen items-center justify-center bg-gray-50">
+      <div className="flex h-screen items-center justify-center bg-muted/30">
         <div className="flex flex-col items-center gap-3">
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-200 border-t-brand-600" />
-          <p className="text-sm text-gray-500">Loading session…</p>
+          <p className="text-sm text-muted-foreground">Loading session…</p>
         </div>
       </div>
     );
@@ -119,28 +117,28 @@ export function PlanningModePage() {
 
   if (loadError) {
     return (
-      <div className="flex h-screen flex-col items-center justify-center gap-4 bg-gray-50 p-8 text-center">
+      <div className="flex h-screen flex-col items-center justify-center gap-4 bg-muted/30 p-8 text-center">
         <div className="text-4xl">⚠️</div>
-        <h2 className="text-lg font-bold text-gray-900">Session not found</h2>
-        <p className="max-w-sm text-sm text-gray-500">{loadError}</p>
-        <button
+        <h2 className="text-lg font-bold text-foreground">Session not found</h2>
+        <p className="max-w-sm text-sm text-muted-foreground">{loadError}</p>
+        <Button
           onClick={() => { reset(); navigate('/planning'); }}
-          className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700"
+          className="bg-brand-600 hover:bg-brand-700"
         >
           Back to Dashboard
-        </button>
+        </Button>
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen flex-col bg-gray-50">
+    <div className="flex h-screen flex-col bg-muted/30">
       {/* Top bar */}
-      <header className="flex items-center justify-between border-b border-gray-200 bg-white px-6 py-4">
+      <header className="flex items-center justify-between border-b bg-background px-6 py-4">
         <div className="flex items-center gap-3">
-          <span className="text-lg font-bold text-gray-900">Atlas</span>
-          <span className="text-sm text-gray-400">/</span>
-          <span className="text-sm font-medium text-gray-600">Planning Mode</span>
+          <span className="text-lg font-bold text-foreground">Atlas</span>
+          <span className="text-sm text-muted-foreground/60">/</span>
+          <span className="text-sm font-medium text-muted-foreground">Planning Mode</span>
         </div>
 
         {/* Step progress */}
@@ -151,26 +149,28 @@ export function PlanningModePage() {
             return (
               <div key={n} className="flex items-center gap-1">
                 <div
-                  className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium transition-colors ${
+                  className={cn(
+                    'flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium transition-colors',
                     isDone
                       ? 'bg-brand-600 text-white'
                       : isCurrent
                       ? 'bg-brand-100 text-brand-700 ring-2 ring-brand-500'
-                      : 'bg-gray-100 text-gray-400'
-                  }`}
+                      : 'bg-muted text-muted-foreground'
+                  )}
                 >
                   {isDone ? '✓' : n}
                 </div>
                 <span
-                  className={`text-xs font-medium ${
-                    isCurrent ? 'text-brand-700' : isDone ? 'text-gray-500' : 'text-gray-300'
-                  }`}
+                  className={cn(
+                    'text-xs font-medium',
+                    isCurrent ? 'text-brand-700' : isDone ? 'text-muted-foreground' : 'text-muted-foreground/40'
+                  )}
                 >
                   {label}
                 </span>
                 {n < STEPS.length && (
                   <div
-                    className={`mx-1 h-px w-6 ${isDone ? 'bg-brand-300' : 'bg-gray-200'}`}
+                    className={cn('mx-1 h-px w-6', isDone ? 'bg-brand-300' : 'bg-border')}
                   />
                 )}
               </div>
@@ -178,16 +178,18 @@ export function PlanningModePage() {
           })}
         </nav>
 
-        <button
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={handleExit}
-          className="text-sm text-gray-400 hover:text-gray-600"
+          className="text-muted-foreground hover:text-foreground"
           aria-label="Exit wizard"
         >
           ✕ Exit
-        </button>
+        </Button>
       </header>
 
-      {/* Step content — steps 4–7 need full height for their layouts */}
+      {/* Step content */}
       <main className={`flex-1 ${currentStep >= 4 ? 'overflow-hidden' : 'overflow-y-auto'}`}>
         {currentStep === 1 && <Step1PlanningSetup />}
         {currentStep === 2 && <Step2PageDiscovery />}

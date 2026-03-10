@@ -4,6 +4,10 @@ import { getJourney } from '@/lib/api/journeyApi';
 import { auditApi } from '@/lib/api/auditApi';
 import type { JourneyWithDetails, StageStatus } from '@/types/journey';
 import { ScoreCard } from '@/components/common/ScoreCard';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -35,14 +39,14 @@ const STATUS_CONFIG: Record<StageStatus, { label: string; color: string; bg: str
   healthy:         { label: '✓ Healthy',         color: 'text-green-700',  bg: 'bg-green-50',  border: 'border-green-300' },
   issues_found:    { label: '⚠ Issues Found',    color: 'text-amber-700',  bg: 'bg-amber-50',  border: 'border-amber-300' },
   signals_missing: { label: '✗ Signals Missing', color: 'text-red-700',    bg: 'bg-red-50',    border: 'border-red-300' },
-  not_checked:     { label: '— Not Checked',     color: 'text-gray-500',   bg: 'bg-gray-50',   border: 'border-gray-200' },
+  not_checked:     { label: '— Not Checked',     color: 'text-muted-foreground', bg: 'bg-muted', border: 'border' },
 };
 
 const SEVERITY_CONFIG = {
-  critical: { label: 'Critical', cls: 'bg-red-100 text-red-700' },
-  high:     { label: 'High',     cls: 'bg-orange-100 text-orange-700' },
-  medium:   { label: 'Medium',   cls: 'bg-amber-100 text-amber-700' },
-  info:     { label: 'Info',     cls: 'bg-blue-100 text-blue-700' },
+  critical: { label: 'Critical', cls: 'bg-red-100 text-red-700 hover:bg-red-100' },
+  high:     { label: 'High',     cls: 'bg-orange-100 text-orange-700 hover:bg-orange-100' },
+  medium:   { label: 'Medium',   cls: 'bg-amber-100 text-amber-700 hover:bg-amber-100' },
+  info:     { label: 'Info',     cls: 'bg-blue-100 text-blue-700 hover:bg-blue-100' },
 };
 
 function effortLabel(effort: string) {
@@ -65,45 +69,45 @@ function GapCard({ gap }: { gap: Gap }) {
   }
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${sev.cls}`}>
-            {sev.label}
-          </span>
-          <span className="text-xs text-gray-500 uppercase tracking-wide">{gap.platform}</span>
-        </div>
-        <span className="text-xs text-gray-400">{effortLabel(gap.estimated_effort)} · {gap.fix_owner}</span>
-      </div>
-
-      <div className="space-y-2 text-sm">
-        <div>
-          <span className="font-medium text-gray-700">Expected: </span>
-          <span className="text-gray-600">{gap.expected}</span>
-        </div>
-        <div>
-          <span className="font-medium text-gray-700">Found: </span>
-          <span className="text-gray-600">{gap.found}</span>
-        </div>
-        <div className="rounded-lg bg-amber-50 border border-amber-100 px-3 py-2">
-          <span className="text-xs font-semibold text-amber-800">Business impact: </span>
-          <span className="text-xs text-amber-700">{gap.business_impact}</span>
-        </div>
-        {gap.fix_code && gap.fix_code.length > 10 && (
-          <div className="mt-2">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium text-gray-600">Fix:</span>
-              <button onClick={copy} className="text-xs text-brand-600 hover:text-brand-700">
-                {copied ? '✓ Copied' : 'Copy code'}
-              </button>
-            </div>
-            <pre className="rounded-lg bg-gray-900 text-green-300 text-xs p-3 overflow-x-auto whitespace-pre-wrap">
-              {gap.fix_code}
-            </pre>
+    <Card>
+      <CardContent className="pt-4">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <Badge className={sev.cls}>{sev.label}</Badge>
+            <span className="text-xs text-muted-foreground uppercase tracking-wide">{gap.platform}</span>
           </div>
-        )}
-      </div>
-    </div>
+          <span className="text-xs text-muted-foreground/60">{effortLabel(gap.estimated_effort)} · {gap.fix_owner}</span>
+        </div>
+
+        <div className="space-y-2 text-sm">
+          <div>
+            <span className="font-medium text-foreground">Expected: </span>
+            <span className="text-muted-foreground">{gap.expected}</span>
+          </div>
+          <div>
+            <span className="font-medium text-foreground">Found: </span>
+            <span className="text-muted-foreground">{gap.found}</span>
+          </div>
+          <div className="rounded-lg bg-amber-50 border border-amber-100 px-3 py-2">
+            <span className="text-xs font-semibold text-amber-800">Business impact: </span>
+            <span className="text-xs text-amber-700">{gap.business_impact}</span>
+          </div>
+          {gap.fix_code && gap.fix_code.length > 10 && (
+            <div className="mt-2">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-muted-foreground">Fix:</span>
+                <Button variant="ghost" size="sm" onClick={copy} className="h-auto py-0 px-1 text-xs text-brand-600 hover:text-brand-700">
+                  {copied ? '✓ Copied' : 'Copy code'}
+                </Button>
+              </div>
+              <pre className="rounded-lg bg-gray-900 text-green-300 text-xs p-3 overflow-x-auto whitespace-pre-wrap">
+                {gap.fix_code}
+              </pre>
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -121,20 +125,20 @@ function StageDetailPanel({ label, status, gaps }: { label: string; status: Stag
       >
         <div className="flex items-center gap-3">
           <span className={`text-sm font-semibold ${cfg.color}`}>{cfg.label}</span>
-          <span className="text-sm font-medium text-gray-800">{label}</span>
+          <span className="text-sm font-medium text-foreground">{label}</span>
         </div>
         <div className="flex items-center gap-2">
           {gaps.length > 0 && (
-            <span className="rounded-full bg-white/80 px-2 py-0.5 text-xs font-medium text-gray-700">
+            <span className="rounded-full bg-white/80 px-2 py-0.5 text-xs font-medium text-foreground">
               {gaps.length} issue{gaps.length !== 1 ? 's' : ''}
             </span>
           )}
-          <span className="text-gray-400 text-sm">{open ? '▲' : '▼'}</span>
+          <span className="text-muted-foreground text-sm">{open ? '▲' : '▼'}</span>
         </div>
       </button>
 
       {open && (
-        <div className="border-t border-gray-200 bg-white p-4 space-y-3">
+        <div className="border-t bg-background p-4 space-y-3">
           {gaps.length === 0 ? (
             <p className="text-sm text-green-700">
               {status === 'not_checked'
@@ -169,21 +173,15 @@ function ResultsSummaryBar({ allGaps }: { allGaps: Gap[] }) {
 
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 mb-6">
-      <span className="text-sm font-semibold text-gray-800">Issues found:</span>
+      <span className="text-sm font-semibold text-foreground">Issues found:</span>
       {critical > 0 && (
-        <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-semibold text-red-700">
-          {critical} Critical
-        </span>
+        <Badge className="bg-red-100 text-red-700 hover:bg-red-100">{critical} Critical</Badge>
       )}
       {high > 0 && (
-        <span className="rounded-full bg-orange-100 px-2.5 py-0.5 text-xs font-semibold text-orange-700">
-          {high} High
-        </span>
+        <Badge className="bg-orange-100 text-orange-700 hover:bg-orange-100">{high} High</Badge>
       )}
       {medium > 0 && (
-        <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
-          {medium} Medium
-        </span>
+        <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100">{medium} Medium</Badge>
       )}
       {critical > 0 && (
         <span className="text-xs text-red-700 ml-auto">
@@ -211,7 +209,6 @@ function NextSteps({
   const highGaps     = allGaps.filter((g) => g.severity === 'high');
   const isHealthy    = allGaps.length === 0;
 
-  // Group priority issues by fix owner
   const priorityGaps = [...criticalGaps, ...highGaps];
   const byOwner: Record<string, Gap[]> = {};
   for (const gap of priorityGaps) {
@@ -220,94 +217,95 @@ function NextSteps({
   }
 
   return (
-    <div className="mt-10 rounded-2xl border border-gray-200 bg-white p-6">
-      <h2 className="text-base font-bold text-gray-900 mb-1">What to do next</h2>
+    <Card className="mt-10">
+      <CardContent className="pt-6">
+        <h2 className="text-base font-bold text-foreground mb-1">What to do next</h2>
 
-      {isHealthy ? (
-        <div>
-          <p className="text-sm text-gray-600 mb-5">
-            Your tracking is firing correctly across all funnel stages. The next step is to hand
-            the <strong>Implementation Spec</strong> to your development team — it documents exactly
-            what each page needs to fire, and what parameters are required.
-          </p>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <Link
-              to={`/journey/${journeyId}/spec`}
-              className="flex flex-col gap-1 rounded-xl border-2 border-brand-500 bg-brand-50 px-4 py-3 hover:bg-brand-100 transition-colors"
-            >
-              <span className="text-sm font-semibold text-brand-700">View Implementation Spec</span>
-              <span className="text-xs text-brand-600">
-                Send to your dev team — per-page tracking code and requirements
-              </span>
-            </Link>
-            <button
-              onClick={onDownloadPDF}
-              className="flex flex-col gap-1 rounded-xl border border-gray-200 px-4 py-3 text-left hover:bg-gray-50 transition-colors"
-            >
-              <span className="text-sm font-semibold text-gray-700">Download PDF Report</span>
-              <span className="text-xs text-gray-500">
-                Share the full signal health report with stakeholders
-              </span>
-            </button>
-            <div className="flex flex-col gap-1 rounded-xl border border-gray-200 px-4 py-3 opacity-50 cursor-not-allowed">
-              <span className="text-sm font-semibold text-gray-700">Set Up Monitoring</span>
-              <span className="text-xs text-gray-400">Coming soon — alerts when signals break</span>
+        {isHealthy ? (
+          <div>
+            <p className="text-sm text-muted-foreground mb-5">
+              Your tracking is firing correctly across all funnel stages. The next step is to hand
+              the <strong>Implementation Spec</strong> to your development team — it documents exactly
+              what each page needs to fire, and what parameters are required.
+            </p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <Link
+                to={`/journey/${journeyId}/spec`}
+                className="flex flex-col gap-1 rounded-xl border-2 border-brand-500 bg-brand-50 px-4 py-3 hover:bg-brand-100 transition-colors"
+              >
+                <span className="text-sm font-semibold text-brand-700">View Implementation Spec</span>
+                <span className="text-xs text-brand-600">
+                  Send to your dev team — per-page tracking code and requirements
+                </span>
+              </Link>
+              <button
+                onClick={onDownloadPDF}
+                className="flex flex-col gap-1 rounded-xl border px-4 py-3 text-left hover:bg-muted/40 transition-colors"
+              >
+                <span className="text-sm font-semibold text-foreground">Download PDF Report</span>
+                <span className="text-xs text-muted-foreground">
+                  Share the full signal health report with stakeholders
+                </span>
+              </button>
+              <div className="flex flex-col gap-1 rounded-xl border px-4 py-3 opacity-50 cursor-not-allowed">
+                <span className="text-sm font-semibold text-foreground">Set Up Monitoring</span>
+                <span className="text-xs text-muted-foreground">Coming soon — alerts when signals break</span>
+              </div>
             </div>
           </div>
-        </div>
-      ) : (
-        <div>
-          <p className="text-sm text-gray-600 mb-5">
-            {criticalGaps.length > 0
-              ? `You have ${criticalGaps.length} critical issue${criticalGaps.length !== 1 ? 's' : ''} causing data loss right now. Fix these first, then re-run the audit.`
-              : `You have ${allGaps.length} issues to fix. Use the Implementation Spec to give your developers a reference for the correct tracking setup.`}
-          </p>
+        ) : (
+          <div>
+            <p className="text-sm text-muted-foreground mb-5">
+              {criticalGaps.length > 0
+                ? `You have ${criticalGaps.length} critical issue${criticalGaps.length !== 1 ? 's' : ''} causing data loss right now. Fix these first, then re-run the audit.`
+                : `You have ${allGaps.length} issues to fix. Use the Implementation Spec to give your developers a reference for the correct tracking setup.`}
+            </p>
 
-          {/* Priority fix list grouped by owner */}
-          {Object.keys(byOwner).length > 0 && (
-            <div className="mb-5 space-y-3">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-                Priority fixes — assign to your team
-              </h3>
-              {Object.entries(byOwner).map(([owner, gaps]) => (
-                <div key={owner} className="rounded-lg border border-gray-200 p-3">
-                  <p className="text-xs font-semibold text-gray-700 mb-2">{owner}</p>
-                  <ul className="space-y-1">
-                    {gaps.map((g, i) => (
-                      <li key={i} className="flex items-start gap-2 text-xs text-gray-600">
-                        <span className={`mt-0.5 shrink-0 rounded-full w-1.5 h-1.5 ${g.severity === 'critical' ? 'bg-red-500' : 'bg-orange-400'}`} />
-                        <span>{g.fix_description}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
+            {Object.keys(byOwner).length > 0 && (
+              <div className="mb-5 space-y-3">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Priority fixes — assign to your team
+                </h3>
+                {Object.entries(byOwner).map(([owner, gaps]) => (
+                  <div key={owner} className="rounded-lg border p-3">
+                    <p className="text-xs font-semibold text-foreground mb-2">{owner}</p>
+                    <ul className="space-y-1">
+                      {gaps.map((g, i) => (
+                        <li key={i} className="flex items-start gap-2 text-xs text-muted-foreground">
+                          <span className={cn('mt-0.5 shrink-0 rounded-full w-1.5 h-1.5', g.severity === 'critical' ? 'bg-destructive' : 'bg-orange-400')} />
+                          <span>{g.fix_description}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Link
+                to={`/journey/${journeyId}/spec`}
+                className="flex flex-col gap-1 rounded-xl border-2 border-brand-500 bg-brand-50 px-4 py-3 hover:bg-brand-100 transition-colors"
+              >
+                <span className="text-sm font-semibold text-brand-700">View Implementation Spec</span>
+                <span className="text-xs text-brand-600">
+                  The full per-page tracking code your dev team should implement to fix these gaps
+                </span>
+              </Link>
+              <button
+                onClick={onDownloadPDF}
+                className="flex flex-col gap-1 rounded-xl border px-4 py-3 text-left hover:bg-muted/40 transition-colors"
+              >
+                <span className="text-sm font-semibold text-foreground">Download PDF Report</span>
+                <span className="text-xs text-muted-foreground">
+                  Share with your team or client — includes all gaps and fix instructions
+                </span>
+              </button>
             </div>
-          )}
-
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Link
-              to={`/journey/${journeyId}/spec`}
-              className="flex flex-col gap-1 rounded-xl border-2 border-brand-500 bg-brand-50 px-4 py-3 hover:bg-brand-100 transition-colors"
-            >
-              <span className="text-sm font-semibold text-brand-700">View Implementation Spec</span>
-              <span className="text-xs text-brand-600">
-                The full per-page tracking code your dev team should implement to fix these gaps
-              </span>
-            </Link>
-            <button
-              onClick={onDownloadPDF}
-              className="flex flex-col gap-1 rounded-xl border border-gray-200 px-4 py-3 text-left hover:bg-gray-50 transition-colors"
-            >
-              <span className="text-sm font-semibold text-gray-700">Download PDF Report</span>
-              <span className="text-xs text-gray-500">
-                Share with your team or client — includes all gaps and fix instructions
-              </span>
-            </button>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -355,7 +353,7 @@ export function GapReportPage() {
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <p className="text-sm text-gray-500">Loading gap report…</p>
+        <p className="text-sm text-muted-foreground">Loading gap report…</p>
       </div>
     );
   }
@@ -363,7 +361,7 @@ export function GapReportPage() {
   if (error || !details) {
     return (
       <div className="mx-auto max-w-3xl px-6 py-10">
-        <p className="text-sm text-red-600">{error ?? 'Report not found'}</p>
+        <p className="text-sm text-destructive">{error ?? 'Report not found'}</p>
         <Link to="/journey/new" className="mt-4 inline-block text-sm text-brand-600 hover:underline">
           Start a new audit
         </Link>
@@ -373,7 +371,6 @@ export function GapReportPage() {
 
   const { journey, stages } = details;
 
-  // Build stage → gap result lookup by matching stage order
   const stageResultMap: Record<number, JourneyAuditResult> = {};
   for (const result of gapResults) {
     const stage = stages.find((s) => s.id === result.stage_id);
@@ -389,22 +386,16 @@ export function GapReportPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">Signal Health Report</h1>
-          <p className="mt-0.5 text-sm text-gray-500">{journey.name} · {stages.length} stages scanned</p>
+          <h1 className="text-xl font-bold text-foreground">Signal Health Report</h1>
+          <p className="mt-0.5 text-sm text-muted-foreground">{journey.name} · {stages.length} stages scanned</p>
         </div>
         <div className="flex gap-2">
-          <Link
-            to={`/journey/${id}/spec`}
-            className="rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50"
-          >
-            View Tracking Spec
-          </Link>
-          <button
-            onClick={downloadPDF}
-            className="rounded-lg bg-brand-600 px-3 py-2 text-xs font-semibold text-white hover:bg-brand-700"
-          >
+          <Button variant="outline" size="sm" asChild>
+            <Link to={`/journey/${id}/spec`}>View Tracking Spec</Link>
+          </Button>
+          <Button size="sm" onClick={downloadPDF} className="bg-brand-600 hover:bg-brand-700">
             Download PDF
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -441,10 +432,10 @@ export function GapReportPage() {
 
       {/* Funnel stage results */}
       <div className="mb-6">
-        <h2 className="text-sm font-semibold text-gray-700 mb-3">Journey Stage Results</h2>
+        <h2 className="text-sm font-semibold text-foreground mb-3">Journey Stage Results</h2>
 
         {/* Horizontal funnel overview */}
-        <div className="flex flex-wrap items-center gap-2 mb-4 p-4 rounded-xl bg-gray-50 border border-gray-200">
+        <div className="flex flex-wrap items-center gap-2 mb-4 p-4 rounded-xl bg-muted border">
           {stages.map((stage, i) => {
             const result = stageResultMap[stage.stage_order];
             const status: StageStatus = result?.stage_status ?? 'not_checked';
@@ -454,7 +445,7 @@ export function GapReportPage() {
                 <span className={`rounded-lg border px-2.5 py-1 text-xs font-medium ${cfg.color} ${cfg.bg} ${cfg.border}`}>
                   {stage.label}
                 </span>
-                {i < stages.length - 1 && <span className="text-gray-300">→</span>}
+                {i < stages.length - 1 && <span className="text-muted-foreground/40">→</span>}
               </span>
             );
           })}

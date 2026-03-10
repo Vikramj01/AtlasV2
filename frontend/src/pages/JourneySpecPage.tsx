@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { getJourney, getSpec } from '@/lib/api/journeyApi';
 import type { JourneyWithDetails } from '@/types/journey';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 interface SpecData {
   gtm?: unknown;
@@ -31,19 +33,19 @@ function CodeBlock({ code, label, filename }: { code: string; label: string; fil
   }
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-gray-50 overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 bg-white">
-        <span className="text-xs font-semibold text-gray-600">{label}</span>
+    <div className="rounded-xl border bg-muted/40 overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-2 border-b bg-background">
+        <span className="text-xs font-semibold text-muted-foreground">{label}</span>
         <div className="flex gap-3">
-          <button onClick={copy} className="text-xs text-brand-600 hover:text-brand-700 font-medium">
+          <Button variant="ghost" size="sm" onClick={copy} className="h-auto py-0 px-1 text-xs text-brand-600 hover:text-brand-700">
             {copied ? '✓ Copied' : 'Copy'}
-          </button>
-          <button onClick={download} className="text-xs text-gray-500 hover:text-gray-700">
+          </Button>
+          <Button variant="ghost" size="sm" onClick={download} className="h-auto py-0 px-1 text-xs text-muted-foreground hover:text-foreground">
             Download
-          </button>
+          </Button>
         </div>
       </div>
-      <pre className="p-4 text-xs text-gray-800 overflow-x-auto whitespace-pre-wrap max-h-96 leading-relaxed">
+      <pre className="p-4 text-xs text-foreground overflow-x-auto whitespace-pre-wrap max-h-96 leading-relaxed">
         {code}
       </pre>
     </div>
@@ -86,7 +88,6 @@ export function JourneySpecPage() {
           validation: validationSpec?.spec_data,
         });
 
-        // Default active tab based on chosen format
         const fmt = journeyDetails.journey.implementation_format;
         if (fmt === 'walkeros') setActiveTab('walkeros');
         else setActiveTab('gtm');
@@ -98,7 +99,7 @@ export function JourneySpecPage() {
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <p className="text-sm text-gray-500">Loading implementation spec…</p>
+        <p className="text-sm text-muted-foreground">Loading implementation spec…</p>
       </div>
     );
   }
@@ -107,16 +108,13 @@ export function JourneySpecPage() {
     return (
       <div className="mx-auto max-w-2xl px-6 py-20 text-center">
         <div className="mb-4 text-5xl">🔍</div>
-        <h2 className="mb-2 text-lg font-bold text-gray-900">No audit found</h2>
-        <p className="mb-6 text-sm text-gray-500">
+        <h2 className="mb-2 text-lg font-bold text-foreground">No audit found</h2>
+        <p className="mb-6 text-sm text-muted-foreground">
           No audit exists for this journey yet. Would you like to start one?
         </p>
-        <Link
-          to="/journey/new"
-          className="inline-block rounded-lg bg-brand-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-brand-700"
-        >
-          Start a New Audit
-        </Link>
+        <Button asChild className="bg-brand-600 hover:bg-brand-700">
+          <Link to="/journey/new">Start a New Audit</Link>
+        </Button>
       </div>
     );
   }
@@ -148,48 +146,49 @@ export function JourneySpecPage() {
           <div className="flex items-center gap-2 mb-1">
             <Link
               to={`/journey/${id}`}
-              className="text-xs text-gray-400 hover:text-gray-600"
+              className="text-xs text-muted-foreground/60 hover:text-muted-foreground"
             >
               ← Back to journey
             </Link>
           </div>
-          <h1 className="text-xl font-bold text-gray-900">Implementation Spec</h1>
-          <p className="mt-1 text-sm text-gray-500">
+          <h1 className="text-xl font-bold text-foreground">Implementation Spec</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             {stages.length} pages · generated for your developer
           </p>
         </div>
-        <button
+        <Button
           onClick={() => navigate(`/journey/${id}/audit/start`)}
-          className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
+          className="bg-brand-600 hover:bg-brand-700"
         >
           Run Audit →
-        </button>
+        </Button>
       </div>
 
       {/* Funnel breadcrumb */}
       <div className="mb-6 flex flex-wrap items-center gap-1.5">
         {stages.map((s, i) => (
           <span key={s.id} className="flex items-center gap-1.5">
-            <span className="rounded-lg bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">
+            <span className="rounded-lg bg-muted px-2.5 py-1 text-xs font-medium text-foreground">
               {s.label}
             </span>
-            {i < stages.length - 1 && <span className="text-gray-400 text-xs">→</span>}
+            {i < stages.length - 1 && <span className="text-muted-foreground/40 text-xs">→</span>}
           </span>
         ))}
       </div>
 
       {/* Tabs */}
-      <div className="border-b border-gray-200 mb-6">
+      <div className="border-b mb-6">
         <div className="flex gap-6">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`pb-2 text-sm font-medium border-b-2 transition-colors ${
+              className={cn(
+                'pb-2 text-sm font-medium border-b-2 transition-colors',
                 activeTab === tab.id
                   ? 'border-brand-600 text-brand-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              )}
             >
               {tab.label}
               {tab.id === journey.implementation_format && (
@@ -218,12 +217,12 @@ export function JourneySpecPage() {
               code={gtmSpec.global_setup}
             />
           ) : (
-            <p className="text-xs text-gray-400 italic">GTM container snippet not generated.</p>
+            <p className="text-xs text-muted-foreground italic">GTM container snippet not generated.</p>
           )}
 
           {(gtmSpec?.stages ?? []).length > 0 ? (
             <>
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                 Step 2 — Per-page dataLayer events
               </p>
               {(gtmSpec?.stages ?? []).map((stage, i) => (
@@ -236,7 +235,7 @@ export function JourneySpecPage() {
               ))}
             </>
           ) : (
-            <p className="text-xs text-gray-400 italic">No per-page events generated. Run the spec generator first.</p>
+            <p className="text-xs text-muted-foreground italic">No per-page events generated. Run the spec generator first.</p>
           )}
         </div>
       )}
@@ -257,12 +256,12 @@ export function JourneySpecPage() {
               code={JSON.stringify(walkerosSpec.flow_json, null, 2)}
             />
           ) : (
-            <p className="text-xs text-gray-400 italic">WalkerOS flow.json not generated.</p>
+            <p className="text-xs text-muted-foreground italic">WalkerOS flow.json not generated.</p>
           )}
 
           {(walkerosSpec?.elb_tags ?? []).length > 0 && (
             <>
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mt-4">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mt-4">
                 Per-page elb attribute tags
               </p>
               {(walkerosSpec?.elb_tags ?? []).map((tag, i) => (
@@ -294,9 +293,9 @@ export function JourneySpecPage() {
               code={JSON.stringify(specs.validation, null, 2)}
             />
           ) : (
-            <div className="rounded-xl border border-gray-200 bg-gray-50 p-6 text-center">
-              <p className="text-sm text-gray-500">Validation spec not available yet.</p>
-              <p className="text-xs text-gray-400 mt-1">
+            <div className="rounded-xl border bg-muted/40 p-6 text-center">
+              <p className="text-sm text-muted-foreground">Validation spec not available yet.</p>
+              <p className="text-xs text-muted-foreground/60 mt-1">
                 It will appear here after your first audit run.
               </p>
             </div>

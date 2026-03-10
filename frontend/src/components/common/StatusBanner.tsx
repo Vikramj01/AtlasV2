@@ -1,3 +1,5 @@
+import { cn } from '@/lib/utils';
+
 type OverallStatus = 'healthy' | 'partially_broken' | 'critical';
 
 const CONFIG: Record<OverallStatus, { icon: string; headline: string; bg: string; border: string; text: string }> = {
@@ -32,10 +34,10 @@ interface Props {
 export function StatusBanner({ status, summary }: Props) {
   const c = CONFIG[status];
   return (
-    <div className={`rounded-xl border-2 ${c.border} ${c.bg} px-6 py-5`}>
+    <div className={cn('rounded-xl border-2 px-6 py-5', c.border, c.bg)}>
       <div className="flex items-center gap-3">
         <span className="text-2xl" aria-hidden="true">{c.icon}</span>
-        <h2 className={`text-xl font-bold ${c.text}`}>{c.headline}</h2>
+        <h2 className={cn('text-xl font-bold', c.text)}>{c.headline}</h2>
       </div>
       <p className="mt-2 text-sm text-gray-700 leading-relaxed">{summary}</p>
     </div>

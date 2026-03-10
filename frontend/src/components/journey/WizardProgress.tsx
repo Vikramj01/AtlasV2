@@ -1,3 +1,5 @@
+import { cn } from '@/lib/utils';
+
 interface WizardProgressProps {
   currentStep: 1 | 2 | 3 | 4;
 }
@@ -16,22 +18,26 @@ export function WizardProgress({ currentStep }: WizardProgressProps) {
         <div key={step.number} className="flex items-center">
           <div className="flex flex-col items-center">
             <div
-              className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold transition-colors ${
+              className={cn(
+                'w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold transition-colors',
                 step.number < currentStep
                   ? 'bg-green-500 text-white'
                   : step.number === currentStep
                   ? 'bg-brand-600 text-white'
-                  : 'bg-gray-200 text-gray-500'
-              }`}
+                  : 'bg-muted text-muted-foreground'
+              )}
             >
               {step.number < currentStep ? '✓' : step.number}
             </div>
-            <span className={`mt-1 text-xs ${step.number === currentStep ? 'text-brand-600 font-medium' : 'text-gray-500'}`}>
+            <span className={cn(
+              'mt-1 text-xs',
+              step.number === currentStep ? 'text-brand-600 font-medium' : 'text-muted-foreground'
+            )}>
               {step.label}
             </span>
           </div>
           {i < STEPS.length - 1 && (
-            <div className={`w-16 h-0.5 mx-2 mb-4 ${step.number < currentStep ? 'bg-green-500' : 'bg-gray-200'}`} />
+            <div className={cn('w-16 h-0.5 mx-2 mb-4', step.number < currentStep ? 'bg-green-500' : 'bg-border')} />
           )}
         </div>
       ))}

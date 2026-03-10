@@ -1,5 +1,6 @@
 import { StatusBanner } from '@/components/common/StatusBanner';
 import { ScoreCard } from '@/components/common/ScoreCard';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { ReportJSON } from '@/types/audit';
 
 function scoreColor(score: number): 'green' | 'yellow' | 'red' {
@@ -18,13 +19,11 @@ export function ExecutiveSummary({ report }: Props) {
 
   return (
     <div className="space-y-6">
-      {/* Status banner */}
       <StatusBanner
         status={executive_summary.overall_status}
         summary={executive_summary.business_summary}
       />
 
-      {/* 4 metric cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <ScoreCard
           title="Conversion Signal Health"
@@ -74,17 +73,17 @@ export function ExecutiveSummary({ report }: Props) {
         />
       </div>
 
-      {/* Business impact */}
-      <div className="rounded-xl border border-gray-200 bg-white p-6">
-        <h3 className="mb-3 text-base font-semibold text-gray-900">
-          What This Means for Your Performance
-        </h3>
-        <p className="text-sm leading-relaxed text-gray-600">
-          {executive_summary.business_summary}
-        </p>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">What This Means for Your Performance</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            {executive_summary.business_summary}
+          </p>
+        </CardContent>
+      </Card>
 
-      {/* Perfect score empty state */}
       {executive_summary.overall_status === 'healthy' && (
         <div className="rounded-xl border border-green-200 bg-green-50 p-5 text-center">
           <p className="font-semibold text-green-800">All signals are functioning correctly.</p>
