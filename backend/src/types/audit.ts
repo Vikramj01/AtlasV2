@@ -194,4 +194,6 @@ export interface AuditRow {
   created_at: string;
   completed_at?: string;
   browserbase_session_id?: string;
+  test_email?: string;
+  test_phone?: string;
 }
