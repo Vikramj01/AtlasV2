@@ -8,6 +8,8 @@ import { generatePDF } from '@/services/export/pdfGenerator';
 import { auditQueue } from '@/services/queue/jobQueue';
 import type { FunnelType, Region } from '@/types/audit';
 import logger from '@/utils/logger';
+import { validateUrl, validateUrls } from '@/utils/urlValidator';
+import { sendInternalError } from '@/utils/apiError';
 
 interface AuthenticatedRequest extends Request {
   user: {
@@ -52,6 +54,19 @@ router.post('/start', auditLimiter, async (req: Request, res: Response) => {
     return;
   }
 
+  const websiteUrlResult = validateUrl(website_url);
+  if (!websiteUrlResult.valid) {
+    res.status(400).json({ error: `Invalid website_url: ${websiteUrlResult.error}` });
+    return;
+  }
+
+  const mapUrls = Object.values(url_map as Record<string, unknown>).filter((v) => typeof v === 'string');
+  const mapUrlError = validateUrls(mapUrls);
+  if (mapUrlError) {
+    res.status(400).json({ error: `Invalid URL in url_map: ${mapUrlError}` });
+    return;
+  }
+
   try {
     const audit = await createAudit({
       user_id: user.id,
@@ -68,8 +83,7 @@ router.post('/start', auditLimiter, async (req: Request, res: Response) => {
       funnel_type,
       region: region ?? 'us',
       url_map,
-      test_email,
-      test_phone,
+      // test_email / test_phone are stored in the audits DB row, not the queue
     });
 
     logger.info({ audit_id: audit.id, user_id: user.id }, 'Audit queued');
@@ -200,8 +214,7 @@ router.post('/start-from-journey', auditLimiter, async (req: Request, res: Respo
       funnel_type: 'ecommerce',
       region: 'us',
       url_map: {},
-      test_email,
-      test_phone,
+      // test_email / test_phone are stored in the audits DB row, not the queue
       journey_id,
       validation_spec: specRecord.spec_data,
     });
@@ -235,7 +248,7 @@ router.get('/:audit_id/gaps', async (req: Request, res: Response) => {
     .eq('audit_id', req.params.audit_id)
     .order('stage_id');
 
-  if (error) { res.status(500).json({ error: error.message }); return; }
+  if (error) { sendInternalError(res, error); return; }
   res.json(data ?? []);
 });
 

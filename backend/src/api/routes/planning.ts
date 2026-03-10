@@ -11,6 +11,8 @@ import type { Request, Response } from 'express';
 import { generateAllOutputs } from '@/services/planning/generators/outputGenerator';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { planningLimiter } from '../middleware/planningLimiter';
+import { validateUrl, validateUrls } from '@/utils/urlValidator';
+import { sendInternalError } from '@/utils/apiError';
 import { planningQueue } from '@/services/queue/jobQueue';
 import {
   createSession,
@@ -77,6 +79,17 @@ router.post('/sessions', planningLimiter, async (req: Request, res: Response) =>
       return res.status(400).json({ error: `business_type must be one of: ${validBusinessTypes.join(', ')}` });
     }
 
+    // Validate all URLs before touching the DB or enqueueing
+    const websiteUrlResult = validateUrl(website_url);
+    if (!websiteUrlResult.valid) {
+      return res.status(400).json({ error: `Invalid website_url: ${websiteUrlResult.error}` });
+    }
+
+    const pageUrlError = validateUrls(normalizedPages.map((p) => p.url));
+    if (pageUrlError) {
+      return res.status(400).json({ error: `Invalid page URL: ${pageUrlError}` });
+    }
+
     const userId = req.user!.id;
 
     // Create session
@@ -107,8 +120,7 @@ router.post('/sessions', planningLimiter, async (req: Request, res: Response) =>
       created_at: session.created_at,
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    res.status(500).json({ error: message });
+    sendInternalError(res, err);
   }
 });
 
@@ -119,7 +131,7 @@ router.get('/sessions', async (req: Request, res: Response) => {
     const sessions = await listSessions(req.user!.id);
     res.json({ sessions });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+    sendInternalError(res, err);
   }
 });
 
@@ -142,7 +154,7 @@ router.get('/sessions/:id', async (req: Request, res: Response) => {
       progress: { total: pages.length, completed, failed },
     });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+    sendInternalError(res, err);
   }
 });
 
@@ -177,7 +189,7 @@ router.get('/sessions/:id/recommendations', async (req: Request, res: Response) 
       by_page: byPage,
     });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+    sendInternalError(res, err);
   }
 });
 
@@ -210,7 +222,7 @@ router.post('/sessions/:id/recommendations', async (req: Request, res: Response)
     const approved = await updateRecommendationDecision(rec.id, 'approved', undefined);
     res.status(201).json(approved);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+    sendInternalError(res, err);
   }
 });
 
@@ -222,7 +234,7 @@ router.patch('/sessions/:id/recommendations/:recId', async (req: Request, res: R
     const session = await getSession(req.params.id, req.user!.id);
     if (!session) return res.status(404).json({ error: 'Session not found' });
 
-    const rec = await getRecommendation(req.params.recId);
+    const rec = await getRecommendation(req.params.recId, session.id);
     if (!rec) return res.status(404).json({ error: 'Recommendation not found' });
 
     const { user_decision, modified_config } = req.body as UpdateDecisionInput;
@@ -239,7 +251,7 @@ router.patch('/sessions/:id/recommendations/:recId', async (req: Request, res: R
 
     res.json(updated);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+    sendInternalError(res, err);
   }
 });
 
@@ -283,7 +295,7 @@ router.post('/sessions/:id/generate', async (req: Request, res: Response) => {
       })),
     });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+    sendInternalError(res, err);
   }
 });
 
@@ -297,7 +309,7 @@ router.get('/sessions/:id/outputs', async (req: Request, res: Response) => {
     const outputs = await getOutputs(session.id);
     res.json({ outputs });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+    sendInternalError(res, err);
   }
 });
 
@@ -328,7 +340,7 @@ router.get('/sessions/:id/outputs/:outputId/download', async (req: Request, res:
 
     res.status(404).json({ error: 'Output has no content yet' });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+    sendInternalError(res, err);
   }
 });
 
@@ -412,7 +424,7 @@ router.post('/sessions/:id/handoff', async (req: Request, res: Response) => {
 
     res.json({ journey_id: journey.id, message: 'Journey created from planning session.' });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+    sendInternalError(res, err);
   }
 });
 
@@ -424,14 +436,14 @@ router.get('/sessions/:id/pages/:pageId/screenshot', async (req: Request, res: R
     const session = await getSession(req.params.id, req.user!.id);
     if (!session) return res.status(404).json({ error: 'Session not found' });
 
-    const page = await getPageWithSignedUrl(req.params.pageId);
+    const page = await getPageWithSignedUrl(req.params.pageId, session.id);
     if (!page.screenshot_signed_url) {
       return res.status(404).json({ error: 'No screenshot available for this page' });
     }
 
     res.json({ signed_url: page.screenshot_signed_url, expires_in_seconds: 1800 });
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
+    sendInternalError(res, err);
   }
 });
 

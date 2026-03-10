@@ -148,11 +148,12 @@ export async function updatePage(
 }
 
 /** Convenience: get page with a fresh signed URL for its screenshot. */
-export async function getPageWithSignedUrl(pageId: string): Promise<PlanningPage & { screenshot_signed_url?: string }> {
+export async function getPageWithSignedUrl(pageId: string, sessionId: string): Promise<PlanningPage & { screenshot_signed_url?: string }> {
   const { data, error } = await supabase
     .from('planning_pages')
     .select('*')
     .eq('id', pageId)
+    .eq('session_id', sessionId)
     .single();
 
   if (error?.code === 'PGRST116') throw new Error('Page not found');
@@ -244,11 +245,12 @@ export async function getRecommendationsByPage(pageId: string): Promise<Planning
   return (data ?? []) as PlanningRecommendation[];
 }
 
-export async function getRecommendation(recId: string): Promise<PlanningRecommendation | null> {
+export async function getRecommendation(recId: string, sessionId: string): Promise<PlanningRecommendation | null> {
   const { data, error } = await supabase
     .from('planning_recommendations')
-    .select('*')
+    .select('*, planning_pages!inner(session_id)')
     .eq('id', recId)
+    .eq('planning_pages.session_id', sessionId)
     .single();
 
   if (error?.code === 'PGRST116') return null;

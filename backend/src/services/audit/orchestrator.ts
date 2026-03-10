@@ -4,7 +4,7 @@
 import type { AuditJobData } from '@/services/queue/jobQueue';
 import type { FunnelType, Region } from '@/types/audit';
 import type { ValidationSpec } from '@/types/journey';
-import { updateAuditStatus, saveValidationResults, saveReport } from '@/services/database/queries';
+import { updateAuditStatus, saveValidationResults, saveReport, getAudit } from '@/services/database/queries';
 import { createBrowserbaseSession, getCDPUrl } from '@/services/browserbase/client';
 import { simulateJourney } from './journeySimulator';
 import { simulateJourneyFromSpec } from './stageSimulator';
@@ -25,6 +25,12 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
     await updateAuditStatus(audit_id, 'running', { progress: 5 });
     logger.info({ audit_id, journey_id: data.journey_id }, 'Audit started');
 
+    // Load PII fields from DB rather than reading from the queue payload,
+    // so they are never stored in plaintext in Redis.
+    const auditRow = await getAudit(audit_id);
+    const test_email = auditRow?.test_email;
+    const test_phone = auditRow?.test_phone;
+
     const session = await createBrowserbaseSession();
     await updateAuditStatus(audit_id, 'running', { progress: 10, browserbase_session_id: session.id });
 
@@ -43,8 +49,8 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
         const stageCaptures = await simulateJourneyFromSpec(
           browser as Parameters<typeof simulateJourneyFromSpec>[0],
           spec,
-          data.test_email,
-          data.test_phone,
+          test_email,
+          test_phone,
         );
         await updateAuditStatus(audit_id, 'running', { progress: 50 });
         logger.info({ audit_id, stages: stageCaptures.length }, 'Stage simulation complete');
@@ -96,8 +102,8 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
           cookieSnapshots: [],
           localStorageSnapshots: [],
           injected: { gclid: '', fbclid: '' },
-          test_email: data.test_email,
-          test_phone: data.test_phone,
+          test_email: test_email,
+          test_phone: test_phone,
           urlParams: {},
           storage: firstCapture?.local_storage ?? {},
           cookies: firstCapture?.cookies ?? {},
@@ -136,8 +142,8 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
           funnel_type: data.funnel_type as FunnelType,
           region: (data.region ?? 'us') as Region,
           url_map: data.url_map,
-          test_email: data.test_email,
-          test_phone: data.test_phone,
+          test_email: test_email,
+          test_phone: test_phone,
         });
         await updateAuditStatus(audit_id, 'running', { progress: 50 });
         logger.info({ audit_id, events: auditData.dataLayer.length }, 'Journey simulation complete');
