@@ -8,6 +8,7 @@ import { PlatformImpact } from '@/components/audit/ReportPages/PlatformImpact';
 import { IssuesFixes } from '@/components/audit/ReportPages/IssuesFixes';
 import { TechnicalAppendix } from '@/components/audit/ReportPages/TechnicalAppendix';
 import { auditApi } from '@/lib/api/auditApi';
+import { Button } from '@/components/ui/button';
 
 export function ReportPage() {
   const { auditId } = useParams<{ auditId: string }>();
@@ -37,7 +38,7 @@ export function ReportPage() {
   if (loading) {
     return (
       <div className="flex h-full min-h-64 items-center justify-center">
-        <p className="text-sm text-gray-400">Loading report…</p>
+        <p className="text-sm text-muted-foreground">Loading report…</p>
       </div>
     );
   }
@@ -45,7 +46,7 @@ export function ReportPage() {
   if (error || !report) {
     return (
       <div className="flex h-full min-h-64 flex-col items-center justify-center gap-3">
-        <p className="text-sm text-red-600">{error ?? 'Report not found.'}</p>
+        <p className="text-sm text-destructive">{error ?? 'Report not found.'}</p>
         <Link to="/dashboard" className="text-sm font-medium text-brand-600 hover:underline">
           ← Back to dashboard
         </Link>
@@ -56,14 +57,14 @@ export function ReportPage() {
   return (
     <div className="flex flex-col min-h-full">
       {/* Report header */}
-      <div className="border-b border-gray-200 bg-white px-6 pt-5 pb-0">
+      <div className="border-b bg-background px-6 pt-5 pb-0">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2 text-sm text-gray-400 mb-1">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground/60 mb-1">
               <Link to="/dashboard" className="hover:text-brand-600">← Audits</Link>
             </div>
-            <h1 className="text-xl font-bold text-gray-900">Signal Health Report</h1>
-            <p className="mt-0.5 text-sm text-gray-500">
+            <h1 className="text-xl font-bold text-foreground">Signal Health Report</h1>
+            <p className="mt-0.5 text-sm text-muted-foreground">
               {new Date(report.generated_at).toLocaleDateString('en-US', {
                 year: 'numeric', month: 'long', day: 'numeric',
               })}
@@ -72,27 +73,31 @@ export function ReportPage() {
 
           {/* Export buttons */}
           <div className="flex flex-wrap items-center gap-2">
-            <button
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => handleExport('pdf', 'Marketing Report')}
               disabled={exporting}
-              className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
             >
               Download Marketing Report (PDF)
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => handleExport('json', 'Developer Report')}
               disabled={exporting}
-              className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
             >
               Download Developer Report
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               disabled
               title="Share link — coming soon"
-              className="rounded-lg border border-dashed border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-400 cursor-not-allowed"
+              className="border-dashed text-muted-foreground cursor-not-allowed"
             >
               Share Link
-            </button>
+            </Button>
           </div>
         </div>
 

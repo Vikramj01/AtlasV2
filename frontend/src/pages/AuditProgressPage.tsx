@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAuditStatus } from '@/hooks/useAudit';
 import { AuditProgressSteps } from '@/components/audit/AuditProgressSteps';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 
 function useElapsedTime(running: boolean) {
   const [seconds, setSeconds] = useState(0);
@@ -53,7 +56,7 @@ export function AuditProgressPage() {
   const barWidth = Math.max(4, progress);
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center px-6 py-16">
+    <div className="min-h-screen bg-muted/30 flex flex-col items-center justify-center px-6 py-16">
       <div className="w-full max-w-lg">
 
         {/* Header */}
@@ -64,13 +67,14 @@ export function AuditProgressPage() {
               <div className="absolute inset-0 animate-ping rounded-full bg-brand-100 opacity-75" />
             )}
             <div
-              className={`relative h-14 w-14 rounded-full flex items-center justify-center transition-colors ${
+              className={cn(
+                'relative h-14 w-14 rounded-full flex items-center justify-center transition-colors',
                 status === 'failed'
-                  ? 'bg-red-500'
+                  ? 'bg-destructive'
                   : status === 'completed'
                   ? 'bg-green-500'
                   : 'bg-brand-500'
-              }`}
+              )}
             >
               <span className="text-2xl text-white select-none">
                 {status === 'failed' ? '✕' : status === 'completed' ? '✓' : '◈'}
@@ -79,47 +83,50 @@ export function AuditProgressPage() {
           </div>
 
           <div className="text-center">
-            <h1 className="text-xl font-semibold text-gray-900">
+            <h1 className="text-xl font-semibold text-foreground">
               {STATUS_LABEL[status ?? 'queued'] ?? 'Initialising…'}
             </h1>
-            <p className="mt-1 text-sm text-gray-500">
+            <p className="mt-1 text-sm text-muted-foreground">
               This usually takes 3–5 minutes. You can keep this tab open.
             </p>
           </div>
         </div>
 
         {/* Timer + progress percent row */}
-        <div className="mb-2 flex items-center justify-between text-sm text-gray-500">
+        <div className="mb-2 flex items-center justify-between text-sm text-muted-foreground">
           <span className="font-mono tabular-nums">
-            <span className="mr-1 text-gray-400">⏱</span>
+            <span className="mr-1 text-muted-foreground/60">⏱</span>
             {elapsed}
           </span>
-          <span className="font-medium text-gray-700">{progress}%</span>
+          <span className="font-medium text-foreground">{progress}%</span>
         </div>
 
         {/* Progress bar */}
-        <div className="mb-6 h-2.5 w-full overflow-hidden rounded-full bg-gray-200">
+        <div className="mb-6 h-2.5 w-full overflow-hidden rounded-full bg-muted">
           <div
-            className={`h-full rounded-full transition-all duration-700 ease-in-out ${
-              status === 'failed' ? 'bg-red-500' : 'bg-brand-500'
-            }`}
+            className={cn(
+              'h-full rounded-full transition-all duration-700 ease-in-out',
+              status === 'failed' ? 'bg-destructive' : 'bg-brand-500'
+            )}
             style={{ width: `${barWidth}%` }}
           />
         </div>
 
         {/* Steps card */}
-        <div className="rounded-2xl border border-gray-200 bg-white shadow-sm p-6">
-          <p className="mb-4 text-xs font-semibold uppercase tracking-wider text-gray-400">
-            Audit stages
-          </p>
-          <AuditProgressSteps progress={progress} />
-        </div>
+        <Card>
+          <CardContent className="pt-6">
+            <p className="mb-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Audit stages
+            </p>
+            <AuditProgressSteps progress={progress} />
+          </CardContent>
+        </Card>
 
         {/* ETA hint */}
         {isRunning && progress > 0 && progress < 100 && (
-          <p className="mt-4 text-center text-xs text-gray-400">
+          <p className="mt-4 text-center text-xs text-muted-foreground/60">
             Estimated remaining:{' '}
-            <span className="font-medium text-gray-500">
+            <span className="font-medium text-muted-foreground">
               {Math.max(0, Math.round((100 - progress) / 5))} min
             </span>
           </p>
@@ -127,28 +134,32 @@ export function AuditProgressPage() {
 
         {/* Error state */}
         {status === 'failed' && (
-          <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4">
-            <p className="text-sm font-medium text-red-700">Audit failed</p>
-            <p className="mt-0.5 text-sm text-red-600">{error ?? 'An unexpected error occurred.'}</p>
-            <button
+          <div className="mt-4 rounded-xl border border-destructive/30 bg-destructive/10 p-4">
+            <p className="text-sm font-medium text-destructive">Audit failed</p>
+            <p className="mt-0.5 text-sm text-destructive/80">{error ?? 'An unexpected error occurred.'}</p>
+            <Button
+              variant="link"
+              size="sm"
               onClick={() => navigate('/journey/new')}
-              className="mt-3 text-sm font-medium text-red-700 hover:underline"
+              className="mt-2 h-auto p-0 text-destructive hover:text-destructive/80"
             >
               ← Start a new audit
-            </button>
+            </Button>
           </div>
         )}
 
         {/* Technical logs toggle */}
         <div className="mt-6 text-center">
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => setShowLogs(!showLogs)}
-            className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+            className="text-xs text-muted-foreground/60 hover:text-muted-foreground h-auto py-1"
           >
             {showLogs ? 'Hide' : 'View'} technical details
-          </button>
+          </Button>
           {showLogs && (
-            <div className="mt-3 rounded-lg border border-gray-100 bg-gray-50 p-3 text-left font-mono text-xs text-gray-500 space-y-0.5">
+            <div className="mt-3 rounded-lg border bg-muted p-3 text-left font-mono text-xs text-muted-foreground space-y-0.5">
               <p>Audit ID: {auditId}</p>
               <p>Journey ID: {journeyId ?? '—'}</p>
               <p>Status: {status ?? 'initialising'}</p>

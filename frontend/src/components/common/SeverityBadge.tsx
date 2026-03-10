@@ -1,3 +1,4 @@
+import { cn } from '@/lib/utils';
 import type { Severity } from '@/types/audit';
 
 const STYLES: Record<Severity, string> = {
@@ -27,10 +28,13 @@ interface Props {
 }
 
 export function SeverityBadge({ severity, size = 'md' }: Props) {
-  const textSize = size === 'sm' ? 'text-xs px-2 py-0.5' : 'text-sm px-2.5 py-1';
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full border font-medium ${textSize} ${STYLES[severity]}`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${DOT_STYLES[severity]}`} />
+    <span className={cn(
+      'inline-flex items-center gap-1.5 rounded-full border font-medium',
+      size === 'sm' ? 'text-xs px-2 py-0.5' : 'text-sm px-2.5 py-1',
+      STYLES[severity]
+    )}>
+      <span className={cn('h-1.5 w-1.5 rounded-full', DOT_STYLES[severity])} />
       {LABELS[severity]}
     </span>
   );

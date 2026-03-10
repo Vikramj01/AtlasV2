@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { cn } from '@/lib/utils';
 import { ACTION_TOGGLES } from '@/types/journey';
 import { useJourneyWizardStore } from '@/store/journeyWizardStore';
 
@@ -30,7 +31,7 @@ export function ActionToggles({ stageId, actions }: ActionTogglesProps) {
       </button>
 
       {open && (
-        <div className="mt-2 space-y-1.5 rounded-lg border border-gray-100 bg-gray-50 p-3">
+        <div className="mt-2 space-y-1.5 rounded-lg border bg-muted/40 p-3">
           {ACTION_TOGGLES.map((toggle) => {
             const isOn = actions.includes(toggle.key);
             return (
@@ -40,17 +41,19 @@ export function ActionToggles({ stageId, actions }: ActionTogglesProps) {
                   role="switch"
                   aria-checked={isOn}
                   onClick={() => toggleAction(stageId, toggle.key)}
-                  className={`relative h-5 w-9 flex-shrink-0 rounded-full transition-colors ${
-                    isOn ? 'bg-brand-500' : 'bg-gray-300'
-                  }`}
+                  className={cn(
+                    'relative h-5 w-9 flex-shrink-0 rounded-full transition-colors',
+                    isOn ? 'bg-brand-500' : 'bg-muted-foreground/30'
+                  )}
                 >
                   <span
-                    className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                    className={cn(
+                      'absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform',
                       isOn ? 'translate-x-4' : 'translate-x-0'
-                    }`}
+                    )}
                   />
                 </button>
-                <span className="text-xs text-gray-700">{toggle.label}</span>
+                <span className="text-xs text-muted-foreground">{toggle.label}</span>
               </label>
             );
           })}

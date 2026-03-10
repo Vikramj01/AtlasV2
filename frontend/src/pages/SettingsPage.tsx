@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Separator } from '@/components/ui/separator';
 
 const PLAN_CONFIG = {
   free: {
@@ -68,60 +71,62 @@ export function SettingsPage() {
   return (
     <div className="mx-auto max-w-2xl px-6 py-8 space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
-        <p className="mt-1 text-sm text-gray-500">Manage your account and plan.</p>
+        <h1 className="text-2xl font-bold text-foreground">Settings</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Manage your account and plan.</p>
       </div>
 
       {/* Account */}
-      <section className="rounded-xl border border-gray-200 bg-white">
-        <div className="border-b border-gray-100 px-6 py-4">
-          <h2 className="text-sm font-semibold text-gray-900">Account</h2>
-        </div>
-        <div className="px-6 py-5 space-y-4">
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold">Account</CardTitle>
+        </CardHeader>
+        <Separator />
+        <CardContent className="pt-5 space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Email</p>
-              <p className="mt-0.5 text-sm text-gray-900">{email}</p>
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Email</p>
+              <p className="mt-0.5 text-sm text-foreground">{email}</p>
             </div>
           </div>
-          <div className="pt-2 border-t border-gray-100">
-            <button
-              onClick={handleSignOut}
-              disabled={isSigningOut}
-              className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
-            >
-              {isSigningOut ? 'Signing out…' : 'Sign out'}
-            </button>
-          </div>
-        </div>
-      </section>
+          <Separator />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleSignOut}
+            disabled={isSigningOut}
+          >
+            {isSigningOut ? 'Signing out…' : 'Sign out'}
+          </Button>
+        </CardContent>
+      </Card>
 
       {/* Plan */}
-      <section className="rounded-xl border border-gray-200 bg-white">
-        <div className="border-b border-gray-100 px-6 py-4">
-          <h2 className="text-sm font-semibold text-gray-900">Plan</h2>
-        </div>
-        <div className="px-6 py-5">
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold">Plan</CardTitle>
+        </CardHeader>
+        <Separator />
+        <CardContent className="pt-5">
           {/* Current plan */}
           <div className="flex items-center gap-3 mb-6">
             <span className={`rounded-full px-3 py-1 text-xs font-semibold ${planInfo.badge}`}>
               {planInfo.label}
             </span>
-            <span className="text-sm text-gray-500">{planInfo.description}</span>
+            <span className="text-sm text-muted-foreground">{planInfo.description}</span>
           </div>
 
           {/* Upgrade options — shown only if not already on agency */}
           {plan !== 'agency' && (
             <div className="space-y-3">
-              <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Upgrade</p>
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Upgrade</p>
 
               {/* Pro */}
               {plan === 'free' && (
                 <div className="flex items-center justify-between rounded-lg border border-brand-200 bg-brand-50 px-4 py-4">
                   <div>
-                    <p className="text-sm font-semibold text-gray-900">
+                    <p className="text-sm font-semibold text-foreground">
                       Pro
-                      <span className="ml-2 text-xs font-normal text-gray-500">20 audits · 10 planning sessions / month</span>
+                      <span className="ml-2 text-xs font-normal text-muted-foreground">20 audits · 10 planning sessions / month</span>
                     </p>
                   </div>
                   <UpgradeButton priceEnvKey="VITE_STRIPE_PRICE_PRO" label="Upgrade to Pro" />
@@ -131,9 +136,9 @@ export function SettingsPage() {
               {/* Agency */}
               <div className="flex items-center justify-between rounded-lg border border-purple-200 bg-purple-50 px-4 py-4">
                 <div>
-                  <p className="text-sm font-semibold text-gray-900">
+                  <p className="text-sm font-semibold text-foreground">
                     Agency
-                    <span className="ml-2 text-xs font-normal text-gray-500">Unlimited audits · Unlimited planning sessions</span>
+                    <span className="ml-2 text-xs font-normal text-muted-foreground">Unlimited audits · Unlimited planning sessions</span>
                   </p>
                 </div>
                 <UpgradeButton priceEnvKey="VITE_STRIPE_PRICE_AGENCY" label="Upgrade to Agency" />
@@ -142,18 +147,17 @@ export function SettingsPage() {
           )}
 
           {plan === 'agency' && (
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-muted-foreground">
               You're on the Agency plan — all features are unlimited.
             </p>
           )}
-        </div>
-      </section>
+        </CardContent>
+      </Card>
     </div>
   );
 }
 
 // ── Upgrade button ─────────────────────────────────────────────────────────────
-// Reads the Stripe Checkout URL from env. Shows "Contact us" if not configured.
 
 function UpgradeButton({ priceEnvKey, label }: { priceEnvKey: string; label: string }) {
   const stripeUrl = (import.meta.env as Record<string, string>)[priceEnvKey];

@@ -1,3 +1,5 @@
+import { cn } from '@/lib/utils';
+
 interface Page {
   id: number;
   label: string;
@@ -18,18 +20,19 @@ interface Props {
 
 export function ReportNav({ currentPage, onPageChange }: Props) {
   return (
-    <nav className="flex flex-wrap gap-1 border-b border-gray-200 bg-white px-6 pt-4">
+    <nav className="flex flex-wrap gap-1 border-b bg-background px-6 pt-4">
       {PAGES.map((p) => (
         <button
           key={p.id}
           onClick={() => onPageChange(p.id)}
-          className={`pb-3 px-1 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+          className={cn(
+            'pb-3 px-1 text-sm font-medium border-b-2 transition-colors whitespace-nowrap',
             currentPage === p.id
               ? 'border-brand-500 text-brand-600'
-              : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          )}
         >
-          <span className="mr-1.5 text-xs text-gray-400">{p.id}</span>
+          <span className="mr-1.5 text-xs text-muted-foreground/60">{p.id}</span>
           {p.label}
         </button>
       ))}

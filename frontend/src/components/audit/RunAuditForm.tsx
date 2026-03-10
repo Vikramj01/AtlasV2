@@ -2,6 +2,12 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { FunnelType, Region } from '@/types/audit';
 import { useAudit } from '@/hooks/useAudit';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const FUNNEL_OPTIONS: { value: FunnelType; label: string }[] = [
   { value: 'ecommerce', label: 'Ecommerce (Cart → Checkout → Confirmation)' },
@@ -71,117 +77,119 @@ export function RunAuditForm() {
   };
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-      <h2 className="text-lg font-semibold text-gray-900">Run a Conversion Signal Audit</h2>
-      <p className="mt-1 text-sm text-gray-500">
-        We'll simulate a real user journey and validate every conversion signal.
-      </p>
+    <Card>
+      <CardHeader>
+        <CardTitle>Run a Conversion Signal Audit</CardTitle>
+        <CardDescription>
+          We'll simulate a real user journey and validate every conversion signal.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Funnel Type */}
+          <div className="space-y-1.5">
+            <Label>Funnel Type</Label>
+            <Select value={funnelType} onValueChange={(v) => handleFunnelChange(v as FunnelType)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {FUNNEL_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-      <form onSubmit={handleSubmit} className="mt-5 space-y-4">
-        {/* Funnel Type */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Funnel Type</label>
-          <select
-            value={funnelType}
-            onChange={(e) => handleFunnelChange(e.target.value as FunnelType)}
-            className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none"
-          >
-            {FUNNEL_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* Per-step URLs */}
-        <div className="space-y-3">
-          <p className="text-sm font-medium text-gray-700">Journey URLs</p>
-          <p className="text-xs text-gray-500 -mt-2">
-            Enter each page in the funnel so we can simulate the full user journey.
-          </p>
-          {steps.map((step) => (
-            <div key={step.key}>
-              <label className="block text-sm font-medium text-gray-700">
-                {step.label}
-                {!step.required && <span className="ml-1 text-gray-400">(optional)</span>}
-              </label>
-              <input
-                type="url"
-                value={urlMap[step.key] ?? ''}
-                onChange={(e) => handleUrlChange(step.key, e.target.value)}
-                required={step.required}
-                placeholder={step.placeholder}
-                className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none"
-              />
+          {/* Per-step URLs */}
+          <div className="space-y-3">
+            <div>
+              <p className="text-sm font-medium">Journey URLs</p>
+              <p className="text-xs text-muted-foreground">
+                Enter each page in the funnel so we can simulate the full user journey.
+              </p>
             </div>
-          ))}
-        </div>
-
-        {/* Region */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Region <span className="text-gray-400">(optional)</span></label>
-          <select
-            value={region}
-            onChange={(e) => setRegion(e.target.value as Region)}
-            className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none"
-          >
-            {REGION_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* Advanced Settings */}
-        <div>
-          <button
-            type="button"
-            onClick={() => setShowAdvanced(!showAdvanced)}
-            className="text-sm text-brand-600 hover:text-brand-700"
-          >
-            {showAdvanced ? '▲ Hide' : '▼ Advanced settings'}
-          </button>
-
-          {showAdvanced && (
-            <div className="mt-3 space-y-3 rounded-lg border border-gray-100 bg-gray-50 p-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  Test email <span className="text-gray-400">(for enhanced conversions)</span>
-                </label>
-                <input
-                  type="email"
-                  value={testEmail}
-                  onChange={(e) => setTestEmail(e.target.value)}
-                  placeholder="test@example.com"
-                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
+            {steps.map((step) => (
+              <div key={step.key} className="space-y-1.5">
+                <Label>
+                  {step.label}
+                  {!step.required && <span className="ml-1 text-muted-foreground">(optional)</span>}
+                </Label>
+                <Input
+                  type="url"
+                  value={urlMap[step.key] ?? ''}
+                  onChange={(e) => handleUrlChange(step.key, e.target.value)}
+                  required={step.required}
+                  placeholder={step.placeholder}
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  Test phone <span className="text-gray-400">(for Meta CAPI)</span>
-                </label>
-                <input
-                  type="tel"
-                  value={testPhone}
-                  onChange={(e) => setTestPhone(e.target.value)}
-                  placeholder="+1 555 000 0000"
-                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
-                />
+            ))}
+          </div>
+
+          {/* Region */}
+          <div className="space-y-1.5">
+            <Label>Region <span className="text-muted-foreground">(optional)</span></Label>
+            <Select value={region} onValueChange={(v) => setRegion(v as Region)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {REGION_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Advanced Settings */}
+          <div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              className="text-brand-600 hover:text-brand-700 px-0"
+            >
+              {showAdvanced ? '▲ Hide' : '▼ Advanced settings'}
+            </Button>
+
+            {showAdvanced && (
+              <div className="mt-3 space-y-3 rounded-lg border bg-muted/40 p-4">
+                <div className="space-y-1.5">
+                  <Label>
+                    Test email <span className="text-muted-foreground">(for enhanced conversions)</span>
+                  </Label>
+                  <Input
+                    type="email"
+                    value={testEmail}
+                    onChange={(e) => setTestEmail(e.target.value)}
+                    placeholder="test@example.com"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>
+                    Test phone <span className="text-muted-foreground">(for Meta CAPI)</span>
+                  </Label>
+                  <Input
+                    type="tel"
+                    value={testPhone}
+                    onChange={(e) => setTestPhone(e.target.value)}
+                    placeholder="+1 555 000 0000"
+                  />
+                </div>
               </div>
-            </div>
+            )}
+          </div>
+
+          {error && (
+            <p className="rounded-lg bg-destructive/10 px-4 py-2.5 text-sm text-destructive">{error}</p>
           )}
-        </div>
 
-        {error && (
-          <p className="rounded-lg bg-red-50 px-4 py-2.5 text-sm text-red-700">{error}</p>
-        )}
-
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50 transition-colors"
-        >
-          {loading ? 'Starting audit…' : 'Run Signal Audit'}
-        </button>
-      </form>
-    </div>
+          <Button type="submit" disabled={loading} className="w-full bg-brand-600 hover:bg-brand-700">
+            {loading ? 'Starting audit…' : 'Run Signal Audit'}
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
   );
 }

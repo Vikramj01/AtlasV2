@@ -13,6 +13,7 @@ import {
   verticalListSortingStrategy,
   arrayMove,
 } from '@dnd-kit/sortable';
+import { Button } from '@/components/ui/button';
 import { useJourneyWizardStore } from '@/store/journeyWizardStore';
 import { StageCard } from './StageCard';
 
@@ -43,10 +44,10 @@ export function Step2JourneyEditor({ onNext, onBack }: Step2Props) {
 
   return (
     <div>
-      <h2 className="text-2xl font-bold text-gray-900 text-center">
+      <h2 className="text-2xl font-bold text-center">
         Here's your customer journey — adjust it to match your site
       </h2>
-      <p className="mt-2 text-center text-gray-500 text-sm">
+      <p className="mt-2 text-center text-muted-foreground text-sm">
         Rename stages, paste your real URLs, and toggle what happens on each page. Drag to reorder.
       </p>
 
@@ -57,24 +58,22 @@ export function Step2JourneyEditor({ onNext, onBack }: Step2Props) {
       )}
 
       {stages.length < 2 && (
-        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
+        <div className="mt-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-2.5 text-sm text-destructive">
           Add at least 2 stages to continue.
         </div>
       )}
 
-      {/* Sortable stages list */}
       <div className="mt-6 space-y-3">
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={stages.map((s) => s.id)} strategy={verticalListSortingStrategy}>
             {stages.map((stage) => (
               <div key={stage.id}>
                 <StageCard stage={stage} canRemove={stages.length > 1} />
-                {/* Add stage button below each card */}
                 <div className="flex justify-center my-1">
                   <div className="relative flex items-center w-full">
-                    <div className="flex-1 border-t border-gray-200" />
+                    <div className="flex-1 border-t" />
                     <AddStageButton onAdd={() => addStage(stage.order)} />
-                    <div className="flex-1 border-t border-gray-200" />
+                    <div className="flex-1 border-t" />
                   </div>
                 </div>
               </div>
@@ -88,21 +87,17 @@ export function Step2JourneyEditor({ onNext, onBack }: Step2Props) {
       </div>
 
       <div className="mt-8 flex gap-3">
-        <button
-          type="button"
-          onClick={onBack}
-          className="flex-1 rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-        >
+        <Button type="button" variant="outline" onClick={onBack} className="flex-1">
           Back
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
           onClick={onNext}
           disabled={!canProceed}
-          className="flex-1 rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-40 transition-colors"
+          className="flex-1 bg-brand-600 hover:bg-brand-700"
         >
           Next: Select Platforms
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -113,7 +108,7 @@ function AddStageButton({ onAdd, label = '+ Add Stage' }: { onAdd: () => void; l
     <button
       type="button"
       onClick={onAdd}
-      className="mx-2 flex-shrink-0 rounded-full border border-dashed border-gray-300 px-3 py-0.5 text-xs text-gray-500 hover:border-brand-400 hover:text-brand-600 transition-colors"
+      className="mx-2 flex-shrink-0 rounded-full border border-dashed px-3 py-0.5 text-xs text-muted-foreground hover:border-brand-400 hover:text-brand-600 transition-colors"
     >
       {label}
     </button>
