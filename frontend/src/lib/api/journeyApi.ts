@@ -1,7 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import type { BusinessType, ImplementationFormat, Platform, JourneyWithDetails, Journey, SpecFormat } from '@/types/journey';
 
-const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3001';
+const API_BASE = import.meta.env.VITE_API_URL ?? '';
 
 async function authHeaders(): Promise<Record<string, string>> {
   const { data: { session } } = await supabase.auth.getSession();
