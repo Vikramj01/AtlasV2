@@ -194,7 +194,7 @@ export function Step6GeneratedOutputs() {
 
   // Sort outputs in canonical order
   const ORDER: OutputType[] = ['gtm_container', 'datalayer_spec', 'implementation_guide'];
-  const sortedOutputs = [...outputs].sort(
+  const sortedOutputs = [...(outputs ?? [])].sort(
     (a, b) => ORDER.indexOf(a.output_type) - ORDER.indexOf(b.output_type),
   );
 

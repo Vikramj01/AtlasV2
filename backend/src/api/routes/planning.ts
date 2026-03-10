@@ -295,7 +295,7 @@ router.get('/sessions/:id/outputs', async (req: Request, res: Response) => {
     if (!session) return res.status(404).json({ error: 'Session not found' });
 
     const outputs = await getOutputs(session.id);
-    res.json(outputs);
+    res.json({ outputs });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' });
   }
