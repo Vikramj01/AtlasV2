@@ -1,53 +1,73 @@
 import { NavLink } from 'react-router-dom';
+import { Map, Zap, Clock, Settings, TrendingUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Separator } from '@/components/ui/separator';
 
 const NAV = [
-  { label: 'Plan Tracking', to: '/planning',    icon: '◎' },
-  { label: 'New Audit',     to: '/journey/new', icon: '✦' },
-  { label: 'History',       to: '/dashboard',   icon: '◈' },
-  { label: 'Settings',      to: '/settings',    icon: '⚙' },
+  { label: 'Plan Tracking', to: '/planning',    Icon: Map },
+  { label: 'New Audit',     to: '/journey/new', Icon: Zap },
+  { label: 'History',       to: '/dashboard',   Icon: Clock },
+  { label: 'Settings',      to: '/settings',    Icon: Settings },
 ];
 
 export function Sidebar() {
   return (
-    <aside className="flex h-full w-56 flex-col border-r bg-background px-3 py-6">
-      {/* Logo */}
-      <div className="mb-6 px-3">
-        <span className="text-xl font-bold tracking-tight">Atlas</span>
-        <span className="ml-1 text-xs font-medium text-brand-500">Signal</span>
-      </div>
+    <aside className="flex h-full w-56 flex-col border-r bg-[hsl(220,9%,98%)] px-3 py-5">
 
-      <Separator className="mb-4" />
+      {/* Logo */}
+      <div className="mb-6 flex items-center gap-2 px-3">
+        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary shadow-sm">
+          <TrendingUp className="h-4 w-4 text-primary-foreground" strokeWidth={2.5} />
+        </div>
+        <div className="flex items-baseline gap-1">
+          <span className="text-[15px] font-bold tracking-tight text-foreground">Atlas</span>
+          <span className="text-[10px] font-semibold uppercase tracking-widest text-primary">Signal</span>
+        </div>
+      </div>
 
       {/* Nav */}
       <nav className="flex flex-col gap-0.5">
-        {NAV.map(({ label, to, icon }) => (
+        <p className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+          Workspace
+        </p>
+        {NAV.map(({ label, to, Icon }) => (
           <NavLink
             key={to}
             to={to}
             className={({ isActive }) =>
               cn(
-                'flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                'group flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-150',
                 isActive
-                  ? 'bg-brand-50 text-brand-700'
-                  : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                  ? 'bg-primary/10 text-primary'
+                  : 'text-muted-foreground hover:bg-accent hover:text-foreground'
               )
             }
           >
-            <span className="text-base leading-none" aria-hidden="true">{icon}</span>
-            {label}
+            {({ isActive }) => (
+              <>
+                <Icon
+                  className={cn(
+                    'h-4 w-4 shrink-0 transition-colors',
+                    isActive ? 'text-primary' : 'text-muted-foreground/70 group-hover:text-foreground'
+                  )}
+                  strokeWidth={isActive ? 2.5 : 2}
+                />
+                {label}
+              </>
+            )}
           </NavLink>
         ))}
       </nav>
 
-      {/* Future: monitoring, benchmarks, multi-property */}
+      {/* Bottom — coming soon */}
       <div className="mt-auto">
-        <div className="rounded-lg border border-dashed px-3 py-3">
-          <p className="text-xs font-medium text-muted-foreground">Coming soon</p>
-          <p className="mt-0.5 text-xs text-muted-foreground/70">Monitoring · Benchmarks · Multi-property</p>
+        <div className="rounded-lg border border-dashed bg-background/60 px-3 py-3">
+          <p className="text-xs font-semibold text-muted-foreground">Coming soon</p>
+          <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground/60">
+            Monitoring · Benchmarks · Multi-property
+          </p>
         </div>
       </div>
+
     </aside>
   );
 }
