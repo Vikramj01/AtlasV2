@@ -12,6 +12,15 @@ function optional(name: string, fallback: string): string {
   return process.env[name] ?? fallback;
 }
 
+const NODE_ENV = optional('NODE_ENV', 'development');
+
+// FRONTEND_URL is required in production to prevent the CORS origin from
+// silently falling back to localhost (which would block all real browser requests).
+const FRONTEND_URL =
+  NODE_ENV === 'production'
+    ? requireEnv('FRONTEND_URL')
+    : optional('FRONTEND_URL', 'http://localhost:5173');
+
 export const env = {
   SUPABASE_URL: requireEnv('SUPABASE_URL'),
   SUPABASE_ANON_KEY: requireEnv('SUPABASE_ANON_KEY'),
@@ -29,5 +38,6 @@ export const env = {
   STRIPE_WEBHOOK_SECRET: optional('STRIPE_WEBHOOK_SECRET', ''),
 
   PORT: parseInt(optional('PORT', '3001'), 10),
-  NODE_ENV: optional('NODE_ENV', 'development'),
+  NODE_ENV,
+  FRONTEND_URL,
 } as const;

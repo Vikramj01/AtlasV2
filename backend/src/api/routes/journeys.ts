@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { authMiddleware } from '../middleware/authMiddleware';
+import { sendInternalError } from '../../utils/apiError';
 import {
   createJourney,
   listJourneys,
@@ -35,8 +36,7 @@ router.get('/templates', async (req: Request, res: Response) => {
     const templates = await listTemplates(req.user!.id);
     res.json(templates);
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    res.status(500).json({ error: message });
+    sendInternalError(res, err);
   }
 });
 
@@ -55,8 +55,7 @@ router.post('/templates', async (req: Request, res: Response) => {
     );
     res.status(201).json(template);
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    res.status(500).json({ error: message });
+    sendInternalError(res, err);
   }
 });
 
@@ -65,8 +64,7 @@ router.delete('/templates/:id', async (req: Request, res: Response) => {
     await deleteTemplate(req.params.id, req.user!.id);
     res.json({ success: true });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    res.status(500).json({ error: message });
+    sendInternalError(res, err);
   }
 });
 
@@ -95,8 +93,7 @@ router.post('/from-template/:templateId', async (req: Request, res: Response) =>
     const details = await getJourneyWithDetails(journey.id, userId);
     res.status(201).json(details);
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    res.status(500).json({ error: message });
+    sendInternalError(res, err);
   }
 });
 
@@ -134,8 +131,7 @@ router.post('/', async (req: Request, res: Response) => {
     const details = await getJourneyWithDetails(journey.id, userId);
     res.status(201).json(details);
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    res.status(500).json({ error: message });
+    sendInternalError(res, err);
   }
 });
 
@@ -144,8 +140,7 @@ router.get('/', async (req: Request, res: Response) => {
     const journeys = await listJourneys(req.user!.id);
     res.json(journeys);
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    res.status(500).json({ error: message });
+    sendInternalError(res, err);
   }
 });
 
@@ -155,8 +150,7 @@ router.get('/:id', async (req: Request, res: Response) => {
     if (!details) return res.status(404).json({ error: 'Journey not found' });
     res.json(details);
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    res.status(500).json({ error: message });
+    sendInternalError(res, err);
   }
 });
 
@@ -165,8 +159,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     const journey = await updateJourney(req.params.id, req.user!.id, req.body);
     res.json(journey);
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    res.status(500).json({ error: message });
+    sendInternalError(res, err);
   }
 });
 
@@ -175,8 +168,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
     await deleteJourney(req.params.id, req.user!.id);
     res.status(204).send();
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    res.status(500).json({ error: message });
+    sendInternalError(res, err);
   }
 });
 
@@ -190,8 +182,7 @@ router.post('/:id/stages', async (req: Request, res: Response) => {
     const stage = await upsertStage(req.params.id, req.body);
     res.status(201).json(stage);
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    res.status(500).json({ error: message });
+    sendInternalError(res, err);
   }
 });
 
@@ -207,8 +198,7 @@ router.put('/:id/stages/reorder', async (req: Request, res: Response) => {
     const stages = await getJourneyStages(req.params.id);
     res.json(stages);
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    res.status(500).json({ error: message });
+    sendInternalError(res, err);
   }
 });
 
@@ -220,8 +210,7 @@ router.put('/:id/stages/:stageId', async (req: Request, res: Response) => {
     const stage = await updateStage(req.params.stageId, req.body);
     res.json(stage);
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    res.status(500).json({ error: message });
+    sendInternalError(res, err);
   }
 });
 
@@ -233,8 +222,7 @@ router.delete('/:id/stages/:stageId', async (req: Request, res: Response) => {
     await deleteStage(req.params.stageId, req.params.id);
     res.status(204).send();
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    res.status(500).json({ error: message });
+    sendInternalError(res, err);
   }
 });
 
@@ -248,8 +236,7 @@ router.put('/:id/platforms', async (req: Request, res: Response) => {
     const platforms = await upsertPlatforms(req.params.id, req.body);
     res.json(platforms);
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    res.status(500).json({ error: message });
+    sendInternalError(res, err);
   }
 });
 
@@ -264,8 +251,7 @@ router.post('/:id/generate', async (req: Request, res: Response) => {
     const specs = await generateAndSaveSpecs(req.params.id, req.user!.id, formats);
     res.json({ generated: Object.keys(specs), specs });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    res.status(500).json({ error: message });
+    sendInternalError(res, err);
   }
 });
 
@@ -277,8 +263,7 @@ router.get('/:id/specs', async (req: Request, res: Response) => {
     const specs = await listSpecs(req.params.id);
     res.json(specs);
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    res.status(500).json({ error: message });
+    sendInternalError(res, err);
   }
 });
 
@@ -292,8 +277,7 @@ router.get('/:id/specs/:format', async (req: Request, res: Response) => {
     if (!spec) return res.status(404).json({ error: 'Spec not found. Run /generate first.' });
     res.json(spec);
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    res.status(500).json({ error: message });
+    sendInternalError(res, err);
   }
 });
 

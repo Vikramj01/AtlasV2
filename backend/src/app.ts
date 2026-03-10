@@ -1,18 +1,45 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import auditRoutes from '@/api/routes/audits';
 import { journeysRouter } from '@/api/routes/journeys';
 import { planningRouter } from '@/api/routes/planning';
 import logger from '@/utils/logger';
+import { env } from '@/config/env';
 
 const app = express();
 
 // ─── Security & parsing middleware ────────────────────────────────────────────
 
 app.use(helmet());
-app.use(cors({ origin: process.env.FRONTEND_URL ?? 'http://localhost:5173', credentials: true }));
+app.use(cors({ origin: env.FRONTEND_URL, credentials: true }));
 app.use(express.json({ limit: '1mb' }));
+
+// ─── IP-based rate limiting ───────────────────────────────────────────────────
+// Global limit: 200 requests per 15 minutes per IP (covers all /api/* routes).
+// Tighter limits are applied per-endpoint below for compute-heavy operations.
+
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 200,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later.' },
+});
+
+// Tighter limit for spec generation and output generation (CPU-intensive).
+const heavyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Too many generation requests, please try again later.' },
+});
+
+app.use('/api', globalLimiter);
+app.use('/api/journeys/:id/generate', heavyLimiter);
+app.use('/api/planning/sessions/:id/generate', heavyLimiter);
 
 // ─── Request logging ─────────────────────────────────────────────────────────
 

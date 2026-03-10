@@ -8,8 +8,9 @@ export interface AuditJobData {
   funnel_type: string;
   region: string;
   url_map: Record<string, string>;
-  test_email?: string;
-  test_phone?: string;
+  // test_email / test_phone are intentionally excluded — they are PII and are
+  // stored in the audits table (DB) instead of in the Redis queue payload.
+  // The orchestrator loads them via getAudit(audit_id).
   // Journey Builder fields (present when audit is driven by a saved journey)
   journey_id?: string;
   validation_spec?: unknown;
