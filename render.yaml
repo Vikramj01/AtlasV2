@@ -1,0 +1,66 @@
+# Render deployment configuration
+# Docs: https://render.com/docs/infrastructure-as-code
+#
+# Deploy steps:
+#   1. Push this repo to GitHub
+#   2. In Render dashboard → New → Blueprint → connect this repo
+#   3. Render auto-detects this file and creates the service
+#   4. Set the secret env vars (marked sync: false) in the Render dashboard
+
+services:
+  - type: web
+    name: atlas-backend
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    # Free tier spins down after 15 min idle — first request after idle
+    # takes ~60s to wake. Acceptable for demos; upgrade to Starter ($7/mo)
+    # to keep the service always-on.
+    plan: free
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      # Render injects PORT automatically — do not set manually.
+      # Your app already reads process.env.PORT (defaults to 3001 in dev).
+
+      # ── Frontend URL (CORS) ──────────────────────────────────────────────
+      # Set this to your Vercel deployment URL, e.g.:
+      #   https://atlas-signal.vercel.app
+      - key: FRONTEND_URL
+        sync: false
+
+      # ── Supabase ─────────────────────────────────────────────────────────
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+
+      # ── Upstash Redis (Bull queue) ────────────────────────────────────────
+      # Use the rediss:// (TLS) URL from your Upstash console, e.g.:
+      #   rediss://default:<password>@<host>.upstash.io:6379
+      - key: REDIS_URL
+        sync: false
+
+      # ── Browserbase ──────────────────────────────────────────────────────
+      - key: BROWSERBASE_API_KEY
+        sync: false
+      - key: BROWSERBASE_PROJECT_ID
+        sync: false
+      - key: BROWSERBASE_USE_PROXIES
+        value: "true"
+
+      # ── Anthropic (Planning Mode) ─────────────────────────────────────────
+      - key: ANTHROPIC_API_KEY
+        sync: false
+
+      # ── Stripe (optional for demo) ────────────────────────────────────────
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
