@@ -10,6 +10,10 @@ import { env } from '@/config/env';
 
 const app = express();
 
+// Trust Render's reverse proxy so express-rate-limit can read the real client
+// IP from X-Forwarded-For without throwing ERR_ERL_UNEXPECTED_X_FORWARDED_FOR.
+app.set('trust proxy', 1);
+
 // ─── Security & parsing middleware ────────────────────────────────────────────
 
 app.use(helmet());
