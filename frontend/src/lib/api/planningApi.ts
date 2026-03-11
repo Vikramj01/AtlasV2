@@ -10,6 +10,7 @@ import type {
   HandoffResponse,
   UserDecision,
   PlanningRecommendation,
+  PlanningOutput,
 } from '@/types/planning';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
@@ -103,7 +104,7 @@ export const planningApi = {
     });
   },
 
-  listOutputs(sessionId: string): Promise<{ outputs: GenerateOutputsResponse['outputs'] }> {
+  listOutputs(sessionId: string): Promise<{ outputs: PlanningOutput[] }> {
     return apiFetch(`/api/planning/sessions/${sessionId}/outputs`);
   },
 

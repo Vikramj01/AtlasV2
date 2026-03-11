@@ -75,7 +75,7 @@ export function PlanningModePage() {
               setRecommendations(recommendations);
             }).catch(() => {});
             planningApi.listOutputs(sessionId).then(({ outputs }) => {
-              setOutputs(outputs as Parameters<typeof setOutputs>[0]);
+              setOutputs(outputs);
             }).catch(() => {});
             break;
           case 'failed':

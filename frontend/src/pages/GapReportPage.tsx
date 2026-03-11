@@ -196,12 +196,10 @@ function ResultsSummaryBar({ allGaps }: { allGaps: Gap[] }) {
 
 function NextSteps({
   journeyId,
-  auditId,
   allGaps,
   onDownloadPDF,
 }: {
   journeyId: string;
-  auditId: string;
   allGaps: Gap[];
   onDownloadPDF: () => void;
 }) {
@@ -471,7 +469,6 @@ export function GapReportPage() {
       {/* Next steps */}
       <NextSteps
         journeyId={id!}
-        auditId={auditId!}
         allGaps={allGaps}
         onDownloadPDF={downloadPDF}
       />

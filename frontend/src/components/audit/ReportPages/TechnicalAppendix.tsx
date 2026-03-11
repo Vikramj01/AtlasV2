@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { SeverityBadge } from '@/components/common/SeverityBadge';
@@ -93,7 +92,7 @@ export function TechnicalAppendix({ report }: Props) {
                       <div key={i} className="rounded-lg border bg-muted px-3 py-2 font-mono text-xs">
                         <span className="font-semibold">{String(req['method'] ?? 'GET')}</span>{' '}
                         {String(req['url'] ?? '')}
-                        {req['step'] && <span className="ml-2 text-muted-foreground">@ {String(req['step'])}</span>}
+                        {req['step'] != null && <span className="ml-2 text-muted-foreground">@ {String(req['step'])}</span>}
                       </div>
                     ))}
                   </div>
@@ -109,7 +108,7 @@ export function TechnicalAppendix({ report }: Props) {
                     {dataLayerEvents.map((ev, i) => (
                       <div key={i} className="rounded-lg border bg-muted px-3 py-2 font-mono text-xs">
                         <span className="font-semibold">{String(ev['event'] ?? 'unknown')}</span>
-                        {ev['step'] && <span className="ml-2 text-muted-foreground">@ {String(ev['step'])}</span>}
+                        {ev['step'] != null && <span className="ml-2 text-muted-foreground">@ {String(ev['step'])}</span>}
                       </div>
                     ))}
                   </div>
