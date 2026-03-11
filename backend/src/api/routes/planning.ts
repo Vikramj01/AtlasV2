@@ -441,7 +441,7 @@ router.get('/sessions/:id/pages/:pageId/screenshot', async (req: Request, res: R
       return res.status(404).json({ error: 'No screenshot available for this page' });
     }
 
-    res.json({ signed_url: page.screenshot_signed_url, expires_in_seconds: 1800 });
+    res.json({ url: page.screenshot_signed_url, expires_in_seconds: 1800 });
   } catch (err) {
     sendInternalError(res, err);
   }
