@@ -52,7 +52,7 @@ export function AnnotatedScreenshot({
       )}
 
       {imgLoaded &&
-        annotated.map((rec, idx) => {
+        annotated.map((rec, _idx) => {
           const left   = ((rec.bbox_x ?? 0) / screenshotWidth) * 100;
           const top    = ((rec.bbox_y ?? 0) / screenshotHeight) * 100;
           const width  = ((rec.bbox_width ?? 0) / screenshotWidth) * 100;
