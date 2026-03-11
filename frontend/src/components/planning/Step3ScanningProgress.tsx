@@ -1,6 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { usePlanningStore } from '@/store/planningStore';
 import { planningApi } from '@/lib/api/planningApi';

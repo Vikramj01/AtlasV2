@@ -141,7 +141,7 @@ export function Step6GeneratedOutputs() {
     setIsRefreshing(true);
     try {
       const { outputs: fresh } = await planningApi.listOutputs(sessionId);
-      setOutputs(fresh as Parameters<typeof setOutputs>[0]);
+      setOutputs(fresh);
     } catch { /* non-fatal */ }
     finally { setIsRefreshing(false); }
   }

@@ -50,7 +50,7 @@ export function Step4ReviewRecommendations() {
 
   const totalRecs = recommendations.length;
   const decidedRecs = recommendations.filter((r) => r.user_decision !== null).length;
-  const approvedRecs = recommendations.filter((r) => r.user_decision === 'approved' || r.user_decision === 'modified').length;
+  const approvedRecs = recommendations.filter((r) => r.user_decision === 'approved' || r.user_decision === 'edited').length;
   const canContinue = approvedRecs > 0;
 
   function approveHighConfidence() {
