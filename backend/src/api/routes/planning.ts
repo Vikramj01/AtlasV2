@@ -438,6 +438,7 @@ router.get('/sessions/:id/pages/:pageId/screenshot', async (req: Request, res: R
 
     const page = await getPageWithSignedUrl(req.params.pageId, session.id);
     if (!page.screenshot_signed_url) {
+      console.warn('[screenshot] No signed URL for page', req.params.pageId, 'screenshot_url in DB:', page.screenshot_url ?? 'null');
       return res.status(404).json({ error: 'No screenshot available for this page' });
     }
 

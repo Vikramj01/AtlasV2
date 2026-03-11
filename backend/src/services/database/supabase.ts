@@ -54,12 +54,18 @@ export async function uploadOutput(
   return path;
 }
 export async function getScreenshotSignedUrl(storagePath: string): Promise<string> {
+  console.log('[screenshot] createSignedUrl path:', storagePath);
+
   const { data, error } = await supabaseAdmin.storage
     .from('planning-screenshots')
     .createSignedUrl(storagePath, 1800); // 30 min
 
   if (error || !data?.signedUrl) {
-    throw new Error(`Failed to create signed URL: ${error?.message ?? 'no URL returned'}`);
+    const msg = `Failed to create signed URL for path "${storagePath}": ${error?.message ?? 'no URL returned'}`;
+    console.error('[screenshot]', msg);
+    throw new Error(msg);
   }
+
+  console.log('[screenshot] signed URL created OK');
   return data.signedUrl;
 }

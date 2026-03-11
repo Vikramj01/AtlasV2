@@ -163,7 +163,10 @@ export async function getPageWithSignedUrl(pageId: string, sessionId: string): P
   let screenshot_signed_url: string | undefined;
 
   if (page.screenshot_url) {
-    screenshot_signed_url = await getScreenshotSignedUrl(page.screenshot_url).catch(() => undefined);
+    screenshot_signed_url = await getScreenshotSignedUrl(page.screenshot_url).catch((err) => {
+      console.error('[screenshot] getPageWithSignedUrl failed:', err.message);
+      return undefined;
+    });
   }
 
   return { ...page, screenshot_signed_url };
