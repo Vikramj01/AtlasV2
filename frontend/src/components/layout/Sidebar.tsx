@@ -1,8 +1,9 @@
 import { NavLink } from 'react-router-dom';
-import { Map, Zap, Clock, Settings, TrendingUp } from 'lucide-react';
+import { Home, Map, Zap, Clock, Settings, TrendingUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const NAV = [
+  { label: 'Home',          to: '/home',        Icon: Home },
   { label: 'Plan Tracking', to: '/planning',    Icon: Map },
   { label: 'New Audit',     to: '/journey/new', Icon: Zap },
   { label: 'History',       to: '/dashboard',   Icon: Clock },

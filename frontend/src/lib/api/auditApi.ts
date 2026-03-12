@@ -74,4 +74,8 @@ export const auditApi = {
   getGaps(audit_id: string): Promise<unknown[]> {
     return apiFetch(`/api/audits/${audit_id}/gaps`);
   },
+
+  delete(audit_id: string): Promise<{ deleted: boolean }> {
+    return apiFetch(`/api/audits/${audit_id}`, { method: 'DELETE' });
+  },
 };

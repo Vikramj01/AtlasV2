@@ -355,3 +355,15 @@ export async function getOutput(outputId: string, sessionId: string): Promise<Pl
   if (error) throw new Error(`Failed to get output: ${error.message}`);
   return data as PlanningOutput;
 }
+
+// ── Delete ────────────────────────────────────────────────────────────────────
+
+export async function deleteSession(sessionId: string, userId: string): Promise<void> {
+  const { error } = await supabase
+    .from('planning_sessions')
+    .delete()
+    .eq('id', sessionId)
+    .eq('user_id', userId);
+
+  if (error) throw new Error(`Failed to delete session: ${error.message}`);
+}

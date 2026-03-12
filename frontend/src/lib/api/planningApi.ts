@@ -132,4 +132,8 @@ export const planningApi = {
       method: 'POST',
     });
   },
+
+  deleteSession(sessionId: string): Promise<{ deleted: boolean }> {
+    return apiFetch(`/api/planning/sessions/${sessionId}`, { method: 'DELETE' });
+  },
 };

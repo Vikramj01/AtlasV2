@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import JSZip from 'jszip';
 import { authMiddleware } from '@/api/middleware/authMiddleware';
 import { auditLimiter } from '@/api/middleware/auditLimiter';
-import { createAudit, getAudit, getReport, listAudits } from '@/services/database/queries';
+import { createAudit, getAudit, getReport, listAudits, deleteAudit } from '@/services/database/queries';
 import { getJourneyWithDetails, getLatestSpec } from '@/services/database/journeyQueries';
 import { generatePDF } from '@/services/export/pdfGenerator';
 import { auditQueue } from '@/services/queue/jobQueue';
@@ -316,6 +316,25 @@ router.post('/:audit_id/export', async (req: Request, res: Response) => {
   } catch (err) {
     logger.error({ err, audit_id }, 'Export failed');
     res.status(500).json({ error: 'Export failed' });
+  }
+});
+
+// ─── DELETE /api/audits/:audit_id ─────────────────────────────────────────────
+
+router.delete('/:audit_id', async (req: Request, res: Response) => {
+  const { user } = req as AuthenticatedRequest;
+  const { audit_id } = req.params;
+
+  const audit = await getAudit(audit_id);
+  if (!audit) { res.status(404).json({ error: 'Audit not found' }); return; }
+  if (audit.user_id !== user.id) { res.status(403).json({ error: 'Forbidden' }); return; }
+
+  try {
+    await deleteAudit(audit_id, user.id);
+    res.json({ deleted: true });
+  } catch (err) {
+    logger.error({ err, audit_id }, 'Failed to delete audit');
+    res.status(500).json({ error: 'Failed to delete audit' });
   }
 });
 

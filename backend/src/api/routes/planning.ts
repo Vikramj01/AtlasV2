@@ -29,6 +29,7 @@ import {
   getApprovedRecommendations,
   getOutputs,
   getOutput,
+  deleteSession,
 } from '@/services/database/planningQueries';
 import type { CreateRecommendationInput } from '@/services/database/planningQueries';
 import { getScreenshotSignedUrl } from '@/services/database/supabase';
@@ -443,6 +444,20 @@ router.get('/sessions/:id/pages/:pageId/screenshot', async (req: Request, res: R
     }
 
     res.json({ url: page.screenshot_signed_url, expires_in_seconds: 1800 });
+  } catch (err) {
+    sendInternalError(res, err);
+  }
+});
+
+// ── DELETE /api/planning/sessions/:id ─────────────────────────────────────────
+
+router.delete('/sessions/:id', async (req: Request, res: Response) => {
+  try {
+    const session = await getSession(req.params.id, req.user!.id);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    await deleteSession(session.id, req.user!.id);
+    res.json({ deleted: true });
   } catch (err) {
     sendInternalError(res, err);
   }
