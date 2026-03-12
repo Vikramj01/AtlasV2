@@ -29,6 +29,7 @@ const globalLimiter = rateLimit({
   limit: 200,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
   message: { error: 'Too many requests, please try again later.' },
 });
 
@@ -38,6 +39,7 @@ const heavyLimiter = rateLimit({
   limit: 20,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
   message: { error: 'Too many generation requests, please try again later.' },
 });
 
