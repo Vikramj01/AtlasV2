@@ -100,6 +100,18 @@ export async function getReport(audit_id: string): Promise<ReportJSON | null> {
   return data.report_json as ReportJSON;
 }
 
+// ─── Delete ───────────────────────────────────────────────────────────────────
+
+export async function deleteAudit(auditId: string, userId: string): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from('audits')
+    .delete()
+    .eq('id', auditId)
+    .eq('user_id', userId);
+
+  if (error) throw new Error(`Failed to delete audit: ${error.message}`);
+}
+
 // ─── Audit list (with report scores joined) ───────────────────────────────────
 
 export interface AuditListItem {

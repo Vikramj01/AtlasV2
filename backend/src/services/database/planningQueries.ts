@@ -163,7 +163,10 @@ export async function getPageWithSignedUrl(pageId: string, sessionId: string): P
   let screenshot_signed_url: string | undefined;
 
   if (page.screenshot_url) {
-    screenshot_signed_url = await getScreenshotSignedUrl(page.screenshot_url).catch(() => undefined);
+    screenshot_signed_url = await getScreenshotSignedUrl(page.screenshot_url).catch((err) => {
+      console.error('[screenshot] getPageWithSignedUrl failed:', err.message);
+      return undefined;
+    });
   }
 
   return { ...page, screenshot_signed_url };
@@ -351,4 +354,16 @@ export async function getOutput(outputId: string, sessionId: string): Promise<Pl
   if (error?.code === 'PGRST116') return null;
   if (error) throw new Error(`Failed to get output: ${error.message}`);
   return data as PlanningOutput;
+}
+
+// ── Delete ────────────────────────────────────────────────────────────────────
+
+export async function deleteSession(sessionId: string, userId: string): Promise<void> {
+  const { error } = await supabase
+    .from('planning_sessions')
+    .delete()
+    .eq('id', sessionId)
+    .eq('user_id', userId);
+
+  if (error) throw new Error(`Failed to delete session: ${error.message}`);
 }

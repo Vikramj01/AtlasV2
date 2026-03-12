@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Trash2, Check, X } from 'lucide-react';
 import { HealthBadge } from '@/components/common/HealthBadge';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -23,9 +25,21 @@ const STATUS_BADGE: Record<AuditStatus, { label: string; cls: string }> = {
 interface Props {
   audits: AuditHistoryItem[];
   loading: boolean;
+  onDelete?: (id: string) => void;
 }
 
-export function AuditHistoryTable({ audits, loading }: Props) {
+export function AuditHistoryTable({ audits, loading, onDelete }: Props) {
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  async function handleConfirmDelete(id: string) {
+    if (!onDelete) return;
+    setDeletingId(id);
+    setConfirmId(null);
+    await onDelete(id);
+    setDeletingId(null);
+  }
+
   if (loading) {
     return (
       <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
@@ -62,7 +76,7 @@ export function AuditHistoryTable({ audits, loading }: Props) {
             })();
 
             return (
-              <TableRow key={audit.id}>
+              <TableRow key={audit.id} className={deletingId === audit.id ? 'opacity-50' : ''}>
                 <TableCell className="font-medium max-w-xs truncate">{domain}</TableCell>
                 <TableCell className="whitespace-nowrap text-muted-foreground">
                   {new Date(audit.created_at).toLocaleDateString()}
@@ -85,14 +99,46 @@ export function AuditHistoryTable({ audits, loading }: Props) {
                   <Badge className={s.cls}>{s.label}</Badge>
                 </TableCell>
                 <TableCell className="text-right">
-                  {audit.status === 'completed' && (
-                    <Link
-                      to={`/report/${audit.id}`}
-                      className="text-sm font-medium text-brand-600 hover:text-brand-700"
-                    >
-                      View →
-                    </Link>
-                  )}
+                  <div className="flex items-center justify-end gap-3">
+                    {audit.status === 'completed' && (
+                      <Link
+                        to={`/report/${audit.id}`}
+                        className="text-sm font-medium text-brand-600 hover:text-brand-700"
+                      >
+                        View →
+                      </Link>
+                    )}
+                    {onDelete && (
+                      confirmId === audit.id ? (
+                        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <span>Delete?</span>
+                          <button
+                            onClick={() => handleConfirmDelete(audit.id)}
+                            className="rounded p-0.5 text-red-600 hover:bg-red-50"
+                            title="Confirm delete"
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => setConfirmId(null)}
+                            className="rounded p-0.5 text-muted-foreground hover:bg-accent"
+                            title="Cancel"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => setConfirmId(audit.id)}
+                          disabled={deletingId === audit.id}
+                          className="rounded p-1 text-muted-foreground/50 hover:bg-red-50 hover:text-red-500 transition-colors"
+                          title="Delete audit"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
             );

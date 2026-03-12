@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { usePlanningStore } from '@/store/planningStore';
 import { planningApi } from '@/lib/api/planningApi';
+import { supabase } from '@/lib/supabase';
 import { AnnotatedScreenshot } from './AnnotatedScreenshot';
 import { RecommendationCard } from './RecommendationCard';
 import { CustomElementForm } from './CustomElementForm';
@@ -38,12 +39,18 @@ export function Step4ReviewRecommendations() {
   }, [pages, recommendations, activePageId]);
 
   useEffect(() => {
-    if (!activePageId || screenshotUrls[activePageId] || !sessionId) return;
-    planningApi
-      .getScreenshotUrl(sessionId, activePageId)
-      .then(({ url }) => setScreenshotUrls((prev) => ({ ...prev, [activePageId]: url })))
-      .catch(() => {});
-  }, [activePageId, sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!activePageId || screenshotUrls[activePageId]) return;
+    const page = pages.find((p) => p.id === activePageId);
+    if (!page?.screenshot_url) return;
+    supabase.storage
+      .from('planning-screenshots')
+      .createSignedUrl(page.screenshot_url, 1800)
+      .then(({ data, error }) => {
+        if (!error && data?.signedUrl) {
+          setScreenshotUrls((prev) => ({ ...prev, [activePageId]: data.signedUrl }));
+        }
+      });
+  }, [activePageId, pages]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pagesWithRecs: PlanningPage[] = pages.filter((p) => recommendations.some((r) => r.page_id === p.id));
   const activePageRecs: PlanningRecommendation[] = recommendations.filter((r) => r.page_id === activePageId);

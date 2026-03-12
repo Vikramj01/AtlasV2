@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { Trash2, Check, X } from 'lucide-react';
 import { planningApi } from '@/lib/api/planningApi';
 import { usePlanningStore } from '@/store/planningStore';
 import type { PlanningSession } from '@/types/planning';
@@ -32,6 +33,8 @@ export function PlanningDashboard() {
   const [sessions, setSessions] = useState<PlanningSession[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const limitReached = (location.state as { limitReached?: boolean } | null)?.limitReached ?? false;
   const limitMessage = (location.state as { limitMessage?: string } | null)?.limitMessage ?? '';
@@ -52,6 +55,19 @@ export function PlanningDashboard() {
   function handleOpen(session: PlanningSession) {
     reset();
     navigate(`/planning/${session.id}`);
+  }
+
+  async function handleDelete(id: string) {
+    setDeletingId(id);
+    setConfirmId(null);
+    try {
+      await planningApi.deleteSession(id);
+      setSessions((prev) => prev.filter((s) => s.id !== id));
+    } catch {
+      // keep the row if delete fails
+    } finally {
+      setDeletingId(null);
+    }
   }
 
   return (
@@ -128,7 +144,7 @@ export function PlanningDashboard() {
             </TableHeader>
             <TableBody>
               {sessions.map((s) => (
-                <TableRow key={s.id}>
+                <TableRow key={s.id} className={deletingId === s.id ? 'opacity-50' : ''}>
                   <TableCell className="font-medium">{s.website_url}</TableCell>
                   <TableCell className="capitalize text-muted-foreground">
                     {s.business_type.replace('_', ' ')}
@@ -142,12 +158,42 @@ export function PlanningDashboard() {
                     {new Date(s.created_at).toLocaleDateString()}
                   </TableCell>
                   <TableCell className="text-right">
-                    <button
-                      onClick={() => handleOpen(s)}
-                      className="text-xs font-medium text-brand-600 hover:text-brand-700"
-                    >
-                      Open →
-                    </button>
+                    <div className="flex items-center justify-end gap-3">
+                      <button
+                        onClick={() => handleOpen(s)}
+                        className="text-xs font-medium text-brand-600 hover:text-brand-700"
+                      >
+                        Open →
+                      </button>
+                      {confirmId === s.id ? (
+                        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <span>Delete?</span>
+                          <button
+                            onClick={() => handleDelete(s.id)}
+                            className="rounded p-0.5 text-red-600 hover:bg-red-50"
+                            title="Confirm delete"
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => setConfirmId(null)}
+                            className="rounded p-0.5 text-muted-foreground hover:bg-accent"
+                            title="Cancel"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => setConfirmId(s.id)}
+                          disabled={deletingId === s.id}
+                          className="rounded p-1 text-muted-foreground/50 hover:bg-red-50 hover:text-red-500 transition-colors"
+                          title="Delete session"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}

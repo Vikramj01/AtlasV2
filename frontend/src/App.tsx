@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ProtectedRoute } from '@/components/layout/ProtectedRoute';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { LoginPage } from '@/pages/LoginPage';
+import { HomePage } from '@/pages/HomePage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { AuditProgressPage } from '@/pages/AuditProgressPage';
 import { ReportPage } from '@/pages/ReportPage';
@@ -22,6 +23,7 @@ export default function App() {
         {/* Protected — wrapped in AppLayout (sidebar + topbar) */}
         <Route element={<ProtectedRoute />}>
           <Route element={<AppLayout />}>
+            <Route path="/home" element={<HomePage />} />
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/report/:auditId" element={<ReportPage />} />
             <Route path="/journey/new" element={<JourneyBuilderPage />} />
@@ -40,8 +42,8 @@ export default function App() {
         </Route>
 
         {/* Redirects */}
-        <Route path="/" element={<Navigate to="/journey/new" replace />} />
-        <Route path="*" element={<Navigate to="/journey/new" replace />} />
+        <Route path="/" element={<Navigate to="/home" replace />} />
+        <Route path="*" element={<Navigate to="/home" replace />} />
       </Routes>
     </BrowserRouter>
   );

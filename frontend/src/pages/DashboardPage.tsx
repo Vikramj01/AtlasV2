@@ -1,11 +1,26 @@
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { AuditHistoryTable } from '@/components/audit/AuditHistoryTable';
-import { useAuditHistory } from '@/hooks/useAuditHistory';
+import type { AuditHistoryItem } from '@/components/audit/AuditHistoryTable';
+import { auditApi } from '@/lib/api/auditApi';
 
 export function DashboardPage() {
-  const { audits, loading } = useAuditHistory();
+  const [audits, setAudits] = useState<AuditHistoryItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    auditApi.list()
+      .then(setAudits)
+      .catch(() => setAudits([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function handleDelete(id: string) {
+    await auditApi.delete(id);
+    setAudits((prev) => prev.filter((a) => a.id !== id));
+  }
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-8 space-y-8">
@@ -25,7 +40,7 @@ export function DashboardPage() {
 
       <section>
         <h2 className="mb-3 text-base font-semibold">Previous Audits</h2>
-        <AuditHistoryTable audits={audits} loading={loading} />
+        <AuditHistoryTable audits={audits} loading={loading} onDelete={handleDelete} />
       </section>
     </div>
   );
