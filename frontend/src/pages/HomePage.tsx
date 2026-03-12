@@ -4,7 +4,6 @@ import { Map, Zap, ArrowRight, CheckCircle2, Clock, AlertTriangle } from 'lucide
 import { supabase } from '@/lib/supabase';
 import { auditApi } from '@/lib/api/auditApi';
 import { planningApi } from '@/lib/api/planningApi';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import type { AuditHistoryItem } from '@/components/audit/AuditHistoryTable';
