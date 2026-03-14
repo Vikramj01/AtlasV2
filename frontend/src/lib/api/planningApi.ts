@@ -12,6 +12,8 @@ import type {
   PlanningRecommendation,
   PlanningOutput,
   SiteDetection,
+  DeveloperShare,
+  ImplementationProgress,
 } from '@/types/planning';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
@@ -145,5 +147,23 @@ export const planningApi = {
       method: 'POST',
       body: JSON.stringify({ url }),
     });
+  },
+
+  // ── Developer Share ──────────────────────────────────────────────────────────
+
+  createShare(sessionId: string): Promise<{ share_id: string; share_token: string; share_url: string; expires_at: string }> {
+    return apiFetch(`/api/planning/sessions/${sessionId}/share`, { method: 'POST' });
+  },
+
+  listShares(sessionId: string): Promise<{ shares: DeveloperShare[] }> {
+    return apiFetch(`/api/planning/sessions/${sessionId}/share`);
+  },
+
+  deleteShare(sessionId: string, shareId: string): Promise<{ revoked: boolean }> {
+    return apiFetch(`/api/planning/sessions/${sessionId}/share/${shareId}`, { method: 'DELETE' });
+  },
+
+  getProgress(sessionId: string): Promise<{ has_share: boolean; share_id?: string; progress: ImplementationProgress | null }> {
+    return apiFetch(`/api/planning/sessions/${sessionId}/share/progress`);
   },
 };

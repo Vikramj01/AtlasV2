@@ -12,6 +12,7 @@ import { GapReportPage } from '@/pages/GapReportPage';
 import { PlanningDashboard } from '@/pages/PlanningDashboard';
 import { PlanningModePage } from '@/pages/PlanningModePage';
 import { SettingsPage } from '@/pages/SettingsPage';
+import { DeveloperPortalPage } from '@/pages/DeveloperPortalPage';
 
 export default function App() {
   return (
@@ -40,6 +41,9 @@ export default function App() {
           <Route path="/planning/new" element={<PlanningModePage />} />
           <Route path="/planning/:sessionId" element={<PlanningModePage />} />
         </Route>
+
+        {/* Developer Portal — public, no auth required */}
+        <Route path="/dev/:shareToken" element={<DeveloperPortalPage />} />
 
         {/* Redirects */}
         <Route path="/" element={<Navigate to="/home" replace />} />
