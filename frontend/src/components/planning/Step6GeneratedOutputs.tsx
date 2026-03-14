@@ -285,12 +285,7 @@ function OutputCard({ output, sessionId }: { output: PlanningOutput; sessionId: 
     setIsDownloading(true);
     try {
       let blob: Blob;
-      if (output.download_url) {
-        const res = await fetch(output.download_url);
-        blob = await res.blob();
-      } else {
-        blob = await planningApi.downloadOutput(sessionId, output.id);
-      }
+      blob = await planningApi.downloadOutput(sessionId, output.id);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
