@@ -6,6 +6,9 @@ import auditRoutes from '@/api/routes/audits';
 import { journeysRouter } from '@/api/routes/journeys';
 import { planningRouter } from '@/api/routes/planning';
 import { shareRouter, devRouter } from '@/api/routes/developer';
+import { organisationsRouter } from '@/api/routes/organisations';
+import { clientsRouter } from '@/api/routes/clients';
+import { signalsRouter } from '@/api/routes/signals';
 import logger from '@/utils/logger';
 import { env } from '@/config/env';
 
@@ -47,6 +50,8 @@ const heavyLimiter = rateLimit({
 app.use('/api', globalLimiter);
 app.use('/api/journeys/:id/generate', heavyLimiter);
 app.use('/api/planning/sessions/:id/generate', heavyLimiter);
+app.use('/api/organisations/:orgId/clients/:clientId/generate', heavyLimiter);
+app.use('/api/organisations/:orgId/clients/:clientId/generate-all', heavyLimiter);
 
 // ─── Request logging ─────────────────────────────────────────────────────────
 
@@ -70,6 +75,10 @@ app.use('/api/planning', planningRouter);
 app.use('/api/planning/sessions/:id/share', shareRouter);
 // Developer portal: /api/dev/* (public, token-auth)
 app.use('/api/dev', devRouter);
+// Composable signals & agency workspaces
+app.use('/api/organisations', organisationsRouter);
+app.use('/api/organisations', clientsRouter);
+app.use('/api/signals', signalsRouter);
 
 // ─── 404 handler ─────────────────────────────────────────────────────────────
 
