@@ -13,6 +13,13 @@ import { PlanningDashboard } from '@/pages/PlanningDashboard';
 import { PlanningModePage } from '@/pages/PlanningModePage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { DeveloperPortalPage } from '@/pages/DeveloperPortalPage';
+// Composable Signals & Agency Workspaces
+import { OrgDashboardPage } from '@/pages/OrgDashboardPage';
+import { ClientListPage } from '@/pages/ClientListPage';
+import { ClientDetailPage } from '@/pages/ClientDetailPage';
+import { SignalLibraryPage } from '@/pages/SignalLibraryPage';
+import { SignalPacksPage } from '@/pages/SignalPacksPage';
+import { PackDetailPage } from '@/pages/PackDetailPage';
 
 export default function App() {
   return (
@@ -34,6 +41,13 @@ export default function App() {
             <Route path="/planning" element={<PlanningDashboard />} />
             {/* Settings */}
             <Route path="/settings" element={<SettingsPage />} />
+            {/* Agency Workspaces */}
+            <Route path="/org/:orgId" element={<OrgDashboardPage />} />
+            <Route path="/org/:orgId/clients" element={<ClientListPage />} />
+            <Route path="/org/:orgId/clients/:clientId" element={<ClientDetailPage />} />
+            <Route path="/org/:orgId/signals" element={<SignalLibraryPage />} />
+            <Route path="/org/:orgId/packs" element={<SignalPacksPage />} />
+            <Route path="/org/:orgId/packs/:packId" element={<PackDetailPage />} />
           </Route>
           {/* Progress page: full-screen, no sidebar */}
           <Route path="/audit/:auditId/progress" element={<AuditProgressPage />} />
