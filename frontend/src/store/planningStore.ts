@@ -5,7 +5,9 @@ import type {
   PlanningRecommendation,
   PlanningOutput,
   CreateSessionInput,
+  SiteDetection,
 } from '@/types/planning';
+import { planningApi } from '@/lib/api/planningApi';
 
 // ── Wizard step definitions ────────────────────────────────────────────────────
 
@@ -25,6 +27,11 @@ interface PlanningStore {
   pages: PlanningPage[];
   recommendations: PlanningRecommendation[];
   outputs: PlanningOutput[];
+
+  // Site detection (Step 1)
+  siteDetection: SiteDetection | null;
+  detectionLoading: boolean;
+  detectionError: string | null;
 
   // Polling / loading
   isLoading: boolean;
@@ -53,6 +60,9 @@ interface PlanningStore {
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
 
+  runDetection: (url: string) => Promise<void>;
+  clearDetection: () => void;
+
   reset: () => void;
 }
 
@@ -65,6 +75,9 @@ const initialState = {
   pages: [],
   recommendations: [],
   outputs: [],
+  siteDetection: null,
+  detectionLoading: false,
+  detectionError: null,
   isLoading: false,
   error: null,
 };
@@ -124,6 +137,19 @@ export const usePlanningStore = create<PlanningStore>((set) => ({
   setLoading: (isLoading) => set({ isLoading }),
 
   setError: (error) => set({ error }),
+
+  runDetection: async (url) => {
+    set({ detectionLoading: true, detectionError: null, siteDetection: null });
+    try {
+      const detection = await planningApi.detectSite(url);
+      set({ siteDetection: detection, detectionLoading: false });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Detection failed';
+      set({ detectionError: message, detectionLoading: false });
+    }
+  },
+
+  clearDetection: () => set({ siteDetection: null, detectionError: null, detectionLoading: false }),
 
   reset: () => set(initialState),
 }));

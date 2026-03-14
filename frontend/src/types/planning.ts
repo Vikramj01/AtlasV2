@@ -108,6 +108,38 @@ export interface PlanningOutput {
   download_url?: string;
 }
 
+// ── Site Detection ─────────────────────────────────────────────────────────────
+
+export interface DetectedPlatform {
+  name: string;
+  version?: string;
+  indicators: string[];
+}
+
+export interface ExistingTrackingQuick {
+  gtm_detected: boolean;
+  gtm_container_id: string | null;
+  ga4_detected: boolean;
+  ga4_measurement_id: string | null;
+  meta_pixel_detected: boolean;
+  meta_pixel_id: string | null;
+  google_ads_detected: boolean;
+  tiktok_detected: boolean;
+  linkedin_detected: boolean;
+}
+
+export interface SiteDetection {
+  url: string;
+  resolved_url: string;
+  site_title: string;
+  detected_platform: DetectedPlatform | null;
+  inferred_business_type: string;
+  business_type_confidence: number;
+  existing_tracking: ExistingTrackingQuick;
+  detected_currency: string | null;
+  detected_language: string | null;
+}
+
 // ── API request / response shapes ─────────────────────────────────────────────
 
 export interface CreateSessionInput {

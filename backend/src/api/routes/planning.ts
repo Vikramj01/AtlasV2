@@ -8,12 +8,14 @@
  */
 import { Router } from 'express';
 import type { Request, Response } from 'express';
+import rateLimit from 'express-rate-limit';
 import { generateAllOutputs } from '@/services/planning/generators/outputGenerator';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { planningLimiter } from '../middleware/planningLimiter';
 import { validateUrl, validateUrls } from '@/utils/urlValidator';
 import { sendInternalError } from '@/utils/apiError';
 import { planningQueue } from '@/services/queue/jobQueue';
+import { detectSite } from '@/services/planning/siteDetectionService';
 import {
   createSession,
   getSession,
@@ -43,6 +45,44 @@ import type { CreateSessionInput, UpdateDecisionInput } from '@/types/planning';
 
 const router = Router();
 router.use(authMiddleware);
+
+// ── Rate limiter for site detection (10 req/min per user) ────────────────────
+const detectRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 10,
+  keyGenerator: (req) => req.user?.id ?? req.ip ?? 'unknown',
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
+  handler: (_req, res) =>
+    res.status(429).json({ error: 'Too many detection requests. Please wait a minute.' }),
+});
+
+// ── POST /api/planning/detect ─────────────────────────────────────────────────
+// Lightweight site detection — no Browserbase, no AI.
+// Returns platform, business type, and existing tracking in ~2 seconds.
+
+router.post('/detect', detectRateLimit, async (req: Request, res: Response) => {
+  try {
+    const { url } = req.body as { url?: string };
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ error: 'url is required' });
+    }
+
+    const urlValidation = validateUrl(url);
+    if (!urlValidation.valid) {
+      return res.status(400).json({ error: `Invalid URL: ${urlValidation.error}` });
+    }
+
+    const detection = await detectSite(url);
+    res.json(detection);
+  } catch (err) {
+    // Detection failures are non-fatal — return a structured error so the frontend
+    // can fall back to the manual form gracefully.
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(422).json({ error: `Detection failed: ${message}` });
+  }
+});
 
 // ── POST /api/planning/sessions ───────────────────────────────────────────────
 // Create a planning session, persist pages, enqueue the scan job.
