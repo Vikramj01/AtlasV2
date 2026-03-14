@@ -22,7 +22,7 @@ function orgNav(orgId: string) {
     { label: 'Signal Packs',   to: `/org/${orgId}/packs`,     Icon: Package },
     { label: 'Plan Tracking',  to: '/planning',               Icon: Map },
     { label: 'History',        to: '/dashboard',              Icon: Clock },
-    { label: 'Settings',       to: '/settings',               Icon: Settings },
+    { label: 'Team & Settings', to: `/org/${orgId}/settings`, Icon: Settings },
   ];
 }
 

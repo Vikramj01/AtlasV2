@@ -20,6 +20,7 @@ import { ClientDetailPage } from '@/pages/ClientDetailPage';
 import { SignalLibraryPage } from '@/pages/SignalLibraryPage';
 import { SignalPacksPage } from '@/pages/SignalPacksPage';
 import { PackDetailPage } from '@/pages/PackDetailPage';
+import { OrgSettingsPage } from '@/pages/OrgSettingsPage';
 
 export default function App() {
   return (
@@ -48,6 +49,7 @@ export default function App() {
             <Route path="/org/:orgId/signals" element={<SignalLibraryPage />} />
             <Route path="/org/:orgId/packs" element={<SignalPacksPage />} />
             <Route path="/org/:orgId/packs/:packId" element={<PackDetailPage />} />
+            <Route path="/org/:orgId/settings" element={<OrgSettingsPage />} />
           </Route>
           {/* Progress page: full-screen, no sidebar */}
           <Route path="/audit/:auditId/progress" element={<AuditProgressPage />} />
