@@ -38,9 +38,9 @@ function QuickCheckResultPanel({ result }: { result: QuickCheckResult }) {
 
   const iconAndLabel =
     overall_status === 'tracking_found'
-      ? { icon: '✓', label: 'Tracking detected', color: 'text-green-700' }
+      ? { icon: '✓', label: 'Implementation verified', color: 'text-green-700' }
       : overall_status === 'partial'
-        ? { icon: '⚠', label: 'Partial tracking', color: 'text-amber-700' }
+        ? { icon: '⚠', label: 'Pre-existing tracking only', color: 'text-amber-700' }
         : { icon: '✗', label: 'No tracking detected', color: 'text-red-700' };
 
   return (
