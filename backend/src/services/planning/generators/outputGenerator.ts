@@ -8,6 +8,7 @@
  * Total generation time: ~1–3 seconds for typical sessions.
  */
 import { generateGTMContainer } from './gtmContainerGenerator';
+import type { GTMPlatformIds } from './gtmContainerGenerator';
 import { generateDataLayerSpec } from './dataLayerSpecGenerator';
 import { generateImplementationGuide } from './implementationGuideGenerator';
 import {
@@ -17,6 +18,7 @@ import {
   getOutputs,
   updateSessionStatus,
 } from '@/services/database/planningQueries';
+import { getClientPlatforms } from '@/services/database/clientQueries';
 import { uploadOutput } from '@/services/database/supabase';
 import type { PlanningSession, PlanningOutput } from '@/types/planning';
 import logger from '@/utils/logger';
@@ -36,13 +38,33 @@ export async function generateAllOutputs(session: PlanningSession): Promise<Gene
     getPagesBySession(sessionId),
   ]);
 
+  // ── Resolve platform IDs from linked client (if any) ─────────────────────
+  let platformIds: GTMPlatformIds | undefined;
+  if (session.client_id) {
+    try {
+      const clientPlatforms = await getClientPlatforms(session.client_id);
+      platformIds = {};
+      for (const p of clientPlatforms) {
+        if (!p.is_active || !p.measurement_id) continue;
+        if (p.platform === 'ga4')        platformIds.ga4         = p.measurement_id;
+        if (p.platform === 'google_ads') platformIds.google_ads  = p.measurement_id;
+        if (p.platform === 'meta')       platformIds.meta        = p.measurement_id;
+        if (p.platform === 'tiktok')     platformIds.tiktok      = p.measurement_id;
+        if (p.platform === 'linkedin')   platformIds.linkedin    = p.measurement_id;
+      }
+      logger.info({ sessionId, clientId: session.client_id, platformIds }, 'Resolved platform IDs from client');
+    } catch (err) {
+      logger.warn({ sessionId, err: (err as Error).message }, 'Failed to fetch client platform IDs — using placeholders');
+    }
+  }
+
   if (approvedRecs.length === 0) {
     throw new Error('No approved recommendations found. Approve at least one recommendation before generating.');
   }
 
   // ── 1. GTM Container JSON ─────────────────────────────────────────────────
   logger.info({ sessionId, recCount: approvedRecs.length }, 'Generating GTM container');
-  const gtmContainer = generateGTMContainer(approvedRecs, session);
+  const gtmContainer = generateGTMContainer(approvedRecs, session, platformIds);
   const gtmJson = JSON.stringify(gtmContainer, null, 2);
   const gtmStoragePath = await uploadOutput(
     sessionId,

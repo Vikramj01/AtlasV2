@@ -26,6 +26,7 @@ export async function createSession(userId: string, input: CreateSessionInput): 
     .from('planning_sessions')
     .insert({
       user_id: userId,
+      client_id: input.client_id ?? null,
       website_url: input.website_url,
       business_type: input.business_type,
       business_description: input.business_description ?? null,
