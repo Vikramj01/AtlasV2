@@ -34,6 +34,7 @@ export interface PlanningSession {
   completed_at: string | null;
   last_rescan_at: string | null;
   rescan_results: ChangeDetectionResult | null;
+  client_id?: string | null;
 }
 
 // ── Change Detection (Re-scan) ────────────────────────────────────────────────
