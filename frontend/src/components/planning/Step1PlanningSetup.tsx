@@ -5,7 +5,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { usePlanningStore } from '@/store/planningStore';
+import { useOrganisationStore } from '@/store/organisationStore';
+import { clientApi } from '@/lib/api/organisationApi';
 import type { BusinessType, Platform, SiteDetection } from '@/types/planning';
+import type { ClientWithDetails } from '@/types/organisation';
 
 const BUSINESS_TYPES: { value: BusinessType; label: string; description: string }[] = [
   { value: 'ecommerce', label: 'E-commerce',  description: 'Online store with products and checkout' },
@@ -74,6 +77,36 @@ export function Step1PlanningSetup() {
   const [description, setDescription] = useState(draftSetup.business_description ?? '');
   const [platforms, setPlatforms] = useState<Platform[]>(draftSetup.selected_platforms ?? ['ga4', 'google_ads']);
 
+  // Client selector (org context)
+  const { organisations, currentOrg } = useOrganisationStore();
+  const [orgClients, setOrgClients] = useState<ClientWithDetails[]>([]);
+  const [selectedClientId, setSelectedClientId] = useState<string>(draftSetup.client_id ?? '');
+  const activeOrgId = currentOrg?.id ?? organisations[0]?.id;
+
+  useEffect(() => {
+    if (!activeOrgId) return;
+    clientApi.list(activeOrgId)
+      .then(setOrgClients)
+      .catch(() => { /* non-blocking */ });
+  }, [activeOrgId]);
+
+  function handleClientSelect(clientId: string) {
+    setSelectedClientId(clientId);
+    if (!clientId) return;
+    const client = orgClients.find((c) => c.id === clientId);
+    if (!client) return;
+    // Pre-fill URL and business type from the client record
+    setUrl(client.website_url);
+    setUrlError('');
+    const bt = client.business_type as BusinessType;
+    if (['ecommerce', 'saas', 'lead_gen'].includes(bt)) {
+      setBusinessType(bt);
+    }
+    // If we were on URL-entry phase, jump to manual-fallback so fields are visible
+    setPhase('manual-fallback');
+    clearDetection();
+  }
+
   // When detection completes, populate form fields
   useEffect(() => {
     if (siteDetection) {
@@ -131,6 +164,7 @@ export function Step1PlanningSetup() {
       business_type: businessType,
       business_description: description || undefined,
       selected_platforms: platforms,
+      client_id: selectedClientId || undefined,
     });
 
     nextStep();
@@ -145,6 +179,25 @@ export function Step1PlanningSetup() {
         <p className="mb-8 text-sm text-muted-foreground">
           Atlas will scan your site and pre-fill everything for you.
         </p>
+
+        {/* Client selector — only shown when user belongs to an org */}
+        {orgClients.length > 0 && (
+          <div className="mb-6 space-y-1.5">
+            <Label htmlFor="client-select">Link to a client <span className="text-xs font-normal text-muted-foreground">(optional)</span></Label>
+            <select
+              id="client-select"
+              value={selectedClientId}
+              onChange={(e) => handleClientSelect(e.target.value)}
+              className="w-full rounded-md border px-3 py-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+            >
+              <option value="">— Personal / no client —</option>
+              {orgClients.map((c) => (
+                <option key={c.id} value={c.id}>{c.name} ({c.website_url})</option>
+              ))}
+            </select>
+            <p className="text-xs text-muted-foreground">Selecting a client pre-fills the URL and business type.</p>
+          </div>
+        )}
 
         <div className="flex gap-2">
           <Input
@@ -213,6 +266,24 @@ export function Step1PlanningSetup() {
           <p className="text-sm text-amber-800">
             We couldn't scan your site automatically. Please fill in the details below.
           </p>
+        </div>
+      )}
+
+      {/* Client selector — only shown when user belongs to an org */}
+      {orgClients.length > 0 && (
+        <div className="mb-5 space-y-1.5">
+          <Label htmlFor="client-select-form">Linked client <span className="text-xs font-normal text-muted-foreground">(optional)</span></Label>
+          <select
+            id="client-select-form"
+            value={selectedClientId}
+            onChange={(e) => handleClientSelect(e.target.value)}
+            className="w-full rounded-md border px-3 py-2 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+          >
+            <option value="">— Personal / no client —</option>
+            {orgClients.map((c) => (
+              <option key={c.id} value={c.id}>{c.name} ({c.website_url})</option>
+            ))}
+          </select>
         </div>
       )}
 
