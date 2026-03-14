@@ -12,11 +12,8 @@
 
 import type { ClientWithDetails } from '@/types/organisation';
 import type { ClientOutput, DeploymentWithSignals, SignalWithOverrides } from '@/types/signal';
-import {
-  resolveDeploymentsForClient,
-  markDeploymentGenerated,
-} from '@/services/database/clientQueries';
-import { listDeployments, saveClientOutput } from '@/services/database/clientQueries';
+import { resolveDeploymentsForClient } from '@/services/database/signalQueries';
+import { listDeployments, saveClientOutput, markDeploymentGenerated } from '@/services/database/clientQueries';
 import { generateWalkerOSFlow } from './walkerosComposableGenerator';
 import logger from '@/utils/logger';
 

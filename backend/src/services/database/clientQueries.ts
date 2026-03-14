@@ -210,7 +210,7 @@ export async function listDeployments(clientId: string): Promise<Deployment[]> {
 
   if (error) throw new Error(`Failed to list deployments: ${error.message}`);
   return (data ?? []).map((row: Record<string, unknown>) => ({
-    ...(row as Deployment),
+    ...(row as unknown as Deployment),
     pack: row['signal_packs'] as Deployment['pack'],
   }));
 }
