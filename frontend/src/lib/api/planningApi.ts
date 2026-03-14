@@ -11,6 +11,7 @@ import type {
   UserDecision,
   PlanningRecommendation,
   PlanningOutput,
+  SiteDetection,
 } from '@/types/planning';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
@@ -135,5 +136,14 @@ export const planningApi = {
 
   deleteSession(sessionId: string): Promise<{ deleted: boolean }> {
     return apiFetch(`/api/planning/sessions/${sessionId}`, { method: 'DELETE' });
+  },
+
+  // ── Site Detection ───────────────────────────────────────────────────────────
+
+  detectSite(url: string): Promise<SiteDetection> {
+    return apiFetch('/api/planning/detect', {
+      method: 'POST',
+      body: JSON.stringify({ url }),
+    });
   },
 };
