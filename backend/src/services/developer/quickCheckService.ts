@@ -97,12 +97,21 @@ export async function runQuickCheck(url: string): Promise<QuickCheckResult> {
     await new Promise((r) => setTimeout(r, 1500));
 
     // ── dataLayer ──────────────────────────────────────────────────────────────
-    const datalayerEvents = await page
+    const rawDatalayerEvents = await page
       .evaluate(() => {
         const dl = (window as unknown as { dataLayer?: Array<{ event?: string }> }).dataLayer ?? [];
         return [...new Set(dl.map((e) => e?.event ?? '').filter(Boolean))];
       })
       .catch(() => [] as string[]);
+
+    // Filter out GTM lifecycle events — these fire on every page with GTM installed
+    // and are not meaningful conversion/tracking events added by a developer.
+    const GTM_DEFAULT_EVENTS = new Set([
+      'gtm.dom', 'gtm.load', 'gtm.js', 'gtm.init', 'gtm.init_consent',
+      'gtm.click', 'gtm.linkClick', 'gtm.scrollDepth', 'gtm.historyChange',
+      'gtm.historyChange-v2', 'gtm.elementVisibility', 'gtm.timer',
+    ]);
+    const datalayerEvents = rawDatalayerEvents.filter((e) => !GTM_DEFAULT_EVENTS.has(e));
 
     // ── Script sources ─────────────────────────────────────────────────────────
     const scriptSources = await page
@@ -159,8 +168,15 @@ export async function runQuickCheck(url: string): Promise<QuickCheckResult> {
     };
 
     // ── Status + summary ───────────────────────────────────────────────────────
-    const hasAny = gtm || ga4 || meta_pixel || google_ads || datalayerEvents.length > 0;
-    const hasCore = (gtm || ga4) && (ga4 || meta_pixel); // at minimum two signals
+    // `tracking_found` requires BOTH infrastructure (GTM/GA4) AND at least one
+    // meaningful custom dataLayer event — confirming the developer actually pushed
+    // conversion events, not just that pre-existing scripts are present.
+    // `partial` = infrastructure scripts found but no custom events yet.
+    // `not_found` = nothing detected at all.
+    const hasInfrastructure = gtm || ga4 || meta_pixel || google_ads;
+    const hasMeaningfulEvents = datalayerEvents.length > 0;
+    const hasAny = hasInfrastructure || hasMeaningfulEvents;
+    const hasCore = hasInfrastructure && hasMeaningfulEvents;
 
     const overall_status: QuickCheckResult['overall_status'] = hasCore
       ? 'tracking_found'
@@ -176,8 +192,13 @@ export async function runQuickCheck(url: string): Promise<QuickCheckResult> {
     if (datalayerEvents.length > 0)
       parts.push(`${datalayerEvents.length} dataLayer event${datalayerEvents.length !== 1 ? 's' : ''}`);
 
+    const infraList = parts.filter((p) => !p.includes('dataLayer')).join(', ');
     const summary =
-      parts.length > 0 ? `Detected: ${parts.join(', ')}` : 'No tracking detected on this page';
+      overall_status === 'partial' && hasInfrastructure && !hasMeaningfulEvents
+        ? `Pre-existing scripts detected (${infraList || 'unknown'}). No custom dataLayer events found yet — add the recommended pushes and re-check.`
+        : parts.length > 0
+          ? `Detected: ${parts.join(', ')}`
+          : 'No tracking detected on this page';
 
     const duration_ms = Date.now() - startTime;
 
