@@ -1,6 +1,6 @@
 import { auditQueue, planningQueue } from './jobQueue';
 import { runAuditOrchestrator } from '@/services/audit/orchestrator';
-import { runPlanningOrchestrator } from '@/services/planning/sessionOrchestrator';
+import { runPlanningOrchestrator, runRescanOrchestrator } from '@/services/planning/sessionOrchestrator';
 import { getPagesBySession } from '@/services/database/planningQueries';
 import { supabaseAdmin } from '@/services/database/supabase';
 import type { PlanningSession, PlanningPage } from '@/types/planning';
@@ -18,10 +18,10 @@ logger.info('Audit queue worker registered');
 // ── Planning worker ───────────────────────────────────────────────────────────
 
 planningQueue.process(async (job) => {
-  const { session_id } = job.data;
-  logger.info({ session_id, jobId: job.id }, 'Planning job received');
+  const { session_id, job_type } = job.data as { session_id: string; job_type?: string };
+  logger.info({ session_id, job_type: job_type ?? 'scan', jobId: job.id }, 'Planning job received');
 
-  // Load session + pages from DB (job is internal — no userId ownership check needed)
+  // Load session from DB
   const { data: sessionRow, error } = await supabaseAdmin
     .from('planning_sessions')
     .select('*')
@@ -32,6 +32,12 @@ planningQueue.process(async (job) => {
     throw new Error(`Planning session not found: ${session_id}`);
   }
 
+  if (job_type === 'rescan') {
+    await runRescanOrchestrator({ session: sessionRow as PlanningSession });
+    return;
+  }
+
+  // Default: full scan
   const pages: PlanningPage[] = await getPagesBySession(session_id);
   if (pages.length === 0) {
     throw new Error(`Planning session has no pages: ${session_id}`);

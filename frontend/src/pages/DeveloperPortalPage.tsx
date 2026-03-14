@@ -161,16 +161,16 @@ export function DeveloperPortalPage() {
         progress={data.progress}
       />
 
-      <main className="mx-auto max-w-3xl px-6 py-8">
+      <main className="mx-auto max-w-3xl px-4 sm:px-6 py-6 sm:py-8">
         {/* Download buttons */}
         {data.outputs.length > 0 && (
-          <div className="mb-8 flex flex-wrap gap-3">
+          <div className="mb-6 sm:mb-8 flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-3">
             {gtmOutput && (
               <button
                 type="button"
                 onClick={() => handleDownload(gtmOutput.id, gtmOutput.output_type, gtmOutput.mime_type)}
                 disabled={downloadingId === gtmOutput.id}
-                className="flex items-center gap-2 rounded-lg border border-border bg-background px-4 py-2.5 text-sm font-medium shadow-sm hover:bg-muted/40 transition-colors disabled:opacity-60"
+                className="flex items-center justify-center gap-2 rounded-lg border border-border bg-background px-4 py-2.5 text-sm font-medium shadow-sm hover:bg-muted/40 transition-colors disabled:opacity-60 w-full sm:w-auto"
               >
                 <span>📦</span>
                 {downloadingId === gtmOutput.id ? 'Downloading…' : 'Download GTM Container'}
@@ -181,7 +181,7 @@ export function DeveloperPortalPage() {
                 type="button"
                 onClick={() => handleDownload(specOutput.id, specOutput.output_type, specOutput.mime_type)}
                 disabled={downloadingId === specOutput.id}
-                className="flex items-center gap-2 rounded-lg border border-border bg-background px-4 py-2.5 text-sm font-medium shadow-sm hover:bg-muted/40 transition-colors disabled:opacity-60"
+                className="flex items-center justify-center gap-2 rounded-lg border border-border bg-background px-4 py-2.5 text-sm font-medium shadow-sm hover:bg-muted/40 transition-colors disabled:opacity-60 w-full sm:w-auto"
               >
                 <span>💻</span>
                 {downloadingId === specOutput.id ? 'Downloading…' : 'Download Full Spec'}

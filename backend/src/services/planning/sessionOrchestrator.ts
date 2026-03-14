@@ -16,10 +16,20 @@ import { capturePage } from './pageCaptureService';
 import { analysePageWithAI } from './aiAnalysisService';
 import {
   updateSessionStatus,
+  updateSessionRescan,
   updatePage,
   createRecommendations,
+  getPagesBySession,
+  getApprovedRecommendations,
   type CreateRecommendationInput,
 } from '@/services/database/planningQueries';
+import {
+  detectPageChanges,
+  buildPageChangeResult,
+  computeChangeSummary,
+  type ChangeDetectionResult,
+  type PageChangeResult,
+} from './changeDetectionService';
 import type { PlanningPage, PlanningSession } from '@/types/planning';
 import logger from '@/utils/logger';
 
@@ -205,6 +215,150 @@ async function scanOnePage(
     await updatePage(pageId, { status: 'failed', error_message: msg });
     throw err; // re-throw so Promise.allSettled records it as rejected
   }
+}
+
+// ── Re-scan orchestrator ─────────────────────────────────────────────────────
+
+export interface RescanInput {
+  session: PlanningSession;
+}
+
+/**
+ * Re-scan all pages in a session and compare against the previously approved
+ * recommendations. Results are stored in planning_sessions.rescan_results.
+ *
+ * Called by the Bull job processor for jobs with job_type: 'rescan'.
+ */
+export async function runRescanOrchestrator(input: RescanInput): Promise<void> {
+  const { session } = input;
+  const sessionId = session.id;
+  const startedAt = new Date().toISOString();
+
+  logger.info({ sessionId }, 'Re-scan orchestrator starting');
+
+  // Mark scanning in-progress (stored in JSONB, NOT in session.status)
+  await updateSessionRescan(sessionId, {
+    status: 'scanning',
+    started_at: startedAt,
+    completed_at: null,
+    error: null,
+    pages: [],
+    summary: {},
+  });
+
+  // ── Connect to Browserbase ──────────────────────────────────────────────────
+  let browser: PlaywrightBrowser;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { chromium } = require('playwright-core') as {
+      chromium: { connectOverCDP(url: string): Promise<PlaywrightBrowser> };
+    };
+    const { createBrowserbaseSession, getCDPUrl } = await import('@/services/browserbase/client');
+    const bbSession = await createBrowserbaseSession();
+    const cdpUrl = getCDPUrl(bbSession.id);
+    browser = await chromium.connectOverCDP(cdpUrl);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error({ sessionId, err: msg }, 'Re-scan Browserbase connection failed');
+    await updateSessionRescan(sessionId, {
+      status: 'failed',
+      started_at: startedAt,
+      completed_at: new Date().toISOString(),
+      error: `Browserbase connection failed: ${msg}`,
+      pages: [],
+      summary: {},
+    });
+    return;
+  }
+
+  // ── Load data ───────────────────────────────────────────────────────────────
+  const [pages, approvedRecs] = await Promise.all([
+    getPagesBySession(sessionId),
+    getApprovedRecommendations(sessionId),
+  ]);
+
+  // Group approved recs by page_id
+  const recsByPage = new Map<string, typeof approvedRecs>();
+  for (const rec of approvedRecs) {
+    const list = recsByPage.get(rec.page_id) ?? [];
+    list.push(rec);
+    recsByPage.set(rec.page_id, list);
+  }
+
+  // ── Scan + detect changes per page ──────────────────────────────────────────
+  const sortedPages = [...pages].sort((a, b) => a.page_order - b.page_order);
+  const pageResults: PageChangeResult[] = [];
+
+  for (const page of sortedPages) {
+    try {
+      const capture = await capturePage(
+        browser as Parameters<typeof capturePage>[0],
+        page.url,
+      );
+
+      const pageRecs = recsByPage.get(page.id) ?? [];
+
+      const elementSummary = capture.interactive_elements
+        .slice(0, 25)
+        .map(
+          (el) => `  [${el.element_id}] <${el.tag}> "${el.text.slice(0, 50)}" (${el.element_type})`,
+        )
+        .join('\n');
+
+      const domSummary = JSON.stringify(capture.simplified_dom, null, 0).slice(0, 4000);
+
+      const aiOutput = await detectPageChanges({
+        page_url: capture.actual_url,
+        page_title: capture.page_title,
+        simplified_dom_summary: domSummary,
+        interactive_elements_summary: elementSummary,
+        screenshot_base64: capture.screenshot_base64,
+        previous_recommendations: pageRecs.map((r) => ({
+          id: r.id,
+          event_name: r.event_name,
+          element_selector: r.element_selector ?? null,
+          element_text: r.element_text ?? null,
+          action_type: r.action_type,
+        })),
+      });
+
+      pageResults.push(buildPageChangeResult(page, pageRecs, aiOutput));
+      logger.info({ sessionId, pageId: page.id, url: page.url }, 'Re-scan page complete');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.warn({ sessionId, pageId: page.id, url: page.url, err: msg }, 'Re-scan page failed');
+      pageResults.push({
+        page_id: page.id,
+        page_url: page.url,
+        page_label: page.page_title ?? page.url,
+        change_type: 'page_not_found',
+        new_elements: [],
+        removed_elements: [],
+        modified_elements: [],
+        scanned_at: new Date().toISOString(),
+      });
+    }
+  }
+
+  // ── Wrap up ─────────────────────────────────────────────────────────────────
+  await browser.close?.().catch(() => {});
+
+  const summary = computeChangeSummary(pageResults);
+  const completedAt = new Date().toISOString();
+
+  const result: ChangeDetectionResult = {
+    session_id: sessionId,
+    status: 'complete',
+    started_at: startedAt,
+    completed_at: completedAt,
+    error: null,
+    pages: pageResults,
+    summary,
+  };
+
+  await updateSessionRescan(sessionId, result as unknown as Record<string, unknown>, completedAt);
+
+  logger.info({ sessionId, summary }, 'Re-scan complete');
 }
 
 /** Convert ExistingTrackingDetection to the JSONB array format stored in DB */

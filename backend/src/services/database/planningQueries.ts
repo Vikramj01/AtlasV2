@@ -82,6 +82,23 @@ export async function updateSessionStatus(
   if (error) throw new Error(`Failed to update session status: ${error.message}`);
 }
 
+/** Update the rescan state (last_rescan_at + rescan_results JSONB). */
+export async function updateSessionRescan(
+  sessionId: string,
+  rescanResults: Record<string, unknown>,
+  lastRescanAt?: string,
+): Promise<void> {
+  const update: Record<string, unknown> = { rescan_results: rescanResults };
+  if (lastRescanAt !== undefined) update['last_rescan_at'] = lastRescanAt;
+
+  const { error } = await supabase
+    .from('planning_sessions')
+    .update(update)
+    .eq('id', sessionId);
+
+  if (error) throw new Error(`Failed to update session rescan: ${error.message}`);
+}
+
 /** Count planning sessions created this calendar month for a user (used by rate limiter). */
 export async function countPlanningSessionsThisMonth(userId: string): Promise<number> {
   const startOfMonth = new Date();

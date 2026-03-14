@@ -3,11 +3,12 @@ import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { Trash2, Check, X } from 'lucide-react';
 import { planningApi } from '@/lib/api/planningApi';
 import { usePlanningStore } from '@/store/planningStore';
-import type { PlanningSession, ImplementationProgress } from '@/types/planning';
+import type { PlanningSession, ImplementationProgress, ChangeDetectionResult } from '@/types/planning';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ProgressBar } from '@/components/developer/ProgressBar';
+import { ChangeDetectionResults } from '@/components/planning/ChangeDetectionResults';
 
 const STATUS_LABELS: Record<PlanningSession['status'], string> = {
   setup:         'Setup',
@@ -55,6 +56,64 @@ function ImplementationCell({
   );
 }
 
+// ── Re-scan button cell ───────────────────────────────────────────────────────
+
+function RescanCell({
+  session,
+  rescanResults,
+  isRescanning,
+  onRescan,
+  onViewResults,
+}: {
+  session: PlanningSession;
+  rescanResults: ChangeDetectionResult | null | undefined;
+  isRescanning: boolean;
+  onRescan: (sessionId: string) => void;
+  onViewResults: (sessionId: string) => void;
+}) {
+  if (session.status !== 'outputs_ready' && session.status !== 'review_ready') {
+    return <span className="text-xs text-muted-foreground/50">—</span>;
+  }
+
+  const hasResults = rescanResults?.status === 'complete';
+  const isScanning = isRescanning || rescanResults?.status === 'scanning';
+
+  return (
+    <div className="flex flex-col items-start gap-1">
+      <button
+        type="button"
+        disabled={isScanning}
+        onClick={() => onRescan(session.id)}
+        className="text-xs font-medium text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        title="Re-scan pages and detect changes"
+      >
+        {isScanning ? (
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
+            Scanning…
+          </span>
+        ) : (
+          '↺ Re-scan'
+        )}
+      </button>
+      {hasResults && (
+        <button
+          type="button"
+          onClick={() => onViewResults(session.id)}
+          className="text-xs text-brand-600 hover:text-brand-700 font-medium"
+        >
+          {rescanResults?.summary?.action_required ? '⚠ View changes' : '✓ View results'}
+        </button>
+      )}
+      {session.last_rescan_at && hasResults && (
+        <span className="text-xs text-muted-foreground/50">
+          {new Date(session.last_rescan_at).toLocaleDateString()}
+        </span>
+      )}
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export function PlanningDashboard() {
@@ -67,6 +126,10 @@ export function PlanningDashboard() {
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [progressMap, setProgressMap] = useState<Record<string, ImplementationProgress | null>>({});
+  const [rescanMap, setRescanMap] = useState<Record<string, ChangeDetectionResult | null>>({});
+  const [rescanningId, setRescanningId] = useState<string | null>(null);
+  const [viewingResultsId, setViewingResultsId] = useState<string | null>(null);
+  const [pollTimer, setPollTimer] = useState<ReturnType<typeof setInterval> | null>(null);
 
   const limitReached = (location.state as { limitReached?: boolean } | null)?.limitReached ?? false;
   const limitMessage = (location.state as { limitMessage?: string } | null)?.limitMessage ?? '';
@@ -84,10 +147,20 @@ export function PlanningDashboard() {
               setProgressMap((prev) => ({ ...prev, [s.id]: progress }));
             })
             .catch(() => {});
+
+          // Restore any existing rescan results from session data
+          if (s.rescan_results) {
+            setRescanMap((prev) => ({ ...prev, [s.id]: s.rescan_results }));
+          }
         }
       })
       .catch((err) => setError(err.message))
       .finally(() => setIsLoading(false));
+
+    return () => {
+      if (pollTimer) clearInterval(pollTimer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function handleNew() {
@@ -113,8 +186,52 @@ export function PlanningDashboard() {
     }
   }
 
+  async function handleRescan(sessionId: string) {
+    setRescanningId(sessionId);
+    try {
+      await planningApi.startRescan(sessionId);
+      // Start polling for results
+      const timer = setInterval(async () => {
+        const { rescan_results } = await planningApi.getChanges(sessionId);
+        if (rescan_results?.status === 'complete' || rescan_results?.status === 'failed') {
+          clearInterval(timer);
+          setPollTimer(null);
+          setRescanningId(null);
+          setRescanMap((prev) => ({ ...prev, [sessionId]: rescan_results }));
+          // Update the session's last_rescan_at from the result
+          setSessions((prev) =>
+            prev.map((s) =>
+              s.id === sessionId
+                ? { ...s, last_rescan_at: rescan_results.completed_at, rescan_results }
+                : s,
+            ),
+          );
+        }
+      }, 5000);
+      setPollTimer(timer);
+    } catch {
+      setRescanningId(null);
+    }
+  }
+
+  function handleViewResults(sessionId: string) {
+    setViewingResultsId(sessionId);
+  }
+
+  const viewingSession = viewingResultsId ? sessions.find((s) => s.id === viewingResultsId) : null;
+  const viewingResults = viewingResultsId ? rescanMap[viewingResultsId] : null;
+
   return (
-    <div className="mx-auto max-w-4xl px-6 py-8">
+    <div className="mx-auto max-w-5xl px-6 py-8">
+      {/* Change detection results modal */}
+      {viewingResultsId && viewingResults?.status === 'complete' && viewingSession && (
+        <ChangeDetectionResults
+          sessionId={viewingResultsId}
+          results={viewingResults}
+          onClose={() => setViewingResultsId(null)}
+        />
+      )}
+
       {/* Plan-limit upgrade banner */}
       {limitReached && (
         <div className="mb-6 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-4">
@@ -182,6 +299,7 @@ export function PlanningDashboard() {
                 <TableHead>Type</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Implementation</TableHead>
+                <TableHead>Re-scan</TableHead>
                 <TableHead>Created</TableHead>
                 <TableHead></TableHead>
               </TableRow>
@@ -200,6 +318,15 @@ export function PlanningDashboard() {
                   </TableCell>
                   <TableCell>
                     <ImplementationCell progress={progressMap[s.id]} status={s.status} />
+                  </TableCell>
+                  <TableCell>
+                    <RescanCell
+                      session={s}
+                      rescanResults={rescanMap[s.id] ?? s.rescan_results}
+                      isRescanning={rescanningId === s.id}
+                      onRescan={handleRescan}
+                      onViewResults={handleViewResults}
+                    />
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {new Date(s.created_at).toLocaleDateString()}

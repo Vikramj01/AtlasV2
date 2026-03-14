@@ -495,6 +495,55 @@ router.get('/sessions/:id/pages/:pageId/screenshot', async (req: Request, res: R
   }
 });
 
+// ── POST /api/planning/sessions/:id/rescan ────────────────────────────────────
+// Re-scan all pages and compare against existing approved recommendations.
+// Enqueues a job on planningQueue with job_type: 'rescan'.
+// Returns immediately; poll GET /changes for results.
+
+router.post('/sessions/:id/rescan', async (req: Request, res: Response) => {
+  try {
+    const session = await getSession(req.params.id, req.user!.id);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    if (session.status !== 'outputs_ready' && session.status !== 'review_ready') {
+      return res.status(409).json({
+        error: `Session must be in outputs_ready or review_ready state to re-scan. Current: ${session.status}`,
+      });
+    }
+
+    const sessionAny = session as unknown as Record<string, unknown>;
+    const currentRescan = sessionAny['rescan_results'] as { status?: string } | null;
+    if (currentRescan?.status === 'scanning') {
+      return res.status(409).json({ error: 'A re-scan is already in progress for this session.' });
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await planningQueue.add({ session_id: session.id, job_type: 'rescan' } as any);
+
+    res.json({ queued: true, session_id: session.id });
+  } catch (err) {
+    sendInternalError(res, err);
+  }
+});
+
+// ── GET /api/planning/sessions/:id/changes ─────────────────────────────────────
+// Returns the latest rescan_results, or { rescan_results: null } if no rescan done.
+
+router.get('/sessions/:id/changes', async (req: Request, res: Response) => {
+  try {
+    const session = await getSession(req.params.id, req.user!.id);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    const sessionAny = session as unknown as Record<string, unknown>;
+    res.json({
+      rescan_results: sessionAny['rescan_results'] ?? null,
+      last_rescan_at: sessionAny['last_rescan_at'] ?? null,
+    });
+  } catch (err) {
+    sendInternalError(res, err);
+  }
+});
+
 // ── DELETE /api/planning/sessions/:id ─────────────────────────────────────────
 
 router.delete('/sessions/:id', async (req: Request, res: Response) => {

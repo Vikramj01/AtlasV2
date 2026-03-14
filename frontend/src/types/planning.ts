@@ -32,6 +32,61 @@ export interface PlanningSession {
   created_at: string;
   updated_at: string;
   completed_at: string | null;
+  last_rescan_at: string | null;
+  rescan_results: ChangeDetectionResult | null;
+}
+
+// ── Change Detection (Re-scan) ────────────────────────────────────────────────
+
+export interface NewElement {
+  event_name: string;
+  element_text: string;
+  priority: 'must_have' | 'should_have' | 'nice_to_have';
+  business_justification: string;
+  selector: string;
+}
+
+export interface RemovedElement {
+  recommendation_id: string;
+  original_event_name: string;
+  reason: string;
+}
+
+export interface ModifiedElement {
+  recommendation_id: string;
+  original_event_name: string;
+  change_description: string;
+}
+
+export type ChangeType = 'unchanged' | 'modified' | 'new_elements' | 'removed_elements' | 'page_not_found';
+
+export interface PageChangeResult {
+  page_id: string;
+  page_url: string;
+  page_label: string;
+  change_type: ChangeType;
+  new_elements: NewElement[];
+  removed_elements: RemovedElement[];
+  modified_elements: ModifiedElement[];
+  scanned_at: string;
+}
+
+export interface ChangeSummary {
+  pages_unchanged: number;
+  pages_modified: number;
+  new_elements_found: number;
+  elements_removed: number;
+  action_required: boolean;
+}
+
+export interface ChangeDetectionResult {
+  session_id: string;
+  status: 'scanning' | 'complete' | 'failed';
+  started_at: string;
+  completed_at: string | null;
+  error: string | null;
+  pages: PageChangeResult[];
+  summary: ChangeSummary;
 }
 
 // ── Pages ──────────────────────────────────────────────────────────────────────
