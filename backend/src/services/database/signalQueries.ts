@@ -282,6 +282,30 @@ export async function countClientsUsingPack(packId: string): Promise<number> {
   return count ?? 0;
 }
 
+export async function countOutdatedDeployments(packId: string): Promise<number> {
+  // Fetch pack's updated_at first, then count deployments behind it
+  const { data: pack } = await supabase
+    .from('signal_packs')
+    .select('updated_at')
+    .eq('id', packId)
+    .single();
+
+  if (!pack) return 0;
+
+  const packUpdatedAt = (pack as { updated_at: string }).updated_at;
+
+  const { data: deployments } = await supabase
+    .from('deployments')
+    .select('last_generated_at')
+    .eq('pack_id', packId);
+
+  if (!deployments) return 0;
+
+  return deployments.filter((d: { last_generated_at: string | null }) =>
+    !d.last_generated_at || d.last_generated_at < packUpdatedAt
+  ).length;
+}
+
 export async function incrementPackVersion(packId: string): Promise<void> {
   const { data } = await supabase
     .from('signal_packs')

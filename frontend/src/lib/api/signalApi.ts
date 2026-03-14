@@ -44,7 +44,7 @@ export const signalApi = {
     apiFetch<{ packs: SignalPack[] }>(`/api/signals/packs${orgId ? `?org_id=${orgId}` : ''}`).then((r) => r.packs),
 
   getPack: (packId: string) =>
-    apiFetch<SignalPackWithSignals & { client_count: number }>(`/api/signals/packs/${packId}`),
+    apiFetch<SignalPackWithSignals & { client_count: number; outdated_count: number }>(`/api/signals/packs/${packId}`),
 
   createPack: (data: { name: string; business_type: string; description?: string; organisation_id?: string }) =>
     apiFetch<SignalPack>('/api/signals/packs', { method: 'POST', body: JSON.stringify(data) }),
@@ -63,4 +63,10 @@ export const signalApi = {
 
   removeSignalFromPack: (packId: string, signalId: string) =>
     apiFetch(`/api/signals/packs/${packId}/signals/${signalId}`, { method: 'DELETE' }),
+
+  regenerateAllForPack: (packId: string, orgId: string) =>
+    apiFetch<{ regenerated: number; failed: number; total: number }>(
+      `/api/signals/packs/${packId}/regenerate-all?org_id=${orgId}`,
+      { method: 'POST' },
+    ),
 };

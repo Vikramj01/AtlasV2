@@ -64,4 +64,5 @@ export interface SignalPackSignal {
 
 export interface SignalPackWithSignals extends SignalPack {
   signals: SignalPackSignal[];
+  outdated_count?: number;
 }

@@ -25,8 +25,11 @@ import {
   addSignalToPack,
   removeSignalFromPack,
   countClientsUsingPack,
+  countOutdatedDeployments,
   incrementPackVersion,
 } from '@/services/database/signalQueries';
+import { getClientsByPack, getClient } from '@/services/database/clientQueries';
+import { generateComposableOutputs } from '@/services/signals/composableOutputGenerator';
 import type { CreateSignalRequest, UpdateSignalRequest, CreatePackRequest } from '@/types/signal';
 
 const router = Router();
@@ -171,8 +174,11 @@ router.get('/packs/:packId', async (req: Request, res: Response) => {
     const pack = await getSignalPackWithSignals(req.params['packId']);
     if (!pack) return res.status(404).json({ error: 'Signal pack not found' });
 
-    const clientCount = await countClientsUsingPack(req.params['packId']);
-    res.json({ ...pack, client_count: clientCount });
+    const [clientCount, outdatedCount] = await Promise.all([
+      countClientsUsingPack(req.params['packId']),
+      countOutdatedDeployments(req.params['packId']),
+    ]);
+    res.json({ ...pack, client_count: clientCount, outdated_count: outdatedCount });
   } catch (err) {
     sendInternalError(res, err);
   }
@@ -236,6 +242,7 @@ router.post('/packs/:packId/signals', async (req: Request, res: Response) => {
     if (pack.organisation_id && !(await assertOrgMember(pack.organisation_id, req.user!.id, res))) return;
 
     const entry = await addSignalToPack(req.params['packId'], signal_id, stage_hint, is_required ?? true);
+    await incrementPackVersion(req.params['packId']);
     res.status(201).json(entry);
   } catch (err) {
     sendInternalError(res, err);
@@ -251,7 +258,44 @@ router.delete('/packs/:packId/signals/:signalId', async (req: Request, res: Resp
     if (pack.organisation_id && !(await assertOrgMember(pack.organisation_id, req.user!.id, res))) return;
 
     await removeSignalFromPack(req.params['packId'], req.params['signalId']);
+    await incrementPackVersion(req.params['packId']);
     res.json({ deleted: true });
+  } catch (err) {
+    sendInternalError(res, err);
+  }
+});
+
+// ── POST /api/signals/packs/:packId/regenerate-all ────────────────────────────
+// Regenerates outputs for every client that has this pack deployed.
+
+router.post('/packs/:packId/regenerate-all', async (req: Request, res: Response) => {
+  try {
+    const pack = await getSignalPack(req.params['packId']);
+    if (!pack) return res.status(404).json({ error: 'Signal pack not found' });
+
+    const orgId = req.query['org_id'] as string | undefined;
+    if (!orgId) return res.status(400).json({ error: 'org_id query param is required' });
+    if (!(await assertOrgMember(orgId, req.user!.id, res))) return;
+
+    const clients = await getClientsByPack(req.params['packId'], orgId);
+    const total = clients.length;
+    let regenerated = 0;
+    let failed = 0;
+
+    await Promise.allSettled(
+      clients.map(async (client) => {
+        try {
+          const full = await getClient(client.id, orgId);
+          if (!full) throw new Error('Client not found');
+          await generateComposableOutputs(full, client.id);
+          regenerated++;
+        } catch {
+          failed++;
+        }
+      })
+    );
+
+    res.json({ regenerated, failed, total });
   } catch (err) {
     sendInternalError(res, err);
   }
