@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import JSZip from 'jszip';
 import { authMiddleware } from '@/api/middleware/authMiddleware';
 import { auditLimiter } from '@/api/middleware/auditLimiter';
-import { createAudit, getAudit, getReport, listAudits, deleteAudit } from '@/services/database/queries';
+import { createAudit, getAudit, getReport, listAudits, deleteAudit, getPreviousAuditScore } from '@/services/database/queries';
 import { getJourneyWithDetails, getLatestSpec } from '@/services/database/journeyQueries';
 import { generatePDF } from '@/services/export/pdfGenerator';
 import { auditQueue } from '@/services/queue/jobQueue';
@@ -161,7 +161,20 @@ router.get('/:audit_id/report', async (req: Request, res: Response) => {
     return;
   }
 
-  res.json(report);
+  // Attach before/after comparison if a previous audit exists for this site
+  const previous = await getPreviousAuditScore(audit_id, audit.website_url, user.id).catch(() => null);
+  const currentScore = report.executive_summary.scores.conversion_signal_health;
+  const comparison = previous
+    ? {
+        previous_audit_id: previous.audit_id,
+        previous_score: previous.score,
+        current_score: currentScore,
+        delta: currentScore - previous.score,
+        previous_audit_date: previous.created_at,
+      }
+    : null;
+
+  res.json({ ...report, comparison });
 });
 
 // ─── POST /api/audits/start-from-journey ─────────────────────────────────────

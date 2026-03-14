@@ -14,7 +14,7 @@ interface Props {
 }
 
 export function ExecutiveSummary({ report }: Props) {
-  const { executive_summary } = report;
+  const { executive_summary, comparison } = report;
   const { scores } = executive_summary;
 
   return (
@@ -23,6 +23,26 @@ export function ExecutiveSummary({ report }: Props) {
         status={executive_summary.overall_status}
         summary={executive_summary.business_summary}
       />
+
+      {comparison && comparison.delta !== 0 && (
+        <div className={`rounded-xl border px-5 py-4 flex items-center justify-between ${
+          comparison.delta > 0
+            ? 'border-green-200 bg-green-50'
+            : 'border-red-100 bg-red-50'
+        }`}>
+          <div>
+            <p className={`text-sm font-semibold ${comparison.delta > 0 ? 'text-green-800' : 'text-red-800'}`}>
+              {comparison.delta > 0 ? 'Tracking improved since last audit' : 'Tracking regressed since last audit'}
+            </p>
+            <p className={`text-xs mt-0.5 ${comparison.delta > 0 ? 'text-green-700' : 'text-red-700'}`}>
+              Signal Health: {comparison.previous_score} &rarr; {comparison.current_score} ({comparison.delta > 0 ? '+' : ''}{comparison.delta} points) &middot; Previous audit: {new Date(comparison.previous_audit_date).toLocaleDateString()}
+            </p>
+          </div>
+          <span className={`text-2xl font-bold tabular-nums ${comparison.delta > 0 ? 'text-green-600' : 'text-red-600'}`}>
+            {comparison.delta > 0 ? `+${comparison.delta}` : comparison.delta}
+          </span>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <ScoreCard

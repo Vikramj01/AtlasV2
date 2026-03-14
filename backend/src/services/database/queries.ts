@@ -154,3 +154,36 @@ export async function listAudits(user_id: string): Promise<AuditListItem[]> {
     };
   });
 }
+
+// ─── Previous audit score (for before/after comparison) ───────────────────────
+// Returns the most recent *other* completed audit for the same user + website URL.
+
+export async function getPreviousAuditScore(
+  currentAuditId: string,
+  websiteUrl: string,
+  userId: string,
+): Promise<{ audit_id: string; score: number; created_at: string } | null> {
+  const { data, error } = await supabaseAdmin
+    .from('audits')
+    .select('id, created_at, audit_reports(report_json)')
+    .eq('user_id', userId)
+    .eq('website_url', websiteUrl)
+    .eq('status', 'completed')
+    .neq('id', currentAuditId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !data) return null;
+
+  const row = data as Record<string, unknown>;
+  const reportRows = row['audit_reports'] as Array<{ report_json: ReportJSON }> | null;
+  const score = reportRows?.[0]?.report_json?.executive_summary?.scores?.conversion_signal_health;
+  if (score == null) return null;
+
+  return {
+    audit_id: row['id'] as string,
+    score,
+    created_at: row['created_at'] as string,
+  };
+}
