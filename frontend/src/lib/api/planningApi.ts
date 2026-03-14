@@ -14,6 +14,7 @@ import type {
   SiteDetection,
   DeveloperShare,
   ImplementationProgress,
+  ChangeDetectionResult,
 } from '@/types/planning';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
@@ -165,5 +166,20 @@ export const planningApi = {
 
   getProgress(sessionId: string): Promise<{ has_share: boolean; share_id?: string; progress: ImplementationProgress | null }> {
     return apiFetch(`/api/planning/sessions/${sessionId}/share/progress`);
+  },
+
+  // ── Re-scan ──────────────────────────────────────────────────────────────────
+
+  /** Enqueue a re-scan job. Returns immediately; poll getChanges() for results. */
+  startRescan(sessionId: string): Promise<{ queued: boolean; session_id: string }> {
+    return apiFetch(`/api/planning/sessions/${sessionId}/rescan`, { method: 'POST' });
+  },
+
+  /** Poll for re-scan results. rescan_results is null until first rescan. */
+  getChanges(sessionId: string): Promise<{
+    rescan_results: ChangeDetectionResult | null;
+    last_rescan_at: string | null;
+  }> {
+    return apiFetch(`/api/planning/sessions/${sessionId}/changes`);
   },
 };
