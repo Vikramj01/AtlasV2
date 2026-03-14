@@ -235,6 +235,7 @@ router.post('/start-from-journey', auditLimiter, async (req: Request, res: Respo
 
 // ─── GET /api/audits/:audit_id/gaps ─────────────────────────────────────────
 // Returns journey gap results for a completed journey-mode audit.
+// Also returns planning_context if the journey was created from Planning Mode.
 
 router.get('/:audit_id/gaps', async (req: Request, res: Response) => {
   const { user } = req as AuthenticatedRequest;
@@ -242,14 +243,59 @@ router.get('/:audit_id/gaps', async (req: Request, res: Response) => {
   if (!audit) { res.status(404).json({ error: 'Audit not found' }); return; }
   if (audit.user_id !== user.id) { res.status(403).json({ error: 'Forbidden' }); return; }
 
-  const { data, error } = await (await import('@/services/database/supabase')).supabaseAdmin
+  const { supabaseAdmin } = await import('@/services/database/supabase');
+
+  const { data, error } = await supabaseAdmin
     .from('journey_audit_results')
     .select('*')
     .eq('audit_id', req.params.audit_id)
     .order('stage_id');
 
   if (error) { sendInternalError(res, error); return; }
-  res.json(data ?? []);
+
+  const results = data ?? [];
+
+  // ── Planning context: surface what was planned if journey came from Planning Mode ──
+  let planning_context: {
+    session_id: string;
+    website_url: string;
+    planned_events: string[];
+  } | null = null;
+
+  if (results.length > 0) {
+    try {
+      const journeyId = (results[0] as { journey_id?: string }).journey_id;
+      if (journeyId) {
+        const { data: journey } = await supabaseAdmin
+          .from('journeys')
+          .select('source_planning_session_id')
+          .eq('id', journeyId)
+          .single();
+
+        if (journey?.source_planning_session_id) {
+          const { getApprovedRecommendations, getSession } = await import(
+            '@/services/database/planningQueries'
+          );
+          const [recs, session] = await Promise.all([
+            getApprovedRecommendations(journey.source_planning_session_id),
+            getSession(journey.source_planning_session_id, user.id).catch(() => null),
+          ]);
+
+          if (recs.length > 0) {
+            planning_context = {
+              session_id: journey.source_planning_session_id,
+              website_url: session?.website_url ?? '',
+              planned_events: [...new Set(recs.map((r) => r.event_name))],
+            };
+          }
+        }
+      }
+    } catch {
+      // Planning context is best-effort — don't fail the gaps request
+    }
+  }
+
+  res.json({ results, planning_context });
 });
 
 // ─── POST /api/audits/:audit_id/export ───────────────────────────────────────

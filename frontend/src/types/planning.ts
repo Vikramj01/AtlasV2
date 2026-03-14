@@ -233,6 +233,28 @@ export interface ImplementationProgress {
   pages: PageProgress[];
 }
 
+// ── Quick Check ────────────────────────────────────────────────────────────────
+
+export interface QuickCheckTracking {
+  gtm: boolean;
+  gtm_container_id: string | undefined;
+  ga4: boolean;
+  ga4_measurement_id: string | undefined;
+  meta_pixel: boolean;
+  meta_pixel_id: string | undefined;
+  google_ads: boolean;
+  datalayer_events: string[];
+}
+
+export interface QuickCheckResult {
+  url: string;
+  checked_at: string;
+  duration_ms: number;
+  tracking: QuickCheckTracking;
+  overall_status: 'tracking_found' | 'partial' | 'not_found' | 'error';
+  summary: string;
+}
+
 export interface DevPortalPage {
   page_id: string;
   page_url: string;

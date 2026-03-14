@@ -71,7 +71,14 @@ export const auditApi = {
     });
   },
 
-  getGaps(audit_id: string): Promise<unknown[]> {
+  getGaps(audit_id: string): Promise<{
+    results: unknown[];
+    planning_context: {
+      session_id: string;
+      website_url: string;
+      planned_events: string[];
+    } | null;
+  }> {
     return apiFetch(`/api/audits/${audit_id}/gaps`);
   },
 

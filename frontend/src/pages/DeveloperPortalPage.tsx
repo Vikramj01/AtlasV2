@@ -14,7 +14,7 @@ import { useParams } from 'react-router-dom';
 import { developerApi } from '@/lib/api/developerApi';
 import { DeveloperHeader } from '@/components/developer/DeveloperHeader';
 import { PageImplementationCard } from '@/components/developer/PageImplementationCard';
-import type { DevPortalData, ImplementationStatus } from '@/types/planning';
+import type { DevPortalData, ImplementationStatus, QuickCheckResult } from '@/types/planning';
 
 // ── Download helpers ──────────────────────────────────────────────────────────
 
@@ -117,6 +117,10 @@ export function DeveloperPortalPage() {
     });
   }
 
+  async function handleQuickCheck(token: string, pageId: string): Promise<QuickCheckResult> {
+    return developerApi.runQuickCheck(token, pageId);
+  }
+
   async function handleDownload(outputId: string, outputType: string, mimeType: string) {
     if (!shareToken) return;
     setDownloadingId(outputId);
@@ -208,8 +212,10 @@ export function DeveloperPortalPage() {
           {data.pages.map((page) => (
             <PageImplementationCard
               key={page.page_id}
+              shareToken={shareToken!}
               page={page}
               onStatusChange={handleStatusChange}
+              onQuickCheck={handleQuickCheck}
             />
           ))}
         </div>

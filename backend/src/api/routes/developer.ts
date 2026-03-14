@@ -33,6 +33,7 @@ import {
   aggregateProgress,
   updatePageStatus,
 } from '@/services/developer/shareService';
+import { runQuickCheck } from '@/services/developer/quickCheckService';
 import { initProgressForShare } from '@/services/database/developerQueries';
 import {
   getSession,
@@ -52,6 +53,20 @@ const devPortalLimiter = rateLimit({
   validate: { xForwardedForHeader: false },
   handler: (_req, res) =>
     res.status(429).json({ error: 'Too many requests. Please slow down.' }),
+});
+
+// ── Rate limiter for quick checks (20/hour per share token) ───────────────────
+// Quick checks spin up a full Browserbase session — higher cost than reads.
+
+const quickCheckLimiter = rateLimit({
+  windowMs: 60 * 60_000, // 1 hour
+  max: 20,
+  keyGenerator: (req) => (req.params as { shareToken?: string }).shareToken ?? req.ip ?? 'unknown',
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
+  handler: (_req, res) =>
+    res.status(429).json({ error: 'Quick check limit reached (20/hour). Please wait before checking again.' }),
 });
 
 // ── Router: share management (JWT-protected) ──────────────────────────────────
@@ -259,6 +274,30 @@ devRouter.get('/:shareToken/outputs/:outputId/download', async (req: Request, re
     sendInternalError(res, err);
   }
 });
+
+// POST /api/dev/:shareToken/pages/:pageId/quickcheck — live tracking verification
+devRouter.post(
+  '/:shareToken/pages/:pageId/quickcheck',
+  quickCheckLimiter,
+  async (req: Request, res: Response) => {
+    try {
+      const validated = await requireToken(req.params.shareToken, res);
+      if (!validated) return;
+
+      // Look up the page URL from the session so we don't trust client-supplied URLs
+      const pages = await getPagesBySession(validated.session_id);
+      const page = pages.find((p) => p.id === req.params.pageId);
+      if (!page) return res.status(404).json({ error: 'Page not found in this share' });
+
+      const result = await runQuickCheck(page.url);
+      res.json(result);
+    } catch (err) {
+      // Quick check failures are non-fatal — return structured error
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      res.status(500).json({ error: `Quick check failed: ${message}` });
+    }
+  },
+);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
