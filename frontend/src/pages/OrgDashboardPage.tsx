@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Users, Building2, Zap, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { organisationApi, clientApi } from '@/lib/api/organisationApi';
 import { useOrganisationStore } from '@/store/organisationStore';
 import { ClientCard } from '@/components/organisation/ClientCard';
@@ -44,8 +44,8 @@ export function OrgDashboardPage() {
     );
   }
 
-  const healthyClients = clients.filter((c) => c.signal_health !== null && c.signal_health >= 80).length;
-  const atRiskClients = clients.filter((c) => c.signal_health !== null && c.signal_health < 60).length;
+  const healthyClients = clients.filter((c) => c.signal_health != null && c.signal_health >= 80).length;
+  const atRiskClients = clients.filter((c) => c.signal_health != null && c.signal_health < 60).length;
 
   return (
     <div className="space-y-6 p-6">

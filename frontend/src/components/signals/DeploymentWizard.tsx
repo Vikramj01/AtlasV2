@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { signalApi } from '@/lib/api/signalApi';
 import { clientApi } from '@/lib/api/organisationApi';
-import { PackCard } from './PackCard';
 import type { SignalPack } from '@/types/signal';
 import type { ClientDeployment } from '@/types/organisation';
 
