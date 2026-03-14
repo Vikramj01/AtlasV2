@@ -131,7 +131,7 @@ export async function getSignalPackWithSignals(packId: string): Promise<SignalPa
   if (error) return { ...pack, signals: [] };
 
   const signals: SignalPackSignal[] = (data ?? []).map((row: Record<string, unknown>) => ({
-    ...(row as SignalPackSignal),
+    ...(row as unknown as SignalPackSignal),
     signal: row['signals'] as Signal,
   }));
 
@@ -207,13 +207,15 @@ export async function addSignalToPack(
   if (error) throw new Error(`Failed to add signal to pack: ${error.message}`);
 
   // Update signals_count
-  await supabase.rpc('increment_signals_count', { pack_id: packId }).catch(() => {
+  try {
+    await supabase.rpc('increment_signals_count', { pack_id: packId });
+  } catch {
     // If the RPC doesn't exist, update manually
-    supabase
+    await supabase
       .from('signal_packs')
       .update({ signals_count: nextOrder })
       .eq('id', packId);
-  });
+  }
 
   return data as SignalPackSignal;
 }

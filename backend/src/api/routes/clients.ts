@@ -27,7 +27,7 @@ import {
   getClientOutput,
   getClientsByPack,
 } from '@/services/database/clientQueries';
-import { getSignalPackWithSignals } from '@/services/database/signalQueries';
+import { getSignalPackWithSignals, resolveDeploymentsForClient } from '@/services/database/signalQueries';
 import { generateComposableOutputs } from '@/services/signals/composableOutputGenerator';
 import { createAudit } from '@/services/database/queries';
 import { auditQueue } from '@/services/queue/jobQueue';
@@ -66,7 +66,7 @@ router.post('/:orgId/clients', async (req: Request, res: Response) => {
     let detectedPlatform: string | undefined;
     if (auto_detect) {
       const detection = await detectSite(website_url).catch(() => null);
-      detectedPlatform = detection?.platform ?? undefined;
+      detectedPlatform = detection?.detected_platform?.name ?? undefined;
     }
 
     const client = await createClient(req.params['orgId'], {
@@ -246,7 +246,11 @@ router.post('/:orgId/clients/:clientId/generate-all', async (req: Request, res: 
     const { pack_id } = req.body as { pack_id?: string };
     if (!pack_id) return res.status(400).json({ error: 'pack_id is required' });
 
-    const clients = await getClientsByPack(pack_id, req.params['orgId']);
+    const rawClients = await getClientsByPack(pack_id, req.params['orgId']);
+    const clientDetails = await Promise.all(
+      rawClients.map((c) => getClient(c.id, req.params['orgId'])),
+    );
+    const clients = clientDetails.filter((c) => c !== null);
     const results = await Promise.allSettled(
       clients.map((c) => generateComposableOutputs(c, c.id)),
     );
@@ -335,8 +339,9 @@ router.post('/:orgId/clients/:clientId/audit', async (req: Request, res: Respons
     });
 
     // Build a simple validation spec from deployed signals
-    const allSignalKeys = deployments.flatMap((d) =>
-      d.signals?.map((s) => (s as unknown as { signal: { key: string } }).signal?.key ?? '') ?? [],
+    const resolvedDeployments = await resolveDeploymentsForClient(req.params['clientId']);
+    const allSignalKeys = resolvedDeployments.flatMap((d) =>
+      d.signals.map((s) => s.signal.key),
     ).filter(Boolean);
 
     await auditQueue.add({
@@ -345,8 +350,7 @@ router.post('/:orgId/clients/:clientId/audit', async (req: Request, res: Respons
       funnel_type: funnelType,
       region: 'us',
       url_map: urlMap,
-      client_id: req.params['clientId'],
-      expected_signal_keys: allSignalKeys,
+      validation_spec: { expected_signal_keys: allSignalKeys },
     });
 
     logger.info({ auditId: audit.id, clientId: req.params['clientId'] }, 'Client audit queued');
