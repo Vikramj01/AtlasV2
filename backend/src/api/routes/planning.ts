@@ -37,6 +37,7 @@ import type { CreateRecommendationInput } from '@/services/database/planningQuer
 import { getScreenshotSignedUrl } from '@/services/database/supabase';
 import {
   createJourney,
+  updateJourney,
   upsertStage,
   upsertPlatforms,
 } from '@/services/database/journeyQueries';
@@ -462,6 +463,11 @@ router.post('/sessions/:id/handoff', async (req: Request, res: Response) => {
     if (journeyPlatforms.length > 0) {
       await upsertPlatforms(journey.id, { platforms: journeyPlatforms });
     }
+
+    // Link the journey back to its source planning session for the feedback loop
+    await updateJourney(journey.id, req.user!.id, {
+      source_planning_session_id: session.id,
+    });
 
     res.json({ journey_id: journey.id, message: 'Journey created from planning session.' });
   } catch (err) {

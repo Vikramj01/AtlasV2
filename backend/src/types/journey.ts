@@ -80,6 +80,7 @@ export interface Journey {
   business_type: BusinessType;
   status: JourneyStatus;
   implementation_format: ImplementationFormat;
+  source_planning_session_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -175,6 +176,7 @@ export interface UpdateJourneyRequest {
   business_type?: BusinessType;
   status?: JourneyStatus;
   implementation_format?: ImplementationFormat;
+  source_planning_session_id?: string | null;
 }
 
 export interface UpsertStageRequest {

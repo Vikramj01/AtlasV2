@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { CodeSnippet } from './CodeSnippet';
-import type { DevPortalPage, ImplementationStatus } from '@/types/planning';
+import type { DevPortalPage, ImplementationStatus, QuickCheckResult } from '@/types/planning';
 
 const STATUS_OPTIONS: { value: ImplementationStatus; label: string }[] = [
   { value: 'not_started', label: 'Not Started' },
@@ -24,16 +24,71 @@ const STATUS_ICONS: Record<ImplementationStatus, string> = {
   verified:    '✓',
 };
 
-interface PageImplementationCardProps {
-  page: DevPortalPage;
-  onStatusChange: (pageId: string, status: ImplementationStatus, notes?: string) => Promise<void>;
+// ── Quick Check Result display ────────────────────────────────────────────────
+
+function QuickCheckResultPanel({ result }: { result: QuickCheckResult }) {
+  const { overall_status, summary, tracking } = result;
+
+  const panelStyle =
+    overall_status === 'tracking_found'
+      ? 'border-green-200 bg-green-50'
+      : overall_status === 'partial'
+        ? 'border-amber-200 bg-amber-50'
+        : 'border-red-200 bg-red-50';
+
+  const iconAndLabel =
+    overall_status === 'tracking_found'
+      ? { icon: '✓', label: 'Tracking detected', color: 'text-green-700' }
+      : overall_status === 'partial'
+        ? { icon: '⚠', label: 'Partial tracking', color: 'text-amber-700' }
+        : { icon: '✗', label: 'No tracking detected', color: 'text-red-700' };
+
+  return (
+    <div className={`rounded-lg border px-4 py-3 ${panelStyle}`}>
+      <div className="flex items-center justify-between mb-1.5">
+        <span className={`text-sm font-semibold ${iconAndLabel.color}`}>
+          {iconAndLabel.icon} {iconAndLabel.label}
+        </span>
+        <span className="text-xs text-muted-foreground/60">
+          {result.duration_ms < 1000 ? `${result.duration_ms}ms` : `${(result.duration_ms / 1000).toFixed(1)}s`}
+        </span>
+      </div>
+      <p className="text-xs text-muted-foreground mb-2">{summary}</p>
+      {tracking.datalayer_events.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {tracking.datalayer_events.map((event) => (
+            <span key={event} className="rounded bg-white/70 border border-current/20 px-1.5 py-0.5 text-xs font-mono">
+              {event}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
-export function PageImplementationCard({ page, onStatusChange }: PageImplementationCardProps) {
+// ── Main card ─────────────────────────────────────────────────────────────────
+
+interface PageImplementationCardProps {
+  shareToken: string;
+  page: DevPortalPage;
+  onStatusChange: (pageId: string, status: ImplementationStatus, notes?: string) => Promise<void>;
+  onQuickCheck: (shareToken: string, pageId: string) => Promise<QuickCheckResult>;
+}
+
+export function PageImplementationCard({
+  shareToken,
+  page,
+  onStatusChange,
+  onQuickCheck,
+}: PageImplementationCardProps) {
   const [isOpen, setIsOpen] = useState(page.status === 'in_progress');
   const [status, setStatus] = useState<ImplementationStatus>(page.status);
   const [notes, setNotes] = useState(page.developer_notes ?? '');
   const [isSaving, setIsSaving] = useState(false);
+  const [isChecking, setIsChecking] = useState(false);
+  const [checkResult, setCheckResult] = useState<QuickCheckResult | null>(null);
+  const [checkError, setCheckError] = useState<string | null>(null);
 
   async function handleStatusChange(newStatus: ImplementationStatus) {
     setStatus(newStatus);
@@ -52,6 +107,24 @@ export function PageImplementationCard({ page, onStatusChange }: PageImplementat
       await onStatusChange(page.page_id, status, notes || undefined);
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function handleQuickCheck() {
+    setIsChecking(true);
+    setCheckError(null);
+    setCheckResult(null);
+    try {
+      const result = await onQuickCheck(shareToken, page.page_id);
+      setCheckResult(result);
+      // Auto-advance to 'verified' if full tracking found and currently implemented
+      if (result.overall_status === 'tracking_found' && status === 'implemented') {
+        await handleStatusChange('verified');
+      }
+    } catch (err) {
+      setCheckError(err instanceof Error ? err.message : 'Quick check failed');
+    } finally {
+      setIsChecking(false);
     }
   }
 
@@ -106,6 +179,47 @@ export function PageImplementationCard({ page, onStatusChange }: PageImplementat
               No dataLayer code generated for this page yet.
             </div>
           )}
+
+          {/* Quick Check */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-medium text-muted-foreground">Live tracking verification</p>
+              <button
+                type="button"
+                onClick={handleQuickCheck}
+                disabled={isChecking}
+                className={cn(
+                  'rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors',
+                  isChecking
+                    ? 'border-border text-muted-foreground cursor-not-allowed'
+                    : 'border-brand-300 text-brand-700 hover:bg-brand-50',
+                )}
+              >
+                {isChecking ? (
+                  <span className="flex items-center gap-1.5">
+                    <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-brand-300 border-t-brand-700" />
+                    Checking live page…
+                  </span>
+                ) : (
+                  '⚡ Quick Check'
+                )}
+              </button>
+            </div>
+
+            {checkError && (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                {checkError}
+              </div>
+            )}
+
+            {checkResult && <QuickCheckResultPanel result={checkResult} />}
+
+            {!checkResult && !checkError && !isChecking && (
+              <p className="text-xs text-muted-foreground/50">
+                Visits the live page and checks for GTM, GA4, Meta Pixel, and dataLayer events.
+              </p>
+            )}
+          </div>
 
           {/* Status selector */}
           <div>

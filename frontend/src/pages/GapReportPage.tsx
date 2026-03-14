@@ -11,6 +11,12 @@ import { cn } from '@/lib/utils';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
+interface PlanningContext {
+  session_id: string;
+  website_url: string;
+  planned_events: string[];
+}
+
 interface Gap {
   gap_type: 'MISSING' | 'WRONG' | 'EXTRA';
   sub_type: string;
@@ -307,6 +313,87 @@ function NextSteps({
   );
 }
 
+// ── Planning Context Banner ───────────────────────────────────────────────────
+
+function PlanningContextBanner({
+  context,
+  allGaps,
+}: {
+  context: PlanningContext;
+  allGaps: Gap[];
+}) {
+  const [open, setOpen] = useState(false);
+
+  // Check how many planned events appear in gap fixes / action keys
+  const detectedEventKeys = new Set(
+    allGaps.map((g) => g.action_key.toLowerCase()),
+  );
+  const gapEventNames = new Set(allGaps.map((g) => g.expected.toLowerCase()));
+  const missingEvents = context.planned_events.filter(
+    (e) =>
+      !detectedEventKeys.has(e.toLowerCase()) && !gapEventNames.has(e.toLowerCase()),
+  );
+  const issueCount = context.planned_events.length - missingEvents.length;
+
+  return (
+    <div className="mb-6 rounded-xl border border-brand-200 bg-brand-50 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between px-4 py-3 text-left"
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-brand-600 text-base">◎</span>
+          <div>
+            <p className="text-sm font-semibold text-brand-800">
+              Created from Planning Mode
+            </p>
+            <p className="text-xs text-brand-700">
+              {context.planned_events.length} events planned for{' '}
+              <span className="font-medium">{context.website_url}</span>
+              {issueCount > 0 && (
+                <span className="ml-1 text-amber-700">
+                  · {issueCount} have gaps
+                </span>
+              )}
+            </p>
+          </div>
+        </div>
+        <span className={`text-xs text-brand-600 transition-transform ${open ? 'rotate-180' : ''}`}>▼</span>
+      </button>
+
+      {open && (
+        <div className="border-t border-brand-100 bg-white/60 px-4 py-3">
+          <p className="mb-2 text-xs font-medium text-brand-800">Planned events</p>
+          <div className="flex flex-wrap gap-1.5">
+            {context.planned_events.map((event) => {
+              const hasGap =
+                detectedEventKeys.has(event.toLowerCase()) ||
+                gapEventNames.has(event.toLowerCase());
+              return (
+                <span
+                  key={event}
+                  className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                    hasGap
+                      ? 'bg-amber-100 text-amber-700'
+                      : 'bg-green-100 text-green-700'
+                  }`}
+                >
+                  {hasGap ? '⚠ ' : '✓ '}
+                  {event}
+                </span>
+              );
+            })}
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Green = no gaps detected · Amber = issues found in this audit
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export function GapReportPage() {
@@ -314,6 +401,7 @@ export function GapReportPage() {
 
   const [details, setDetails] = useState<JourneyWithDetails | null>(null);
   const [gapResults, setGapResults] = useState<JourneyAuditResult[]>([]);
+  const [planningContext, setPlanningContext] = useState<PlanningContext | null>(null);
   const [report, setReport] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -327,9 +415,10 @@ export function GapReportPage() {
       auditApi.getGaps(auditId),
       auditApi.getReport(auditId).catch(() => null),
     ])
-      .then(([journeyDetails, gaps, auditReport]) => {
+      .then(([journeyDetails, gapsResponse, auditReport]) => {
         setDetails(journeyDetails);
-        setGapResults(gaps as JourneyAuditResult[]);
+        setGapResults(gapsResponse.results as JourneyAuditResult[]);
+        setPlanningContext(gapsResponse.planning_context);
         setReport(auditReport);
       })
       .catch((err) => setError(err.message))
@@ -396,6 +485,11 @@ export function GapReportPage() {
           </Button>
         </div>
       </div>
+
+      {/* Planning context banner — shown when audit was created from Planning Mode */}
+      {planningContext && (
+        <PlanningContextBanner context={planningContext} allGaps={allGaps} />
+      )}
 
       {/* Results summary bar */}
       <ResultsSummaryBar allGaps={allGaps} />

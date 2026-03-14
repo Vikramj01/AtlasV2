@@ -6,7 +6,7 @@
  * No Authorization header is sent.
  */
 
-import type { DevPortalData } from '@/types/planning';
+import type { DevPortalData, QuickCheckResult } from '@/types/planning';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
 
@@ -52,5 +52,10 @@ export const developerApi = {
       if (!r.ok) throw new Error(`Download failed: ${r.status}`);
       return r.blob();
     });
+  },
+
+  // POST /api/dev/:shareToken/pages/:pageId/quickcheck
+  runQuickCheck(shareToken: string, pageId: string): Promise<QuickCheckResult> {
+    return devFetch(`/api/dev/${shareToken}/pages/${pageId}/quickcheck`, { method: 'POST' });
   },
 };
