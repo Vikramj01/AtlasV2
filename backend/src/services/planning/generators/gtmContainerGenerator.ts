@@ -203,9 +203,20 @@ function dlvRef(path: string): string { return `{{DLV - ${path}}}`; }
 
 // ── Main generator ────────────────────────────────────────────────────────────
 
+export interface GTMPlatformIds {
+  ga4?: string;
+  google_ads?: string;
+  meta?: string;
+  tiktok?: string;
+  linkedin?: string;
+  linkedin_conversion_id?: string;
+  google_ads_conversion_label?: string;
+}
+
 export function generateGTMContainer(
   recommendations: PlanningRecommendation[],
   session: Pick<PlanningSession, 'business_type' | 'selected_platforms'>,
+  platformIds?: GTMPlatformIds,
 ): GTMContainerJSON {
   const platforms = session.selected_platforms;
   const hasGA4         = platforms.includes('ga4');
@@ -357,7 +368,7 @@ export function generateGTMContainer(
       name: 'GA4 - Config',
       type: 'gaawc',
       parameter: [
-        tmpl('measurementId', '{{GA4_MEASUREMENT_ID}}'),
+        tmpl('measurementId', platformIds?.ga4 ?? '{{GA4_MEASUREMENT_ID}}'),
         bool('sendPageView', 'true'),
         bool('enableSendToServerContainer', 'false'),
       ],
@@ -376,7 +387,7 @@ export function generateGTMContainer(
       variableId: ga4VarId,
       name: 'CONST - GA4 Measurement ID',
       type: 'c',
-      parameter: [tmpl('value', 'G-XXXXXXXXXX')],
+      parameter: [tmpl('value', platformIds?.ga4 ?? 'G-XXXXXXXXXX')],
       folderId: FOLDER.VARIABLES,
     });
   }
@@ -409,7 +420,7 @@ export function generateGTMContainer(
       variableId: gadsVarId,
       name: 'CONST - Google Ads Conversion ID',
       type: 'c',
-      parameter: [tmpl('value', 'AW-XXXXXXXXX')],
+      parameter: [tmpl('value', platformIds?.google_ads ?? 'AW-XXXXXXXXX')],
       folderId: FOLDER.VARIABLES,
     });
   }
@@ -429,11 +440,11 @@ n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
 n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
 t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
 document,'script','https://connect.facebook.net/en_US/fbevents.js');
-fbq('init', '{{META_PIXEL_ID}}');
+fbq('init', '${platformIds?.meta ?? '{{META_PIXEL_ID}}'}');
 fbq('track', 'PageView');
 </script>
 <noscript><img height="1" width="1" style="display:none"
-src="https://www.facebook.com/tr?id={{META_PIXEL_ID}}&ev=PageView&noscript=1"/></noscript>`),
+src="https://www.facebook.com/tr?id=${platformIds?.meta ?? '{{META_PIXEL_ID}}'}&ev=PageView&noscript=1"/></noscript>`),
         bool('supportDocumentWrite', 'false'),
       ],
       firingTriggerId: [allPagesTrigId],
@@ -450,7 +461,7 @@ src="https://www.facebook.com/tr?id={{META_PIXEL_ID}}&ev=PageView&noscript=1"/><
       variableId: metaVarId,
       name: 'CONST - Meta Pixel ID',
       type: 'c',
-      parameter: [tmpl('value', 'XXXXXXXXXXXXXXXX')],
+      parameter: [tmpl('value', platformIds?.meta ?? 'XXXXXXXXXXXXXXXX')],
       folderId: FOLDER.VARIABLES,
     });
   }
@@ -479,7 +490,7 @@ src="https://www.facebook.com/tr?id={{META_PIXEL_ID}}&ev=PageView&noscript=1"/><
   o.type="text/javascript",o.async=!0,o.src=i+"?sdkid="+e+"&lib="+t;
   var a=document.getElementsByTagName("script")[0];
   a.parentNode.insertBefore(o,a)};
-  ttq.load('{{TIKTOK_PIXEL_ID}}');ttq.page();
+  ttq.load('${platformIds?.tiktok ?? '{{TIKTOK_PIXEL_ID}}'}');ttq.page();
 }(window, document, 'ttq');
 </script>`),
         bool('supportDocumentWrite', 'false'),
@@ -498,7 +509,7 @@ src="https://www.facebook.com/tr?id={{META_PIXEL_ID}}&ev=PageView&noscript=1"/><
       variableId: ttVarId,
       name: 'CONST - TikTok Pixel ID',
       type: 'c',
-      parameter: [tmpl('value', 'XXXXXXXXXXXXXXXXXX')],
+      parameter: [tmpl('value', platformIds?.tiktok ?? 'XXXXXXXXXXXXXXXXXX')],
       folderId: FOLDER.VARIABLES,
     });
   }
@@ -513,7 +524,7 @@ src="https://www.facebook.com/tr?id={{META_PIXEL_ID}}&ev=PageView&noscript=1"/><
       type: 'html',
       parameter: [
         tmpl('html', `<script type="text/javascript">
-_linkedin_partner_id = "{{LINKEDIN_PARTNER_ID}}";
+_linkedin_partner_id = "${platformIds?.linkedin ?? '{{LINKEDIN_PARTNER_ID}}'}";
 window._linkedin_data_partner_ids = window._linkedin_data_partner_ids || [];
 window._linkedin_data_partner_ids.push(_linkedin_partner_id);
 </script><script type="text/javascript">
@@ -527,7 +538,7 @@ b.src = "https://snap.licdn.com/li.lms-analytics/insight.min.js";
 s.parentNode.insertBefore(b, s);})(window.lintrk);
 </script>
 <noscript><img height="1" width="1" style="display:none;" alt=""
-src="https://px.ads.linkedin.com/collect/?pid={{LINKEDIN_PARTNER_ID}}&fmt=gif" /></noscript>`),
+src="https://px.ads.linkedin.com/collect/?pid=${platformIds?.linkedin ?? '{{LINKEDIN_PARTNER_ID}}'}&fmt=gif" /></noscript>`),
         bool('supportDocumentWrite', 'false'),
       ],
       firingTriggerId: [allPagesTrigId],
@@ -544,7 +555,7 @@ src="https://px.ads.linkedin.com/collect/?pid={{LINKEDIN_PARTNER_ID}}&fmt=gif" /
       variableId: liVarId,
       name: 'CONST - LinkedIn Partner ID',
       type: 'c',
-      parameter: [tmpl('value', 'XXXXXXX')],
+      parameter: [tmpl('value', platformIds?.linkedin ?? 'XXXXXXX')],
       folderId: FOLDER.VARIABLES,
     });
   }
@@ -642,7 +653,7 @@ src="https://px.ads.linkedin.com/collect/?pid={{LINKEDIN_PARTNER_ID}}&fmt=gif" /
     if (hasGoogleAds && isConversion) {
       const gadsParams: GTMParameter[] = [
         tmpl('conversionId', '{{CONST - Google Ads Conversion ID}}'),
-        tmpl('conversionLabel', '{{CONVERSION_LABEL}}'),
+        tmpl('conversionLabel', platformIds?.google_ads_conversion_label ?? '{{CONVERSION_LABEL}}'),
         tmpl('currencyCode', dlvRef('ecommerce.currency')),
       ];
       if (actionKey === 'purchase') {
@@ -726,7 +737,7 @@ src="https://px.ads.linkedin.com/collect/?pid={{LINKEDIN_PARTNER_ID}}&fmt=gif" /
         name: `LinkedIn - ${label}`,
         type: 'html',
         parameter: [
-          tmpl('html', `<script>lintrk('track', {conversion_id: '{{LINKEDIN_CONVERSION_ID}}'});</script>`),
+          tmpl('html', `<script>lintrk('track', {conversion_id: '${platformIds?.linkedin_conversion_id ?? '{{LINKEDIN_CONVERSION_ID}}' }'});</script>`),
           bool('supportDocumentWrite', 'false'),
         ],
         firingTriggerId: [trigId],
@@ -762,7 +773,7 @@ src="https://px.ads.linkedin.com/collect/?pid={{LINKEDIN_PARTNER_ID}}&fmt=gif" /
       containerId: '0',
       containerVersionId: '0',
       name: 'Atlas Generated Tracking',
-      description: `Generated by Atlas Planning Mode. ${recCount} tracking recommendation(s) for platforms: ${platformList}. Import this container into your GTM workspace, then fill in the placeholder values (GA4 Measurement ID, Google Ads Conversion ID, Meta Pixel ID, etc.) in the Variables section.`,
+      description: `Generated by Atlas Planning Mode. ${recCount} tracking recommendation(s) for platforms: ${platformList}. ${platformIds ? 'Platform IDs have been pre-filled from your client configuration.' : 'Import this container into your GTM workspace, then fill in the placeholder values (GA4 Measurement ID, Google Ads Conversion ID, Meta Pixel ID, etc.) in the Variables section.'}`,
       container: {
         path: 'accounts/0/containers/0',
         accountId: '0',

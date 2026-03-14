@@ -170,6 +170,7 @@ export type OutputType = 'gtm_container' | 'datalayer_spec' | 'implementation_gu
 export interface PlanningSession {
   id: string;
   user_id: string;
+  client_id?: string | null;
   website_url: string;
   business_type: BusinessType;
   business_description?: string;
@@ -244,6 +245,7 @@ export interface CreateSessionInput {
   business_description?: string;
   selected_platforms: string[];
   pages: Array<{ url: string; page_type?: string }>;
+  client_id?: string;
 }
 
 export interface UpdateDecisionInput {
