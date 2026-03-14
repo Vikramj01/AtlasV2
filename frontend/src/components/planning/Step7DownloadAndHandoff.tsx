@@ -6,6 +6,48 @@ import { usePlanningStore } from '@/store/planningStore';
 import { planningApi } from '@/lib/api/planningApi';
 import type { OutputType } from '@/types/planning';
 
+// ── Share with Developer modal/inline reveal ──────────────────────────────────
+
+function ShareReveal({
+  shareUrl,
+  onClose,
+}: {
+  shareUrl: string;
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  async function handleCopy() {
+    await navigator.clipboard.writeText(shareUrl).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <div className="rounded-xl border border-brand-200 bg-brand-50 p-4">
+      <div className="mb-2 flex items-center justify-between">
+        <p className="text-sm font-semibold text-brand-800">Share link generated</p>
+        <button type="button" onClick={onClose} className="text-xs text-muted-foreground hover:text-foreground">✕</button>
+      </div>
+      <p className="mb-3 text-xs text-brand-700">
+        Send this link to your developer. They can open it without an Atlas account.
+        The link expires in 90 days.
+      </p>
+      <div className="flex gap-2">
+        <input
+          readOnly
+          value={shareUrl}
+          className="flex-1 rounded-lg border border-brand-200 bg-white px-3 py-2 text-xs font-mono text-foreground select-all"
+          onClick={(e) => (e.target as HTMLInputElement).select()}
+        />
+        <Button size="sm" variant="outline" onClick={handleCopy} className="shrink-0 text-xs">
+          {copied ? '✓ Copied' : 'Copy'}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 const OUTPUT_LABELS: Record<OutputType, string> = {
   gtm_container:        'GTM Container JSON',
   datalayer_spec:       'DataLayer Specification',
@@ -25,6 +67,22 @@ export function Step7DownloadAndHandoff() {
   const sessionId = currentSession?.id ?? '';
   const [isHandingOff, setIsHandingOff] = useState(false);
   const [handoffError, setHandoffError] = useState<string | null>(null);
+  const [isSharing, setIsSharing] = useState(false);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [shareError, setShareError] = useState<string | null>(null);
+
+  async function handleShare() {
+    setIsSharing(true);
+    setShareError(null);
+    try {
+      const result = await planningApi.createShare(sessionId);
+      setShareUrl(result.share_url);
+    } catch (err) {
+      setShareError(err instanceof Error ? err.message : 'Failed to create share link');
+    } finally {
+      setIsSharing(false);
+    }
+  }
 
   async function handleStartAudit() {
     setIsHandingOff(true);
@@ -79,7 +137,7 @@ export function Step7DownloadAndHandoff() {
       </div>
 
       {outputs.length > 0 && (
-        <Card className="mb-8">
+        <Card className="mb-6">
           <CardHeader className="pb-2">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Download your files
@@ -114,6 +172,34 @@ export function Step7DownloadAndHandoff() {
           </CardContent>
         </Card>
       )}
+
+      {/* Share with Developer */}
+      <div className="mb-8">
+        {shareUrl ? (
+          <ShareReveal shareUrl={shareUrl} onClose={() => setShareUrl(null)} />
+        ) : (
+          <Card>
+            <CardContent className="flex items-center justify-between py-4">
+              <div>
+                <p className="text-sm font-medium">Share with your developer</p>
+                <p className="text-xs text-muted-foreground">
+                  Generate a link so your developer can see exactly what to implement, page by page.
+                </p>
+                {shareError && <p className="mt-1 text-xs text-destructive">{shareError}</p>}
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleShare}
+                disabled={isSharing || !sessionId}
+                className="ml-4 shrink-0 text-xs"
+              >
+                {isSharing ? 'Generating…' : '🔗 Share with Developer'}
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+      </div>
 
       <Card className="mb-8">
         <CardHeader className="pb-2">

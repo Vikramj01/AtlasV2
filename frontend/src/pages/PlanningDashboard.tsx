@@ -3,10 +3,11 @@ import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { Trash2, Check, X } from 'lucide-react';
 import { planningApi } from '@/lib/api/planningApi';
 import { usePlanningStore } from '@/store/planningStore';
-import type { PlanningSession } from '@/types/planning';
+import type { PlanningSession, ImplementationProgress } from '@/types/planning';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { ProgressBar } from '@/components/developer/ProgressBar';
 
 const STATUS_LABELS: Record<PlanningSession['status'], string> = {
   setup:         'Setup',
@@ -26,6 +27,36 @@ const STATUS_COLORS: Record<PlanningSession['status'], string> = {
   failed:        'bg-red-100 text-red-700 hover:bg-red-100',
 };
 
+// ── Implementation progress cell ──────────────────────────────────────────────
+
+function ImplementationCell({
+  progress,
+  status,
+}: {
+  progress: ImplementationProgress | null | undefined;
+  status: PlanningSession['status'];
+}) {
+  if (status !== 'outputs_ready') {
+    return <span className="text-xs text-muted-foreground/50">—</span>;
+  }
+  if (progress === undefined) {
+    return <span className="text-xs text-muted-foreground/50">Loading…</span>;
+  }
+  if (!progress) {
+    return <span className="text-xs text-muted-foreground/50">Not shared yet</span>;
+  }
+  return (
+    <div className="min-w-[120px]">
+      <p className="mb-1 text-xs text-muted-foreground">
+        {progress.implemented + progress.verified}/{progress.total_pages} pages
+      </p>
+      <ProgressBar value={progress.percent_complete} />
+    </div>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
+
 export function PlanningDashboard() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -35,6 +66,7 @@ export function PlanningDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [progressMap, setProgressMap] = useState<Record<string, ImplementationProgress | null>>({});
 
   const limitReached = (location.state as { limitReached?: boolean } | null)?.limitReached ?? false;
   const limitMessage = (location.state as { limitMessage?: string } | null)?.limitMessage ?? '';
@@ -42,7 +74,18 @@ export function PlanningDashboard() {
   useEffect(() => {
     planningApi
       .listSessions()
-      .then(({ sessions }) => setSessions(sessions))
+      .then(({ sessions: list }) => {
+        setSessions(list);
+        // Fire-and-forget: fetch progress for completed sessions that may have shares
+        const readySessions = list.filter((s) => s.status === 'outputs_ready');
+        for (const s of readySessions) {
+          planningApi.getProgress(s.id)
+            .then(({ progress }) => {
+              setProgressMap((prev) => ({ ...prev, [s.id]: progress }));
+            })
+            .catch(() => {});
+        }
+      })
       .catch((err) => setError(err.message))
       .finally(() => setIsLoading(false));
   }, []);
@@ -79,7 +122,7 @@ export function PlanningDashboard() {
           <div className="flex-1">
             <p className="text-sm font-semibold text-amber-800">Plan limit reached</p>
             <p className="mt-0.5 text-xs text-amber-700">
-              {limitMessage || 'You\'ve used all planning sessions included in your current plan.'}
+              {limitMessage || "You've used all planning sessions included in your current plan."}
             </p>
             <p className="mt-1 text-xs text-amber-700">
               Upgrade to <strong>Pro</strong> for 10 sessions/month, or <strong>Agency</strong> for unlimited.
@@ -138,6 +181,7 @@ export function PlanningDashboard() {
                 <TableHead>Website</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Implementation</TableHead>
                 <TableHead>Created</TableHead>
                 <TableHead></TableHead>
               </TableRow>
@@ -153,6 +197,9 @@ export function PlanningDashboard() {
                     <Badge className={STATUS_COLORS[s.status]}>
                       {STATUS_LABELS[s.status]}
                     </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <ImplementationCell progress={progressMap[s.id]} status={s.status} />
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {new Date(s.created_at).toLocaleDateString()}

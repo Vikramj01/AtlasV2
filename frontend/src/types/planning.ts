@@ -197,3 +197,60 @@ export interface HandoffResponse {
   journey_id: string;
   message: string;
 }
+
+// ── Developer Portal ───────────────────────────────────────────────────────────
+
+export type ImplementationStatus = 'not_started' | 'in_progress' | 'implemented' | 'verified';
+
+export interface DeveloperShare {
+  id: string;
+  session_id: string;
+  share_token: string;
+  developer_name: string | null;
+  developer_email: string | null;
+  is_active: boolean;
+  expires_at: string;
+  created_at: string;
+}
+
+export interface PageProgress {
+  page_id: string;
+  page_label: string;
+  page_url: string;
+  status: ImplementationStatus;
+  developer_notes: string | null;
+  updated_at: string;
+}
+
+export interface ImplementationProgress {
+  total_pages: number;
+  not_started: number;
+  in_progress: number;
+  implemented: number;
+  verified: number;
+  percent_complete: number;
+  all_implemented: boolean;
+  pages: PageProgress[];
+}
+
+export interface DevPortalPage {
+  page_id: string;
+  page_url: string;
+  page_label: string;
+  page_type: string | null;
+  datalayer_code: string | null;
+  status: ImplementationStatus;
+  developer_notes: string | null;
+}
+
+export interface DevPortalData {
+  session_id: string;
+  site_url: string;
+  site_title: string | null;
+  prepared_by: string;
+  generated_at: string;
+  share_id: string;
+  pages: DevPortalPage[];
+  outputs: Array<{ id: string; output_type: OutputType; mime_type: string }>;
+  progress: ImplementationProgress;
+}

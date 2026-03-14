@@ -5,6 +5,7 @@ import rateLimit from 'express-rate-limit';
 import auditRoutes from '@/api/routes/audits';
 import { journeysRouter } from '@/api/routes/journeys';
 import { planningRouter } from '@/api/routes/planning';
+import { shareRouter, devRouter } from '@/api/routes/developer';
 import logger from '@/utils/logger';
 import { env } from '@/config/env';
 
@@ -65,6 +66,10 @@ app.get('/health', (_req, res) => {
 app.use('/api/audits', auditRoutes);
 app.use('/api/journeys', journeysRouter);
 app.use('/api/planning', planningRouter);
+// Share management: /api/planning/sessions/:id/share (JWT-protected)
+app.use('/api/planning/sessions/:id/share', shareRouter);
+// Developer portal: /api/dev/* (public, token-auth)
+app.use('/api/dev', devRouter);
 
 // ─── 404 handler ─────────────────────────────────────────────────────────────
 
