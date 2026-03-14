@@ -13,6 +13,8 @@ interface RecommendationCardProps {
   sessionId: string;
   isSelected: boolean;
   onSelect: () => void;
+  /** Map of signal key → pack name for signals already deployed to the linked client */
+  packCoverage?: Map<string, string>;
 }
 
 const CONFIDENCE_LABEL: Record<string, string> = {
@@ -39,13 +41,14 @@ const DECISION_STYLES: Record<UserDecision, string> = {
   edited:   'border-brand-300 bg-brand-50',
 };
 
-export function RecommendationCard({ rec, index, sessionId, isSelected, onSelect }: RecommendationCardProps) {
+export function RecommendationCard({ rec, index, sessionId, isSelected, onSelect, packCoverage }: RecommendationCardProps) {
   const updateRecommendation = usePlanningStore((s) => s.updateRecommendation);
   const [isSaving, setIsSaving] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editedEventName, setEditedEventName] = useState(rec.event_name);
 
   const tier = confidenceTier(rec.confidence_score);
+  const coveredByPack = packCoverage?.get(rec.event_name);
 
   async function decide(decision: UserDecision, eventName?: string) {
     setIsSaving(true);
@@ -89,13 +92,30 @@ export function RecommendationCard({ rec, index, sessionId, isSelected, onSelect
           </p>
         </div>
 
-        <Badge
-          className={cn('flex-shrink-0', CONFIDENCE_COLORS[tier])}
-          title={`Confidence: ${Math.round(rec.confidence_score * 100)}%`}
-        >
-          {CONFIDENCE_LABEL[tier]}
-        </Badge>
+        <div className="flex flex-shrink-0 flex-col items-end gap-1">
+          <Badge
+            className={cn(CONFIDENCE_COLORS[tier])}
+            title={`Confidence: ${Math.round(rec.confidence_score * 100)}%`}
+          >
+            {CONFIDENCE_LABEL[tier]}
+          </Badge>
+          {coveredByPack && (
+            <Badge
+              className="bg-indigo-50 text-indigo-700 hover:bg-indigo-50 whitespace-nowrap"
+              title={`This signal is already included in the "${coveredByPack}" pack deployed to this client`}
+            >
+              📦 In {coveredByPack}
+            </Badge>
+          )}
+        </div>
       </div>
+
+      {coveredByPack && (
+        <p className="mb-2 rounded-md border border-indigo-100 bg-indigo-50 px-2.5 py-1.5 text-xs text-indigo-700">
+          This event is already covered by the <strong>{coveredByPack}</strong> pack deployed to this client.
+          You can still approve it to customise parameters, or skip it.
+        </p>
+      )}
 
       <p className="mb-2 text-xs leading-relaxed text-muted-foreground">{rec.business_justification}</p>
 

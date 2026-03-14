@@ -4,6 +4,9 @@ import { Button } from '@/components/ui/button';
 import { usePlanningStore } from '@/store/planningStore';
 import { planningApi } from '@/lib/api/planningApi';
 import { supabase } from '@/lib/supabase';
+import { clientApi } from '@/lib/api/organisationApi';
+import { signalApi } from '@/lib/api/signalApi';
+import { useOrganisationStore } from '@/store/organisationStore';
 import { AnnotatedScreenshot } from './AnnotatedScreenshot';
 import { RecommendationCard } from './RecommendationCard';
 import { CustomElementForm } from './CustomElementForm';
@@ -11,9 +14,11 @@ import type { PlanningPage, PlanningRecommendation } from '@/types/planning';
 
 export function Step4ReviewRecommendations() {
   const {
-    currentSession, pages, recommendations, setRecommendations,
+    currentSession, draftSetup, pages, recommendations, setRecommendations,
     nextStep, setLoading, isLoading, error, setError,
   } = usePlanningStore();
+
+  const { organisations, currentOrg } = useOrganisationStore();
 
   const sessionId = currentSession?.id ?? '';
 
@@ -21,6 +26,34 @@ export function Step4ReviewRecommendations() {
   const [activePageId, setActivePageId] = useState<string | null>(null);
   const [selectedRecId, setSelectedRecId] = useState<string | null>(null);
   const [showCustomForm, setShowCustomForm] = useState(false);
+
+  // Pack coverage: signal key → pack name (for recommendations already in a deployed pack)
+  const [packCoverage, setPackCoverage] = useState<Map<string, string>>(new Map());
+
+  const clientId = currentSession?.client_id ?? draftSetup.client_id;
+  const orgId = currentOrg?.id ?? organisations[0]?.id;
+
+  useEffect(() => {
+    if (!clientId || !orgId) return;
+    clientApi.get(orgId, clientId)
+      .then(async (client) => {
+        if (!client.deployments?.length) return;
+        const coverage = new Map<string, string>();
+        await Promise.all(
+          client.deployments.map(async (dep) => {
+            try {
+              const pack = await signalApi.getPack(dep.pack_id);
+              pack.signals.forEach((s) => {
+                const key = s.signal?.key ?? s.signal_id;
+                if (!coverage.has(key)) coverage.set(key, pack.name);
+              });
+            } catch { /* ignore individual pack errors */ }
+          })
+        );
+        setPackCoverage(coverage);
+      })
+      .catch(() => { /* non-blocking — coverage is a hint, not required */ });
+  }, [clientId, orgId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (recommendations.length > 0 || !sessionId) return;
@@ -198,6 +231,7 @@ export function Step4ReviewRecommendations() {
                   sessionId={sessionId}
                   isSelected={rec.id === selectedRecId}
                   onSelect={() => setSelectedRecId(rec.id)}
+                  packCoverage={packCoverage}
                 />
               ))
             )}
