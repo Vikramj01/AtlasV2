@@ -48,6 +48,14 @@ export interface ValidationResult {
   };
 }
 
+export interface AuditComparison {
+  previous_audit_id: string;
+  previous_score: number;
+  current_score: number;
+  delta: number;
+  previous_audit_date: string;
+}
+
 export interface ReportJSON {
   audit_id: string;
   generated_at: string;
@@ -64,6 +72,7 @@ export interface ReportJSON {
     raw_network_requests: unknown[];
     raw_datalayer_events: unknown[];
   };
+  comparison?: AuditComparison | null;
 }
 
 // API response shapes
