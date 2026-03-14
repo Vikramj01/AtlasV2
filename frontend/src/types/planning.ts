@@ -203,6 +203,7 @@ export interface CreateSessionInput {
   business_description?: string;
   selected_platforms: Platform[];
   page_urls: string[];
+  client_id?: string;
 }
 
 export interface CreateSessionResponse {
