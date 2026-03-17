@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { usePlanningStore } from '@/store/planningStore';
 import { planningApi } from '@/lib/api/planningApi';
 import { WalkerOSAdvantageCard } from '@/components/signals/WalkerOSAdvantageCard';
@@ -71,13 +73,20 @@ export function Step7DownloadAndHandoff() {
   const [isSharing, setIsSharing] = useState(false);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [shareError, setShareError] = useState<string | null>(null);
+  const [developerEmail, setDeveloperEmail] = useState('');
+  const [developerName, setDeveloperName] = useState('');
+  const [inviteEmailSentTo, setInviteEmailSentTo] = useState<string | null>(null);
 
   async function handleShare() {
     setIsSharing(true);
     setShareError(null);
     try {
-      const result = await planningApi.createShare(sessionId);
+      const result = await planningApi.createShare(sessionId, {
+        developer_email: developerEmail.trim() || undefined,
+        developer_name: developerName.trim() || undefined,
+      });
       setShareUrl(result.share_url);
+      if (developerEmail.trim()) setInviteEmailSentTo(developerEmail.trim());
     } catch (err) {
       setShareError(err instanceof Error ? err.message : 'Failed to create share link');
     } finally {
@@ -181,26 +190,62 @@ export function Step7DownloadAndHandoff() {
       {/* Share with Developer */}
       <div className="mb-8">
         {shareUrl ? (
-          <ShareReveal shareUrl={shareUrl} onClose={() => setShareUrl(null)} />
+          <div className="space-y-3">
+            <ShareReveal shareUrl={shareUrl} onClose={() => setShareUrl(null)} />
+            {inviteEmailSentTo && (
+              <p className="text-xs text-green-700 bg-green-50 border border-green-100 rounded-lg px-4 py-2.5">
+                ✓ Invite email sent to <strong>{inviteEmailSentTo}</strong>
+              </p>
+            )}
+          </div>
         ) : (
           <Card>
-            <CardContent className="flex items-center justify-between py-4">
-              <div>
-                <p className="text-sm font-medium">Share with your developer</p>
-                <p className="text-xs text-muted-foreground">
-                  Generate a link so your developer can see exactly what to implement, page by page.
-                </p>
-                {shareError && <p className="mt-1 text-xs text-destructive">{shareError}</p>}
+            <CardHeader className="pb-2">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Share with your developer
+              </h3>
+            </CardHeader>
+            <CardContent className="space-y-4 pt-0">
+              <p className="text-xs text-muted-foreground">
+                Generate a link so your developer can see exactly what to implement, page by page.
+                No Atlas account required. Optionally add their email to send the link directly.
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <Label htmlFor="dev-email" className="text-xs">Developer email <span className="text-muted-foreground/60">(optional)</span></Label>
+                  <Input
+                    id="dev-email"
+                    type="email"
+                    placeholder="developer@agency.com"
+                    value={developerEmail}
+                    onChange={(e) => setDeveloperEmail(e.target.value)}
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="dev-name" className="text-xs">Developer name <span className="text-muted-foreground/60">(optional)</span></Label>
+                  <Input
+                    id="dev-name"
+                    type="text"
+                    placeholder="Alex"
+                    value={developerName}
+                    onChange={(e) => setDeveloperName(e.target.value)}
+                    className="h-8 text-xs"
+                  />
+                </div>
               </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleShare}
-                disabled={isSharing || !sessionId}
-                className="ml-4 shrink-0 text-xs"
-              >
-                {isSharing ? 'Generating…' : '🔗 Share with Developer'}
-              </Button>
+              {shareError && <p className="text-xs text-destructive">{shareError}</p>}
+              <div className="flex justify-end">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleShare}
+                  disabled={isSharing || !sessionId}
+                  className="text-xs"
+                >
+                  {isSharing ? 'Generating…' : '🔗 Generate share link'}
+                </Button>
+              </div>
             </CardContent>
           </Card>
         )}

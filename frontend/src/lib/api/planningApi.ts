@@ -152,8 +152,14 @@ export const planningApi = {
 
   // ── Developer Share ──────────────────────────────────────────────────────────
 
-  createShare(sessionId: string): Promise<{ share_id: string; share_token: string; share_url: string; expires_at: string }> {
-    return apiFetch(`/api/planning/sessions/${sessionId}/share`, { method: 'POST' });
+  createShare(
+    sessionId: string,
+    opts?: { developer_email?: string; developer_name?: string },
+  ): Promise<{ share_id: string; share_token: string; share_url: string; expires_at: string }> {
+    return apiFetch(`/api/planning/sessions/${sessionId}/share`, {
+      method: 'POST',
+      body: JSON.stringify(opts ?? {}),
+    });
   },
 
   listShares(sessionId: string): Promise<{ shares: DeveloperShare[] }> {
