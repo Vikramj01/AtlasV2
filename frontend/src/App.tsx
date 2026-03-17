@@ -21,6 +21,8 @@ import { SignalLibraryPage } from '@/pages/SignalLibraryPage';
 import { SignalPacksPage } from '@/pages/SignalPacksPage';
 import { PackDetailPage } from '@/pages/PackDetailPage';
 import { OrgSettingsPage } from '@/pages/OrgSettingsPage';
+// Consent Hub
+import { ConsentPage } from '@/pages/ConsentPage';
 
 export default function App() {
   return (
@@ -42,6 +44,8 @@ export default function App() {
             <Route path="/planning" element={<PlanningDashboard />} />
             {/* Settings */}
             <Route path="/settings" element={<SettingsPage />} />
+            {/* Consent Hub */}
+            <Route path="/consent" element={<ConsentPage />} />
             {/* Agency Workspaces */}
             <Route path="/org/:orgId" element={<OrgDashboardPage />} />
             <Route path="/org/:orgId/clients" element={<ClientListPage />} />
