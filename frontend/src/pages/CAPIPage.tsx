@@ -2,40 +2,84 @@
  * CAPIPage — /integrations/capi
  *
  * Top-level Conversions API integration page.
- * Shows the ProviderList and opens the SetupWizard inline.
+ * Three views (controlled by local state):
+ *   1. Provider list  — default
+ *   2. Setup wizard   — "Add provider" opens the 5-step wizard inline
+ *   3. Dashboard      — clicking an existing provider card shows its analytics
  */
 
 import { useState } from 'react';
 import { ProviderList } from '@/components/capi/ProviderList';
 import { SetupWizard } from '@/components/capi/SetupWizard';
+import { CAPIMonitoringDashboard } from '@/components/capi/CAPIMonitoringDashboard';
 import { useCAPIStore } from '@/store/capiStore';
+import { capiApi } from '@/lib/api/capiApi';
+import type { CAPIProviderConfig } from '@/types/capi';
+
+type View = 'list' | 'wizard' | 'dashboard';
 
 export function CAPIPage() {
-  const [showWizard, setShowWizard] = useState(false);
-  const { openWizard, closeWizard, setProviders } = useCAPIStore();
+  const [view, setView] = useState<View>('list');
+  const [selectedProvider, setSelectedProvider] = useState<CAPIProviderConfig | null>(null);
+
+  const { openWizard, closeWizard, setProviders, selectProvider, providers } = useCAPIStore();
 
   function handleAddProvider() {
     openWizard('meta');
-    setShowWizard(true);
+    setView('wizard');
   }
 
-  function handleWizardComplete() {
-    setShowWizard(false);
-    closeWizard();
-    // Refresh provider list
-    import('@/lib/api/capiApi').then(({ capiApi }) => {
-      capiApi.listProviders().then(setProviders).catch(() => {});
+  function handleSelectProvider(id: string) {
+    // Try to get full provider details (includes status/events_sent_total)
+    capiApi.getProvider(id).then((provider) => {
+      setSelectedProvider(provider);
+      selectProvider(id);
+      setView('dashboard');
+    }).catch(() => {
+      // Fallback: use cached provider from the store list
+      const cached = providers.find((p) => p.id === id);
+      if (cached) {
+        setSelectedProvider(cached);
+        selectProvider(id);
+        setView('dashboard');
+      }
     });
   }
 
-  function handleWizardCancel() {
-    setShowWizard(false);
+  function handleWizardComplete() {
+    setView('list');
     closeWizard();
+    capiApi.listProviders().then(setProviders).catch(() => {});
+  }
+
+  function handleWizardCancel() {
+    setView('list');
+    closeWizard();
+  }
+
+  function handleBackFromDashboard() {
+    setSelectedProvider(null);
+    selectProvider(null);
+    setView('list');
   }
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 p-6">
-      {!showWizard ? (
+      {view === 'wizard' && (
+        <SetupWizard
+          onComplete={handleWizardComplete}
+          onCancel={handleWizardCancel}
+        />
+      )}
+
+      {view === 'dashboard' && selectedProvider && (
+        <CAPIMonitoringDashboard
+          provider={selectedProvider}
+          onBack={handleBackFromDashboard}
+        />
+      )}
+
+      {view === 'list' && (
         <>
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Conversions API</h1>
@@ -45,14 +89,9 @@ export function CAPIPage() {
           </div>
           <ProviderList
             onAddProvider={handleAddProvider}
-            onSelectProvider={(_id) => { /* Sprint 4: open dashboard */ }}
+            onSelectProvider={handleSelectProvider}
           />
         </>
-      ) : (
-        <SetupWizard
-          onComplete={handleWizardComplete}
-          onCancel={handleWizardCancel}
-        />
       )}
     </div>
   );
