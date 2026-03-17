@@ -28,9 +28,8 @@ import {
   getProviderDashboard,
 } from '@/services/database/capiQueries';
 import { safeDecryptCredentials } from '@/services/capi/credentials';
-import { validateMetaCredentials } from '@/services/capi/metaDelivery';
-import { sendMetaTestEvent } from '@/services/capi/metaDelivery';
-import { formatMetaEvent } from '@/services/capi/metaDelivery';
+import { validateMetaCredentials, sendMetaTestEvent, formatMetaEvent } from '@/services/capi/metaDelivery';
+import { validateGoogleCredentials, sendGoogleTestEvent } from '@/services/capi/googleDelivery';
 import { processEvent } from '@/services/capi/pipeline';
 import type {
   CreateProviderRequest,
@@ -38,6 +37,7 @@ import type {
   AtlasEvent,
   EventMapping,
   MetaCredentials,
+  GoogleCredentials,
   HashedIdentifier,
 } from '@/types/capi';
 
@@ -61,6 +61,12 @@ capiRouter.post('/providers', async (req: Request, res: Response): Promise<void>
     const validation = await validateMetaCredentials(body.credentials as MetaCredentials).catch(() => ({ valid: false, error: 'Validation request failed' }));
     if (!validation.valid) {
       res.status(400).json({ error: 'INVALID_CREDENTIALS', message: validation.error ?? 'Meta credential validation failed' });
+      return;
+    }
+  } else if (body.provider === 'google') {
+    const validation = await validateGoogleCredentials(body.credentials as GoogleCredentials).catch(() => ({ valid: false, error: 'Validation request failed' }));
+    if (!validation.valid) {
+      res.status(400).json({ error: 'INVALID_CREDENTIALS', message: validation.error ?? 'Google credential validation failed' });
       return;
     }
   }
@@ -186,6 +192,10 @@ capiRouter.post('/providers/:id/test', async (req: Request, res: Response): Prom
 
         if (provider.provider === 'meta') {
           const result = await sendMetaTestEvent(event, [], mapping, creds as MetaCredentials, provider.test_event_code!);
+          return { event_name: event.event_name, ...result };
+        }
+        if (provider.provider === 'google') {
+          const result = await sendGoogleTestEvent(event, [], mapping, creds as GoogleCredentials);
           return { event_name: event.event_name, ...result };
         }
         return { event_name: event.event_name, status: 'failed' as const, provider_response: null, error: 'Provider not supported for testing yet' };

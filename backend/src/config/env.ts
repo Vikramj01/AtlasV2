@@ -41,6 +41,12 @@ export const env = {
   // Generate: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
   CAPI_ENCRYPTION_KEY: optional('CAPI_ENCRYPTION_KEY', ''),
 
+  // Google Ads OAuth — required for token refresh on Google Enhanced Conversions
+  GOOGLE_OAUTH_CLIENT_ID: optional('GOOGLE_OAUTH_CLIENT_ID', ''),
+  GOOGLE_OAUTH_CLIENT_SECRET: optional('GOOGLE_OAUTH_CLIENT_SECRET', ''),
+  // Developer token required for every Google Ads API request
+  GOOGLE_ADS_DEVELOPER_TOKEN: optional('GOOGLE_ADS_DEVELOPER_TOKEN', ''),
+
   PORT: parseInt(optional('PORT', '3001'), 10),
   NODE_ENV,
   FRONTEND_URL,

@@ -10,8 +10,7 @@
  *   6. Log           — write CAPIEvent record to DB
  *   7. Counters      — increment provider sent/failed totals
  *
- * Currently supports: Meta CAPI
- * Sprint 3 will add: Google Enhanced Conversions
+ * Supports: Meta CAPI, Google Enhanced Conversions
  */
 
 import { createHash } from 'crypto';
@@ -27,7 +26,8 @@ import type {
 import { safeDecryptCredentials } from './credentials';
 import { isEventDuplicate, createCAPIEvent, incrementProviderCounters } from '@/services/database/capiQueries';
 import { sendMetaEvents } from './metaDelivery';
-import type { MetaCredentials } from '@/types/capi';
+import { sendGoogleEvents } from './googleDelivery';
+import type { MetaCredentials, GoogleCredentials } from '@/types/capi';
 import logger from '@/utils/logger';
 
 // ── PII Hashing ───────────────────────────────────────────────────────────────
@@ -216,6 +216,14 @@ async function deliverToProvider(
         config.event_mapping,
         creds as MetaCredentials,
         config.test_event_code,
+      );
+
+    case 'google':
+      return sendGoogleEvents(
+        [event],
+        [identifiers],
+        config.event_mapping,
+        creds as GoogleCredentials,
       );
 
     default:
