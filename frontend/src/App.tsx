@@ -23,6 +23,8 @@ import { PackDetailPage } from '@/pages/PackDetailPage';
 import { OrgSettingsPage } from '@/pages/OrgSettingsPage';
 // Consent Hub
 import { ConsentPage } from '@/pages/ConsentPage';
+// CAPI Integrations
+import { CAPIPage } from '@/pages/CAPIPage';
 
 export default function App() {
   return (
@@ -46,6 +48,8 @@ export default function App() {
             <Route path="/settings" element={<SettingsPage />} />
             {/* Consent Hub */}
             <Route path="/consent" element={<ConsentPage />} />
+            {/* CAPI Integrations */}
+            <Route path="/integrations/capi" element={<CAPIPage />} />
             {/* Agency Workspaces */}
             <Route path="/org/:orgId" element={<OrgDashboardPage />} />
             <Route path="/org/:orgId/clients" element={<ClientListPage />} />
