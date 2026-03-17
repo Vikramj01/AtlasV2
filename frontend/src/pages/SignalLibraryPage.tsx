@@ -7,6 +7,7 @@ import { signalApi } from '@/lib/api/signalApi';
 import { useSignalStore } from '@/store/signalStore';
 import { SignalCard } from '@/components/signals/SignalCard';
 import { SignalEditor } from '@/components/signals/SignalEditor';
+import { AddToPackModal } from '@/components/signals/AddToPackModal';
 import type { Signal } from '@/types/signal';
 
 const CATEGORY_ORDER = ['conversion', 'engagement', 'navigation', 'custom'];
@@ -18,6 +19,7 @@ export function SignalLibraryPage() {
   const [search, setSearch] = useState('');
   const [showEditor, setShowEditor] = useState(false);
   const [editingSignal, setEditingSignal] = useState<Signal | null>(null);
+  const [addToPackSignal, setAddToPackSignal] = useState<Signal | null>(null);
 
   useEffect(() => {
     if (!orgId) return;
@@ -102,6 +104,7 @@ export function SignalLibraryPage() {
                     signal={signal}
                     onEdit={(s) => { setEditingSignal(s); setShowEditor(true); }}
                     onDelete={handleDelete}
+                    onAddToPack={(s) => setAddToPackSignal(s)}
                   />
                 ))}
               </div>
@@ -116,6 +119,14 @@ export function SignalLibraryPage() {
           signal={editingSignal}
           onSaved={handleSaved}
           onClose={() => { setShowEditor(false); setEditingSignal(null); }}
+        />
+      )}
+
+      {addToPackSignal && orgId && (
+        <AddToPackModal
+          signal={addToPackSignal}
+          orgId={orgId}
+          onClose={() => setAddToPackSignal(null)}
         />
       )}
     </div>

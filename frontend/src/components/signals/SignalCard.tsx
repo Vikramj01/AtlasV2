@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Edit2, Trash2 } from 'lucide-react';
+import { Edit2, Trash2, BookmarkPlus } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { SignalToPlatformPreview } from '@/components/signals/SignalToPlatformPreview';
 import type { Signal } from '@/types/signal';
 
 const PLATFORM_LABELS: Record<string, string> = {
@@ -24,13 +25,18 @@ interface Props {
   signal: Signal;
   onEdit?: (signal: Signal) => void;
   onDelete?: (signal: Signal) => void;
+  /** Called when the user clicks "Add to pack" — parent handles the modal */
+  onAddToPack?: (signal: Signal) => void;
 }
 
-export function SignalCard({ signal, onEdit, onDelete }: Props) {
-  const [expanded, setExpanded] = useState(false);
+export function SignalCard({ signal, onEdit, onDelete, onAddToPack }: Props) {
+  const [showParams, setShowParams] = useState(false);
+  const [showMappings, setShowMappings] = useState(false);
   const platforms = Object.keys(signal.platform_mappings ?? {});
   const canEdit = !signal.is_system && !!onEdit;
   const canDelete = !signal.is_system && !!onDelete;
+  const totalParams = signal.required_params.length + signal.optional_params.length;
+  const hasMappings = platforms.length > 0 || !!signal.walkeros_mapping;
 
   return (
     <Card className="relative overflow-hidden">
@@ -64,7 +70,7 @@ export function SignalCard({ signal, onEdit, onDelete }: Props) {
         )}
 
         {/* Expanded params */}
-        {expanded && (
+        {showParams && (
           <div className="mt-3 space-y-1.5 border-t pt-3">
             {signal.required_params.length > 0 && (
               <div>
@@ -89,16 +95,53 @@ export function SignalCard({ signal, onEdit, onDelete }: Props) {
           </div>
         )}
 
+        {/* Platform mapping preview */}
+        {showMappings && hasMappings && (
+          <div className="mt-3 border-t pt-3">
+            <SignalToPlatformPreview signal={signal} />
+          </div>
+        )}
+
         {/* Footer */}
-        <div className="mt-3 flex items-center justify-between">
-          <button
-            type="button"
-            onClick={() => setExpanded((e) => !e)}
-            className="text-[10px] text-muted-foreground hover:text-foreground"
-          >
-            {expanded ? 'Hide params ▲' : `${signal.required_params.length + signal.optional_params.length} params ▾`}
-          </button>
-          <div className="flex gap-1">
+        <div className="mt-3 flex items-center justify-between gap-2">
+          {/* Left: text toggles */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {totalParams > 0 && (
+              <button
+                type="button"
+                onClick={() => { setShowParams((v) => !v); if (!showParams) setShowMappings(false); }}
+                className="text-[10px] text-muted-foreground hover:text-foreground"
+              >
+                {showParams ? 'Hide params ▲' : `${totalParams} params ▾`}
+              </button>
+            )}
+            {hasMappings && (
+              <>
+                {totalParams > 0 && <span className="text-[10px] text-muted-foreground/40">·</span>}
+                <button
+                  type="button"
+                  onClick={() => { setShowMappings((v) => !v); if (!showMappings) setShowParams(false); }}
+                  className="text-[10px] text-muted-foreground hover:text-foreground"
+                >
+                  {showMappings ? 'Hide mappings ▲' : 'Platform mappings ▾'}
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* Right: action buttons */}
+          <div className="flex gap-1 shrink-0">
+            {onAddToPack && (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-6 w-6 text-muted-foreground hover:text-primary"
+                title="Add to pack"
+                onClick={() => onAddToPack(signal)}
+              >
+                <BookmarkPlus className="h-3 w-3" />
+              </Button>
+            )}
             {canEdit && (
               <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => onEdit(signal)}>
                 <Edit2 className="h-3 w-3" />
