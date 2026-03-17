@@ -1,543 +1,283 @@
-# CLAUDE.md — AI Assistant Guide for AtlasV2
+# CLAUDE.md — Atlas Phase 1: Consent Integration Hub + Conversion API Module
 
-## Project Overview
+## Project Context
 
-**Atlas** is a **marketing-facing Signal Health Platform** that audits conversion tracking infrastructure on SPAs and headless commerce sites. It uses Browserbase (managed Playwright) to simulate user journeys, validates signal integrity across 26 rules, scores conversion health, and produces executive-ready PDF/JSON reports that non-technical marketers can understand.
+Atlas is a marketing signal optimisation and tracking infrastructure platform built for agencies, consultancies, and SMB marketers. It's hosted at atlas.spi3l.com.
 
-It also includes **Planning Mode** — an upstream AI-powered workflow that scans a website, recommends what to track, and generates a ready-to-import GTM container, dataLayer spec, and implementation guide.
+### What Atlas Does Today
+- **Journey Builder**: Guided wizard + AI-assisted flow for defining customer journeys and generating composable tracking tags
+- **Planning Mode**: AI agent that scans sites, recommends tagging, and generates GTM container JSON
+- **Validation Engine**: 26 rules across 3 layers (signal initiation, parameter completeness, persistence)
+- **Chrome Extension**: Scans website tracking tags and identifies existing implementations
+- **Dual GTM Output**: Generates both client-side and server-side GTM container configurations
+- **WalkerOS Integration**: Uses WalkerOS as the vendor-neutral event collection/data layer
 
-**Current status: Fully implemented and deployed.** The monorepo contains a working React 19 frontend (deployed on Vercel) and a Node.js/Express backend (deployed on Render). All three core modes are live.
+### Tech Stack
+- **Frontend**: Next.js (App Router), TypeScript, Tailwind CSS, shadcn/ui
+- **Backend**: Next.js API routes + Supabase Edge Functions
+- **Database**: Supabase (PostgreSQL) for app state; DuckDB/MotherDuck for analytics
+- **Auth**: Supabase Auth (email + OAuth)
+- **Hosting**: Vercel
+- **State Management**: Zustand
+- **Forms**: react-hook-form + zod
+- **Payments**: Stripe (future)
 
----
-
-## Repository Structure
-
-```
-AtlasV2/
-├── CLAUDE.md                          ← This file (AI assistant guide)
-├── claude.md                          ← Full implementation guide & sprint roadmap
-├── validation-rules.ts                ← 26 validation rules (source of truth)
-├── rule-interpretations.ts            ← Business impact mappings (tech → marketing)
-├── docs/
-│   ├── planning-mode-sprint-plan.md
-│   ├── planning-mode-tasks.md
-│   ├── planning-mode-migrations.md
-│   └── planning-mode-e2e-test-guide.md
-├── frontend/                          ← React 19 + Vite + TypeScript (Vercel)
-│   └── src/
-│       ├── pages/
-│       ├── components/
-│       ├── store/
-│       ├── hooks/
-│       ├── lib/api/
-│       └── types/
-├── backend/                           ← Node.js/Express + TypeScript (Render)
-│   └── src/
-│       ├── api/routes/
-│       ├── api/middleware/
-│       ├── services/
-│       ├── types/
-│       └── config/
-├── README.md
-└── LICENSE                            ← Apache 2.0
+### Existing Supabase Schema (tables you must NOT modify)
+```sql
+-- These tables exist and are in use. Do not alter them.
+organizations (id, name, type, plan, created_at)
+profiles (id [FK auth.users], organization_id, full_name, role, created_at)
+clients (id, organization_id, name, website_url, industry, created_at)
+projects (id, organization_id, client_id, name, status, phase_data, created_by, created_at, updated_at)
+planning_sessions (id, user_id, site_url, business_type, business_context, platforms, implementation_format, status, created_at, updated_at)
+planning_pages (id, session_id, url, label, page_type, scan_status, is_selected, page_capture, ai_analysis, error, created_at)
+planning_recommendations (id, session_id, page_id, element_reference, selector, recommendation_type, ...)
 ```
 
----
+RLS is enabled with organization-level isolation. All new tables MUST follow this pattern.
 
-## Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| Frontend | React 19 + TypeScript + Vite |
-| State Management | Zustand |
-| Styling | Tailwind CSS + shadcn/ui |
-| Build / Deploy | Vite → Vercel |
-| Backend | Node.js/Express (LTS 20+) → Render |
-| Browser Automation | Browserbase API (managed Playwright) |
-| Job Queue | Bull on Redis |
-| PDF Generation | PDFKit |
-| ZIP Export | jszip |
-| Database | Supabase PostgreSQL |
-| Storage | Supabase Storage (`planning-screenshots` bucket) |
-| Auth | Supabase Auth |
-| Payments | Stripe |
-| AI Analysis | Anthropic Claude API (`claude-haiku-4-5-20251001`) |
-
----
-
-## The Three Modes
-
-### 1. Planning Mode
-AI-powered upstream workflow. Sits *before* Audit Mode.
-
+### Existing Folder Structure
 ```
-Planning Mode → (developer implements tracking) → Audit Mode
-"What should I track?"                            "Is my tracking working?"
-```
-
-**User flow (7-step wizard):**
-1. Enter site URL, business type, platforms
-2. Enter page URLs to scan (max 10)
-3. Scanning progress (real-time, polls backend)
-4. Review AI recommendations (annotated screenshots)
-5. Tracking plan summary
-6. Generated outputs (GTM container JSON, dataLayer spec, HTML implementation guide)
-7. Download + handoff to Audit Mode (creates a Journey in Journey Builder)
-
-**Rate limits:** Free = 1/month, Pro = 10/month, Agency = unlimited
-
----
-
-### 2. Journey Builder → Audit Mode
-Structured audit workflow. User builds a reusable journey definition, then runs audits against it.
-
-**User flow:**
-1. Journey Builder wizard (4 steps): business type → funnel stages → platform selection → review
-2. Generate validation spec (`POST /api/journeys/:id/generate`)
-3. Run audit from journey (`POST /api/audits/start-from-journey`)
-4. View Gap Report (`/journey/:id/audit/:auditId`)
-
----
-
-### 3. Direct Audit Mode
-Quick-start audit without a saved journey.
-
-**User flow:**
-1. Enter URL, funnel type, region, URL map
-2. Audit runs async (Browserbase job queue)
-3. Poll progress (`GET /api/audits/:id`)
-4. View 5-page report (`/report/:auditId`)
-5. Export PDF/JSON/ZIP
-
-**Rate limits:** Free = 2/month, Pro = 20/month, Agency = unlimited
-
----
-
-## Frontend — Pages & Routing
-
-| Route | Page | Description |
-|-------|------|-------------|
-| `/` | → `/home` redirect | |
-| `/login` | `LoginPage` | Supabase Auth UI |
-| `/home` | `HomePage` | **Landing page** — plan badge, mode-selection cards, recent activity feed |
-| `/dashboard` | `DashboardPage` | Audit history table with delete functionality |
-| `/journey/new` | `JourneyBuilderPage` | 4-step journey wizard |
-| `/journey/:id/spec` | `JourneySpecPage` | Generated GTM/WalkerOS spec viewer |
-| `/journey/:id/audit/:auditId` | `GapReportPage` | Journey-specific gap analysis |
-| `/audit/:auditId/progress` | `AuditProgressPage` | Full-screen progress tracker (no sidebar) |
-| `/report/:auditId` | `ReportPage` | 5-page audit report |
-| `/planning` | `PlanningDashboard` | Planning sessions list with delete functionality |
-| `/planning/new` | `PlanningModePage` | New planning session wizard (full-screen) |
-| `/planning/:sessionId` | `PlanningModePage` | Resume existing session (full-screen) |
-| `/settings` | `SettingsPage` | Billing, plan upgrade, preferences |
-
-**Layout:** Most protected routes use `AppLayout` (sidebar + topbar). `AuditProgressPage` and `PlanningModePage` are full-screen (no sidebar).
-
-**Sidebar nav links:** Home → Plan Tracking → New Audit → History → Settings
-
----
-
-## Frontend — Key Files
-
-```
-frontend/src/
-├── pages/
-│   ├── HomePage.tsx              ← Landing page post-login
-│   ├── DashboardPage.tsx         ← Audit history + delete
-│   ├── PlanningDashboard.tsx     ← Planning sessions list + delete
-│   ├── PlanningModePage.tsx      ← 7-step wizard container
-│   ├── JourneyBuilderPage.tsx
-│   ├── JourneySpecPage.tsx
-│   ├── GapReportPage.tsx
-│   ├── AuditProgressPage.tsx
-│   ├── ReportPage.tsx
-│   ├── SettingsPage.tsx
-│   └── LoginPage.tsx
-│
-├── components/
-│   ├── audit/
-│   │   ├── AuditHistoryTable.tsx      ← Supports onDelete prop (inline confirm UI)
-│   │   ├── AuditProgressSteps.tsx
-│   │   ├── ReportNav.tsx
-│   │   ├── RunAuditForm.tsx
-│   │   └── ReportPages/
-│   │       ├── ExecutiveSummary.tsx
-│   │       ├── IssuesFixes.tsx
-│   │       ├── JourneyBreakdown.tsx
-│   │       ├── PlatformImpact.tsx
-│   │       └── TechnicalAppendix.tsx
-│   ├── planning/
-│   │   ├── AnnotatedScreenshot.tsx    ← Desktop-only (≥1024px)
-│   │   ├── RecommendationCard.tsx
-│   │   ├── CustomElementForm.tsx
-│   │   ├── Step1PlanningSetup.tsx
-│   │   ├── Step2PageDiscovery.tsx
-│   │   ├── Step3ScanningProgress.tsx
-│   │   ├── Step4ReviewRecommendations.tsx
-│   │   ├── Step5TrackingPlanSummary.tsx
-│   │   ├── Step6GeneratedOutputs.tsx
-│   │   └── Step7DownloadAndHandoff.tsx
-│   ├── journey/
-│   │   ├── JourneyWizard.tsx
-│   │   ├── Step1BusinessType.tsx
-│   │   ├── Step2JourneyEditor.tsx
-│   │   ├── Step3PlatformSelector.tsx
-│   │   └── Step4Review.tsx
-│   ├── layout/
-│   │   ├── AppLayout.tsx              ← Fetches user email + plan from Supabase
-│   │   ├── Sidebar.tsx                ← Nav: Home, Plan Tracking, New Audit, History, Settings
-│   │   ├── TopBar.tsx                 ← Plan badge + sign-out
-│   │   └── ProtectedRoute.tsx
-│   └── common/
-│       ├── HealthBadge.tsx
-│       ├── ScoreCard.tsx
-│       ├── SeverityBadge.tsx
-│       └── StatusBanner.tsx
-│
-├── store/
-│   ├── auditStore.ts              ← currentAudit, report, setAudit, clearAudit
-│   ├── planningStore.ts           ← currentStep (1–7), draftSetup, currentSession, pages, recommendations, outputs
-│   └── journeyWizardStore.ts
-│
-├── hooks/
-│   ├── useAudit.ts                ← Polls audit status
-│   ├── useAuditHistory.ts         ← Fetches audit list
-│   └── useReport.ts               ← Report data
-│
-├── lib/api/
-│   ├── auditApi.ts                ← start, getStatus, getReport, list, delete, export, startFromJourney, getGaps
-│   ├── planningApi.ts             ← createSession, listSessions, getSession, getRecommendations, updateDecision, generateOutputs, listOutputs, downloadOutput, getScreenshotUrl, handoff, deleteSession
-│   └── journeyApi.ts
-│
-└── types/
-    ├── audit.ts
-    ├── journey.ts
-    └── planning.ts
+atlas/
+├── frontend/src/
+│   ├── app/                    # Next.js App Router pages
+│   ├── components/
+│   │   ├── layout/             # Sidebar, Header, Layout
+│   │   ├── wizard/             # Journey Builder wizard phases
+│   │   ├── journey/            # JourneyList, JourneyCard, StepEditor
+│   │   ├── conversion/         # ConversionConfig, PlatformMapper
+│   │   └── clients/            # ClientList, ClientCard
+│   ├── pages/                  # Dashboard, Projects, Clients, Templates
+│   ├── services/               # api.ts, gtm-generator.ts
+│   ├── store/                  # Zustand stores
+│   ├── types/                  # TypeScript interfaces
+│   └── utils/                  # validation.ts, formatting.ts
+├── backend/src/                # (if separate — some logic in Next.js API routes)
+├── supabase/
+│   └── migrations/             # SQL migration files
+└── package.json
 ```
 
 ---
 
-## Backend — API Endpoints
+## What You Are Building
 
-### Audits (`/api/audits`)
+Two features that extend Atlas's existing event pipeline:
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/audits` | List user's audits (with report scores joined) |
-| `POST` | `/api/audits/start` | Enqueue new audit job. Returns `{ audit_id, status: 'queued' }` |
-| `POST` | `/api/audits/start-from-journey` | Enqueue audit from a saved Journey spec |
-| `GET` | `/api/audits/:id` | Poll audit status and progress |
-| `GET` | `/api/audits/:id/report` | Fetch completed `ReportJSON` |
-| `GET` | `/api/audits/:id/gaps` | Journey-specific gap results |
-| `POST` | `/api/audits/:id/export` | Download PDF / JSON / ZIP bundle |
-| `DELETE` | `/api/audits/:id` | Delete an audit (ownership-checked). Returns `{ deleted: true }` |
+### Feature 1: Consent Integration Hub
+A consent management layer with two modes:
+- **Built-in Mode**: Lightweight consent banner Atlas generates and injects alongside tracking tags
+- **Integration Mode**: Bidirectional sync with external CMPs (OneTrust, Cookiebot, Usercentrics)
 
-### Planning Mode (`/api/planning`)
+Key capabilities: consent collection, storage, enforcement (gates tag firing + CAPI forwarding), Google Consent Mode v2 signal generation, consent analytics dashboard.
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/api/planning/sessions` | Create session + enqueue scan job |
-| `GET` | `/api/planning/sessions` | List user's planning sessions |
-| `GET` | `/api/planning/sessions/:id` | Get session with pages + scan progress |
-| `DELETE` | `/api/planning/sessions/:id` | Delete a session (ownership-checked). Returns `{ deleted: true }` |
-| `GET` | `/api/planning/sessions/:id/recommendations` | Get all AI recommendations (grouped by page) |
-| `POST` | `/api/planning/sessions/:id/recommendations` | Add a manual recommendation (auto-approved) |
-| `PATCH` | `/api/planning/sessions/:id/recommendations/:recId` | Record user decision: approved / skipped / modified |
-| `POST` | `/api/planning/sessions/:id/generate` | Generate GTM container, dataLayer spec, HTML guide |
-| `GET` | `/api/planning/sessions/:id/outputs` | List generated outputs |
-| `GET` | `/api/planning/sessions/:id/outputs/:id/download` | Download a specific output file |
-| `GET` | `/api/planning/sessions/:id/pages/:pageId/screenshot` | Get fresh 30-min signed URL for a page screenshot |
-| `POST` | `/api/planning/sessions/:id/handoff` | Create a Journey from approved recommendations |
+### Feature 2: Conversion API Module
+Server-side conversion API integrations with a provider-abstracted architecture:
+- **Meta Conversions API** (ships first)
+- **Google Enhanced Conversions** (ships alongside or immediately after)
+- Architecture designed so TikTok, LinkedIn, Snapchat adapters plug in later
 
-### Journeys (`/api/journeys`)
+Key capabilities: guided setup wizard, automatic PII hashing (SHA-256), event deduplication, consent gating, EMQ monitoring, delivery dashboard.
 
-CRUD for journey definitions, stages, platforms, and spec generation. See `backend/src/api/routes/journeys.ts`.
-
----
-
-## Backend — Key Files
-
+### How They Connect
 ```
-backend/src/
-├── app.ts                         ← Express setup, trust proxy, rate limiters, routes
-├── api/
-│   ├── middleware/
-│   │   ├── authMiddleware.ts      ← Validates Supabase JWT; attaches req.user {id, email, plan}
-│   │   ├── auditLimiter.ts        ← DB-based monthly limit by plan (free:2, pro:20, agency:∞)
-│   │   └── planningLimiter.ts     ← DB-based monthly limit by plan (free:1, pro:10, agency:∞)
-│   └── routes/
-│       ├── audits.ts
-│       ├── planning.ts
-│       └── journeys.ts
-│
-├── services/
-│   ├── audit/
-│   │   ├── orchestrator.ts        ← Audit job orchestration
-│   │   ├── dataCapture.ts         ← Capture network & dataLayer events
-│   │   ├── journeySimulator.ts
-│   │   └── stageSimulator.ts
-│   ├── validation/
-│   │   ├── engine.ts              ← Runs all 26 rules
-│   │   ├── signalInitiation.ts    ← Layer 1 (8 rules)
-│   │   ├── parameterCompleteness.ts ← Layer 2 (12 rules)
-│   │   └── persistence.ts         ← Layer 3 (6 rules)
-│   ├── scoring/
-│   │   └── engine.ts              ← Calculates 4 scores
-│   ├── reporting/
-│   │   └── generator.ts           ← JSON → ReportJSON
-│   ├── interpretation/
-│   │   └── engine.ts              ← Business impact mappings
-│   ├── export/
-│   │   └── pdfGenerator.ts        ← PDFKit PDF generation
-│   ├── planning/
-│   │   ├── pageCaptureService.ts  ← Browserbase page capture + screenshot upload
-│   │   ├── domSimplifier.ts       ← DOM → ≤15K token simplified tree
-│   │   ├── aiAnalysisService.ts   ← Claude API (haiku) prompts + parsing
-│   │   ├── sessionOrchestrator.ts ← Multi-page scan orchestration
-│   │   └── generators/
-│   │       ├── gtmContainerGenerator.ts      ← GTM importable JSON (exportFormatVersion: 2)
-│   │       ├── dataLayerSpecGenerator.ts     ← Per-page developer code snippets
-│   │       ├── implementationGuideGenerator.ts ← Standalone HTML guide
-│   │       └── outputGenerator.ts            ← Orchestrates all generators
-│   ├── journey/
-│   │   ├── platformSchemas.ts
-│   │   ├── actionPrimitives.ts
-│   │   └── generators/
-│   │       ├── gtmDataLayer.ts
-│   │       ├── validationSpec.ts
-│   │       └── walkerosFlow.ts
-│   ├── browserbase/
-│   │   ├── client.ts              ← Browserbase API client (reused by both audit + planning)
-│   │   └── journeyConfigs.ts
-│   ├── database/
-│   │   ├── supabase.ts            ← supabaseAdmin client + getScreenshotSignedUrl()
-│   │   ├── queries.ts             ← Audit CRUD: createAudit, getAudit, updateAuditStatus, deleteAudit, listAudits, ...
-│   │   ├── journeyQueries.ts
-│   │   └── planningQueries.ts     ← Planning CRUD: createSession, getSession, listSessions, deleteSession, createPage, getPageWithSignedUrl, createRecommendations, updateRecommendationDecision, createOutput, ...
-│   └── queue/
-│       ├── jobQueue.ts            ← Bull queue setup (auditQueue, planningQueue)
-│       └── worker.ts              ← Job processors
-│
-└── config/
-    └── env.ts                     ← All environment variable access
+User visits site
+  → Consent banner/CMP collects decision
+  → Consent state stored in Atlas + propagated to data layer
+  → WalkerOS collects events (with consent state attached)
+  → Atlas validation engine checks quality + consent compliance
+  → Consented conversion events route to CAPI Module
+  → CAPI Module hashes PII, formats payload, sends to Meta/Google
+  → Delivery confirmation + EMQ scores logged to dashboard
 ```
 
 ---
 
-## Database Schema
+## Implementation Rules
 
-### Tables
+### Must Follow
+1. **All new tables** go in `supabase/migrations/` as numbered SQL files
+2. **RLS required** on every new table — use the org_isolation pattern from existing tables
+3. **Credentials encryption** — provider tokens/API keys stored in `capi_providers.credentials` must be encrypted. Use Supabase Vault if available, otherwise AES-256 at the application layer
+4. **No PII in logs** — never log unhashed email, phone, or other personal data
+5. **Consent-first** — every event entering or leaving Atlas must carry a consent state. No data processing without consent validation
+6. **Provider adapter pattern** — the CAPI module uses a TypeScript interface (`CAPIProviderAdapter`) that all providers implement. Never put Meta-specific or Google-specific logic in the core pipeline
+7. **shadcn/ui components** — use existing shadcn/ui components for all new UI. Install additional components as needed via `npx shadcn add [component]`
+8. **Zod validation** — all API request/response bodies validated with Zod schemas
+9. **Error boundaries** — wrap all new pages/features in React error boundaries
+10. **Loading states** — every async operation shows a loading indicator (use shadcn Skeleton)
 
-| Table | Purpose |
-|-------|---------|
-| `profiles` | User plan: `free \| pro \| agency` |
-| `audits` | Audit records (status, progress, website_url, funnel_type) |
-| `audit_results` | Per-rule validation results |
-| `audit_reports` | Final `ReportJSON` JSONB blob |
-| `journeys` | Journey definitions |
-| `journey_stages` | Funnel stages per journey |
-| `journey_platforms` | Platform selections per journey |
-| `journey_specs` | Generated GTM/WalkerOS specs |
-| `journey_templates` | Saved templates |
-| `journey_audit_results` | Gap analysis results for journey-mode audits |
-| `planning_sessions` | Planning Mode sessions |
-| `planning_pages` | URLs scanned per session |
-| `planning_recommendations` | AI-generated recommendations |
-| `planning_outputs` | Generated GTM JSON, dataLayer spec, HTML guide |
+### Code Style
+- TypeScript strict mode
+- Functional components only (no class components)
+- Server components by default; 'use client' only when needed
+- API routes use Next.js Route Handlers (app/api/...)
+- Database queries via Supabase JS client (not raw SQL in application code)
+- Zustand for client-side state; server state via React Query or SWR
 
-### Supabase Storage
-
-**Bucket:** `planning-screenshots`
-- Screenshots are uploaded during page capture and stored with path `{user_id}/{session_id}/{page_id}.jpg`
-- Only paths are stored in DB (`planning_pages.screenshot_url`); signed URLs are generated on demand via `getScreenshotSignedUrl()`
-- **RLS policies required on `storage.objects`:**
-  - `Users can upload own screenshots` (INSERT) — `auth.uid()::text = (storage.foldername(name))[1]`
-  - `Users can read own screenshots` (SELECT) — same check
+### Testing
+- Unit tests for PII hashing (critical path — must not leak unhashed data)
+- Unit tests for provider adapter payload formatting
+- Integration tests for consent → CAPI pipeline flow
+- E2E tests for the setup wizard flows
 
 ---
 
-## Validation Engine — 26 Rules
+## File Placement Guide
 
-**Layer 1 — Signal Initiation (8 rules):** Are conversion events firing at all?
-- `GA4_PURCHASE_EVENT_FIRED`, `META_PIXEL_PURCHASE_EVENT_FIRED`, `GOOGLE_ADS_CONVERSION_EVENT_FIRED`, `SGTM_SERVER_EVENT_FIRED`, `DATALAYER_POPULATED`, `GTM_CONTAINER_LOADED`, `PAGE_VIEW_EVENT_FIRED`, `ADD_TO_CART_EVENT_FIRED`
+Place new files in these locations:
 
-**Layer 2 — Parameter Completeness (12 rules):** Are required parameters present?
-- `TRANSACTION_ID_PRESENT`, `VALUE_PARAMETER_PRESENT`, `CURRENCY_PARAMETER_PRESENT`, `GCLID_CAPTURED_AT_LANDING`, `FBCLID_CAPTURED_AT_LANDING`, `EVENT_ID_GENERATED`, `EMAIL_CAPTURED_FOR_ENHANCED_CONVERSIONS`, `PHONE_CAPTURED_FOR_CAPI`, `ITEMS_ARRAY_POPULATED`, `USER_ID_PRESENT`, `COUPON_CAPTURED_IF_USED`, `SHIPPING_CAPTURED`
-
-**Layer 3 — Persistence (6 rules):** Do identifiers survive cross-page navigation?
-- `GCLID_PERSISTS_TO_CONVERSION`, `FBCLID_PERSISTS_TO_CONVERSION`, `TRANSACTION_ID_MATCHES_ORDER_SYSTEM`, `EVENT_ID_CONSISTENCY_CLIENT_TO_SERVER`, `USER_DATA_NORMALIZED_CONSISTENTLY`, `PII_PROPERLY_HASHED`
-
-Rules are pure synchronous functions: `(auditData: AuditData) => ValidationResult`. No async logic inside `test()`.
-
----
-
-## Scoring Engine — 4 Scores
-
-1. **Conversion Signal Health (0–100)** — `(passing rules / 26) * 100`
-2. **Attribution Risk** — `'Low' | 'Medium' | 'High' | 'Critical'` based on gclid/fbclid/transaction_id capture
-3. **Optimization Strength** — `'Weak' | 'Moderate' | 'Strong'` based on user_data field completeness
-4. **Data Consistency Score** — `'Low' | 'Medium' | 'High'` based on event_id deduplication
-
----
-
-## Report — 5 Pages
-
-1. **Executive Summary** — overall status, 4 scores, business summary (critical/high issues only)
-2. **Issues & Fixes** — all failing rules with business impact + recommended owner + effort estimate
-3. **Journey Breakdown** — per-stage signal analysis
-4. **Platform Impact** — breakdown by GA4, Meta, Google Ads, sGTM
-5. **Technical Appendix** — raw validation results, network requests, dataLayer events
-
-Report language always uses `business_impact` from `rule-interpretations.ts`, never raw `technical_details`.
-
----
-
-## Platforms Audited
-
-| Platform | Signal Type | Key Rules |
-|----------|-------------|-----------|
-| Google Analytics 4 | Purchase event, dataLayer | `GA4_PURCHASE_EVENT_FIRED`, `DATALAYER_POPULATED` |
-| Meta Ads | Pixel, CAPI | `META_PIXEL_PURCHASE_EVENT_FIRED`, `FBCLID_*`, `PHONE_CAPTURED_FOR_CAPI` |
-| Google Ads | Conversion event, gclid | `GOOGLE_ADS_CONVERSION_EVENT_FIRED`, `GCLID_*` |
-| GTM | Container load | `GTM_CONTAINER_LOADED` |
-| Server-side GTM | sGTM event, event_id | `SGTM_SERVER_EVENT_FIRED`, `EVENT_ID_*` |
-
----
-
-## Supported Funnel Types
-
-- `ecommerce` — Shopping cart → checkout → order confirmation
-- `saas` — Trial signup → onboarding → subscription
-- `lead_gen` — Landing → form submit → thank you page
-- `content`, `marketplace`, `custom` (Journey Builder / Planning Mode)
-
----
-
-## Environment Variables
-
-### Frontend (`frontend/.env`)
 ```
-VITE_API_URL=https://your-backend.onrender.com
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-key
-VITE_STRIPE_PRICE_PRO=price_xxx
-VITE_STRIPE_PRICE_AGENCY=price_xxx
+atlas/
+├── frontend/src/
+│   ├── app/
+│   │   ├── (dashboard)/
+│   │   │   ├── consent/                    # Consent settings + analytics pages
+│   │   │   │   ├── page.tsx
+│   │   │   │   └── analytics/page.tsx
+│   │   │   └── integrations/
+│   │   │       └── capi/                   # CAPI provider setup + dashboard
+│   │   │           ├── page.tsx
+│   │   │           ├── [providerId]/
+│   │   │           │   ├── setup/page.tsx  # 5-step wizard
+│   │   │           │   └── dashboard/page.tsx
+│   │   │           └── layout.tsx
+│   │   └── api/
+│   │       └── v1/
+│   │           ├── consent/
+│   │           │   ├── route.ts            # POST (record consent)
+│   │           │   ├── [projectId]/
+│   │           │   │   ├── [visitorId]/route.ts  # GET, DELETE
+│   │           │   │   └── analytics/route.ts    # GET
+│   │           │   └── config/route.ts     # GET, PUT consent config
+│   │           └── capi/
+│   │               ├── providers/
+│   │               │   ├── route.ts        # POST (create provider)
+│   │               │   └── [id]/
+│   │               │       ├── route.ts    # GET, PUT, DELETE
+│   │               │       ├── test/route.ts     # POST (test events)
+│   │               │       ├── activate/route.ts # PUT
+│   │               │       └── dashboard/route.ts # GET
+│   │               └── process/route.ts    # Internal: event processing endpoint
+│   ├── components/
+│   │   ├── consent/
+│   │   │   ├── ConsentSettings.tsx
+│   │   │   ├── BannerConfigurator.tsx
+│   │   │   ├── CMPIntegration.tsx
+│   │   │   ├── CategoryEditor.tsx
+│   │   │   ├── ConsentAnalyticsDashboard.tsx
+│   │   │   └── BannerPreview.tsx
+│   │   └── capi/
+│   │       ├── ProviderList.tsx
+│   │       ├── SetupWizard.tsx
+│   │       ├── steps/
+│   │       │   ├── ConnectAccount.tsx
+│   │       │   ├── MapEvents.tsx
+│   │       │   ├── ConfigureIdentifiers.tsx
+│   │       │   ├── TestVerify.tsx
+│   │       │   └── Activate.tsx
+│   │       ├── EMQEstimator.tsx
+│   │       ├── CAPIMonitoringDashboard.tsx
+│   │       ├── DeliveryTimeline.tsx
+│   │       └── ErrorLog.tsx
+│   ├── lib/
+│   │   ├── consent/
+│   │   │   ├── consent-engine.ts           # Consent state management
+│   │   │   ├── gcm-mapper.ts              # Google Consent Mode mapping
+│   │   │   ├── banner-generator.ts        # Generate banner JS snippet
+│   │   │   └── cmp-listeners.ts           # OneTrust/Cookiebot/Usercentrics bridges
+│   │   ├── capi/
+│   │   │   ├── pipeline.ts                # Core event processing pipeline
+│   │   │   ├── hash-pii.ts               # SHA-256 PII hashing
+│   │   │   ├── dedup.ts                   # Event deduplication logic
+│   │   │   ├── queue.ts                   # Event queue management
+│   │   │   └── adapters/
+│   │   │       ├── types.ts               # CAPIProviderAdapter interface
+│   │   │       ├── meta.ts               # Meta Conversions API adapter
+│   │   │       ├── google.ts             # Google Enhanced Conversions adapter
+│   │   │       ├── tiktok.ts             # (stub for Phase 1.5)
+│   │   │       └── linkedin.ts           # (stub for Phase 1.5)
+│   │   └── shared/
+│   │       └── crypto.ts                  # Shared hashing utilities
+│   ├── store/
+│   │   ├── consentStore.ts
+│   │   └── capiStore.ts
+│   └── types/
+│       ├── consent.ts
+│       └── capi.ts
+├── supabase/
+│   └── migrations/
+│       ├── 20260317_001_consent_tables.sql
+│       └── 20260317_002_capi_tables.sql
+└── scripts/
+    └── generate-consent-banner.ts  # CLI tool to preview banner output
 ```
 
-### Backend (`backend/.env`)
-```
-BROWSERBASE_API_KEY=your-browserbase-key
-REDIS_URL=redis://localhost:6379
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_ANON_KEY=your-anon-key
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-STRIPE_SECRET_KEY=sk_live_xxx
-STRIPE_WEBHOOK_SECRET=whsec_xxx
-ANTHROPIC_API_KEY=sk-ant-xxx
-FRONTEND_URL=https://your-frontend.vercel.app
-```
+---
 
-> Never commit `.env` files. `SUPABASE_SERVICE_ROLE_KEY` and `ANTHROPIC_API_KEY` are backend-only — never expose in frontend `VITE_*` variables.
+## Development Sequence
+
+### Sprint 0 (Week 1-2): Shared Foundation
+1. Run the Supabase migration (creates all new tables)
+2. Implement `types/consent.ts` and `types/capi.ts`
+3. Implement `lib/shared/crypto.ts` (SHA-256 hashing)
+4. Implement `lib/capi/hash-pii.ts`
+5. Implement `lib/capi/adapters/types.ts` (provider interface)
+
+### Sprint 1 (Week 3-4): Consent Core
+1. Consent API routes (POST, GET, DELETE)
+2. `ConsentSettings.tsx` page with built-in banner configurator
+3. `banner-generator.ts` — generates the JS snippet
+4. `consent-engine.ts` — state management + GCM mapping
+5. Basic consent analytics API route
+
+### Sprint 2 (Week 5-6): Meta CAPI Adapter
+1. `lib/capi/adapters/meta.ts` — full Meta adapter
+2. `lib/capi/pipeline.ts` — core processing pipeline
+3. `lib/capi/dedup.ts` — event deduplication
+4. CAPI provider API routes (create, test, activate)
+5. `SetupWizard.tsx` with all 5 steps (Meta-specific)
+
+### Sprint 3 (Week 7-8): Google Adapter + CMP Integration
+1. `lib/capi/adapters/google.ts` — Google Enhanced Conversions adapter
+2. `lib/consent/cmp-listeners.ts` — OneTrust, Cookiebot, Usercentrics
+3. `CMPIntegration.tsx` component
+4. Extend SetupWizard for Google (OAuth flow, conversion action selection)
+
+### Sprint 4 (Week 9-10): Dashboards + Consent Enforcement
+1. `ConsentAnalyticsDashboard.tsx`
+2. `CAPIMonitoringDashboard.tsx`
+3. Consent enforcement in the event pipeline (consent gates CAPI)
+4. `lib/capi/queue.ts` — retry logic, dead letter handling
+5. Error log UI
+
+### Sprint 5 (Week 11-12): Integration Testing + Polish
+1. End-to-end consent → CAPI pipeline testing
+2. Load testing (5,000 events/min target)
+3. Edge case handling (token expiry, rate limiting, burst traffic)
+4. Documentation
+5. Beta launch prep
 
 ---
 
-## Delete Functionality
+## Key Technical Decisions (Already Made)
 
-Both audits and planning sessions can be deleted by the owning user:
-
-- **Audit delete:** `DELETE /api/audits/:id` — checks `user_id` ownership, cascades to `audit_results` and `audit_reports`
-- **Planning session delete:** `DELETE /api/planning/sessions/:id` — checks `user_id` ownership
-- **Frontend UX:** Trash icon on each table row → inline "Delete? ✓ ✗" confirm → row removed optimistically on success
-- Available on: `/dashboard` (DashboardPage) and `/planning` (PlanningDashboard)
-
----
-
-## Code Conventions
-
-### TypeScript
-- Strict mode — no `any`; use proper types from `types/audit.ts`, `types/planning.ts`, `types/journey.ts`
-- `as const` for literal type narrowing on severity/validation_layer
-- Interfaces over types for object shapes
-- Named exports for all rules and utilities (no default exports on rule files)
-
-### API Design
-- **Async job pattern**: POST returns immediately with ID; client polls GET until `status === 'completed'`
-- Poll interval: 2 seconds from frontend
-- All endpoints authenticated via `authMiddleware.ts`
-- DELETE endpoints return `{ deleted: true }` (not 204) so `apiFetch` can parse the response
-
-### Frontend Patterns
-- API calls only through `src/lib/api/*.ts` — never `fetch()` directly in components
-- State via Zustand stores — `auditStore`, `planningStore`, `journeyWizardStore`
-- Report sub-pages receive data as props from parent — no direct API calls in sub-pages
-- Screenshot signed URLs are generated via `planningApi.getScreenshotUrl()` — never stored as long-lived URLs
-
-### Database
-- All DB queries go through `services/database/*.ts` — no raw SQL in route handlers
-- Use `supabaseAdmin` (service role) in backend only
-- `deleteAudit(auditId, userId)` and `deleteSession(sessionId, userId)` both double-check ownership at the DB layer
-
-### Deployment / Infrastructure
-- **Frontend:** Vercel, auto-deploys from `main` branch. TypeScript errors cause build failures — `tsc --noEmit` must pass.
-- **Backend:** Render, auto-deploys from feature branch (or `main` after merge). Runs `node dist/index.js`.
-- **Trust proxy:** `app.set('trust proxy', 1)` is set in `app.ts`. Rate limiters use `validate: { xForwardedForHeader: false }` to suppress Render's `ERR_ERL_UNEXPECTED_X_FORWARDED_FOR` warning.
+1. **Supabase for everything** — no new database systems. Consent records and CAPI events go in Supabase tables, not DuckDB.
+2. **Next.js API routes for CAPI processing** — not Supabase Edge Functions. The CAPI pipeline needs access to encryption keys and provider credentials that are easier to manage in the Next.js server environment.
+3. **Provider credentials encrypted at rest** — use `@noble/ciphers` for AES-256-GCM encryption of tokens stored in JSONB columns.
+4. **Event queue in Supabase** — for Phase 1, the event queue is a Supabase table with status-based polling. If throughput becomes an issue in Phase 2, migrate to a proper queue (Inngest, Trigger.dev, or Supabase Realtime).
+5. **No external CMP dependency for built-in mode** — the built-in consent banner is a self-contained JS snippet that Atlas generates. It does NOT require OneTrust or any other third-party service.
 
 ---
 
-## Business Rules
+## Reference Documents
 
-| Rule | Detail |
-|------|--------|
-| Audit rate limit | Free: 2/month, Pro: 20/month, Agency: unlimited. Checked via `auditLimiter.ts` before enqueueing. |
-| Planning rate limit | Free: 1/month, Pro: 10/month, Agency: unlimited. Checked via `planningLimiter.ts`. |
-| Max pages per planning session | 10 (MVP) |
-| AI model | `claude-haiku-4-5-20251001` — cost target ~$0.13/session |
-| Screenshot format | JPEG 80% quality, 1280×800 viewport |
-| DOM token limit | Hard cap at 15,000 tokens for Claude API input |
-| Confidence threshold | Recommendations ≥ 0.8 confidence can be batch-approved |
-| GTM export format | `exportFormatVersion: 2` |
-| Severity routing | Only `critical` and `high` appear in Executive Summary. All severities in Issues & Fixes. |
-| PII handling | Email/phone captured for validation only. Hash before storing. Never log raw PII. |
-| Annotated screenshots | Desktop-only (≥1024px). Show warning banner on mobile. |
-| Handoff | Auto-created Journey from handoff must be reviewed in Journey Builder before running an audit. |
+The full PRD with detailed specs is in: `docs/atlas-prd-consent-capi.docx`
 
----
-
-## Common Pitfalls to Avoid
-
-1. **Don't add async logic to validation rule `test()` functions** — all data is passed in via `AuditData`; rules are synchronous.
-2. **Don't expose `SUPABASE_SERVICE_ROLE_KEY` or `ANTHROPIC_API_KEY` to frontend** — backend only.
-3. **Don't render raw `technical_details` to marketers** — always use `business_impact` from `rule-interpretations.ts`.
-4. **Don't store screenshots as binary in DB** — upload to Supabase Storage `planning-screenshots` bucket; store only the path.
-5. **Don't conflate GTM Container JSON with GTM dataLayer snippets** — container JSON is importable; dataLayer spec is human-readable developer code.
-6. **Don't call Claude API synchronously in route handlers** — all page scanning goes through the Bull job queue.
-7. **Don't use `dangerouslySetInnerHTML` for user-supplied content** — the implementation guide HTML is Atlas-generated (safe). Never render user-supplied HTML.
-8. **Don't skip the handoff journey review step** — auto-created Journey stage types may need correction before running the audit.
-9. **Don't return 204 from DELETE endpoints** — `apiFetch` calls `res.json()`, so return `{ deleted: true }` with 200 instead.
-10. **Don't push directly to `main`** — all changes go through feature branches (`claude/<description>-<session-id>`) and PRs. Vercel runs a preview build on every PR; TypeScript errors will block the merge.
-
----
-
-## Git Workflow
-
-- **Main branch:** `main` (deploys to Vercel + Render)
-- **Feature branches:** `claude/<description>-<session-id>`
-- All changes go through PRs; Vercel preview build must pass before merging
-- Run `npx tsc --noEmit` in `frontend/` before pushing to catch TS errors that would fail the Vercel build
-
----
-
-## Key Reference Points
-
-| What you need | Where to find it |
-|---------------|-----------------|
-| All 26 validation rules (logic) | `validation-rules.ts` |
-| Business impact wording | `rule-interpretations.ts` |
-| Full implementation guide | `claude.md` |
-| API endpoint contracts | This file (above) + `claude.md` |
-| Database schema SQL | `claude.md` → "Database Schema" section |
-| Planning Mode migrations | `docs/planning-mode-migrations.md` |
-| Planning Mode sprint plan | `docs/planning-mode-sprint-plan.md` |
-| Planning Mode task checklist | `docs/planning-mode-tasks.md` |
-| E2E test guide | `docs/planning-mode-e2e-test-guide.md` |
-| Planning Mode PRD | `ATLAS_Planning_Mode_PRD.md` |
+Key sections to reference:
+- **Section 6**: Consent data models (complete column definitions)
+- **Section 7**: Consent API specifications (request/response formats)
+- **Section 13**: CAPI data models (complete column definitions)
+- **Section 14**: CAPI API specifications + Meta/Google payload formats
+- **Section 9 & 16**: Error handling & edge cases
+- **Section 10 & 17**: Acceptance criteria & test plans
