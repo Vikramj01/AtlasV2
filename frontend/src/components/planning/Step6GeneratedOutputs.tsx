@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { usePlanningStore } from '@/store/planningStore';
 import { planningApi } from '@/lib/api/planningApi';
 import { GTMContainerPreview } from './GTMContainerPreview';
+import { WalkerOSAdvantageCard } from '@/components/signals/WalkerOSAdvantageCard';
 import type { PlanningOutput, OutputType, ExistingTrackingQuick } from '@/types/planning';
 
 const OUTPUT_META: Record<OutputType, { title: string; description: string; icon: string; ext: string }> = {
@@ -394,6 +395,10 @@ export function Step6GeneratedOutputs() {
             </Button>
           </div>
         )}
+      </div>
+
+      <div className="mb-8">
+        <WalkerOSAdvantageCard context="output" />
       </div>
 
       <div className="mb-8 rounded-xl border border-amber-100 bg-amber-50 p-5">
