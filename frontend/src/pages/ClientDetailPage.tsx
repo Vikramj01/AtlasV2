@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { ExternalLink, Package, Download, Plus, Trash2 } from 'lucide-react';
+import { ExternalLink, Package, Download, Plus, Trash2, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -138,6 +138,25 @@ export function ClientDetailPage() {
       </div>
 
       {error && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>}
+
+      {/* Ungenerated-outputs nudge */}
+      {deployments.length > 0 && deployments.some((d) => !d.last_generated_at) && !isGenerating && (
+        <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-amber-800">
+              {deployments.filter((d) => !d.last_generated_at).length} pack
+              {deployments.filter((d) => !d.last_generated_at).length !== 1 ? 's' : ''} deployed — outputs not yet generated
+            </p>
+            <p className="mt-0.5 text-xs text-amber-700">
+              Generate outputs to get the GTM container JSON, dataLayer spec, and implementation guide for this client.
+            </p>
+          </div>
+          <Button size="sm" variant="outline" className="shrink-0 border-amber-300 text-amber-800 hover:bg-amber-100" onClick={handleGenerate}>
+            Generate now
+          </Button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Deployed Signal Packs */}
