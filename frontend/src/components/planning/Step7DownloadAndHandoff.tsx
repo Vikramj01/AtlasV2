@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { usePlanningStore } from '@/store/planningStore';
 import { planningApi } from '@/lib/api/planningApi';
+import { WalkerOSAdvantageCard } from '@/components/signals/WalkerOSAdvantageCard';
 import type { OutputType } from '@/types/planning';
 
 // ── Share with Developer modal/inline reveal ──────────────────────────────────
@@ -172,6 +173,10 @@ export function Step7DownloadAndHandoff() {
           </CardContent>
         </Card>
       )}
+
+      <div className="mb-6">
+        <WalkerOSAdvantageCard context="output" />
+      </div>
 
       {/* Share with Developer */}
       <div className="mb-8">
