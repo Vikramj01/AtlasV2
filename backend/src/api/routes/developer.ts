@@ -32,7 +32,9 @@ import {
   revokeShare,
   aggregateProgress,
   updatePageStatus,
+  notifyMarketerIfComplete,
 } from '@/services/developer/shareService';
+import { supabaseAdmin } from '@/services/database/supabase';
 import { runQuickCheck } from '@/services/developer/quickCheckService';
 import { initProgressForShare } from '@/services/database/developerQueries';
 import {
@@ -75,6 +77,7 @@ const shareRouter = Router({ mergeParams: true });
 shareRouter.use(authMiddleware);
 
 // POST /api/planning/sessions/:id/share — generate a share token
+// Optional body: { developer_email?, developer_name? }
 shareRouter.post('/', async (req: Request, res: Response) => {
   try {
     const session = await getSession(req.params.id, req.user!.id);
@@ -82,7 +85,19 @@ shareRouter.post('/', async (req: Request, res: Response) => {
 
     const pages = await getPagesBySession(session.id);
 
-    const result = await generateShareToken(session.id, req.user!.id, env.FRONTEND_URL);
+    const body = req.body as { developer_email?: string; developer_name?: string } | undefined;
+
+    const result = await generateShareToken(
+      session.id,
+      req.user!.id,
+      env.FRONTEND_URL,
+      {
+        developerEmail: body?.developer_email ?? null,
+        developerName: body?.developer_name ?? null,
+        marketerEmail: req.user!.email ?? null,
+        siteName: session.website_url,
+      },
+    );
 
     // Initialise progress rows for every page (all start as 'not_started')
     await initProgressForShare(result.share_id, pages.map((p) => p.id));
@@ -236,6 +251,19 @@ devRouter.patch('/:shareToken/pages/:pageId/status', async (req: Request, res: R
       req.params.pageId,
       status,
       developer_notes,
+    );
+
+    // After persisting the update, check if all pages are now complete and
+    // notify the marketer once. This is fire-and-forget — never blocks response.
+    const session = await getSession(validated.session_id, validated.user_id);
+    notifyMarketerIfComplete(
+      validated.share_id,
+      env.FRONTEND_URL,
+      async (userId) => {
+        const { data } = await supabaseAdmin.auth.admin.getUserById(userId);
+        return data?.user?.email ?? null;
+      },
+      session?.website_url ?? 'your site',
     );
 
     res.json({ updated: true });

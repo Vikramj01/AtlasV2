@@ -25,6 +25,8 @@ export interface DeveloperShare {
   is_active: boolean;
   expires_at: string;
   created_at: string;
+  invite_sent_at: string | null;
+  marketer_notified_at: string | null;
 }
 
 export interface ImplementationProgressRow {
@@ -44,6 +46,8 @@ export async function createShare(
   sessionId: string,
   userId: string,
   token: string,
+  developerEmail?: string | null,
+  developerName?: string | null,
 ): Promise<DeveloperShare> {
   const { data, error } = await supabaseAdmin
     .from('developer_shares')
@@ -51,6 +55,8 @@ export async function createShare(
       session_id: sessionId,
       user_id: userId,
       share_token: token,
+      developer_email: developerEmail ?? null,
+      developer_name: developerName ?? null,
     })
     .select()
     .single();
@@ -168,6 +174,48 @@ export async function getProgressByShare(shareId: string): Promise<Implementatio
       updated_at: row.updated_at,
     };
   });
+}
+
+// ── Email notification tracking ───────────────────────────────────────────────
+
+/** Mark that the developer invite email has been sent for this share. */
+export async function setInviteSent(shareId: string): Promise<void> {
+  await supabaseAdmin
+    .from('developer_shares')
+    .update({ invite_sent_at: new Date().toISOString() })
+    .eq('id', shareId);
+}
+
+/** Mark that the marketer completion notification has been sent.
+ *  Returns false if already notified (idempotency guard). */
+export async function markNotified(shareId: string): Promise<boolean> {
+  const { data } = await supabaseAdmin
+    .from('developer_shares')
+    .select('marketer_notified_at')
+    .eq('id', shareId)
+    .single();
+
+  if (!data) return false;
+  if (data.marketer_notified_at) return false; // already sent
+
+  const { error } = await supabaseAdmin
+    .from('developer_shares')
+    .update({ marketer_notified_at: new Date().toISOString() })
+    .eq('id', shareId);
+
+  return !error;
+}
+
+/** Fetch a share by its ID (used to read developer_email, developer_name, user_id). */
+export async function getShareById(shareId: string): Promise<DeveloperShare | null> {
+  const { data, error } = await supabaseAdmin
+    .from('developer_shares')
+    .select('*')
+    .eq('id', shareId)
+    .single();
+
+  if (error) return null;
+  return data as DeveloperShare;
 }
 
 // ── Initialise progress rows for all pages in a session ──────────────────────

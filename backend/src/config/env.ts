@@ -47,6 +47,10 @@ export const env = {
   // Developer token required for every Google Ads API request
   GOOGLE_ADS_DEVELOPER_TOKEN: optional('GOOGLE_ADS_DEVELOPER_TOKEN', ''),
 
+  // Email — Resend (https://resend.com). Optional: emails are silently skipped if not set.
+  RESEND_API_KEY: optional('RESEND_API_KEY', ''),
+  FROM_EMAIL: optional('FROM_EMAIL', 'Atlas <notifications@getatlas.io>'),
+
   PORT: parseInt(optional('PORT', '3001'), 10),
   NODE_ENV,
   FRONTEND_URL,

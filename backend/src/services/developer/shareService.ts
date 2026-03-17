@@ -19,7 +19,11 @@ import {
   deactivateShare,
   getProgressByShare,
   upsertPageProgress,
+  setInviteSent,
+  markNotified,
+  getShareById,
 } from '@/services/database/developerQueries';
+import { sendDeveloperInvite, sendMarketerCompletionNotification } from '@/services/email/emailService';
 
 export interface ShareTokenResult {
   share_id: string;
@@ -40,14 +44,43 @@ export async function generateShareToken(
   sessionId: string,
   userId: string,
   frontendUrl: string,
+  opts?: {
+    developerEmail?: string | null;
+    developerName?: string | null;
+    marketerEmail?: string | null;
+    siteName?: string | null;
+  },
 ): Promise<ShareTokenResult> {
   const token = crypto.randomBytes(24).toString('hex'); // 48 hex chars
-  const share = await createShare(sessionId, userId, token);
+  const share = await createShare(
+    sessionId,
+    userId,
+    token,
+    opts?.developerEmail,
+    opts?.developerName,
+  );
+
+  const shareUrl = `${frontendUrl}/dev/${token}`;
+
+  // Fire developer invite email (non-blocking — never reject on email failure)
+  if (opts?.developerEmail && opts?.marketerEmail) {
+    sendDeveloperInvite({
+      developerEmail: opts.developerEmail,
+      developerName: opts.developerName ?? null,
+      marketerEmail: opts.marketerEmail,
+      siteName: opts.siteName ?? new URL(frontendUrl).hostname,
+      shareUrl,
+    })
+      .then((result) => {
+        if (result.ok) setInviteSent(share.id).catch(() => {});
+      })
+      .catch(() => {});
+  }
 
   return {
     share_id: share.id,
     share_token: token,
-    share_url: `${frontendUrl}/dev/${token}`,
+    share_url: shareUrl,
     expires_at: share.expires_at,
   };
 }
@@ -140,4 +173,44 @@ export async function updatePageStatus(
     throw new Error(`Invalid status: ${status}. Must be one of: ${validStatuses.join(', ')}`);
   }
   await upsertPageProgress(shareId, pageId, status, developerNotes ?? null);
+}
+
+// ── Marketer completion notification ──────────────────────────────────────────
+
+/**
+ * After each page status update, check if all pages are now implemented.
+ * If so — and we haven't already notified — look up the marketer's email
+ * from Supabase Auth and send the completion notification.
+ *
+ * All errors are caught internally; this never rejects the parent request.
+ */
+export async function notifyMarketerIfComplete(
+  shareId: string,
+  frontendUrl: string,
+  getMarketerEmail: (userId: string) => Promise<string | null>,
+  siteName: string,
+): Promise<void> {
+  try {
+    const progress = await aggregateProgress(shareId);
+    if (!progress.all_implemented) return;
+
+    // Idempotency: markNotified returns false if already sent
+    const shouldSend = await markNotified(shareId);
+    if (!shouldSend) return;
+
+    const share = await getShareById(shareId);
+    if (!share) return;
+
+    const marketerEmail = await getMarketerEmail(share.user_id);
+    if (!marketerEmail) return;
+
+    await sendMarketerCompletionNotification({
+      marketerEmail,
+      siteName,
+      developerName: share.developer_name,
+      progressUrl: `${frontendUrl}/planning/${share.session_id}`,
+    });
+  } catch {
+    // Non-fatal — never block the status update response
+  }
 }
