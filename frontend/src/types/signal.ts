@@ -66,3 +66,15 @@ export interface SignalPackWithSignals extends SignalPack {
   signals: SignalPackSignal[];
   outdated_count?: number;
 }
+
+/** A client that has a given pack deployed — returned by getPackDeployments */
+export interface PackDeploymentClient {
+  deployment_id: string;
+  client_id: string;
+  client_name: string;
+  org_id: string;
+  deployed_at: string;
+  last_generated_at: string | null;
+  /** true when last_generated_at is null or predates the pack's last update */
+  is_outdated: boolean;
+}

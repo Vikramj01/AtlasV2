@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase';
-import type { Signal, SignalPack, SignalPackWithSignals } from '@/types/signal';
+import type { Signal, SignalPack, SignalPackWithSignals, PackDeploymentClient } from '@/types/signal';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
 
@@ -69,4 +69,10 @@ export const signalApi = {
       `/api/signals/packs/${packId}/regenerate-all?org_id=${orgId}`,
       { method: 'POST' },
     ),
+
+  /** Which clients (across an org) have this pack deployed */
+  getPackDeployments: (packId: string, orgId: string) =>
+    apiFetch<{ deployments: PackDeploymentClient[] }>(
+      `/api/signals/packs/${packId}/deployments?org_id=${orgId}`,
+    ).then((r) => r.deployments),
 };
