@@ -11,6 +11,7 @@ import { clientsRouter } from '@/api/routes/clients';
 import { signalsRouter } from '@/api/routes/signals';
 import { consentRouter } from '@/api/routes/consent';
 import { capiRouter } from '@/api/routes/capi';
+import { checklistRouter } from '@/api/routes/checklist';
 import logger from '@/utils/logger';
 import { env } from '@/config/env';
 
@@ -83,6 +84,7 @@ app.use('/api/organisations', clientsRouter);
 app.use('/api/signals', signalsRouter);
 app.use('/api/consent', consentRouter);
 app.use('/api/capi', capiRouter);
+app.use('/api/setup-checklist', checklistRouter);
 
 // ─── 404 handler ─────────────────────────────────────────────────────────────
 

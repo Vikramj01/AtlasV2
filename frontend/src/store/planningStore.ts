@@ -11,7 +11,7 @@ import { planningApi } from '@/lib/api/planningApi';
 
 // ── Wizard step definitions ────────────────────────────────────────────────────
 
-export type PlanningStep = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+export type PlanningStep = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
 
 // ── Store shape ────────────────────────────────────────────────────────────────
 
@@ -32,6 +32,9 @@ interface PlanningStore {
   siteDetection: SiteDetection | null;
   detectionLoading: boolean;
   detectionError: string | null;
+
+  // Consent step (Step 6)
+  consentConfigId: string | null;
 
   // Polling / loading
   isLoading: boolean;
@@ -57,6 +60,8 @@ interface PlanningStore {
 
   setOutputs: (outputs: PlanningOutput[]) => void;
 
+  setConsentConfigId: (id: string | null) => void;
+
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
 
@@ -78,6 +83,7 @@ const initialState = {
   siteDetection: null,
   detectionLoading: false,
   detectionError: null,
+  consentConfigId: null,
   isLoading: false,
   error: null,
 };
@@ -91,7 +97,7 @@ export const usePlanningStore = create<PlanningStore>((set) => ({
 
   nextStep: () =>
     set((state) => ({
-      currentStep: Math.min(state.currentStep + 1, 7) as PlanningStep,
+      currentStep: Math.min(state.currentStep + 1, 8) as PlanningStep,
     })),
 
   prevStep: () =>
@@ -133,6 +139,8 @@ export const usePlanningStore = create<PlanningStore>((set) => ({
     })),
 
   setOutputs: (outputs) => set({ outputs }),
+
+  setConsentConfigId: (consentConfigId) => set({ consentConfigId }),
 
   setLoading: (isLoading) => set({ isLoading }),
 

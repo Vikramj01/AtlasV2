@@ -62,6 +62,16 @@ export const planningApi = {
     return apiFetch(`/api/planning/sessions/${sessionId}`);
   },
 
+  updateSession(
+    sessionId: string,
+    patch: { consent_config_id?: string | null },
+  ): Promise<{ updated: true }> {
+    return apiFetch(`/api/planning/sessions/${sessionId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    });
+  },
+
   // ── Recommendations ─────────────────────────────────────────────────────────
 
   getRecommendations(sessionId: string): Promise<GetRecommendationsResponse> {

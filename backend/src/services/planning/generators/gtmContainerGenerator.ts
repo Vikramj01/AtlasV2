@@ -286,6 +286,38 @@ export function generateGTMContainer(
     folderId: FOLDER.VARIABLES,
   });
 
+  // ── Click ID URL Query variables ──────────────────────────────────────────
+
+  const CLICK_ID_KEYS = ['gclid', 'fbclid', 'wbraid', 'gbraid'] as const;
+  for (const key of CLICK_ID_KEYS) {
+    variables.push({
+      ...stub(),
+      variableId: varIds.next(),
+      name: `URL Query - ${key}`,
+      type: 'u',
+      parameter: [
+        tmpl('component', 'URL_QUERY'),
+        tmpl('queryKey', key),
+      ],
+      folderId: FOLDER.VARIABLES,
+    });
+  }
+
+  // First-party cookie variables (read back the stored click IDs)
+  const CLICK_ID_COOKIES = ['_gcl_aw', '_fbc', '_fbp'] as const;
+  for (const cookieName of CLICK_ID_COOKIES) {
+    variables.push({
+      ...stub(),
+      variableId: varIds.next(),
+      name: `1P Cookie - ${cookieName}`,
+      type: 'k',
+      parameter: [
+        tmpl('name', cookieName),
+      ],
+      folderId: FOLDER.VARIABLES,
+    });
+  }
+
   // ── Collect unique DLV paths needed across all recommendations ────────────
   const dlvPathsSeen = new Map<string, string>(); // path → variableId
 
@@ -349,6 +381,105 @@ export function generateGTMContainer(
   // Mark this page as using enhanced conversions
   gtag('set', 'ads_data_redaction', true);
   gtag('set', 'url_passthrough', true);
+</script>`),
+      bool('supportDocumentWrite', 'false'),
+    ],
+    firingTriggerId: [allPagesTrigId],
+    tagFiringOption: 'oncePerEvent',
+    folderId: FOLDER.CONFIG,
+    fingerprint: '0',
+    tagManagerUrl: 'https://tagmanager.google.com/',
+  });
+
+  // ── Click ID capture tags (fire on All Pages) ─────────────────────────────
+
+  // Atlas — Store GCLID: reads gclid from URL and persists in _gcl_aw cookie
+  tags.push({
+    ...stub(),
+    tagId: tagIds.next(),
+    name: 'Atlas — Store GCLID',
+    type: 'html',
+    parameter: [
+      tmpl('html', `<script>
+(function() {
+  try {
+    var params = new URLSearchParams(window.location.search);
+    var gclid = params.get('gclid');
+    if (gclid) {
+      var expiry = new Date();
+      expiry.setDate(expiry.getDate() + 90);
+      var domain = window.location.hostname.replace(/^www\\./, '');
+      document.cookie = '_gcl_aw=GCL.' + Math.floor(Date.now() / 1000) + '.' + gclid
+        + '; expires=' + expiry.toUTCString()
+        + '; path=/; domain=.' + domain + '; SameSite=Lax';
+    }
+  } catch (e) {}
+})();
+</script>`),
+      bool('supportDocumentWrite', 'false'),
+    ],
+    firingTriggerId: [allPagesTrigId],
+    tagFiringOption: 'oncePerEvent',
+    folderId: FOLDER.CONFIG,
+    fingerprint: '0',
+    tagManagerUrl: 'https://tagmanager.google.com/',
+  });
+
+  // Atlas — Store FBCLID: reads fbclid from URL and persists in _fbc cookie
+  tags.push({
+    ...stub(),
+    tagId: tagIds.next(),
+    name: 'Atlas — Store FBCLID',
+    type: 'html',
+    parameter: [
+      tmpl('html', `<script>
+(function() {
+  try {
+    var params = new URLSearchParams(window.location.search);
+    var fbclid = params.get('fbclid');
+    if (fbclid) {
+      var fbc = 'fb.1.' + Date.now() + '.' + fbclid;
+      var expiry = new Date();
+      expiry.setDate(expiry.getDate() + 90);
+      var domain = window.location.hostname.replace(/^www\\./, '');
+      document.cookie = '_fbc=' + fbc
+        + '; expires=' + expiry.toUTCString()
+        + '; path=/; domain=.' + domain + '; SameSite=Lax';
+    }
+  } catch (e) {}
+})();
+</script>`),
+      bool('supportDocumentWrite', 'false'),
+    ],
+    firingTriggerId: [allPagesTrigId],
+    tagFiringOption: 'oncePerEvent',
+    folderId: FOLDER.CONFIG,
+    fingerprint: '0',
+    tagManagerUrl: 'https://tagmanager.google.com/',
+  });
+
+  // Atlas — Generate FBP: creates _fbp browser ID cookie if not already set
+  tags.push({
+    ...stub(),
+    tagId: tagIds.next(),
+    name: 'Atlas — Generate FBP',
+    type: 'html',
+    parameter: [
+      tmpl('html', `<script>
+(function() {
+  try {
+    var match = document.cookie.match(/(^| )_fbp=([^;]+)/);
+    if (!match) {
+      var fbp = 'fb.1.' + Date.now() + '.' + Math.floor(Math.random() * 2147483647);
+      var expiry = new Date();
+      expiry.setDate(expiry.getDate() + 90);
+      var domain = window.location.hostname.replace(/^www\\./, '');
+      document.cookie = '_fbp=' + fbp
+        + '; expires=' + expiry.toUTCString()
+        + '; path=/; domain=.' + domain + '; SameSite=Lax';
+    }
+  } catch (e) {}
+})();
 </script>`),
       bool('supportDocumentWrite', 'false'),
     ],
