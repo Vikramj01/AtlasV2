@@ -7,6 +7,7 @@ import { Step2PageDiscovery } from '@/components/planning/Step2PageDiscovery';
 import { Step3ScanningProgress } from '@/components/planning/Step3ScanningProgress';
 import { Step4ReviewRecommendations } from '@/components/planning/Step4ReviewRecommendations';
 import { Step5TrackingPlanSummary } from '@/components/planning/Step5TrackingPlanSummary';
+import { Step6ConsentStep } from '@/components/planning/Step6ConsentStep';
 import { Step6GeneratedOutputs } from '@/components/planning/Step6GeneratedOutputs';
 import { Step7DownloadAndHandoff } from '@/components/planning/Step7DownloadAndHandoff';
 import { Button } from '@/components/ui/button';
@@ -20,8 +21,9 @@ const STEPS = [
   { n: 3, label: 'Scan' },
   { n: 4, label: 'Review' },
   { n: 5, label: 'Summary' },
-  { n: 6, label: 'Outputs' },
-  { n: 7, label: 'Handoff' },
+  { n: 6, label: 'Consent' },
+  { n: 7, label: 'Outputs' },
+  { n: 8, label: 'Handoff' },
 ];
 
 // ── Wizard container ───────────────────────────────────────────────────────────
@@ -67,10 +69,10 @@ export function PlanningModePage() {
             setStep(4);
             break;
           case 'generating':
-            setStep(6);
+            setStep(7);
             break;
           case 'outputs_ready':
-            setStep(6);
+            setStep(7);
             planningApi.getRecommendations(sessionId).then(({ recommendations }) => {
               setRecommendations(recommendations);
             }).catch(() => {});
@@ -196,8 +198,9 @@ export function PlanningModePage() {
         {currentStep === 3 && <Step3ScanningProgress />}
         {currentStep === 4 && <Step4ReviewRecommendations />}
         {currentStep === 5 && <Step5TrackingPlanSummary />}
-        {currentStep === 6 && <Step6GeneratedOutputs />}
-        {currentStep === 7 && <Step7DownloadAndHandoff />}
+        {currentStep === 6 && <Step6ConsentStep />}
+        {currentStep === 7 && <Step6GeneratedOutputs />}
+        {currentStep === 8 && <Step7DownloadAndHandoff />}
       </main>
     </div>
   );

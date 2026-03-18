@@ -1,12 +1,13 @@
 import { useEffect } from 'react';
 import { NavLink, useParams } from 'react-router-dom';
-import { Home, Map, Zap, Clock, Settings, TrendingUp, Building2, Package, Shield, Activity } from 'lucide-react';
+import { Home, Map, Zap, Clock, Settings, TrendingUp, Building2, Package, Shield, Activity, HeartPulse } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { OrgSwitcher } from '@/components/organisation/OrgSwitcher';
 import { useOrganisationStore } from '@/store/organisationStore';
 import { organisationApi } from '@/lib/api/organisationApi';
 
 const PERSONAL_NAV = [
+  { label: 'Data Health',   to: '/health',             Icon: HeartPulse },
   { label: 'Home',          to: '/home',               Icon: Home },
   { label: 'Plan Tracking', to: '/planning',           Icon: Map },
   { label: 'New Audit',     to: '/journey/new',        Icon: Zap },
@@ -18,6 +19,7 @@ const PERSONAL_NAV = [
 
 function orgNav(orgId: string) {
   return [
+    { label: 'Data Health',     to: '/health',                 Icon: HeartPulse },
     { label: 'Overview',        to: `/org/${orgId}`,           Icon: Home },
     { label: 'Clients',         to: `/org/${orgId}/clients`,   Icon: Building2 },
     { label: 'Signal Library',  to: `/org/${orgId}/signals`,   Icon: Zap },

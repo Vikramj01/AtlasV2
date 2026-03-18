@@ -1,6 +1,7 @@
-import { auditQueue, planningQueue } from './jobQueue';
+import { auditQueue, planningQueue, healthQueue } from './jobQueue';
 import { runAuditOrchestrator } from '@/services/audit/orchestrator';
 import { runPlanningOrchestrator, runRescanOrchestrator } from '@/services/planning/sessionOrchestrator';
+import { runHealthPipeline, runHealthPipelineForActiveUsers } from '@/services/health/healthOrchestrator';
 import { getPagesBySession } from '@/services/database/planningQueries';
 import { supabaseAdmin } from '@/services/database/supabase';
 import type { PlanningSession, PlanningPage } from '@/types/planning';
@@ -47,3 +48,24 @@ planningQueue.process(async (job) => {
 });
 
 logger.info('Planning queue worker registered');
+
+// ── Health worker ─────────────────────────────────────────────────────────────
+
+healthQueue.process(async (job) => {
+  logger.info({ trigger: job.data.trigger, userId: job.data.user_id }, 'Health job received');
+
+  if (job.data.trigger === 'manual' && job.data.user_id) {
+    await runHealthPipeline(job.data.user_id);
+  } else {
+    await runHealthPipelineForActiveUsers();
+  }
+});
+
+logger.info('Health queue worker registered');
+
+// Schedule recurring health computation every 15 minutes
+// Bull deduplicates repeat jobs, so it's safe to call this on every startup.
+healthQueue.add(
+  { trigger: 'scheduled' },
+  { repeat: { cron: '*/15 * * * *' }, jobId: 'health-scheduled' },
+).catch((err) => logger.error({ err }, 'Failed to schedule health job'));

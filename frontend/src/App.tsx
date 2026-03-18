@@ -25,6 +25,8 @@ import { OrgSettingsPage } from '@/pages/OrgSettingsPage';
 import { ConsentPage } from '@/pages/ConsentPage';
 // CAPI Integrations
 import { CAPIPage } from '@/pages/CAPIPage';
+// Data Health Dashboard
+import HealthDashboardPage from '@/pages/HealthDashboardPage';
 
 export default function App() {
   return (
@@ -50,6 +52,8 @@ export default function App() {
             <Route path="/consent" element={<ConsentPage />} />
             {/* CAPI Integrations */}
             <Route path="/integrations/capi" element={<CAPIPage />} />
+            {/* Data Health Dashboard */}
+            <Route path="/health" element={<HealthDashboardPage />} />
             {/* Agency Workspaces */}
             <Route path="/org/:orgId" element={<OrgDashboardPage />} />
             <Route path="/org/:orgId/clients" element={<ClientListPage />} />
@@ -70,8 +74,8 @@ export default function App() {
         <Route path="/dev/:shareToken" element={<DeveloperPortalPage />} />
 
         {/* Redirects */}
-        <Route path="/" element={<Navigate to="/home" replace />} />
-        <Route path="*" element={<Navigate to="/home" replace />} />
+        <Route path="/" element={<Navigate to="/health" replace />} />
+        <Route path="*" element={<Navigate to="/health" replace />} />
       </Routes>
     </BrowserRouter>
   );

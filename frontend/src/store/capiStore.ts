@@ -35,7 +35,7 @@ const DEFAULT_DRAFT: WizardDraft = {
   credentials: {},
   event_mapping: [],
   identifier_config: {
-    enabled_identifiers: ['email', 'phone', 'fn', 'ln', 'fbc', 'fbp'],
+    enabled_identifiers: ['email', 'phone', 'fn', 'ln', 'fbc', 'fbp', 'gclid', 'wbraid', 'gbraid'],
     source_mapping: {},
   },
   dedup_config: {

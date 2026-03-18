@@ -7,6 +7,7 @@ import { usePlanningStore } from '@/store/planningStore';
 import { planningApi } from '@/lib/api/planningApi';
 import { GTMContainerPreview } from './GTMContainerPreview';
 import { WalkerOSAdvantageCard } from '@/components/signals/WalkerOSAdvantageCard';
+import { SignalComparison } from './SignalComparison';
 import type { PlanningOutput, OutputType, ExistingTrackingQuick } from '@/types/planning';
 
 const OUTPUT_META: Record<OutputType, { title: string; description: string; icon: string; ext: string }> = {
@@ -338,9 +339,10 @@ function OutputCard({ output, sessionId }: { output: PlanningOutput; sessionId: 
 // ── Main step component ───────────────────────────────────────────────────────
 
 export function Step6GeneratedOutputs() {
-  const { currentSession, outputs, setOutputs, nextStep, prevStep, siteDetection } = usePlanningStore();
+  const { currentSession, outputs, setOutputs, recommendations, nextStep, prevStep, siteDetection } = usePlanningStore();
   const sessionId = currentSession?.id ?? '';
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [activeTab, setActiveTab] = useState<'outputs' | 'signal_map'>('outputs');
 
   async function refreshOutputs() {
     if (!sessionId) return;
@@ -357,17 +359,56 @@ export function Step6GeneratedOutputs() {
     (a, b) => ORDER.indexOf(a.output_type) - ORDER.indexOf(b.output_type),
   );
 
+  const approvedRecs = recommendations.filter(
+    (r) => r.user_decision === 'approved' || r.user_decision === 'edited'
+  );
+
   return (
     <div className="mx-auto max-w-2xl px-6 py-10">
       <div className="mb-2 flex items-center gap-2">
         <span className="text-2xl">🎉</span>
         <h2 className="text-xl font-bold">Your implementation files are ready</h2>
       </div>
-      <p className="mb-8 text-sm text-muted-foreground">
+      <p className="mb-6 text-sm text-muted-foreground">
         Preview or download each file below. Share them with your developer to implement tracking.
       </p>
 
-      <div className="mb-8 space-y-4">
+      {/* Tab navigation */}
+      <div className="mb-6 flex border-b">
+        <button
+          type="button"
+          onClick={() => setActiveTab('outputs')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+            activeTab === 'outputs'
+              ? 'border-brand-500 text-brand-700'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          Implementation Files
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('signal_map')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+            activeTab === 'signal_map'
+              ? 'border-brand-500 text-brand-700'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          Signal Map
+        </button>
+      </div>
+
+      {activeTab === 'signal_map' && (
+        <div className="mb-8">
+          <SignalComparison
+            recommendations={approvedRecs}
+            selectedPlatforms={currentSession?.selected_platforms ?? []}
+          />
+        </div>
+      )}
+
+      {activeTab === 'outputs' && <div className="mb-8 space-y-4">
         {sortedOutputs.map((output) =>
           output.output_type === 'gtm_container' ? (
             <GTMOutputCard
@@ -395,13 +436,13 @@ export function Step6GeneratedOutputs() {
             </Button>
           </div>
         )}
-      </div>
+      </div>}
 
-      <div className="mb-8">
+      {activeTab === 'outputs' && <div className="mb-8">
         <WalkerOSAdvantageCard context="output" />
-      </div>
+      </div>}
 
-      <div className="mb-8 rounded-xl border border-amber-100 bg-amber-50 p-5">
+      {activeTab === 'outputs' && <div className="mb-8 rounded-xl border border-amber-100 bg-amber-50 p-5">
         <h3 className="mb-2 text-sm font-bold text-amber-800">How to import the GTM container</h3>
         <ol className="list-inside list-decimal space-y-1 text-xs text-amber-700">
           <li>Paste your platform IDs above, then download the GTM Container JSON file.</li>
@@ -410,7 +451,7 @@ export function Step6GeneratedOutputs() {
           <li>Choose <strong>Merge → Rename conflicting</strong> to avoid overwriting existing tags.</li>
           <li>Preview and test in GTM Preview Mode before publishing.</li>
         </ol>
-      </div>
+      </div>}
 
       <div className="flex items-center justify-between">
         <Button variant="ghost" onClick={prevStep} className="text-muted-foreground">← Back</Button>

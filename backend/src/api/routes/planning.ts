@@ -200,6 +200,32 @@ router.get('/sessions/:id', async (req: Request, res: Response) => {
   }
 });
 
+// ── PATCH /api/planning/sessions/:id ─────────────────────────────────────────
+// Update mutable fields on a planning session.
+// Currently supports: consent_config_id (set or clear).
+
+router.patch('/sessions/:id', async (req: Request, res: Response) => {
+  try {
+    const session = await getSession(req.params.id, req.user!.id);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    const { consent_config_id } = req.body as { consent_config_id?: string | null };
+
+    const { error } = await (await import('@/services/database/supabase'))
+      .supabaseAdmin
+      .from('planning_sessions')
+      .update({ consent_config_id: consent_config_id ?? null })
+      .eq('id', session.id)
+      .eq('user_id', req.user!.id);
+
+    if (error) throw error;
+
+    res.json({ updated: true });
+  } catch (err) {
+    sendInternalError(res, err);
+  }
+});
+
 // ── GET /api/planning/sessions/:id/recommendations ───────────────────────────
 // Returns all recommendations for the session, grouped by page.
 

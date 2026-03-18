@@ -1,9 +1,7 @@
-import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { usePlanningStore } from '@/store/planningStore';
-import { planningApi } from '@/lib/api/planningApi';
 import type { Platform } from '@/types/planning';
 
 const PLATFORM_LABELS: Record<Platform, string> = {
@@ -23,10 +21,7 @@ const PLATFORM_ICONS: Record<Platform, string> = {
 };
 
 export function Step5TrackingPlanSummary() {
-  const { currentSession, recommendations, pages, setOutputs, nextStep, prevStep } = usePlanningStore();
-
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { currentSession, recommendations, pages, nextStep, prevStep } = usePlanningStore();
 
   const sessionId = currentSession?.id ?? '';
   const platforms = currentSession?.selected_platforms ?? [];
@@ -44,33 +39,7 @@ export function Step5TrackingPlanSummary() {
 
   const estimatedHours = Math.max(1, Math.ceil(approved.length * 0.5));
 
-  async function handleGenerate() {
-    setIsGenerating(true);
-    setError(null);
-    try {
-      const result = await planningApi.generateOutputs(sessionId);
-      setOutputs(
-        result.outputs.map((o) => ({
-          id: o.id,
-          session_id: sessionId,
-          output_type: o.type,
-          content: null,
-          content_text: null,
-          storage_path: null,
-          file_size_bytes: null,
-          mime_type: o.mime_type,
-          generated_at: o.generated_at,
-          version: o.version,
-          download_url: o.download_url ?? undefined,
-        })),
-      );
-      nextStep();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Generation failed');
-    } finally {
-      setIsGenerating(false);
-    }
-  }
+  void sessionId; // used by parent context
 
   return (
     <div className="mx-auto max-w-2xl px-6 py-10">
@@ -170,33 +139,16 @@ export function Step5TrackingPlanSummary() {
         </CardContent>
       </Card>
 
-      {error && (
-        <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-4 text-sm text-destructive">
-          <p className="font-medium">Generation failed</p>
-          <p className="mt-0.5">{error}</p>
-          <Button size="sm" onClick={() => { setError(null); handleGenerate(); }} className="mt-3 bg-destructive hover:bg-destructive/90">
-            Retry
-          </Button>
-        </div>
-      )}
-
       <div className="flex items-center justify-between">
         <Button variant="ghost" onClick={prevStep} className="text-muted-foreground">
           ← Back
         </Button>
         <Button
-          onClick={handleGenerate}
-          disabled={approved.length === 0 || isGenerating}
+          onClick={nextStep}
+          disabled={approved.length === 0}
           className="bg-brand-600 hover:bg-brand-700"
         >
-          {isGenerating ? (
-            <span className="flex items-center gap-2">
-              <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
-              Generating files…
-            </span>
-          ) : (
-            'Generate Implementation Files →'
-          )}
+          Continue to Consent →
         </Button>
       </div>
     </div>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Map, Zap, ArrowRight, CheckCircle2, Clock, AlertTriangle } from 'lucide-react';
+import { SetupChecklist } from '@/components/common/SetupChecklist';
 import { supabase } from '@/lib/supabase';
 import { auditApi } from '@/lib/api/auditApi';
 import { planningApi } from '@/lib/api/planningApi';
@@ -116,6 +117,9 @@ export function HomePage() {
         </Card>
 
       </div>
+
+      {/* Setup checklist */}
+      <SetupChecklist />
 
       {/* Recent activity */}
       {(recentAudits.length > 0 || recentSessions.length > 0) && (
