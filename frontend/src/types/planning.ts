@@ -333,3 +333,14 @@ export interface DevPortalData {
   outputs: Array<{ id: string; output_type: OutputType; mime_type: string }>;
   progress: ImplementationProgress;
 }
+
+export type PiiSeverity = 'high' | 'medium' | 'info';
+
+export interface PiiWarning {
+  severity: PiiSeverity;
+  field: string;
+  event_name: string;
+  page_url?: string;
+  message: string;
+  recommendation: string;
+}

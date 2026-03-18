@@ -16,6 +16,7 @@ import { validateUrl, validateUrls } from '@/utils/urlValidator';
 import { sendInternalError } from '@/utils/apiError';
 import { planningQueue } from '@/services/queue/jobQueue';
 import { detectSite } from '@/services/planning/siteDetectionService';
+import { detectPiiWarnings } from '@/services/planning/piiDetectionService';
 import {
   createSession,
   getSession,
@@ -565,6 +566,27 @@ router.get('/sessions/:id/changes', async (req: Request, res: Response) => {
       rescan_results: sessionAny['rescan_results'] ?? null,
       last_rescan_at: sessionAny['last_rescan_at'] ?? null,
     });
+  } catch (err) {
+    sendInternalError(res, err);
+  }
+});
+
+// ── GET /api/planning/sessions/:id/pii-warnings ───────────────────────────────
+// Returns PII warnings for the session's approved recommendations.
+// No new data is stored — this is a pure derivation from existing recommendations.
+
+router.get('/sessions/:id/pii-warnings', async (req: Request, res: Response) => {
+  try {
+    const session = await getSession(req.params.id, req.user!.id);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    const allRecs = await getRecommendationsBySession(req.params.id);
+    const approvedRecs = allRecs.filter(
+      (r) => r.user_decision === 'approved' || r.user_decision === 'modified' || r.user_decision == null
+    );
+
+    const warnings = detectPiiWarnings(approvedRecs as Parameters<typeof detectPiiWarnings>[0]);
+    res.json({ warnings });
   } catch (err) {
     sendInternalError(res, err);
   }

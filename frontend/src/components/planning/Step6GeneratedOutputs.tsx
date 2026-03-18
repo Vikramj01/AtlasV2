@@ -8,6 +8,7 @@ import { planningApi } from '@/lib/api/planningApi';
 import { GTMContainerPreview } from './GTMContainerPreview';
 import { WalkerOSAdvantageCard } from '@/components/signals/WalkerOSAdvantageCard';
 import { SignalComparison } from './SignalComparison';
+import { PiiWarningsBanner } from './PiiWarningsBanner';
 import type { PlanningOutput, OutputType, ExistingTrackingQuick } from '@/types/planning';
 
 const OUTPUT_META: Record<OutputType, { title: string; description: string; icon: string; ext: string }> = {
@@ -372,6 +373,13 @@ export function Step6GeneratedOutputs() {
       <p className="mb-6 text-sm text-muted-foreground">
         Preview or download each file below. Share them with your developer to implement tracking.
       </p>
+
+      {/* PII warnings */}
+      {sessionId && (
+        <div className="mb-6">
+          <PiiWarningsBanner sessionId={sessionId} />
+        </div>
+      )}
 
       {/* Tab navigation */}
       <div className="mb-6 flex border-b">

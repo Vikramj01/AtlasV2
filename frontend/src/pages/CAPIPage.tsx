@@ -9,6 +9,7 @@
  */
 
 import { useState } from 'react';
+import { InfoTooltip } from '@/components/common/EducationTooltip';
 import { ProviderList } from '@/components/capi/ProviderList';
 import { SetupWizard } from '@/components/capi/SetupWizard';
 import { CAPIMonitoringDashboard } from '@/components/capi/CAPIMonitoringDashboard';
@@ -82,7 +83,10 @@ export function CAPIPage() {
       {view === 'list' && (
         <>
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Conversions API</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-semibold tracking-tight">Conversions API</h1>
+              <InfoTooltip contentKey="capi.why_server_side" />
+            </div>
             <p className="text-muted-foreground text-sm mt-1">
               Send server-side conversion events directly to ad platforms. Improves attribution accuracy and fills gaps left by browser-side tracking.
             </p>

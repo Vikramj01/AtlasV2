@@ -318,6 +318,33 @@ export function generateGTMContainer(
     });
   }
 
+  // ── UTM URL Query variables ───────────────────────────────────────────────
+
+  const UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'] as const;
+  for (const key of UTM_KEYS) {
+    variables.push({
+      ...stub(),
+      variableId: varIds.next(),
+      name: `URL Query - ${key}`,
+      type: 'u',
+      parameter: [
+        tmpl('component', 'URL_QUERY'),
+        tmpl('queryKey', key),
+      ],
+      folderId: FOLDER.VARIABLES,
+    });
+  }
+
+  // First-party cookie for session-level traffic source (stored by the capture tag below)
+  variables.push({
+    ...stub(),
+    variableId: varIds.next(),
+    name: '1P Cookie - _atlas_traffic_source',
+    type: 'k',
+    parameter: [tmpl('name', '_atlas_traffic_source')],
+    folderId: FOLDER.VARIABLES,
+  });
+
   // ── Collect unique DLV paths needed across all recommendations ────────────
   const dlvPathsSeen = new Map<string, string>(); // path → variableId
 
@@ -477,6 +504,91 @@ export function generateGTMContainer(
       document.cookie = '_fbp=' + fbp
         + '; expires=' + expiry.toUTCString()
         + '; path=/; domain=.' + domain + '; SameSite=Lax';
+    }
+  } catch (e) {}
+})();
+</script>`),
+      bool('supportDocumentWrite', 'false'),
+    ],
+    firingTriggerId: [allPagesTrigId],
+    tagFiringOption: 'oncePerEvent',
+    folderId: FOLDER.CONFIG,
+    fingerprint: '0',
+    tagManagerUrl: 'https://tagmanager.google.com/',
+  });
+
+  // ── UTM & Traffic Source capture tag (fires on All Pages) ─────────────────
+  // Reads UTM params from URL and referrer, classifies traffic source,
+  // and persists session-level attribution in a first-party cookie.
+  tags.push({
+    ...stub(),
+    tagId: tagIds.next(),
+    name: 'Atlas — Capture Traffic Source',
+    type: 'html',
+    parameter: [
+      tmpl('html', `<script>
+(function() {
+  try {
+    var params = new URLSearchParams(window.location.search);
+    var utmSource   = params.get('utm_source');
+    var utmMedium   = params.get('utm_medium');
+    var utmCampaign = params.get('utm_campaign');
+    var utmContent  = params.get('utm_content');
+    var utmTerm     = params.get('utm_term');
+
+    // Only update the session cookie if UTM params are present on this page
+    if (utmSource) {
+      var source = {
+        source:   utmSource,
+        medium:   utmMedium   || '(none)',
+        campaign: utmCampaign || '(none)',
+        content:  utmContent  || '(none)',
+        term:     utmTerm     || '(none)',
+        channel:  classifyChannel(utmSource, utmMedium),
+        ts:       Date.now()
+      };
+      var expiry = new Date();
+      expiry.setDate(expiry.getDate() + 30);
+      var domain = window.location.hostname.replace(/^www\\./, '');
+      document.cookie = '_atlas_traffic_source=' + encodeURIComponent(JSON.stringify(source))
+        + '; expires=' + expiry.toUTCString()
+        + '; path=/; domain=.' + domain + '; SameSite=Lax';
+    } else if (!document.cookie.match(/(^| )_atlas_traffic_source=/)) {
+      // No UTM and no existing session: classify from referrer
+      var ref = document.referrer;
+      var classified = classifyReferrer(ref);
+      var expiry2 = new Date();
+      expiry2.setDate(expiry2.getDate() + 30);
+      var domain2 = window.location.hostname.replace(/^www\\./, '');
+      document.cookie = '_atlas_traffic_source=' + encodeURIComponent(JSON.stringify(classified))
+        + '; expires=' + expiry2.toUTCString()
+        + '; path=/; domain=.' + domain2 + '; SameSite=Lax';
+    }
+
+    function classifyChannel(src, med) {
+      if (!src) return 'direct';
+      if (med === 'cpc' || med === 'ppc' || med === 'paid') return 'paid_search';
+      if (med === 'paid_social' || med === 'social_paid') return 'paid_social';
+      if (med === 'email') return 'email';
+      if (med === 'affiliate') return 'affiliate';
+      if (med === 'display') return 'display';
+      if (/google|bing|yahoo|duckduckgo/.test(src)) return 'organic_search';
+      if (/facebook|instagram|twitter|linkedin|tiktok|pinterest|snapchat/.test(src)) return 'social';
+      return 'referral';
+    }
+
+    function classifyReferrer(ref) {
+      if (!ref) return { source: '(direct)', medium: '(none)', campaign: '(none)', content: '(none)', term: '(none)', channel: 'direct', ts: Date.now() };
+      var url;
+      try { url = new URL(ref); } catch(e) { return { source: ref, medium: 'referral', campaign: '(none)', content: '(none)', term: '(none)', channel: 'referral', ts: Date.now() }; }
+      var host = url.hostname.replace(/^www\\./, '');
+      if (/google\\.|bing\\.com|yahoo\\.com|duckduckgo\\.com|baidu\\.com/.test(host)) {
+        return { source: host, medium: 'organic', campaign: '(none)', content: '(none)', term: '(none)', channel: 'organic_search', ts: Date.now() };
+      }
+      if (/facebook\\.com|instagram\\.com|twitter\\.com|x\\.com|linkedin\\.com|tiktok\\.com|pinterest\\.com/.test(host)) {
+        return { source: host, medium: 'social', campaign: '(none)', content: '(none)', term: '(none)', channel: 'social', ts: Date.now() };
+      }
+      return { source: host, medium: 'referral', campaign: '(none)', content: '(none)', term: '(none)', channel: 'referral', ts: Date.now() };
     }
   } catch (e) {}
 })();

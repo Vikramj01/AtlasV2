@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
+import { InfoTooltip } from '@/components/common/EducationTooltip';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -93,12 +94,15 @@ export function RecommendationCard({ rec, index, sessionId, isSelected, onSelect
         </div>
 
         <div className="flex flex-shrink-0 flex-col items-end gap-1">
-          <Badge
-            className={cn(CONFIDENCE_COLORS[tier])}
-            title={`Confidence: ${Math.round(rec.confidence_score * 100)}%`}
-          >
-            {CONFIDENCE_LABEL[tier]}
-          </Badge>
+          <div className="flex items-center gap-1">
+            <Badge
+              className={cn(CONFIDENCE_COLORS[tier])}
+              title={`Confidence: ${Math.round(rec.confidence_score * 100)}%`}
+            >
+              {CONFIDENCE_LABEL[tier]}
+            </Badge>
+            <InfoTooltip contentKey="planning.recommendation_confidence" />
+          </div>
           {coveredByPack && (
             <Badge
               className="bg-indigo-50 text-indigo-700 hover:bg-indigo-50 whitespace-nowrap"

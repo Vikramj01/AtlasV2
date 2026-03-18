@@ -19,6 +19,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Shield, ExternalLink, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { InfoTooltip } from '@/components/common/EducationTooltip';
 import { Button } from '@/components/ui/button';
 import { usePlanningStore } from '@/store/planningStore';
 import { planningApi } from '@/lib/api/planningApi';
@@ -83,7 +84,10 @@ export function Step6ConsentStep() {
           <Shield className="h-5 w-5 text-blue-600" />
         </div>
         <div>
-          <h2 className="text-lg font-semibold text-foreground">Consent & Privacy</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-semibold text-foreground">Consent & Privacy</h2>
+            <InfoTooltip contentKey="planning.consent_step" />
+          </div>
           <p className="text-sm text-muted-foreground">
             Step 6 of 8 — Is consent management configured for this site?
           </p>
