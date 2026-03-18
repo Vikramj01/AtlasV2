@@ -1,28 +1,32 @@
 import { useEffect } from 'react';
 import { NavLink, useParams } from 'react-router-dom';
-import { Home, Map, Zap, Clock, Settings, TrendingUp, Building2, Package } from 'lucide-react';
+import { Home, Map, Zap, Clock, Settings, TrendingUp, Building2, Package, Shield, Activity } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { OrgSwitcher } from '@/components/organisation/OrgSwitcher';
 import { useOrganisationStore } from '@/store/organisationStore';
 import { organisationApi } from '@/lib/api/organisationApi';
 
 const PERSONAL_NAV = [
-  { label: 'Home',          to: '/home',        Icon: Home },
-  { label: 'Plan Tracking', to: '/planning',    Icon: Map },
-  { label: 'New Audit',     to: '/journey/new', Icon: Zap },
-  { label: 'History',       to: '/dashboard',   Icon: Clock },
-  { label: 'Settings',      to: '/settings',    Icon: Settings },
+  { label: 'Home',          to: '/home',               Icon: Home },
+  { label: 'Plan Tracking', to: '/planning',           Icon: Map },
+  { label: 'New Audit',     to: '/journey/new',        Icon: Zap },
+  { label: 'History',       to: '/dashboard',          Icon: Clock },
+  { label: 'CAPI',          to: '/integrations/capi',  Icon: Activity },
+  { label: 'Consent',       to: '/consent',            Icon: Shield },
+  { label: 'Settings',      to: '/settings',           Icon: Settings },
 ];
 
 function orgNav(orgId: string) {
   return [
-    { label: 'Overview',       to: `/org/${orgId}`,           Icon: Home },
-    { label: 'Clients',        to: `/org/${orgId}/clients`,   Icon: Building2 },
-    { label: 'Signal Library', to: `/org/${orgId}/signals`,   Icon: Zap },
-    { label: 'Signal Packs',   to: `/org/${orgId}/packs`,     Icon: Package },
-    { label: 'Plan Tracking',  to: '/planning',               Icon: Map },
-    { label: 'History',        to: '/dashboard',              Icon: Clock },
-    { label: 'Team & Settings', to: `/org/${orgId}/settings`, Icon: Settings },
+    { label: 'Overview',        to: `/org/${orgId}`,           Icon: Home },
+    { label: 'Clients',         to: `/org/${orgId}/clients`,   Icon: Building2 },
+    { label: 'Signal Library',  to: `/org/${orgId}/signals`,   Icon: Zap },
+    { label: 'Signal Packs',    to: `/org/${orgId}/packs`,     Icon: Package },
+    { label: 'Plan Tracking',   to: '/planning',               Icon: Map },
+    { label: 'History',         to: '/dashboard',              Icon: Clock },
+    { label: 'CAPI',            to: '/integrations/capi',      Icon: Activity },
+    { label: 'Consent',         to: '/consent',                Icon: Shield },
+    { label: 'Team & Settings', to: `/org/${orgId}/settings`,  Icon: Settings },
   ];
 }
 
@@ -94,15 +98,6 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* Bottom */}
-      <div className="mt-auto">
-        <div className="rounded-lg border border-dashed bg-background/60 px-3 py-3">
-          <p className="text-xs font-semibold text-muted-foreground">Coming soon</p>
-          <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground/60">
-            Monitoring · Benchmarks · Multi-property
-          </p>
-        </div>
-      </div>
 
     </aside>
   );
