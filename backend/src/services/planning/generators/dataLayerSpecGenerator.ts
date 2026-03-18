@@ -71,6 +71,21 @@ export interface HumanEventDoc {
   business_justification: string;
 }
 
+export interface TrafficSourceParam {
+  key: string;
+  label: string;
+  source: string;
+  example: string;
+  storage: string;
+}
+
+export interface TrafficSourceSpec {
+  utm_parameters: TrafficSourceParam[];
+  referrer_classification: string;
+  session_cookie: string;
+  code_snippet: string;
+}
+
 export interface DataLayerSpecOutput {
   atlas_spec_version: '1.0';
   metadata: {
@@ -84,6 +99,7 @@ export interface DataLayerSpecOutput {
     ui_instrumentation_map: UIInstrumentationEntry[];
     tracking_coverage: TrackingCoverage;
     pages: DataLayerPageSpec[];
+    traffic_source: TrafficSourceSpec;
   };
   human_documentation: {
     overview: string;
@@ -436,6 +452,48 @@ function buildTrackingCoverage(
   return { implemented_events: implementedEvents, missing_recommended_events: missingRecommendedEvents };
 }
 
+// ── Traffic Source Spec ───────────────────────────────────────────────────────
+
+function buildTrafficSourceSpec(): TrafficSourceSpec {
+  return {
+    utm_parameters: [
+      { key: 'utm_source',   label: 'Traffic Source',   source: 'URL query parameter', example: 'google',          storage: '_atlas_traffic_source cookie (JSON)' },
+      { key: 'utm_medium',   label: 'Traffic Medium',   source: 'URL query parameter', example: 'cpc',             storage: '_atlas_traffic_source cookie (JSON)' },
+      { key: 'utm_campaign', label: 'Campaign Name',    source: 'URL query parameter', example: 'spring_sale',     storage: '_atlas_traffic_source cookie (JSON)' },
+      { key: 'utm_content',  label: 'Ad Content',       source: 'URL query parameter', example: 'banner_v2',       storage: '_atlas_traffic_source cookie (JSON)' },
+      { key: 'utm_term',     label: 'Search Term',      source: 'URL query parameter', example: 'running shoes',   storage: '_atlas_traffic_source cookie (JSON)' },
+    ],
+    referrer_classification: [
+      'organic_search  — referrer matches google/bing/yahoo/duckduckgo/baidu',
+      'paid_search     — utm_medium = cpc/ppc/paid',
+      'paid_social     — utm_medium = paid_social/social_paid',
+      'social          — referrer matches facebook/instagram/twitter/linkedin/tiktok/pinterest',
+      'email           — utm_medium = email',
+      'affiliate       — utm_medium = affiliate',
+      'display         — utm_medium = display',
+      'referral        — other known referrer domain',
+      'direct          — no referrer and no UTM params',
+    ].join('\n'),
+    session_cookie: '_atlas_traffic_source — 30-day root-domain cookie storing source, medium, campaign, content, term, channel, and timestamp as JSON. Used to attribute conversion events back to the originating session.',
+    code_snippet: `// Read Atlas traffic source from session cookie (for use in conversion dataLayer pushes)
+function getAtlasTrafficSource() {
+  try {
+    var match = document.cookie.match(/(^| )_atlas_traffic_source=([^;]+)/);
+    return match ? JSON.parse(decodeURIComponent(match[2])) : null;
+  } catch (e) { return null; }
+}
+
+// Include in purchase event:
+var trafficSource = getAtlasTrafficSource();
+window.dataLayer = window.dataLayer || [];
+window.dataLayer.push({
+  event: 'purchase',
+  ecommerce: { /* ... */ },
+  traffic_source: trafficSource  // Attach session attribution to conversion
+});`,
+  };
+}
+
 // ── Human Documentation builder ───────────────────────────────────────────────
 
 function buildHumanDocumentation(
@@ -579,6 +637,7 @@ export function generateDataLayerSpec(
       ui_instrumentation_map: buildUIInstrumentationMap(recommendations, pages),
       tracking_coverage:      buildTrackingCoverage(recommendations, session.business_type),
       pages:                  pageSpecs,
+      traffic_source:         buildTrafficSourceSpec(),
     },
     human_documentation: {
       overview:              humanDocs.overview,

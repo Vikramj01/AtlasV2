@@ -12,6 +12,7 @@ import { OverallScoreRing } from '@/components/health/OverallScoreRing';
 import { KeyMetricsRow } from '@/components/health/KeyMetricsRow';
 import { ActiveAlertsFeed } from '@/components/health/ActiveAlertsFeed';
 import { HealthHistoryChart } from '@/components/health/HealthHistoryChart';
+import { ReadinessScore } from '@/components/health/ReadinessScore';
 
 type LoadState = 'loading' | 'loaded' | 'error' | 'empty';
 
@@ -176,7 +177,13 @@ export default function HealthDashboardPage() {
         </div>
       </section>
 
-      {/* ── Zone 5: Quick actions ───────────────────────────────────────────── */}
+      {/* ── Zone 5: Readiness score ─────────────────────────────────────────── */}
+      <section>
+        <h2 className="text-sm font-semibold mb-3">First-Party Data Readiness</h2>
+        <ReadinessScore />
+      </section>
+
+      {/* ── Zone 6: Quick actions ───────────────────────────────────────────── */}
       <section>
         <h2 className="text-sm font-semibold mb-3">Quick Actions</h2>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

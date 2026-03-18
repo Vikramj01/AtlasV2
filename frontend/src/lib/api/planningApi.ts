@@ -15,6 +15,7 @@ import type {
   DeveloperShare,
   ImplementationProgress,
   ChangeDetectionResult,
+  PiiWarning,
 } from '@/types/planning';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
@@ -197,5 +198,11 @@ export const planningApi = {
     last_rescan_at: string | null;
   }> {
     return apiFetch(`/api/planning/sessions/${sessionId}/changes`);
+  },
+
+  // ── PII Detection ─────────────────────────────────────────────────────────
+
+  getPiiWarnings(sessionId: string): Promise<{ warnings: PiiWarning[] }> {
+    return apiFetch(`/api/planning/sessions/${sessionId}/pii-warnings`);
   },
 };
