@@ -89,3 +89,34 @@ planningQueue.on('failed', (job, err) => {
 planningQueue.on('stalled', (job) => {
   logger.warn({ jobId: job.id, sessionId: job.data.session_id }, 'Planning job stalled');
 });
+
+// ── Health Queue ──────────────────────────────────────────────────────────────
+// Runs the health score computation for all active users every 15 minutes.
+// Uses Bull's repeat/cron feature — only one worker should process this.
+
+export interface HealthJobData {
+  trigger: 'scheduled' | 'manual';
+  user_id?: string; // present for manual single-user runs
+}
+
+export const healthQueue = new Bull<HealthJobData>('health', {
+  redis: buildRedisOpts(env.REDIS_URL),
+  defaultJobOptions: {
+    attempts: 1,
+    removeOnComplete: 10,
+    removeOnFail: 10,
+  },
+});
+
+healthQueue.on('error', (err) => {
+  logger.error({ err }, 'Health queue error');
+});
+
+healthQueue.on('completed', (job) => {
+  logger.info({ jobId: job.id, trigger: job.data.trigger }, 'Health job completed');
+});
+
+healthQueue.on('failed', (job, err) => {
+  logger.error({ jobId: job?.id, err: err.message }, 'Health job failed');
+});
+
