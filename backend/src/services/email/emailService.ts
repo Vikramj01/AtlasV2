@@ -32,7 +32,7 @@ async function sendEmail(opts: {
   html: string;
 }): Promise<SendResult> {
   if (!env.RESEND_API_KEY) {
-    logger.warn({ to: opts.to, subject: opts.subject }, '[emailService] RESEND_API_KEY not set — email skipped');
+    logger.warn({ subject: opts.subject }, '[emailService] RESEND_API_KEY not set — email skipped');
     return { ok: false, error: 'RESEND_API_KEY not configured' };
   }
 
@@ -58,7 +58,7 @@ async function sendEmail(opts: {
       return { ok: false, error: msg };
     }
 
-    logger.info({ to: opts.to, subject: opts.subject }, '[emailService] Email sent');
+    logger.info({ subject: opts.subject }, '[emailService] Email sent');
     return { ok: true };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';

@@ -127,7 +127,7 @@ router.post('/:orgId/members', orgMiddleware, requireOrgAdmin, async (req: Reque
     }
 
     const member = await inviteMember(req.params['orgId'], user.id, role as MemberRole);
-    logger.info({ orgId: req.params['orgId'], invitedEmail: email }, 'Member invited');
+    logger.info({ orgId: req.params['orgId'] }, 'Member invited');
     res.status(201).json(member);
   } catch (err) {
     const msg = err instanceof Error ? err.message : '';

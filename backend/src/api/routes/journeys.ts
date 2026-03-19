@@ -166,7 +166,7 @@ router.put('/:id', async (req: Request, res: Response) => {
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
     await deleteJourney(req.params.id, req.user!.id);
-    res.status(204).send();
+    res.json({ deleted: true });
   } catch (err) {
     sendInternalError(res, err);
   }
@@ -220,7 +220,7 @@ router.delete('/:id/stages/:stageId', async (req: Request, res: Response) => {
     if (!journey) return res.status(404).json({ error: 'Journey not found' });
 
     await deleteStage(req.params.stageId, req.params.id);
-    res.status(204).send();
+    res.json({ deleted: true });
   } catch (err) {
     sendInternalError(res, err);
   }

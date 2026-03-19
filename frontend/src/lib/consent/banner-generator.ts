@@ -155,13 +155,33 @@ function buildScript(config: ConsentConfig, apiBaseUrl: string): string {
       'padding:20px 24px;z-index:999999;font-family:system-ui,sans-serif;' +
       'box-shadow:0 -4px 24px rgba(0,0,0,0.3);';
 
-    banner.innerHTML =
-      '<h3 style="margin:0 0 8px;font-size:16px;font-weight:600;">' + ${cfg.heading} + '</h3>' +
-      '<p style="margin:0 0 16px;font-size:14px;opacity:0.85;line-height:1.5;">' + ${cfg.body} + '</p>' +
-      '<div style="display:flex;gap:10px;flex-wrap:wrap;">' +
-        '<button id="atlas-accept-all" style="background:' + ${cfg.btnPrimary} + ';color:#fff;border:none;padding:10px 20px;border-radius:6px;cursor:pointer;font-size:14px;font-weight:500;">' + ${cfg.acceptBtn} + '</button>' +
-        '<button id="atlas-reject-all" style="background:' + ${cfg.btnSecondary} + ';color:#fff;border:none;padding:10px 20px;border-radius:6px;cursor:pointer;font-size:14px;">' + ${cfg.rejectBtn} + '</button>' +
-      '</div>';
+    // Build banner DOM without innerHTML to prevent XSS from user-configured text
+    var h3 = document.createElement('h3');
+    h3.style.cssText = 'margin:0 0 8px;font-size:16px;font-weight:600;';
+    h3.textContent = ${cfg.heading};
+
+    var p = document.createElement('p');
+    p.style.cssText = 'margin:0 0 16px;font-size:14px;opacity:0.85;line-height:1.5;';
+    p.textContent = ${cfg.body};
+
+    var btnAccept = document.createElement('button');
+    btnAccept.id = 'atlas-accept-all';
+    btnAccept.style.cssText = 'background:' + ${cfg.btnPrimary} + ';color:#fff;border:none;padding:10px 20px;border-radius:6px;cursor:pointer;font-size:14px;font-weight:500;';
+    btnAccept.textContent = ${cfg.acceptBtn};
+
+    var btnReject = document.createElement('button');
+    btnReject.id = 'atlas-reject-all';
+    btnReject.style.cssText = 'background:' + ${cfg.btnSecondary} + ';color:#fff;border:none;padding:10px 20px;border-radius:6px;cursor:pointer;font-size:14px;';
+    btnReject.textContent = ${cfg.rejectBtn};
+
+    var btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex;gap:10px;flex-wrap:wrap;';
+    btnRow.appendChild(btnAccept);
+    btnRow.appendChild(btnReject);
+
+    banner.appendChild(h3);
+    banner.appendChild(p);
+    banner.appendChild(btnRow);
 
     document.body.appendChild(banner);
 
