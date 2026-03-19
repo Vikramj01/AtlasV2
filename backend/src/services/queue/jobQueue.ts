@@ -14,6 +14,8 @@ export interface AuditJobData {
   // Journey Builder fields (present when audit is driven by a saved journey)
   journey_id?: string;
   validation_spec?: unknown;
+  // Scheduled audit: set when the audit was triggered by a schedule
+  scheduled_audit_id?: string;
 }
 
 // Parse REDIS_URL into explicit options so ioredis handles TLS correctly
@@ -118,5 +120,33 @@ healthQueue.on('completed', (job) => {
 
 healthQueue.on('failed', (job, err) => {
   logger.error({ jobId: job?.id, err: err.message }, 'Health job failed');
+});
+
+// ── Schedule Runner Queue ─────────────────────────────────────────────────────
+// Fires every 5 minutes and dispatches any due scheduled audits.
+
+export interface ScheduleRunnerJobData {
+  trigger: 'scheduled';
+}
+
+export const scheduleRunnerQueue = new Bull<ScheduleRunnerJobData>('schedule-runner', {
+  redis: buildRedisOpts(env.REDIS_URL),
+  defaultJobOptions: {
+    attempts: 1,
+    removeOnComplete: 10,
+    removeOnFail: 10,
+  },
+});
+
+scheduleRunnerQueue.on('error', (err) => {
+  logger.error({ err }, 'Schedule runner queue error');
+});
+
+scheduleRunnerQueue.on('completed', (job) => {
+  logger.info({ jobId: job.id }, 'Schedule runner job completed');
+});
+
+scheduleRunnerQueue.on('failed', (job, err) => {
+  logger.error({ jobId: job?.id, err: err.message }, 'Schedule runner job failed');
 });
 
