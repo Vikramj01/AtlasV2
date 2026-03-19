@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -48,8 +48,30 @@ export function DashboardPage() {
 
   const activeScheduleCount = schedules.filter((s) => s.is_active).length;
 
+  const pageHeading = useMemo(() => {
+    if (loadingAudits || audits.length === 0) return null;
+    const domains = [...new Set(audits.map((a) => {
+      try { return new URL(a.website_url).hostname.replace(/^www\./, ''); }
+      catch { return a.website_url; }
+    }))];
+    if (domains.length === 1) return domains[0];
+    return 'All Sites';
+  }, [audits, loadingAudits]);
+
   return (
     <div className="mx-auto max-w-5xl px-6 py-8 space-y-8">
+      {/* Page heading */}
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">
+          {pageHeading ?? 'Audit History'}
+        </h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {pageHeading
+            ? `Conversion tracking audits for ${pageHeading}`
+            : 'Run an audit to start tracking your conversion signal health.'}
+        </p>
+      </div>
+
       {/* CTA card */}
       <Card className="border-brand-200 bg-brand-50">
         <CardContent className="flex items-center justify-between p-6">
