@@ -30,7 +30,10 @@ export const env = {
 
   BROWSERBASE_API_KEY: requireEnv('BROWSERBASE_API_KEY'),
   BROWSERBASE_PROJECT_ID: requireEnv('BROWSERBASE_PROJECT_ID'),
-  BROWSERBASE_USE_PROXIES: optional('BROWSERBASE_USE_PROXIES', 'true') === 'true',
+  // Proxies are OFF by default — they consume ~5–15 MB per page from the 1 GB/month
+  // allowance ($12/GB overage). Enable only if scans are being blocked by anti-bot
+  // protection on the target site. Set BROWSERBASE_USE_PROXIES=true in Render env vars.
+  BROWSERBASE_USE_PROXIES: optional('BROWSERBASE_USE_PROXIES', 'false') === 'true',
 
   ANTHROPIC_API_KEY: requireEnv('ANTHROPIC_API_KEY'),
 
