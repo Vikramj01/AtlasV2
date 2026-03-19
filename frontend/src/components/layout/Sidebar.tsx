@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { NavLink, useParams } from 'react-router-dom';
-import { Home, Map, Zap, Clock, Settings, TrendingUp, Building2, Package, Shield, Activity, HeartPulse } from 'lucide-react';
+import { Home, Map, Zap, Clock, Settings, Building2, Package, Shield, Activity, HeartPulse } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { OrgSwitcher } from '@/components/organisation/OrgSwitcher';
 import { useOrganisationStore } from '@/store/organisationStore';
@@ -52,9 +52,11 @@ export function Sidebar() {
 
       {/* Logo */}
       <div className="mb-4 flex items-center gap-2 px-3">
-        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary shadow-sm">
-          <TrendingUp className="h-4 w-4 text-primary-foreground" strokeWidth={2.5} />
-        </div>
+        <img
+          src="/atlas_logo.svg"
+          alt="Atlas logo"
+          className="h-7 w-7 rounded-md object-contain"
+        />
         <div className="flex items-baseline gap-1">
           <span className="text-[15px] font-bold tracking-tight text-foreground">Atlas</span>
           <span className="text-[10px] font-semibold uppercase tracking-widest text-primary">Signal</span>
