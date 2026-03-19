@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabase';
 import type {
   HealthDashboardResponse,
   HealthHistoryResponse,
+  SiteOption,
 } from '@/types/health';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
@@ -29,11 +30,20 @@ export const healthApi = {
   getDashboard: () =>
     apiFetch<HealthDashboardResponse>('/api/health'),
 
-  getHistory: (days = 30) =>
-    apiFetch<HealthHistoryResponse>(`/api/health/history?days=${days}`),
+  getHistory: (days = 30, site?: string) => {
+    const params = new URLSearchParams({ days: String(days) });
+    if (site) params.set('site', site);
+    return apiFetch<HealthHistoryResponse>(`/api/health/history?${params}`);
+  },
 
-  triggerCompute: () =>
-    apiFetch<{ status: string }>('/api/health/compute', { method: 'POST' }),
+  triggerCompute: (site?: string) =>
+    apiFetch<{ status: string }>('/api/health/compute', {
+      method: 'POST',
+      body: site ? JSON.stringify({ site }) : undefined,
+    }),
+
+  getSites: () =>
+    apiFetch<{ sites: SiteOption[] }>('/api/health/sites'),
 
   acknowledgeAlert: (alertId: string) =>
     apiFetch<{ acknowledged: boolean }>(`/api/health/alerts/${alertId}/acknowledge`, { method: 'POST' }),

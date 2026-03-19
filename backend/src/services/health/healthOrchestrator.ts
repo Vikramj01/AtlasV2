@@ -18,11 +18,11 @@ import { upsertHealthScore, insertSnapshot } from '@/services/database/healthQue
 import { supabaseAdmin } from '@/services/database/supabase';
 import logger from '@/utils/logger';
 
-export async function runHealthPipeline(userId: string): Promise<void> {
-  logger.info({ userId }, 'Running health pipeline');
+export async function runHealthPipeline(userId: string, websiteUrl?: string): Promise<void> {
+  logger.info({ userId, websiteUrl }, 'Running health pipeline');
 
   // 1. Compute metrics
-  const { metrics, overallScore } = await computeHealthMetrics(userId);
+  const { metrics, overallScore } = await computeHealthMetrics(userId, websiteUrl);
 
   // 2. Persist latest score (upsert) + append snapshot
   await Promise.all([

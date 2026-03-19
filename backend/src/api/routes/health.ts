@@ -17,6 +17,7 @@ import {
   getActiveAlerts,
   getSnapshots,
   acknowledgeAlert,
+  getDistinctSites,
 } from '@/services/database/healthQueries';
 import logger from '@/utils/logger';
 
@@ -28,16 +29,30 @@ healthRouter.use(authMiddleware);
 healthRouter.get('/', async (req: Request, res: Response): Promise<void> => {
   const userId = req.user.id;
   try {
-    const [score, alerts] = await Promise.all([
+    const [score, alerts, sites] = await Promise.all([
       getHealthScore(userId),
       getActiveAlerts(userId),
+      getDistinctSites(userId),
     ]);
 
     res.json({
       score,
       alerts,
       has_data: score !== null,
+      sites,
     });
+  } catch (err) {
+    sendInternalError(res, err);
+  }
+});
+
+// ── GET /api/health/sites ─────────────────────────────────────────────────────
+
+healthRouter.get('/sites', async (req: Request, res: Response): Promise<void> => {
+  const userId = req.user.id;
+  try {
+    const sites = await getDistinctSites(userId);
+    res.json({ sites });
   } catch (err) {
     sendInternalError(res, err);
   }
@@ -48,8 +63,9 @@ healthRouter.get('/', async (req: Request, res: Response): Promise<void> => {
 healthRouter.get('/history', async (req: Request, res: Response): Promise<void> => {
   const userId = req.user.id;
   const days = Math.min(90, Math.max(1, Number(req.query.days ?? 30)));
+  const site = typeof req.query.site === 'string' ? req.query.site : undefined;
   try {
-    const snapshots = await getSnapshots(userId, days);
+    const snapshots = await getSnapshots(userId, days, site);
     res.json({ snapshots });
   } catch (err) {
     sendInternalError(res, err);
@@ -62,8 +78,9 @@ healthRouter.get('/history', async (req: Request, res: Response): Promise<void> 
 
 healthRouter.post('/compute', async (req: Request, res: Response): Promise<void> => {
   const userId = req.user.id;
+  const websiteUrl: string | undefined = typeof req.body?.site === 'string' ? req.body.site : undefined;
   try {
-    const jobId = `health-manual-${userId}`;
+    const jobId = `health-manual-${userId}${websiteUrl ? `-${Buffer.from(websiteUrl).toString('base64').slice(0, 8)}` : ''}`;
 
     // Check if a job already exists
     const existing = await healthQueue.getJob(jobId);
@@ -76,11 +93,11 @@ healthRouter.post('/compute', async (req: Request, res: Response): Promise<void>
     }
 
     await healthQueue.add(
-      { trigger: 'manual', user_id: userId },
+      { trigger: 'manual', user_id: userId, website_url: websiteUrl },
       { jobId, attempts: 1, removeOnComplete: true },
     );
 
-    logger.info({ userId }, 'Manual health computation enqueued');
+    logger.info({ userId, websiteUrl }, 'Manual health computation enqueued');
     res.status(202).json({ status: 'queued' });
   } catch (err) {
     sendInternalError(res, err);

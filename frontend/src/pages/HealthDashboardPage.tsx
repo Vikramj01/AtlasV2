@@ -3,11 +3,11 @@
  * 5-zone layout: score ring → key metrics → alerts → trend chart → quick actions
  */
 
-import { useEffect, useState, useCallback } from 'react';
-import { RefreshCw, ExternalLink, ShieldCheck, Zap, BarChart3 } from 'lucide-react';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { RefreshCw, ExternalLink, ShieldCheck, Zap, BarChart3, ChevronDown } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { healthApi } from '@/lib/api/healthApi';
-import type { HealthDashboardResponse, HealthSnapshot } from '@/types/health';
+import type { HealthDashboardResponse, HealthSnapshot, SiteOption } from '@/types/health';
 import { OverallScoreRing } from '@/components/health/OverallScoreRing';
 import { KeyMetricsRow } from '@/components/health/KeyMetricsRow';
 import { ActiveAlertsFeed } from '@/components/health/ActiveAlertsFeed';
@@ -23,15 +23,30 @@ export default function HealthDashboardPage() {
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [computing, setComputing] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const [sites, setSites] = useState<SiteOption[]>([]);
+  const [selectedSite, setSelectedSite] = useState<string | null>(null);
+  const [siteDropdownOpen, setSiteDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const load = useCallback(async () => {
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setSiteDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const load = useCallback(async (site?: string) => {
     try {
       const [dash, hist] = await Promise.all([
         healthApi.getDashboard(),
-        healthApi.getHistory(30),
+        healthApi.getHistory(30, site ?? undefined),
       ]);
       setDashboard(dash);
       setHistory(hist.snapshots);
+      setSites(dash.sites ?? []);
       setLoadState(dash.score ? 'loaded' : 'empty');
       setLastRefresh(new Date());
     } catch {
@@ -39,20 +54,30 @@ export default function HealthDashboardPage() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(selectedSite ?? undefined); }, [load, selectedSite]);
+
+  async function handleSiteChange(site: string | null) {
+    setSelectedSite(site);
+    setSiteDropdownOpen(false);
+  }
 
   async function handleCompute() {
     setComputing(true);
     try {
-      await healthApi.triggerCompute();
+      await healthApi.triggerCompute(selectedSite ?? undefined);
       // Poll for update after a short delay
       setTimeout(async () => {
-        await load();
+        await load(selectedSite ?? undefined);
         setComputing(false);
       }, 4000);
     } catch {
       setComputing(false);
     }
+  }
+
+  function formatDomain(url: string): string {
+    try { return new URL(url).hostname.replace(/^www\./, ''); }
+    catch { return url; }
   }
 
   // ── Loading skeleton ────────────────────────────────────────────────────────
@@ -77,7 +102,7 @@ export default function HealthDashboardPage() {
         <p className="text-sm text-muted-foreground">Failed to load health dashboard.</p>
         <button
           type="button"
-          onClick={load}
+          onClick={() => load(selectedSite ?? undefined)}
           className="text-sm px-4 py-2 rounded-lg border hover:bg-muted transition-colors"
         >
           Retry
@@ -122,12 +147,53 @@ export default function HealthDashboardPage() {
     <div className="p-6 space-y-6 max-w-5xl">
 
       {/* ── Page header ────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">Data Health</h1>
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h1 className="text-xl font-semibold tracking-tight">Data Health</h1>
+            {/* Site selector */}
+            {sites.length > 0 && (
+              <div className="relative" ref={dropdownRef}>
+                <button
+                  type="button"
+                  onClick={() => setSiteDropdownOpen((o) => !o)}
+                  className="flex items-center gap-1 text-sm font-medium px-2.5 py-1 rounded-lg border bg-muted/50 hover:bg-muted transition-colors max-w-[240px]"
+                >
+                  <span className="truncate">
+                    {selectedSite ? formatDomain(selectedSite) : 'All Sites'}
+                  </span>
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                </button>
+                {siteDropdownOpen && (
+                  <div className="absolute left-0 top-full mt-1 z-50 min-w-[200px] rounded-lg border bg-popover shadow-md py-1">
+                    <button
+                      type="button"
+                      onClick={() => handleSiteChange(null)}
+                      className={`w-full text-left px-3 py-1.5 text-sm hover:bg-muted transition-colors ${selectedSite === null ? 'font-semibold text-primary' : ''}`}
+                    >
+                      All Sites
+                    </button>
+                    {sites.map((s) => (
+                      <button
+                        key={s.website_url}
+                        type="button"
+                        onClick={() => handleSiteChange(s.website_url)}
+                        className={`w-full text-left px-3 py-1.5 text-sm hover:bg-muted transition-colors truncate ${selectedSite === s.website_url ? 'font-semibold text-primary' : ''}`}
+                      >
+                        {formatDomain(s.website_url)}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
           {lastRefresh && (
             <p className="text-xs text-muted-foreground mt-0.5">
               Last refreshed {lastRefresh.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+              {selectedSite && (
+                <span className="ml-1 text-muted-foreground/60">· {formatDomain(selectedSite)}</span>
+              )}
             </p>
           )}
         </div>
@@ -135,7 +201,7 @@ export default function HealthDashboardPage() {
           type="button"
           onClick={handleCompute}
           disabled={computing}
-          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border hover:bg-muted disabled:opacity-60 transition-colors"
+          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border hover:bg-muted disabled:opacity-60 transition-colors shrink-0"
         >
           <RefreshCw className={`h-3.5 w-3.5 ${computing ? 'animate-spin' : ''}`} />
           {computing ? 'Computing…' : 'Refresh'}
