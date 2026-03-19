@@ -55,12 +55,9 @@ export function Sidebar() {
         <img
           src="/atlas_logo.svg"
           alt="Atlas logo"
-          className="h-7 w-7 rounded-md object-contain"
+          className="h-[31px] w-[31px] rounded-md object-contain"
         />
-        <div className="flex items-baseline gap-1">
-          <span className="text-[15px] font-bold tracking-tight text-foreground">Atlas</span>
-          <span className="text-[10px] font-semibold uppercase tracking-widest text-primary">Signal</span>
-        </div>
+        <span className="text-[16.5px] font-bold tracking-tight text-foreground">Atlas</span>
       </div>
 
       {/* Workspace switcher — only show if user has orgs */}
