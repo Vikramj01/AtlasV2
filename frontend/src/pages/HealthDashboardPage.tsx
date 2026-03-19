@@ -151,8 +151,8 @@ export default function HealthDashboardPage() {
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-xl font-semibold tracking-tight">Data Health</h1>
-            {/* Site selector */}
-            {sites.length > 0 && (
+            {/* Site selector — multi-site */}
+            {sites.length > 1 && (
               <div className="relative" ref={dropdownRef}>
                 <button
                   type="button"
@@ -187,12 +187,26 @@ export default function HealthDashboardPage() {
                 )}
               </div>
             )}
+            {/* Single-site label — static badge when only one site exists */}
+            {sites.length === 1 && (
+              <span className="text-sm font-medium px-2.5 py-1 rounded-lg border bg-muted/50 text-muted-foreground max-w-[240px] truncate">
+                {formatDomain(sites[0].website_url)}
+              </span>
+            )}
+            {/* Fallback: show URL from the score record if sites list is empty */}
+            {sites.length === 0 && score.website_url && (
+              <span className="text-sm font-medium px-2.5 py-1 rounded-lg border bg-muted/50 text-muted-foreground max-w-[240px] truncate">
+                {formatDomain(score.website_url)}
+              </span>
+            )}
           </div>
           {lastRefresh && (
             <p className="text-xs text-muted-foreground mt-0.5">
               Last refreshed {lastRefresh.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
-              {selectedSite && (
-                <span className="ml-1 text-muted-foreground/60">· {formatDomain(selectedSite)}</span>
+              {(selectedSite ?? (sites.length === 0 ? score.website_url : null)) && (
+                <span className="ml-1 text-muted-foreground/60">
+                  · {formatDomain(selectedSite ?? score.website_url ?? '')}
+                </span>
               )}
             </p>
           )}
