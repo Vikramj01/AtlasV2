@@ -44,10 +44,13 @@ export default function HealthDashboardPage() {
         healthApi.getDashboard(),
         healthApi.getHistory(30, site ?? undefined),
       ]);
+      const resolvedSites = dash.sites ?? [];
       setDashboard(dash);
       setHistory(hist.snapshots);
-      setSites(dash.sites ?? []);
-      setLoadState(dash.score ? 'loaded' : 'empty');
+      setSites(resolvedSites);
+      // Only show loaded state if the user has actual completed audits.
+      // A stale health_scores row with no audits should show the empty state.
+      setLoadState((dash.score && resolvedSites.length > 0) ? 'loaded' : 'empty');
       setLastRefresh(new Date());
     } catch {
       setLoadState('error');
@@ -111,32 +114,22 @@ export default function HealthDashboardPage() {
     );
   }
 
-  // ── Empty state (no score computed yet) ─────────────────────────────────────
+  // ── Empty state (no completed audits yet) ───────────────────────────────────
   if (loadState === 'empty' || !dashboard?.score) {
     return (
       <div className="p-6 flex flex-col items-center justify-center min-h-[50vh] gap-4 text-center">
         <BarChart3 className="h-10 w-10 text-muted-foreground/40" />
         <p className="text-base font-semibold">No health data yet</p>
         <p className="text-sm text-muted-foreground max-w-sm">
-          Run your first audit or set up CAPI to see your Data Health Score.
+          Run your first audit to see your Data Health Score, alerts, and 30-day trend.
         </p>
-        <div className="flex gap-3">
-          <button
-            type="button"
-            onClick={handleCompute}
-            disabled={computing}
-            className="text-sm px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-60 transition-colors"
-          >
-            {computing ? 'Computing…' : 'Compute Score Now'}
-          </button>
-          <button
-            type="button"
-            onClick={() => navigate('/audit/new')}
-            className="text-sm px-4 py-2 rounded-lg border hover:bg-muted transition-colors"
-          >
-            Run Audit
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => navigate('/journey/new')}
+          className="text-sm px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+        >
+          Run your first audit
+        </button>
       </div>
     );
   }
