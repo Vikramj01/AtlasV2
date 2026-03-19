@@ -54,4 +54,10 @@ export const env = {
   PORT: parseInt(optional('PORT', '3001'), 10),
   NODE_ENV,
   FRONTEND_URL,
+
+  // Queue worker concurrency — tune to match your Browserbase session quota.
+  // Each concurrent audit/planning job opens one Browserbase session.
+  // Default: 2 audit workers, 1 planning worker (conservative for Hobby Browserbase plan).
+  AUDIT_WORKER_CONCURRENCY: parseInt(optional('AUDIT_WORKER_CONCURRENCY', '2'), 10),
+  PLANNING_WORKER_CONCURRENCY: parseInt(optional('PLANNING_WORKER_CONCURRENCY', '1'), 10),
 } as const;
