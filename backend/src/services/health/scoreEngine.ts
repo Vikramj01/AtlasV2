@@ -17,23 +17,30 @@ import type { ReportJSON } from '@/types/audit';
 
 // ── Data fetchers ─────────────────────────────────────────────────────────────
 
-async function fetchLatestAuditScore(userId: string): Promise<{
+async function fetchLatestAuditScore(userId: string, websiteUrl?: string): Promise<{
   signal_health: number;
   last_audit_id: string | null;
   last_audit_at: string | null;
   days_since_audit: number | null;
+  website_url: string | null;
 }> {
-  const { data } = await supabaseAdmin
+  let query = supabaseAdmin
     .from('audits')
-    .select('id, created_at, audit_reports(report_json)')
+    .select('id, created_at, website_url, audit_reports(report_json)')
     .eq('user_id', userId)
     .eq('status', 'completed')
     .order('created_at', { ascending: false })
     .limit(1);
 
+  if (websiteUrl) {
+    query = query.eq('website_url', websiteUrl);
+  }
+
+  const { data } = await query;
+
   const row = data?.[0];
   if (!row) {
-    return { signal_health: 0, last_audit_id: null, last_audit_at: null, days_since_audit: null };
+    return { signal_health: 0, last_audit_id: null, last_audit_at: null, days_since_audit: null, website_url: websiteUrl ?? null };
   }
 
   const reportRows = row['audit_reports'] as Array<{ report_json: ReportJSON }> | null;
@@ -47,6 +54,7 @@ async function fetchLatestAuditScore(userId: string): Promise<{
     last_audit_id: row.id as string,
     last_audit_at: row.created_at as string,
     days_since_audit: daysSince,
+    website_url: (row.website_url as string | null) ?? null,
   };
 }
 
@@ -111,12 +119,12 @@ function computeOverallScore(
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-export async function computeHealthMetrics(userId: string): Promise<{
+export async function computeHealthMetrics(userId: string, websiteUrl?: string): Promise<{
   metrics: ComputedMetrics;
   overallScore: number;
 }> {
   const [auditData, capiRate, consent] = await Promise.all([
-    fetchLatestAuditScore(userId),
+    fetchLatestAuditScore(userId, websiteUrl),
     fetchCAPIDeliveryRate(userId),
     fetchConsentCoverage(userId),
   ]);
@@ -128,6 +136,7 @@ export async function computeHealthMetrics(userId: string): Promise<{
     tag_firing_rate:     auditData.signal_health, // derived from same audit
     last_audit_id:       auditData.last_audit_id,
     last_audit_at:       auditData.last_audit_at,
+    website_url:         auditData.website_url,
   };
 
   const overallScore = computeOverallScore(

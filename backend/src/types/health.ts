@@ -3,6 +3,7 @@
 export interface HealthScore {
   id: string;
   user_id: string;
+  website_url: string | null;    // site this score was computed for (null = aggregate)
   overall_score: number;         // 0–100
   signal_health: number;         // 0–100 (from latest audit)
   capi_delivery_rate: number;    // 0–100 %
@@ -57,6 +58,7 @@ export interface HealthDashboardResponse {
   score: HealthScore | null;
   alerts: HealthAlert[];
   has_data: boolean;
+  sites: SiteOption[];  // distinct sites available to switch to
 }
 
 export interface HealthHistoryResponse {
@@ -72,4 +74,10 @@ export interface ComputedMetrics {
   tag_firing_rate: number;
   last_audit_id: string | null;
   last_audit_at: string | null;
+  website_url: string | null;    // site the audit came from
+}
+
+export interface SiteOption {
+  website_url: string;
+  last_audit_at: string;
 }

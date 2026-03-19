@@ -98,7 +98,8 @@ planningQueue.on('stalled', (job) => {
 
 export interface HealthJobData {
   trigger: 'scheduled' | 'manual';
-  user_id?: string; // present for manual single-user runs
+  user_id?: string;     // present for manual single-user runs
+  website_url?: string; // optional site filter for manual runs
 }
 
 export const healthQueue = new Bull<HealthJobData>('health', {

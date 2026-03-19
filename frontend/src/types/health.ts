@@ -1,6 +1,7 @@
 export interface HealthScore {
   id: string;
   user_id: string;
+  website_url: string | null;
   overall_score: number;
   signal_health: number;
   capi_delivery_rate: number;
@@ -10,6 +11,11 @@ export interface HealthScore {
   last_audit_at: string | null;
   computed_at: string;
   created_at: string;
+}
+
+export interface SiteOption {
+  website_url: string;
+  last_audit_at: string;
 }
 
 export interface HealthSnapshot {
@@ -53,6 +59,7 @@ export interface HealthDashboardResponse {
   score: HealthScore | null;
   alerts: HealthAlert[];
   has_data: boolean;
+  sites: SiteOption[];
 }
 
 export interface HealthHistoryResponse {

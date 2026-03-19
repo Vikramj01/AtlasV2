@@ -115,7 +115,7 @@ healthQueue.process(async (job) => {
   logger.info({ trigger: job.data.trigger, userId: job.data.user_id }, 'Health job received');
 
   if (job.data.trigger === 'manual' && job.data.user_id) {
-    await runHealthPipeline(job.data.user_id);
+    await runHealthPipeline(job.data.user_id, job.data.website_url ?? undefined);
   } else {
     await runHealthPipelineForActiveUsers();
   }

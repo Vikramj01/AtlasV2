@@ -12,6 +12,7 @@ import type {
   AlertType,
   AlertSeverity,
   ComputedMetrics,
+  SiteOption,
 } from '@/types/health';
 
 // ── health_scores ─────────────────────────────────────────────────────────────
@@ -29,6 +30,7 @@ export async function upsertHealthScore(
     .upsert(
       {
         user_id: userId,
+        website_url: metrics.website_url ?? null,
         overall_score: overallScore,
         signal_health: metrics.signal_health,
         capi_delivery_rate: metrics.capi_delivery_rate,
@@ -55,6 +57,34 @@ export async function getHealthScore(userId: string): Promise<HealthScore | null
   return data as HealthScore;
 }
 
+/**
+ * Returns distinct sites (website_url) from the user's completed audits,
+ * ordered by most recent audit date.
+ */
+export async function getDistinctSites(userId: string): Promise<SiteOption[]> {
+  const { data, error } = await supabaseAdmin
+    .from('audits')
+    .select('website_url, created_at')
+    .eq('user_id', userId)
+    .eq('status', 'completed')
+    .order('created_at', { ascending: false });
+
+  if (error || !data) return [];
+
+  // Deduplicate by website_url, keeping the most recent created_at
+  const seen = new Map<string, string>();
+  for (const row of data as Array<{ website_url: string; created_at: string }>) {
+    if (row.website_url && !seen.has(row.website_url)) {
+      seen.set(row.website_url, row.created_at);
+    }
+  }
+
+  return Array.from(seen.entries()).map(([website_url, last_audit_at]) => ({
+    website_url,
+    last_audit_at,
+  }));
+}
+
 // ── health_snapshots ──────────────────────────────────────────────────────────
 
 export async function insertSnapshot(
@@ -66,6 +96,7 @@ export async function insertSnapshot(
     .from('health_snapshots')
     .insert({
       user_id: userId,
+      website_url: metrics.website_url ?? null,
       overall_score: overallScore,
       signal_health: metrics.signal_health,
       capi_delivery_rate: metrics.capi_delivery_rate,
@@ -80,15 +111,21 @@ export async function insertSnapshot(
 export async function getSnapshots(
   userId: string,
   days = 30,
+  websiteUrl?: string,
 ): Promise<HealthSnapshot[]> {
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-  const { data, error } = await supabaseAdmin
+  let query = supabaseAdmin
     .from('health_snapshots')
     .select('*')
     .eq('user_id', userId)
     .gte('snapshot_at', since)
     .order('snapshot_at', { ascending: true });
 
+  if (websiteUrl) {
+    query = query.eq('website_url', websiteUrl);
+  }
+
+  const { data, error } = await query;
   if (error) throw error;
   return (data ?? []) as HealthSnapshot[];
 }
