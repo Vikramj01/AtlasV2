@@ -14,6 +14,7 @@ import { authMiddleware } from '../middleware/authMiddleware';
 import { planningLimiter } from '../middleware/planningLimiter';
 import { validateUrl, validateUrls } from '@/utils/urlValidator';
 import { sendInternalError } from '@/utils/apiError';
+import logger from '@/utils/logger';
 import { planningQueue } from '@/services/queue/jobQueue';
 import { detectSite } from '@/services/planning/siteDetectionService';
 import { detectPiiWarnings } from '@/services/planning/piiDetectionService';
@@ -512,7 +513,7 @@ router.get('/sessions/:id/pages/:pageId/screenshot', async (req: Request, res: R
 
     const page = await getPageWithSignedUrl(req.params.pageId, session.id);
     if (!page.screenshot_signed_url) {
-      console.warn('[screenshot] No signed URL for page', req.params.pageId, 'screenshot_url in DB:', page.screenshot_url ?? 'null');
+      logger.warn({ pageId: req.params.pageId, hasStoragePath: !!page.screenshot_url }, '[screenshot] No signed URL available');
       return res.status(404).json({ error: 'No screenshot available for this page' });
     }
 
