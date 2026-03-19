@@ -14,6 +14,7 @@ import { capiRouter } from '@/api/routes/capi';
 import { checklistRouter } from '@/api/routes/checklist';
 import { healthRouter } from '@/api/routes/health';
 import { readinessRouter } from '@/api/routes/readiness';
+import { schedulesRouter } from '@/api/routes/schedules';
 import logger from '@/utils/logger';
 import { env } from '@/config/env';
 
@@ -89,6 +90,7 @@ app.use('/api/capi', capiRouter);
 app.use('/api/setup-checklist', checklistRouter);
 app.use('/api/health', healthRouter);
 app.use('/api/readiness-score', readinessRouter);
+app.use('/api/schedules', schedulesRouter);
 
 // ─── 404 handler ─────────────────────────────────────────────────────────────
 
