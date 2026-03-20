@@ -74,14 +74,17 @@ ALTER TABLE health_alerts    ENABLE ROW LEVEL SECURITY;
 -- These policies allow authenticated users to read their own data via the
 -- anon/user key if ever needed from the frontend directly.
 
-CREATE POLICY IF NOT EXISTS "Users can read own health scores"
-  ON health_scores FOR SELECT
-  USING (auth.uid() = user_id);
+DO $$ BEGIN
+  CREATE POLICY "Users can read own health scores"
+    ON health_scores FOR SELECT USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-CREATE POLICY IF NOT EXISTS "Users can read own health snapshots"
-  ON health_snapshots FOR SELECT
-  USING (auth.uid() = user_id);
+DO $$ BEGIN
+  CREATE POLICY "Users can read own health snapshots"
+    ON health_snapshots FOR SELECT USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-CREATE POLICY IF NOT EXISTS "Users can read own health alerts"
-  ON health_alerts FOR SELECT
-  USING (auth.uid() = user_id);
+DO $$ BEGIN
+  CREATE POLICY "Users can read own health alerts"
+    ON health_alerts FOR SELECT USING (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
