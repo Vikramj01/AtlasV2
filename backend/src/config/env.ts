@@ -63,4 +63,11 @@ export const env = {
   // Default: 2 audit workers, 1 planning worker (conservative for Hobby Browserbase plan).
   AUDIT_WORKER_CONCURRENCY: parseInt(optional('AUDIT_WORKER_CONCURRENCY', '2'), 10),
   PLANNING_WORKER_CONCURRENCY: parseInt(optional('PLANNING_WORKER_CONCURRENCY', '1'), 10),
+
+  // Admin module — comma-separated list of email addresses with admin access.
+  // Example: ADMIN_EMAILS=alice@example.com,bob@example.com
+  ADMIN_EMAILS: optional('ADMIN_EMAILS', '')
+    .split(',')
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean),
 } as const;

@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { NavLink, useParams } from 'react-router-dom';
-import { Home, Map, Zap, Clock, Settings, Building2, Package, Shield, Activity, HeartPulse } from 'lucide-react';
+import { Home, Map, Zap, Clock, Settings, Building2, Package, Shield, Activity, HeartPulse, ShieldAlert } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { OrgSwitcher } from '@/components/organisation/OrgSwitcher';
 import { useOrganisationStore } from '@/store/organisationStore';
@@ -32,7 +32,7 @@ function orgNav(orgId: string) {
   ];
 }
 
-export function Sidebar() {
+export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
   const { currentOrg, organisations, setOrganisations } = useOrganisationStore();
   const params = useParams<{ orgId?: string }>();
 
@@ -98,6 +98,39 @@ export function Sidebar() {
           </NavLink>
         ))}
       </nav>
+
+      {/* Admin link — only shown to admin users */}
+      {isAdmin && (
+        <div className="mt-auto pt-4 border-t">
+          <p className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+            Admin
+          </p>
+          <NavLink
+            to="/admin"
+            className={({ isActive }) =>
+              cn(
+                'group flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-150',
+                isActive
+                  ? 'bg-primary/10 text-primary'
+                  : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+              )
+            }
+          >
+            {({ isActive }) => (
+              <>
+                <ShieldAlert
+                  className={cn(
+                    'h-4 w-4 shrink-0 transition-colors',
+                    isActive ? 'text-primary' : 'text-muted-foreground/70 group-hover:text-foreground'
+                  )}
+                  strokeWidth={isActive ? 2.5 : 2}
+                />
+                Platform Admin
+              </>
+            )}
+          </NavLink>
+        </div>
+      )}
 
 
     </aside>
