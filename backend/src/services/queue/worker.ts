@@ -53,7 +53,9 @@ auditQueue.on('completed', async (job) => {
         user_id: schedule.user_id,
         alert_type: 'scheduled_audit_regression',
         severity: delta >= 15 ? 'critical' : 'warning',
-        message: `Scheduled audit "${schedule.name}" detected a tracking regression.`,
+        title: `Tracking regression detected — ${schedule.name}`,
+        message: `Scheduled audit "${schedule.name}" detected a tracking regression. Score dropped ${delta} points (${previousScore} → ${currentScore}).`,
+        is_active: true,
         details: {
           schedule_id: scheduled_audit_id,
           schedule_name: schedule.name,
@@ -63,8 +65,6 @@ auditQueue.on('completed', async (job) => {
           delta: -delta,
           website_url: schedule.website_url,
         },
-        status: 'active',
-        created_at: new Date().toISOString(),
       });
       logger.warn(
         { scheduleId: scheduled_audit_id, delta, currentScore, previousScore },
