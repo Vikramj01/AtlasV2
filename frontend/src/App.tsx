@@ -27,6 +27,8 @@ import { ConsentPage } from '@/pages/ConsentPage';
 import { CAPIPage } from '@/pages/CAPIPage';
 // Data Health Dashboard
 import HealthDashboardPage from '@/pages/HealthDashboardPage';
+// Admin
+import { AdminPage } from '@/pages/AdminPage';
 
 export default function App() {
   return (
@@ -54,6 +56,8 @@ export default function App() {
             <Route path="/integrations/capi" element={<CAPIPage />} />
             {/* Data Health Dashboard */}
             <Route path="/health" element={<HealthDashboardPage />} />
+            {/* Admin */}
+            <Route path="/admin" element={<AdminPage />} />
             {/* Agency Workspaces */}
             <Route path="/org/:orgId" element={<OrgDashboardPage />} />
             <Route path="/org/:orgId/clients" element={<ClientListPage />} />
