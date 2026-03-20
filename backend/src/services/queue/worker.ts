@@ -1,4 +1,5 @@
 import { auditQueue, planningQueue, healthQueue, scheduleRunnerQueue } from './jobQueue';
+import { env } from '@/config/env';
 import { runAuditOrchestrator } from '@/services/audit/orchestrator';
 import { runPlanningOrchestrator, runRescanOrchestrator } from '@/services/planning/sessionOrchestrator';
 import { runHealthPipeline, runHealthPipelineForActiveUsers } from '@/services/health/healthOrchestrator';
@@ -17,8 +18,8 @@ import logger from '@/utils/logger';
 
 // ── Audit worker ──────────────────────────────────────────────────────────────
 
-auditQueue.process(async (job) => {
-  logger.info({ audit_id: job.data.audit_id, jobId: job.id }, 'Audit job received');
+auditQueue.process(env.AUDIT_WORKER_CONCURRENCY, async (job) => {
+  logger.info({ audit_id: job.data.audit_id, jobId: job.id, concurrency: env.AUDIT_WORKER_CONCURRENCY }, 'Audit job received');
   await runAuditOrchestrator(job.data);
 });
 
@@ -78,7 +79,7 @@ auditQueue.on('completed', async (job) => {
 
 // ── Planning worker ───────────────────────────────────────────────────────────
 
-planningQueue.process(async (job) => {
+planningQueue.process(env.PLANNING_WORKER_CONCURRENCY, async (job) => {
   const { session_id, job_type } = job.data as { session_id: string; job_type?: string };
   logger.info({ session_id, job_type: job_type ?? 'scan', jobId: job.id }, 'Planning job received');
 
