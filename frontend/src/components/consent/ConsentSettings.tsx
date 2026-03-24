@@ -18,6 +18,7 @@ import { CMPIntegration } from '@/components/consent/CMPIntegration';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
+import { ConsentAnalyticsDashboard } from '@/components/consent/ConsentAnalyticsDashboard';
 import type {
   ConsentConfig,
   ConsentMode,
@@ -460,18 +461,9 @@ export function ConsentSettings() {
         />
       )}
 
-      {/* ── Analytics tab (Sprint 4 placeholder) ─────────────────────────── */}
+      {/* ── Analytics tab ──────────────────────────────────────────────── */}
       {activeTab === 'analytics' && (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-16 text-center gap-3">
-            <p className="text-muted-foreground text-sm">
-              Consent analytics will be available in Sprint 4.
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Once live, you'll see opt-in rates by category, country, and day.
-            </p>
-          </CardContent>
-        </Card>
+        <ConsentAnalyticsDashboard projectId={resolvedProjectId} />
       )}
     </div>
   );
