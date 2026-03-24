@@ -27,6 +27,8 @@ import { ConsentPage } from '@/pages/ConsentPage';
 import { CAPIPage } from '@/pages/CAPIPage';
 // Data Health Dashboard
 import HealthDashboardPage from '@/pages/HealthDashboardPage';
+// Channel Signal Behaviour
+import { ChannelInsightsPage } from '@/pages/ChannelInsightsPage';
 // Admin
 import { AdminPage } from '@/pages/AdminPage';
 
@@ -56,6 +58,8 @@ export default function App() {
             <Route path="/integrations/capi" element={<CAPIPage />} />
             {/* Data Health Dashboard */}
             <Route path="/health" element={<HealthDashboardPage />} />
+            {/* Channel Insights */}
+            <Route path="/channels" element={<ChannelInsightsPage />} />
             {/* Admin */}
             <Route path="/admin" element={<AdminPage />} />
             {/* Agency Workspaces */}

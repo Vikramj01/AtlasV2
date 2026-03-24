@@ -123,6 +123,37 @@ healthQueue.on('failed', (job, err) => {
   logger.error({ jobId: job?.id, err: err.message }, 'Health job failed');
 });
 
+// ── Channel Queue ─────────────────────────────────────────────────────────────
+// Runs journey computation + diagnostic engine for channel signal behaviour.
+
+export interface ChannelJobData {
+  trigger: 'scheduled' | 'manual';
+  user_id?: string;     // present for manual single-user runs
+  website_url?: string; // optional site filter
+}
+
+export const channelQueue = new Bull<ChannelJobData>('channel', {
+  redis: buildRedisOpts(env.REDIS_URL),
+  defaultJobOptions: {
+    attempts: 1,
+    timeout: 5 * 60 * 1000,
+    removeOnComplete: 10,
+    removeOnFail: 10,
+  },
+});
+
+channelQueue.on('error', (err) => {
+  logger.error({ err }, 'Channel queue error');
+});
+
+channelQueue.on('completed', (job) => {
+  logger.info({ jobId: job.id, trigger: job.data.trigger }, 'Channel job completed');
+});
+
+channelQueue.on('failed', (job, err) => {
+  logger.error({ jobId: job?.id, err: err.message }, 'Channel job failed');
+});
+
 // ── Schedule Runner Queue ─────────────────────────────────────────────────────
 // Fires every 5 minutes and dispatches any due scheduled audits.
 

@@ -55,6 +55,12 @@ const STEPS: StepDef[] = [
     description: 'Run an audit to confirm your tracking is firing correctly.',
     href: '/journey/new',
   },
+  {
+    key: 'channel_tracking_enabled',
+    label: 'Enable channel tracking',
+    description: 'Send session data to Atlas to compare signal quality across acquisition channels.',
+    href: '/channels',
+  },
 ];
 
 const READINESS_LABEL: Record<SetupChecklistResponse['readiness_level'], string> = {

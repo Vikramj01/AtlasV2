@@ -1,8 +1,10 @@
-import { auditQueue, planningQueue, healthQueue, scheduleRunnerQueue } from './jobQueue';
+import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue } from './jobQueue';
 import { env } from '@/config/env';
 import { runAuditOrchestrator } from '@/services/audit/orchestrator';
 import { runPlanningOrchestrator, runRescanOrchestrator } from '@/services/planning/sessionOrchestrator';
 import { runHealthPipeline, runHealthPipelineForActiveUsers } from '@/services/health/healthOrchestrator';
+import { computeJourneysForUser } from '@/services/channels/journeyComputation';
+import { runDiagnosticsForUser } from '@/services/channels/diagnosticEngine';
 import { getPagesBySession } from '@/services/database/planningQueries';
 import { supabaseAdmin } from '@/services/database/supabase';
 import {
@@ -130,6 +132,20 @@ healthQueue.add(
   { trigger: 'scheduled' },
   { repeat: { cron: '*/15 * * * *' }, jobId: 'health-scheduled' },
 ).catch((err) => logger.error({ err }, 'Failed to schedule health job'));
+
+// ── Channel worker ────────────────────────────────────────────────────────────
+
+channelQueue.process(async (job) => {
+  logger.info({ trigger: job.data.trigger, userId: job.data.user_id }, 'Channel job received');
+
+  if (job.data.trigger === 'manual' && job.data.user_id) {
+    await computeJourneysForUser(job.data.user_id, job.data.website_url ?? undefined);
+    await runDiagnosticsForUser(job.data.user_id, job.data.website_url ?? undefined);
+  }
+  // Scheduled full-run handled once active user enumeration is added (Phase 2)
+});
+
+logger.info('Channel queue worker registered');
 
 // ── Schedule runner worker ────────────────────────────────────────────────────
 // Runs every 5 minutes. Finds all due schedules, creates audits, and enqueues them.
