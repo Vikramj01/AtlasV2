@@ -33,6 +33,7 @@ export interface SetupChecklistResponse {
     shared_with_developer: ChecklistStep & { share_count: number };
     capi_connected:       ChecklistStep & { providers: string[]; active_providers: string[] };
     audit_passed:         ChecklistStep & { last_audit_id: string | null; last_audit_date: string | null };
+    channel_tracking_enabled: ChecklistStep;
   };
   overall_progress_pct: number;
   readiness_level: 'getting_started' | 'building' | 'strong' | 'best_in_class';

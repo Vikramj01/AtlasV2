@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Map, Zap, ArrowRight, CheckCircle2, Clock, AlertTriangle } from 'lucide-react';
+import { Map, Zap, ArrowRight, CheckCircle2, Clock, AlertTriangle, GitBranch } from 'lucide-react';
 import { SetupChecklist } from '@/components/common/SetupChecklist';
 import { supabase } from '@/lib/supabase';
 import { auditApi } from '@/lib/api/auditApi';
@@ -72,7 +72,7 @@ export function HomePage() {
       </div>
 
       {/* Mode selection cards */}
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
 
         {/* Planning Mode card */}
         <Card className="group cursor-pointer border-2 border-transparent hover:border-primary/20 hover:shadow-md transition-all duration-200"
@@ -111,6 +111,27 @@ export function HomePage() {
             </div>
             <div className="flex items-center gap-1.5 text-sm font-medium text-amber-600 group-hover:gap-2.5 transition-all">
               Run an audit
+              <ArrowRight className="h-4 w-4" />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Channel Insights card */}
+        <Card className="group cursor-pointer border-2 border-transparent hover:border-primary/20 hover:shadow-md transition-all duration-200"
+          onClick={() => navigate('/channels')}
+        >
+          <CardContent className="p-6 space-y-4">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-100">
+              <GitBranch className="h-5 w-5 text-emerald-600" strokeWidth={2} />
+            </div>
+            <div>
+              <h2 className="text-base font-semibold text-foreground">Analyse channel behaviour</h2>
+              <p className="mt-1.5 text-sm text-muted-foreground leading-relaxed">
+                Compare signal quality, journey paths, and conversion rates across acquisition channels.
+              </p>
+            </div>
+            <div className="flex items-center gap-1.5 text-sm font-medium text-emerald-600 group-hover:gap-2.5 transition-all">
+              View channels
               <ArrowRight className="h-4 w-4" />
             </div>
           </CardContent>

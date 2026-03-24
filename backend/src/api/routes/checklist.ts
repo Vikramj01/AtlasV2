@@ -11,6 +11,7 @@
  *   4. shared_with_dev    — developer share token has been created
  *   5. capi_connected     — at least one active CAPI provider
  *   6. audit_passed       — at least one completed audit
+ *   7. channel_tracking_enabled — at least one channel session ingested
  */
 
 import { Router } from 'express';
@@ -49,6 +50,7 @@ checklistRouter.get('/', async (req: Request, res: Response): Promise<void> => {
       sharesResult,
       capiResult,
       auditsResult,
+      channelSessionsResult,
     ] = await Promise.all([
       // 2. Has the user configured consent?
       supabaseAdmin
@@ -90,6 +92,13 @@ checklistRouter.get('/', async (req: Request, res: Response): Promise<void> => {
         .eq('user_id', userId)
         .eq('status', 'completed')
         .order('created_at', { ascending: false })
+        .limit(1),
+
+      // 7. Has the user ingested any channel sessions?
+      supabaseAdmin
+        .from('channel_sessions')
+        .select('id')
+        .eq('user_id', userId)
         .limit(1),
     ]);
 
@@ -138,6 +147,9 @@ checklistRouter.get('/', async (req: Request, res: Response): Promise<void> => {
         complete: latestAudit !== null,
         last_audit_id: latestAudit?.id ?? null,
         last_audit_date: latestAudit?.created_at ?? null,
+      },
+      channel_tracking_enabled: {
+        complete: (channelSessionsResult.data?.length ?? 0) > 0,
       },
     };
 
