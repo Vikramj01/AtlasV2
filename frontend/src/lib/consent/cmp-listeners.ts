@@ -4,22 +4,20 @@
  * Translates each CMP's consent change events into Atlas ConsentDecisions.
  * Runs in the browser (WalkerOS integration layer).
  *
- * All listeners:
- *   - Are defensive: never throw if the CMP window object is absent
- *   - Return a cleanup function that removes all attached event listeners
- *   - Never log PII
+ * Each listener returns a cleanup function that removes all registered event
+ * listeners. Never throws if window CMP globals are undefined.
  */
 
-import type { ConsentDecisions, ConsentMode, ConsentCategory, ConsentState } from '@/types/consent';
+import type { ConsentCategory, ConsentDecisions, ConsentMode, ConsentState } from '@/types/consent';
 
-// ── Public interface ───────────────────────────────────────────────────────────
+// ── Callback interface ─────────────────────────────────────────────────────────
 
 export interface CMPListenerCallbacks {
   onConsentChange: (decisions: ConsentDecisions, source: ConsentMode) => void;
   onReady?: () => void;
 }
 
-// ── Internal helpers ───────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 const ALL_CATEGORIES: ConsentCategory[] = ['analytics', 'marketing', 'personalisation', 'functional'];
 
@@ -33,24 +31,31 @@ function buildDeniedDecisions(): ConsentDecisions {
 }
 
 /**
- * Given a set of active (granted) CMP-specific category IDs and a user-configured
- * category_mapping, produce an Atlas ConsentDecisions object.
- * Categories not found in activeIds are set to 'denied'.
- * Categories without a mapping entry are ignored (not present in output).
+ * Given a set of granted Atlas category keys and all available categories,
+ * returns a full ConsentDecisions map (denied for anything not in granted set).
  */
-function mapActiveIdsToDecisions(
-  activeIds: Set<string>,
-  categoryMapping: Record<string, ConsentCategory>,
+function buildDecisions(
+  grantedCategories: Set<ConsentCategory>,
+  alwaysGranted: ConsentCategory[] = [],
 ): ConsentDecisions {
   const decisions = buildDeniedDecisions();
-
-  for (const [cmpId, atlasCategory] of Object.entries(categoryMapping)) {
-    if (activeIds.has(cmpId)) {
-      decisions[atlasCategory] = 'granted';
+  for (const cat of ALL_CATEGORIES) {
+    if (grantedCategories.has(cat) || alwaysGranted.includes(cat)) {
+      decisions[cat] = 'granted';
     }
   }
-
   return decisions;
+}
+
+/**
+ * Maps an arbitrary CMP key to an Atlas ConsentCategory via category_mapping.
+ * Returns null if no mapping is found.
+ */
+function mapToAtlasCategory(
+  cmpKey: string,
+  categoryMapping: Record<string, ConsentCategory>,
+): ConsentCategory | null {
+  return categoryMapping[cmpKey] ?? null;
 }
 
 // ── OneTrust ──────────────────────────────────────────────────────────────────
@@ -60,112 +65,105 @@ interface OneTrustWindow {
     GetDomainData?: () => {
       Groups?: Array<{ CustomGroupId: string; Status: string }>;
     };
-    IsAlertBoxClosed?: () => boolean;
   };
-  OnetrustActiveGroups?: string;
 }
 
 /**
- * Extract the set of active (consented) OneTrust group IDs.
- * OneTrust populates `window.OnetrustActiveGroups` as a comma-separated list,
- * e.g. ",C0001,C0002,". We also fall back to GetDomainData().Groups.
+ * Parses OneTrust active group IDs and maps them to Atlas categories.
+ * OneTrust uses group IDs like "C0002", "C0003", "C0004".
+ * C0001 (Strictly Necessary) is always active.
  */
-function getOneTrustActiveGroups(win: OneTrustWindow): Set<string> {
-  const active = new Set<string>();
-
-  // Primary: OnetrustActiveGroups string (always up-to-date after user interaction)
-  if (typeof win.OnetrustActiveGroups === 'string') {
-    win.OnetrustActiveGroups.split(',').forEach((id) => {
-      const trimmed = id.trim();
-      if (trimmed) active.add(trimmed);
-    });
-    return active;
-  }
-
-  // Fallback: GetDomainData API
-  try {
-    const groups = win.OneTrust?.GetDomainData?.()?.Groups ?? [];
-    for (const group of groups) {
-      if (group.Status === 'always active' || group.Status === '1') {
-        active.add(group.CustomGroupId);
-      }
+function parseOneTrustGroups(
+  activeGroupIds: string[],
+  categoryMapping: Record<string, ConsentCategory>,
+): ConsentDecisions {
+  const granted = new Set<ConsentCategory>();
+  for (const groupId of activeGroupIds) {
+    const atlasCategory = mapToAtlasCategory(groupId, categoryMapping);
+    if (atlasCategory) {
+      granted.add(atlasCategory);
     }
-  } catch {
-    // Defensive — GetDomainData may not be available yet
   }
-
-  return active;
+  return buildDecisions(granted, ['functional']);
 }
 
 /**
- * OneTrust listener.
- *
- * Listens for:
- *   - `OneTrustGroupsUpdated` (fires when user saves preferences — preferred)
- *   - `consent.onetrust` (legacy / custom event some deployments use)
- *
- * The event payload for OneTrustGroupsUpdated is an array of active group IDs.
- * We map those through the user's category_mapping to produce ConsentDecisions.
+ * Reads current OneTrust consent from GetDomainData API.
  */
+function readOneTrustCurrent(
+  categoryMapping: Record<string, ConsentCategory>,
+): ConsentDecisions | null {
+  try {
+    const w = window as OneTrustWindow;
+    const domainData = w.OneTrust?.GetDomainData?.();
+    if (!domainData?.Groups) return null;
+
+    const activeIds = domainData.Groups
+      .filter((g) => g.Status === 'always' || g.Status === 'active')
+      .map((g) => g.CustomGroupId);
+
+    return parseOneTrustGroups(activeIds, categoryMapping);
+  } catch {
+    return null;
+  }
+}
+
 export function startOneTrustListener(
   callbacks: CMPListenerCallbacks,
   categoryMapping: Record<string, ConsentCategory> = {},
 ): () => void {
-  if (typeof window === 'undefined') return () => undefined;
+  const handlers: Array<{ event: string; fn: EventListener }> = [];
 
-  const win = window as Window & OneTrustWindow;
+  function register(event: string, fn: EventListener) {
+    window.addEventListener(event, fn);
+    handlers.push({ event, fn });
+  }
 
-  function handleGroupsUpdated(event: Event): void {
-    try {
-      const customEvent = event as CustomEvent<string[]>;
-      const activeIds = new Set<string>(
-        Array.isArray(customEvent.detail) ? customEvent.detail : [],
-      );
-
-      // If detail is missing/empty, fall back to reading window.OnetrustActiveGroups
-      if (activeIds.size === 0) {
-        getOneTrustActiveGroups(win).forEach((id) => activeIds.add(id));
-      }
-
-      const decisions = mapActiveIdsToDecisions(activeIds, categoryMapping);
-      callbacks.onConsentChange(decisions, 'onetrust');
-    } catch {
-      // Defensive — never throw from event handler
+  function cleanup() {
+    for (const { event, fn } of handlers) {
+      window.removeEventListener(event, fn);
     }
   }
 
-  function handleLegacyConsentEvent(): void {
+  // OneTrust newer API: fires with array of active group IDs
+  const onGroupsUpdated: EventListener = (e) => {
     try {
-      const activeIds = getOneTrustActiveGroups(win);
-      const decisions = mapActiveIdsToDecisions(activeIds, categoryMapping);
+      const detail = (e as CustomEvent<string[]>).detail;
+      const activeIds = Array.isArray(detail) ? detail : [];
+      const decisions = parseOneTrustGroups(activeIds, categoryMapping);
       callbacks.onConsentChange(decisions, 'onetrust');
     } catch {
-      // Defensive
+      // defensive — never throw
     }
-  }
+  };
 
-  window.addEventListener('OneTrustGroupsUpdated', handleGroupsUpdated);
-  window.addEventListener('consent.onetrust', handleLegacyConsentEvent);
-
-  // Fire onReady if OneTrust is already initialised
-  if (win.OneTrust) {
+  // OneTrust legacy API
+  const onConsentChanged: EventListener = () => {
     try {
-      callbacks.onReady?.();
-      // Emit current state on init if user already consented
-      const activeIds = getOneTrustActiveGroups(win);
-      if (activeIds.size > 0) {
-        const decisions = mapActiveIdsToDecisions(activeIds, categoryMapping);
+      const decisions = readOneTrustCurrent(categoryMapping);
+      if (decisions) {
         callbacks.onConsentChange(decisions, 'onetrust');
       }
     } catch {
-      // Defensive
+      // defensive
     }
+  };
+
+  register('OneTrustGroupsUpdated', onGroupsUpdated);
+  register('consent.onetrust', onConsentChanged);
+
+  // Read initial state if OneTrust is already loaded
+  try {
+    const initial = readOneTrustCurrent(categoryMapping);
+    if (initial) {
+      callbacks.onConsentChange(initial, 'onetrust');
+      callbacks.onReady?.();
+    }
+  } catch {
+    // defensive
   }
 
-  return () => {
-    window.removeEventListener('OneTrustGroupsUpdated', handleGroupsUpdated);
-    window.removeEventListener('consent.onetrust', handleLegacyConsentEvent);
-  };
+  return cleanup;
 }
 
 // ── Cookiebot ─────────────────────────────────────────────────────────────────
@@ -179,217 +177,250 @@ interface CookiebotConsent {
 
 interface CookiebotWindow {
   Cookiebot?: {
-    consent?: CookiebotConsent;
-    hasResponse?: boolean;
+    consent: CookiebotConsent;
   };
 }
 
 /**
- * Map Cookiebot's fixed consent categories to Atlas ConsentDecisions.
- * Cookiebot mapping is deterministic — no user-configured mapping needed:
- *   necessary   → functional  (always granted)
+ * Cookiebot has a fixed category structure — map directly to Atlas categories.
+ * The category_mapping from CMPConfig can override, but sensible defaults apply:
+ *   statistics → analytics
+ *   marketing  → marketing
  *   preferences → personalisation
- *   statistics  → analytics
- *   marketing   → marketing
+ *   necessary  → functional (always granted)
  */
-function mapCookiebotConsent(consent: CookiebotConsent): ConsentDecisions {
-  return {
-    functional: consent.necessary ? 'granted' : 'denied',
-    personalisation: consent.preferences ? 'granted' : 'denied',
-    analytics: consent.statistics ? 'granted' : 'denied',
-    marketing: consent.marketing ? 'granted' : 'denied',
-  };
+const COOKIEBOT_DEFAULT_MAPPING: Record<string, ConsentCategory> = {
+  statistics: 'analytics',
+  marketing: 'marketing',
+  preferences: 'personalisation',
+  necessary: 'functional',
+};
+
+function readCookiebotConsent(
+  categoryMapping: Record<string, ConsentCategory>,
+): ConsentDecisions | null {
+  try {
+    const w = window as CookiebotWindow;
+    const consent = w.Cookiebot?.consent;
+    if (!consent) return null;
+
+    const effectiveMapping = { ...COOKIEBOT_DEFAULT_MAPPING, ...categoryMapping };
+    const granted = new Set<ConsentCategory>();
+
+    const consentMap: Record<string, boolean> = {
+      necessary: consent.necessary,
+      preferences: consent.preferences,
+      statistics: consent.statistics,
+      marketing: consent.marketing,
+    };
+
+    for (const [cbKey, isGranted] of Object.entries(consentMap)) {
+      if (isGranted) {
+        const atlasCategory = mapToAtlasCategory(cbKey, effectiveMapping);
+        if (atlasCategory) {
+          granted.add(atlasCategory);
+        }
+      }
+    }
+
+    return buildDecisions(granted, ['functional']);
+  } catch {
+    return null;
+  }
 }
 
-/**
- * Cookiebot listener.
- *
- * Listens for:
- *   - `CookiebotOnConsentReady` (fires on page load if consent already recorded)
- *   - `CookiebotOnAccept`       (user clicks Accept)
- *   - `CookiebotOnDecline`      (user clicks Decline)
- *   - `CookiebotOnDialogDisplay` (banner shown — signals CMP is ready)
- *
- * Consent state is always read from `window.Cookiebot.consent` at event time.
- */
-export function startCookiebotListener(callbacks: CMPListenerCallbacks): () => void {
-  if (typeof window === 'undefined') return () => undefined;
+export function startCookiebotListener(
+  callbacks: CMPListenerCallbacks,
+  categoryMapping: Record<string, ConsentCategory> = {},
+): () => void {
+  const handlers: Array<{ event: string; fn: EventListener }> = [];
 
-  const win = window as Window & CookiebotWindow;
+  function register(event: string, fn: EventListener) {
+    window.addEventListener(event, fn);
+    handlers.push({ event, fn });
+  }
 
-  function readAndEmit(): void {
-    try {
-      const consent = win.Cookiebot?.consent;
-      if (!consent) return;
-      const decisions = mapCookiebotConsent(consent);
-      callbacks.onConsentChange(decisions, 'cookiebot');
-    } catch {
-      // Defensive
+  function cleanup() {
+    for (const { event, fn } of handlers) {
+      window.removeEventListener(event, fn);
     }
   }
 
-  function handleDialogDisplay(): void {
+  function emitCurrentConsent() {
+    try {
+      const decisions = readCookiebotConsent(categoryMapping);
+      if (decisions) {
+        callbacks.onConsentChange(decisions, 'cookiebot');
+      }
+    } catch {
+      // defensive
+    }
+  }
+
+  const onReady: EventListener = () => {
     try {
       callbacks.onReady?.();
+      emitCurrentConsent();
     } catch {
-      // Defensive
+      // defensive
     }
-  }
-
-  window.addEventListener('CookiebotOnConsentReady', readAndEmit);
-  window.addEventListener('CookiebotOnAccept', readAndEmit);
-  window.addEventListener('CookiebotOnDecline', readAndEmit);
-  window.addEventListener('CookiebotOnDialogDisplay', handleDialogDisplay);
-
-  // If Cookiebot is already loaded and has a response, emit current state immediately
-  if (win.Cookiebot?.hasResponse) {
-    readAndEmit();
-    callbacks.onReady?.();
-  }
-
-  return () => {
-    window.removeEventListener('CookiebotOnConsentReady', readAndEmit);
-    window.removeEventListener('CookiebotOnAccept', readAndEmit);
-    window.removeEventListener('CookiebotOnDecline', readAndEmit);
-    window.removeEventListener('CookiebotOnDialogDisplay', handleDialogDisplay);
   };
+
+  const onChange: EventListener = () => {
+    emitCurrentConsent();
+  };
+
+  register('CookiebotOnDialogDisplay', onReady);
+  register('CookiebotOnConsentReady', onChange);
+  register('CookiebotOnAccept', onChange);
+  register('CookiebotOnDecline', onChange);
+
+  // Read initial state if Cookiebot is already loaded
+  try {
+    const initial = readCookiebotConsent(categoryMapping);
+    if (initial) {
+      callbacks.onConsentChange(initial, 'cookiebot');
+    }
+  } catch {
+    // defensive
+  }
+
+  return cleanup;
 }
 
 // ── Usercentrics ──────────────────────────────────────────────────────────────
 
 interface UCService {
-  id?: string;
+  consent?: { status: boolean };
   templateId?: string;
   name?: string;
-  consent?: {
-    status: boolean;
-  };
 }
 
 interface UCWindow {
   UC_UI?: {
     getServicesBaseInfo?: () => UCService[];
-    isInitialized?: () => boolean;
   };
 }
 
 type UCEventDetail =
   | { type: 'CONSENT_ACCEPTED' }
   | { type: 'CONSENT_DENIED' }
-  | { type: 'UI_INITIALIZED' }
-  | { type: string };
+  | { type: 'UI_INITIALIZED' };
 
 /**
- * Build ConsentDecisions from Usercentrics service list.
+ * Reads current Usercentrics consent via UC_UI.getServicesBaseInfo().
  * Maps service templateId or name to Atlas categories via category_mapping.
- * Any Atlas category with at least one granted service is set to 'granted'.
  */
-function mapUCServices(
-  services: UCService[],
+function readUsercentricsConsent(
   categoryMapping: Record<string, ConsentCategory>,
-): ConsentDecisions {
-  const decisions = buildDeniedDecisions();
+): ConsentDecisions | null {
+  try {
+    const w = window as UCWindow;
+    const services = w.UC_UI?.getServicesBaseInfo?.();
+    if (!services || !Array.isArray(services)) return null;
 
-  for (const service of services) {
-    const isGranted = service.consent?.status === true;
-    if (!isGranted) continue;
+    const granted = new Set<ConsentCategory>();
 
-    // Try to match by templateId first, then name
-    const keys = [service.templateId, service.name].filter(Boolean) as string[];
-    for (const key of keys) {
-      const atlasCategory = categoryMapping[key];
-      if (atlasCategory) {
-        decisions[atlasCategory] = 'granted';
+    for (const service of services) {
+      if (!service.consent?.status) continue;
+
+      // Try templateId first, then name
+      const keys: string[] = [];
+      if (service.templateId) keys.push(service.templateId);
+      if (service.name) keys.push(service.name);
+
+      for (const key of keys) {
+        const atlasCategory = mapToAtlasCategory(key, categoryMapping);
+        if (atlasCategory) {
+          granted.add(atlasCategory);
+          break;
+        }
       }
     }
-  }
 
-  return decisions;
+    return buildDecisions(granted);
+  } catch {
+    return null;
+  }
 }
 
-/**
- * Usercentrics listener.
- *
- * Listens for:
- *   - `UC_UI_INITIALIZED`  (UC UI is ready — call getServicesBaseInfo)
- *   - `ucEvent`            (custom event with detail.type indicating consent change)
- *
- * `window.UC_UI.getServicesBaseInfo()` returns service objects with consent.status.
- * We map service templateId / name to Atlas categories via the user's category_mapping.
- */
 export function startUsercentricsListener(
   callbacks: CMPListenerCallbacks,
   categoryMapping: Record<string, ConsentCategory> = {},
 ): () => void {
-  if (typeof window === 'undefined') return () => undefined;
+  const handlers: Array<{ event: string; fn: EventListener }> = [];
 
-  const win = window as Window & UCWindow;
+  function register(event: string, fn: EventListener) {
+    window.addEventListener(event, fn);
+    handlers.push({ event, fn });
+  }
 
-  function readAndEmit(): void {
-    try {
-      const services = win.UC_UI?.getServicesBaseInfo?.() ?? [];
-      const decisions = mapUCServices(services, categoryMapping);
-      callbacks.onConsentChange(decisions, 'usercentrics');
-    } catch {
-      // Defensive — UC_UI may not be ready yet
+  function cleanup() {
+    for (const { event, fn } of handlers) {
+      window.removeEventListener(event, fn);
     }
   }
 
-  function handleUCEvent(event: Event): void {
+  function emitCurrentConsent() {
     try {
-      const detail = (event as CustomEvent<UCEventDetail>).detail;
-      if (!detail) return;
-
-      if (
-        detail.type === 'CONSENT_ACCEPTED' ||
-        detail.type === 'CONSENT_DENIED' ||
-        detail.type === 'UI_INITIALIZED'
-      ) {
-        if (detail.type === 'UI_INITIALIZED') {
-          callbacks.onReady?.();
-        }
-        readAndEmit();
+      const decisions = readUsercentricsConsent(categoryMapping);
+      if (decisions) {
+        callbacks.onConsentChange(decisions, 'usercentrics');
       }
     } catch {
-      // Defensive
+      // defensive
     }
   }
 
-  function handleUCInitialized(): void {
+  const onUCEvent: EventListener = (e) => {
+    try {
+      const detail = (e as CustomEvent<UCEventDetail>).detail;
+      if (!detail?.type) return;
+
+      if (detail.type === 'UI_INITIALIZED') {
+        callbacks.onReady?.();
+        emitCurrentConsent();
+      } else if (detail.type === 'CONSENT_ACCEPTED' || detail.type === 'CONSENT_DENIED') {
+        emitCurrentConsent();
+      }
+    } catch {
+      // defensive
+    }
+  };
+
+  const onUIInitialized: EventListener = () => {
     try {
       callbacks.onReady?.();
-      readAndEmit();
+      emitCurrentConsent();
     } catch {
-      // Defensive
+      // defensive
     }
-  }
-
-  window.addEventListener('ucEvent', handleUCEvent);
-  window.addEventListener('UC_UI_INITIALIZED', handleUCInitialized);
-
-  // If Usercentrics is already initialised, emit current state immediately
-  if (win.UC_UI?.isInitialized?.()) {
-    readAndEmit();
-    callbacks.onReady?.();
-  }
-
-  return () => {
-    window.removeEventListener('ucEvent', handleUCEvent);
-    window.removeEventListener('UC_UI_INITIALIZED', handleUCInitialized);
   };
+
+  register('ucEvent', onUCEvent);
+  register('UC_UI_INITIALIZED', onUIInitialized);
+
+  // Read initial state if UC_UI is already loaded
+  try {
+    const initial = readUsercentricsConsent(categoryMapping);
+    if (initial) {
+      callbacks.onConsentChange(initial, 'usercentrics');
+    }
+  } catch {
+    // defensive
+  }
+
+  return cleanup;
 }
 
 // ── Dispatcher ────────────────────────────────────────────────────────────────
 
 /**
  * Start the appropriate CMP listener for the given mode.
- * 'builtin' mode has no external CMP — returns a no-op cleanup.
+ * For 'builtin', does nothing and returns a no-op cleanup.
  *
- * @param mode            The active ConsentMode from ConsentConfig
- * @param callbacks       Callbacks to invoke on consent changes
- * @param categoryMapping User-configured CMP category → Atlas category mapping
- *                        (from CMPConfig.category_mapping). Not needed for Cookiebot.
- * @returns Cleanup function — call to remove all event listeners
+ * The categoryMapping from CMPConfig is forwarded to the listener so CMP
+ * category IDs are translated into Atlas categories per user configuration.
  */
 export function startCMPListener(
   mode: ConsentMode,
@@ -400,38 +431,17 @@ export function startCMPListener(
     case 'onetrust':
       return startOneTrustListener(callbacks, categoryMapping);
     case 'cookiebot':
-      return startCookiebotListener(callbacks);
+      return startCookiebotListener(callbacks, categoryMapping);
     case 'usercentrics':
       return startUsercentricsListener(callbacks, categoryMapping);
+    case 'builtin':
     default:
-      // 'builtin' — Atlas manages consent internally; no external CMP listener needed
       return () => undefined;
   }
 }
 
-// ── Detection helpers (used by CMPIntegration UI) ─────────────────────────────
+// ── Type guards (exported for consumers) ──────────────────────────────────────
 
-/**
- * Check whether the CMP for a given mode is currently loaded on the page.
- * Returns true only if the CMP's global object is detected.
- */
-export function detectCMPOnPage(mode: ConsentMode): boolean {
-  if (typeof window === 'undefined') return false;
-  try {
-    switch (mode) {
-      case 'onetrust':
-        return Boolean((window as Window & OneTrustWindow).OneTrust);
-      case 'cookiebot':
-        return Boolean((window as Window & CookiebotWindow).Cookiebot);
-      case 'usercentrics':
-        return Boolean((window as Window & UCWindow).UC_UI);
-      default:
-        return false;
-    }
-  } catch {
-    return false;
-  }
+export function isGranted(state: ConsentState): boolean {
+  return state === 'granted';
 }
-
-// Re-export for convenience
-export type { ConsentDecisions, ConsentMode, ConsentCategory, ConsentState };

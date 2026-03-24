@@ -14,6 +14,7 @@ import { supabase } from '@/lib/supabase';
 import { consentApi } from '@/lib/api/consentApi';
 import { useConsentStore } from '@/store/consentStore';
 import { generateBannerSnippet } from '@/lib/consent/banner-generator';
+import { CMPIntegration } from '@/components/consent/CMPIntegration';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
@@ -24,6 +25,7 @@ import type {
   BannerConfig,
   BannerPosition,
   ConsentCategoryConfig,
+  CMPConfig,
 } from '@/types/consent';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
@@ -56,6 +58,7 @@ export function ConsentSettings() {
     config, configLoading, configError,
     activeTab, setActiveTab,
     setConfig, setConfigLoading, setConfigError,
+    cmpConfig, setCmpConfig, cmpMode, setCmpMode,
   } = useConsentStore();
 
   const [orgId, setOrgId] = useState<string>('');
@@ -109,6 +112,8 @@ export function ConsentSettings() {
     setGcmEnabled(cfg.gcm_enabled);
     setBanner(cfg.banner_config ?? DEFAULT_BANNER);
     setCategories(cfg.categories);
+    setCmpMode(cfg.mode);
+    setCmpConfig(cfg.cmp_config);
   }
 
   // ── Save ────────────────────────────────────────────────────────────────────
@@ -132,6 +137,33 @@ export function ConsentSettings() {
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err) {
       setConfigError(err instanceof Error ? err.message : 'Failed to save');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // ── CMP save ─────────────────────────────────────────────────────────────────
+
+  async function handleCMPSave(newMode: ConsentMode, newCmpConfig: CMPConfig) {
+    setSaving(true);
+    setSaveSuccess(false);
+    setConfigError(null);
+
+    try {
+      const updated = await consentApi.saveConfig(resolvedProjectId, orgId, {
+        mode: newMode,
+        regulation,
+        gcm_enabled: gcmEnabled,
+        banner_config: banner,
+        categories,
+        cmp_config: newCmpConfig,
+      });
+      applyConfig(updated);
+      setConfig(updated);
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } catch (err) {
+      setConfigError(err instanceof Error ? err.message : 'Failed to save CMP configuration');
     } finally {
       setSaving(false);
     }
@@ -190,7 +222,7 @@ export function ConsentSettings() {
     <div className="space-y-6">
       {/* Tab bar */}
       <div className="flex gap-1 border-b">
-        {(['settings', 'banner', 'analytics'] as const).map((tab) => (
+        {(['settings', 'banner', 'integrations', 'analytics'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -415,6 +447,17 @@ export function ConsentSettings() {
             </CardContent>
           </Card>
         </div>
+      )}
+
+      {/* ── Integrations tab ───────────────────────────────────────────────── */}
+      {activeTab === 'integrations' && (
+        <CMPIntegration
+          projectId={resolvedProjectId}
+          currentMode={cmpMode}
+          currentCmpConfig={cmpConfig}
+          onSave={handleCMPSave}
+          saving={saving}
+        />
       )}
 
       {/* ── Analytics tab (Sprint 4 placeholder) ─────────────────────────── */}

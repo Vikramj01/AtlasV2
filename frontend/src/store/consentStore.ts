@@ -13,6 +13,8 @@ import type {
   ConsentDecisions,
   GCMState,
   ConsentAnalyticsResponse,
+  CMPConfig,
+  ConsentMode,
 } from '@/types/consent';
 
 interface ConsentStore {
@@ -23,6 +25,12 @@ interface ConsentStore {
   setConfig: (config: ConsentConfig) => void;
   setConfigLoading: (loading: boolean) => void;
   setConfigError: (error: string | null) => void;
+
+  // ── CMP config ────────────────────────────────────────────────────────────
+  cmpConfig: CMPConfig | null;
+  setCmpConfig: (cmpConfig: CMPConfig | null) => void;
+  cmpMode: ConsentMode;
+  setCmpMode: (mode: ConsentMode) => void;
 
   // ── Visitor consent state ─────────────────────────────────────────────────
   decisions: ConsentDecisions | null;
@@ -38,8 +46,8 @@ interface ConsentStore {
   setAnalyticsLoading: (loading: boolean) => void;
 
   // ── UI state ──────────────────────────────────────────────────────────────
-  activeTab: 'settings' | 'banner' | 'analytics';
-  setActiveTab: (tab: 'settings' | 'banner' | 'analytics') => void;
+  activeTab: 'settings' | 'banner' | 'integrations' | 'analytics';
+  setActiveTab: (tab: 'settings' | 'banner' | 'integrations' | 'analytics') => void;
 
   // ── Reset ─────────────────────────────────────────────────────────────────
   reset: () => void;
@@ -49,6 +57,8 @@ const initialState = {
   config: null,
   configLoading: false,
   configError: null,
+  cmpConfig: null,
+  cmpMode: 'builtin' as ConsentMode,
   decisions: null,
   gcmState: null,
   hasPriorConsent: false,
@@ -63,6 +73,9 @@ export const useConsentStore = create<ConsentStore>((set) => ({
   setConfig: (config) => set({ config, configError: null }),
   setConfigLoading: (configLoading) => set({ configLoading }),
   setConfigError: (configError) => set({ configError }),
+
+  setCmpConfig: (cmpConfig) => set({ cmpConfig }),
+  setCmpMode: (cmpMode) => set({ cmpMode }),
 
   setDecisions: (decisions, gcmState) => set({ decisions, gcmState }),
   setHasPriorConsent: (hasPriorConsent) => set({ hasPriorConsent }),
