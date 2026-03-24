@@ -1,8 +1,8 @@
 /**
  * CAPI SetupWizard — Step 4: Test & Verify
  *
- * Builds a sample Atlas event, shows the formatted Meta payload, and allows
- * the user to fire a test event to Meta via the backend.
+ * Builds a sample Atlas event, shows the formatted payload, and allows
+ * the user to fire a test event to the configured provider via the backend.
  */
 
 import { useState, useEffect } from 'react';
@@ -13,8 +13,9 @@ import { useCAPIStore } from '@/store/capiStore';
 import { capiApi } from '@/lib/api/capiApi';
 import { buildAtlasEvent } from '@/lib/capi/pipeline';
 import { formatMetaPayload } from '@/lib/capi/adapters/meta';
+import { formatGooglePayload } from '@/lib/capi/adapters/google';
 import { hashUserData } from '@/lib/capi/hash-pii';
-import type { AtlasEvent, HashedIdentifier, EventMapping } from '@/types/capi';
+import type { AtlasEvent, HashedIdentifier, EventMapping, GoogleCredentials } from '@/types/capi';
 
 interface TestVerifyProps {
   onNext: () => void;
@@ -36,6 +37,8 @@ export function TestVerify({ onNext, onBack }: TestVerifyProps) {
     setWizardError,
     setWizardSaving,
   } = useCAPIStore();
+
+  const isGoogle = wizardDraft.provider === 'google';
 
   const [previewPayload, setPreviewPayload] = useState<unknown>(null);
   const [testStatus, setTestStatus] = useState<TestStatus>({ kind: 'idle' });
@@ -65,9 +68,11 @@ export function TestVerify({ onNext, onBack }: TestVerifyProps) {
         const { event, identifiers } = await buildPreview();
         const mapping: EventMapping = firstMapping ?? {
           atlas_event: eventName,
-          provider_event: 'Purchase',
+          provider_event: isGoogle ? 'PURCHASE' : 'Purchase',
         };
-        const formatted = formatMetaPayload(event, mapping, identifiers);
+        const formatted = isGoogle
+          ? formatGooglePayload(event, mapping, identifiers, wizardDraft.credentials as GoogleCredentials)
+          : formatMetaPayload(event, mapping, identifiers);
         if (!cancelled) setPreviewPayload(formatted);
       } catch (err) {
         if (!cancelled) {
@@ -78,7 +83,7 @@ export function TestVerify({ onNext, onBack }: TestVerifyProps) {
     void init();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eventName]);
+  }, [eventName, isGoogle]);
 
   async function handleSendTest() {
     if (!wizardProviderId) return;
@@ -120,7 +125,8 @@ export function TestVerify({ onNext, onBack }: TestVerifyProps) {
         <CardContent className="space-y-3">
           <p className="text-sm text-muted-foreground">
             Shows how a sample <strong>{eventName}</strong> event will be formatted before it
-            reaches Meta. Sample PII is hashed using the same SHA-256 pipeline used in production.
+            reaches {isGoogle ? 'Google Ads' : 'Meta'}. Sample PII is hashed using the same
+            SHA-256 pipeline used in production.
           </p>
 
           {previewPayload ? (
@@ -147,10 +153,18 @@ export function TestVerify({ onNext, onBack }: TestVerifyProps) {
             </div>
           ) : (
             <>
-              <p className="text-sm text-muted-foreground">
-                Sends a single test event to Meta using your configured pixel. Check Events Manager
-                to confirm receipt.
-              </p>
+              {isGoogle ? (
+                <p className="text-sm text-muted-foreground">
+                  Validates payload structure via Google Ads API{' '}
+                  <code className="rounded bg-muted px-1 py-0.5 text-xs">validateOnly=true</code>{' '}
+                  mode. No data is recorded in Google Ads.
+                </p>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Sends a single test event to Meta using your configured pixel. Check Events Manager
+                  to confirm receipt.
+                </p>
+              )}
 
               <Button
                 onClick={handleSendTest}
@@ -158,6 +172,8 @@ export function TestVerify({ onNext, onBack }: TestVerifyProps) {
               >
                 {testStatus.kind === 'loading' || wizardSaving
                   ? 'Sending…'
+                  : isGoogle
+                  ? 'Send test event to Google Ads'
                   : 'Send test event to Meta'}
               </Button>
 
@@ -165,7 +181,7 @@ export function TestVerify({ onNext, onBack }: TestVerifyProps) {
                 <div className="rounded-md border border-green-300 bg-green-50 px-4 py-3 text-sm text-green-800 space-y-2">
                   <p className="font-medium">Test event delivered successfully.</p>
                   {testStatus.emqEstimate !== undefined && (
-                    <p>Meta reports EMQ: {testStatus.emqEstimate}/10</p>
+                    <p>{isGoogle ? 'Google' : 'Meta'} reports EMQ: {testStatus.emqEstimate}/10</p>
                   )}
                   <pre className="mt-1 overflow-x-auto rounded bg-green-100 p-2 text-xs">
                     {JSON.stringify(testStatus.providerResponse, null, 2)}

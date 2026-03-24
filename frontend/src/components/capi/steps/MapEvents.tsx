@@ -1,5 +1,5 @@
 /**
- * SetupWizard — Step 2: Map your events to Meta standard events
+ * SetupWizard — Step 2: Map your events to provider standard events
  * File: frontend/src/components/capi/steps/MapEvents.tsx
  */
 
@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useCAPIStore } from '@/store/capiStore';
 import { META_EVENT_SUGGESTIONS, META_STANDARD_EVENTS } from '@/lib/capi/adapters/meta';
+import { GOOGLE_EVENT_SUGGESTIONS, GOOGLE_STANDARD_EVENTS } from '@/lib/capi/adapters/google';
 import type { EventMapping } from '@/types/capi';
 
 interface MapEventsProps {
@@ -32,24 +33,28 @@ function makeKey(): string {
   return `row-${rowCounter}`;
 }
 
-function buildInitialRows(existing: EventMapping[]): MappingRow[] {
+function buildInitialRows(existing: EventMapping[], standardEvents: readonly string[]): MappingRow[] {
   if (!existing.length) return DEFAULT_ROWS;
   return existing.map((m, i) => ({
     ...m,
     key: `existing-${i}`,
-    isCustom: !(META_STANDARD_EVENTS as readonly string[]).includes(m.provider_event),
+    isCustom: !(standardEvents as readonly string[]).includes(m.provider_event),
   }));
 }
 
 export function MapEvents({ onNext, onBack }: MapEventsProps) {
   const { wizardDraft, setWizardDraft } = useCAPIStore();
 
+  const isGoogle = wizardDraft.provider === 'google';
+  const standardEvents: readonly string[] = isGoogle ? GOOGLE_STANDARD_EVENTS : META_STANDARD_EVENTS;
+  const eventSuggestions: Record<string, string> = isGoogle ? GOOGLE_EVENT_SUGGESTIONS : META_EVENT_SUGGESTIONS;
+
   const [rows, setRows] = useState<MappingRow[]>(() =>
-    buildInitialRows(wizardDraft.event_mapping),
+    buildInitialRows(wizardDraft.event_mapping, standardEvents),
   );
 
   const [newAtlas, setNewAtlas] = useState('');
-  const [newProvider, setNewProvider] = useState<string>(META_STANDARD_EVENTS[0]);
+  const [newProvider, setNewProvider] = useState<string>(standardEvents[0]);
   const [newCustomProvider, setNewCustomProvider] = useState('');
   const [newIsCustom, setNewIsCustom] = useState(false);
 
@@ -83,7 +88,7 @@ export function MapEvents({ onNext, onBack }: MapEventsProps) {
     ]);
 
     setNewAtlas('');
-    setNewProvider(META_STANDARD_EVENTS[0]);
+    setNewProvider(standardEvents[0]);
     setNewCustomProvider('');
     setNewIsCustom(false);
   }
@@ -105,14 +110,21 @@ export function MapEvents({ onNext, onBack }: MapEventsProps) {
     onNext();
   }
 
-  const suggestedKeys = Object.keys(META_EVENT_SUGGESTIONS);
+  const suggestedKeys = Object.keys(eventSuggestions);
+  const providerLabel = isGoogle ? 'Google Ads Conversion Type' : 'Meta Standard Event';
+  const cardTitle = isGoogle
+    ? 'Map your events to Google Ads conversion types'
+    : 'Map your events to Meta standard events';
+  const cardSubtitle = isGoogle
+    ? 'Step 2 of 5 — Tell Atlas which of your events maps to each Google Ads conversion type.'
+    : 'Step 2 of 5 — Tell Atlas which of your events maps to each Meta standard event.';
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Map your events to Meta standard events</CardTitle>
+        <CardTitle>{cardTitle}</CardTitle>
         <p className="text-sm text-muted-foreground mt-1">
-          Step 2 of 5 — Tell Atlas which of your events maps to each Meta standard event.
+          {cardSubtitle}
         </p>
       </CardHeader>
       <CardContent className="space-y-5">
@@ -125,7 +137,7 @@ export function MapEvents({ onNext, onBack }: MapEventsProps) {
                   Your Event (Atlas)
                 </th>
                 <th className="py-2 pr-4 text-left font-medium text-muted-foreground">
-                  Meta Standard Event
+                  {providerLabel}
                 </th>
                 <th className="py-2 text-left font-medium text-muted-foreground">Remove</th>
               </tr>
@@ -155,7 +167,7 @@ export function MapEvents({ onNext, onBack }: MapEventsProps) {
                         }}
                         className="rounded-md border border-input bg-background px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                       >
-                        {META_STANDARD_EVENTS.map((ev) => (
+                        {standardEvents.map((ev) => (
                           <option key={ev} value={ev}>
                             {ev}
                           </option>
@@ -215,7 +227,7 @@ export function MapEvents({ onNext, onBack }: MapEventsProps) {
             </div>
 
             <div className="flex-1 space-y-1">
-              <label className="text-xs text-muted-foreground">Meta Standard Event</label>
+              <label className="text-xs text-muted-foreground">{providerLabel}</label>
               <div className="flex gap-2">
                 <select
                   value={newIsCustom ? 'Custom…' : newProvider}
@@ -230,7 +242,7 @@ export function MapEvents({ onNext, onBack }: MapEventsProps) {
                   }}
                   className="rounded-md border border-input bg-background px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                 >
-                  {META_STANDARD_EVENTS.map((ev) => (
+                  {standardEvents.map((ev) => (
                     <option key={ev} value={ev}>
                       {ev}
                     </option>
