@@ -183,4 +183,14 @@ export class GoogleAdapter implements CAPIProviderAdapter {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-export { GOOGLE_EVENT_SUGGESTIONS as GOOGLE_STANDARD_EVENTS };
+// Deduplicated list of Google Ads conversion action types — used as dropdown
+// options in MapEvents.tsx. Must be readonly string[] to match META_STANDARD_EVENTS shape.
+export const GOOGLE_STANDARD_EVENTS = [
+  'PURCHASE',
+  'SUBMIT_LEAD_FORM',
+  'SIGNUP',
+  'SUBSCRIBE',
+  'ADD_TO_CART',
+  'BEGIN_CHECKOUT',
+  'PAGE_VIEW',
+] as const;
