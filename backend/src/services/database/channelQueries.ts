@@ -11,6 +11,7 @@ import type {
   ChannelJourneyMap,
   ChannelDiagnostic,
   ChannelType,
+  DiagnosticType,
   JourneyStep,
 } from '@/types/channel';
 
@@ -313,4 +314,83 @@ export async function resolveDiagnostic(
     .eq('is_resolved', false);
 
   return !error;
+}
+
+// ── Phase 2: event-level journey aggregation ──────────────────────────────────
+
+/**
+ * Returns session IDs + conversion status for a given channel + period.
+ */
+export async function getSessionsForChannel(
+  userId: string,
+  websiteUrl: string,
+  channel: ChannelType,
+  since: string,
+): Promise<Array<{ id: string; conversion_reached: boolean; landing_page: string }>> {
+  const { data, error } = await supabaseAdmin
+    .from('channel_sessions')
+    .select('id, conversion_reached, landing_page')
+    .eq('user_id', userId)
+    .eq('website_url', websiteUrl)
+    .eq('channel', channel)
+    .gte('started_at', since);
+
+  if (error) throw error;
+  return (data ?? []) as Array<{ id: string; conversion_reached: boolean; landing_page: string }>;
+}
+
+/**
+ * Returns all events for the given session IDs, ordered by session + seq.
+ */
+export async function getEventsForSessions(
+  sessionIds: string[],
+): Promise<
+  Array<{
+    session_id: string;
+    event_name: string;
+    event_category: string;
+    page_url: string | null;
+    signal_health_status: string | null;
+    seq: number;
+  }>
+> {
+  if (sessionIds.length === 0) return [];
+
+  const { data, error } = await supabaseAdmin
+    .from('channel_session_events')
+    .select('session_id, event_name, event_category, page_url, signal_health_status, seq')
+    .in('session_id', sessionIds)
+    .order('seq', { ascending: true });
+
+  if (error) throw error;
+  return (data ?? []) as typeof data extends null ? never[] : NonNullable<typeof data>;
+}
+
+// ── Phase 3: diagnostic deduplication ────────────────────────────────────────
+
+/**
+ * Returns the count of unresolved diagnostics of the given type + channel
+ * created in the last `days` days. Used to avoid re-inserting duplicate diagnostics.
+ */
+export async function getRecentDiagnosticCount(
+  userId: string,
+  websiteUrl: string,
+  channel: ChannelType,
+  diagnosticType: DiagnosticType,
+  days = 7,
+): Promise<number> {
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+  const { count, error } = await supabaseAdmin
+    .from('channel_diagnostics')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('website_url', websiteUrl)
+    .eq('channel', channel)
+    .eq('diagnostic_type', diagnosticType)
+    .eq('is_resolved', false)
+    .gte('created_at', since);
+
+  if (error) return 0;
+  return count ?? 0;
 }

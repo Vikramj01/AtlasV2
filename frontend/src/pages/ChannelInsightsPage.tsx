@@ -1,10 +1,10 @@
 /**
- * ChannelInsightsPage — Channel Signal Behaviour (Phase 1)
+ * ChannelInsightsPage — Channel Signal Behaviour
  *
  * Three tabs:
- *   Overview    — channel comparison table (live)
- *   Journeys    — side-by-side flow comparison (stub, Phase 2)
- *   Diagnostics — prioritised diagnostic list (stub, Phase 3)
+ *   Overview    — per-channel comparison table (sessions, conversion rate, SCS, health)
+ *   Journeys    — side-by-side funnel flow (Landing → Engagement → Micro-Conv → Conversion)
+ *   Diagnostics — prioritised signal gap, journey divergence, and engagement anomaly list
  */
 
 import { useEffect, useState, useCallback, useRef } from 'react';
