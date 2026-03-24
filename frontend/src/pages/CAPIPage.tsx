@@ -15,7 +15,7 @@ import { SetupWizard } from '@/components/capi/SetupWizard';
 import { CAPIMonitoringDashboard } from '@/components/capi/CAPIMonitoringDashboard';
 import { useCAPIStore } from '@/store/capiStore';
 import { capiApi } from '@/lib/api/capiApi';
-import type { CAPIProviderConfig } from '@/types/capi';
+import type { CAPIProvider, CAPIProviderConfig } from '@/types/capi';
 
 type View = 'list' | 'wizard' | 'dashboard';
 
@@ -25,8 +25,8 @@ export function CAPIPage() {
 
   const { openWizard, closeWizard, setProviders, selectProvider, providers } = useCAPIStore();
 
-  function handleAddProvider() {
-    openWizard('meta');
+  function handleAddProvider(provider: CAPIProvider) {
+    openWizard(provider);
     setView('wizard');
   }
 

@@ -179,7 +179,8 @@ capiRouter.post('/providers/:id/test', async (req: Request, res: Response): Prom
   try {
     const provider = await getProvider(req.params.id, req.user.id);
     if (!provider) { res.status(404).json({ error: 'PROVIDER_NOT_FOUND' }); return; }
-    if (!provider.test_event_code) {
+
+    if (provider.provider === 'meta' && !provider.test_event_code) {
       res.status(400).json({ error: 'VALIDATION_FAILED', message: 'test_event_code must be set before testing' });
       return;
     }
