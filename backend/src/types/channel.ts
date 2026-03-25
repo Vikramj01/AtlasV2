@@ -92,6 +92,7 @@ export interface ChannelDiagnostic {
   affected_pages: string[];
   estimated_impact: string | null;
   recommended_action: string | null;
+  is_resolved: boolean;
   created_at: string;
 }
 
