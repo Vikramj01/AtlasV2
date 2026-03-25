@@ -224,9 +224,9 @@ export function ChannelInsightsPage() {
                 Step 1
               </div>
               <p className="text-sm text-muted-foreground">
-                Go to your <span className="font-medium text-foreground">Project</span>, open the
-                {' '}<span className="font-medium text-foreground">Tags</span> tab, and copy your
-                Atlas tracking snippet.
+                Run a <span className="font-medium text-foreground">New Audit</span> or open{' '}
+                <span className="font-medium text-foreground">Plan Tracking</span> to generate
+                your Atlas tracking snippet for your website.
               </p>
             </div>
 
