@@ -9,8 +9,16 @@
 import type { Response } from 'express';
 import logger from './logger';
 
+function extractMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'object' && err !== null && 'message' in err) {
+    return String((err as Record<string, unknown>).message);
+  }
+  return String(err);
+}
+
 export function sendInternalError(res: Response, err: unknown, context?: string): void {
-  const message = err instanceof Error ? err.message : String(err);
+  const message = extractMessage(err);
   logger.error({ err: message, context }, 'Internal server error');
 
   const clientMessage =
