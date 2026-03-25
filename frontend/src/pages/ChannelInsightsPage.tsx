@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { RefreshCw, GitBranch, ChevronDown } from 'lucide-react';
+import { RefreshCw, GitBranch, ChevronDown, Code2, BarChart2, Zap } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { channelApi } from '@/lib/api/channelApi';
 import { ChannelOverviewTable } from '@/components/channels/ChannelOverviewTable';
@@ -202,15 +202,57 @@ export function ChannelInsightsPage() {
 
       {/* ── Empty state ───────────────────────────────────────────────────── */}
       {loadState === 'empty' ? (
-        <div className="flex flex-col items-center justify-center gap-4 rounded-xl border border-dashed py-16 text-center">
-          <GitBranch className="h-10 w-10 text-muted-foreground/30" />
-          <div>
-            <p className="text-base font-semibold">No channel data yet</p>
-            <p className="mt-1 text-sm text-muted-foreground max-w-sm mx-auto">
-              Send session data via{' '}
-              <code className="text-xs bg-muted px-1.5 py-0.5 rounded">POST /api/channels/ingest</code>{' '}
-              to start tracking channel signal behaviour.
-            </p>
+        <div className="rounded-xl border border-dashed py-14 px-6">
+          <div className="flex flex-col items-center text-center gap-3 mb-10">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+              <GitBranch className="h-6 w-6 text-muted-foreground" />
+            </div>
+            <div>
+              <p className="text-base font-semibold">No channel data yet</p>
+              <p className="mt-1 text-sm text-muted-foreground max-w-md mx-auto">
+                Channel Insights shows how each traffic source — Google Ads, Meta, organic search,
+                and more — performs in terms of signal quality, journey completion, and conversions.
+                To get started, add the Atlas tracking snippet to your website.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-2xl mx-auto">
+            <div className="flex flex-col gap-2 rounded-lg border bg-muted/30 p-4">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <Code2 className="h-4 w-4 text-muted-foreground shrink-0" />
+                Step 1
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Go to your <span className="font-medium text-foreground">Project</span>, open the
+                {' '}<span className="font-medium text-foreground">Tags</span> tab, and copy your
+                Atlas tracking snippet.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 rounded-lg border bg-muted/30 p-4">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <Zap className="h-4 w-4 text-muted-foreground shrink-0" />
+                Step 2
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Paste the snippet into your website's{' '}
+                <code className="text-xs bg-muted px-1 py-0.5 rounded">&lt;head&gt;</code> tag,
+                or deploy it via Google Tag Manager. Sessions will be captured automatically.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 rounded-lg border bg-muted/30 p-4">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <BarChart2 className="h-4 w-4 text-muted-foreground shrink-0" />
+                Step 3
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Once traffic starts flowing, click{' '}
+                <span className="font-medium text-foreground">Refresh</span> above to compute
+                channel journey maps and surface signal diagnostics.
+              </p>
+            </div>
           </div>
         </div>
       ) : (
