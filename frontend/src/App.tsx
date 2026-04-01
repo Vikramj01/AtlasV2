@@ -31,6 +31,7 @@ import HealthDashboardPage from '@/pages/HealthDashboardPage';
 import { ChannelInsightsPage } from '@/pages/ChannelInsightsPage';
 // Admin
 import { AdminPage } from '@/pages/AdminPage';
+import { ResetPasswordPage } from '@/pages/ResetPasswordPage';
 
 export default function App() {
   return (
@@ -38,6 +39,7 @@ export default function App() {
       <Routes>
         {/* Public */}
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
 
         {/* Protected — wrapped in AppLayout (sidebar + topbar) */}
         <Route element={<ProtectedRoute />}>
