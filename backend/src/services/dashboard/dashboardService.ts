@@ -40,49 +40,33 @@ function overallHealth(cards: DashboardCard[]): OverallHealth {
 }
 
 // ── CAPI metrics ──────────────────────────────────────────────────────────────
+// Use health_scores.capi_delivery_rate — already user-scoped and computed by
+// the health orchestrator from the user's own CAPI providers.
 
 async function getCAPIMetrics(
   userId: string,
 ): Promise<{ deliveryPct: number | null; avgEmq: number | null; dataAt: string | null }> {
-  // Get all active providers for this user's orgs
-  const { data: providers } = await supabase
-    .from('capi_providers')
-    .select('id, events_sent_total, events_failed_total, organization_id')
-    .eq('status', 'active');
+  const { data: healthScore } = await supabase
+    .from('health_scores')
+    .select('capi_delivery_rate, computed_at')
+    .eq('user_id', userId)
+    .maybeSingle();
 
-  if (!providers || providers.length === 0) {
+  if (!healthScore || healthScore.capi_delivery_rate == null) {
     return { deliveryPct: null, avgEmq: null, dataAt: null };
   }
 
-  // Aggregate across all providers
-  const totalSent = providers.reduce((sum, p) => sum + (p.events_sent_total ?? 0), 0);
-  const totalFailed = providers.reduce((sum, p) => sum + (p.events_failed_total ?? 0), 0);
+  const rate = healthScore.capi_delivery_rate as number;
+  // capi_delivery_rate of 0 means "no providers connected" — treat as null
+  if (rate === 0) {
+    return { deliveryPct: null, avgEmq: null, dataAt: null };
+  }
 
-  const deliveryPct =
-    totalSent > 0
-      ? Math.round(((totalSent - totalFailed) / totalSent) * 100)
-      : null;
-
-  // EMQ: query recent capi_events for avg match quality
-  // avg_emq is stored per-event when available; fall back to null if not populated
-  const since = new Date();
-  since.setDate(since.getDate() - 30);
-
-  const providerIds = providers.map((p) => p.id);
-  const { data: recentEvents } = await supabase
-    .from('capi_events')
-    .select('processed_at')
-    .in('provider_config_id', providerIds)
-    .gte('processed_at', since.toISOString())
-    .order('processed_at', { ascending: false })
-    .limit(1);
-
-  const dataAt =
-    recentEvents && recentEvents.length > 0
-      ? (recentEvents[0].processed_at as string)
-      : null;
-
-  return { deliveryPct, avgEmq: null, dataAt };
+  return {
+    deliveryPct: Math.round(rate),
+    avgEmq: null,
+    dataAt: healthScore.computed_at as string,
+  };
 }
 
 // ── Audit metrics ─────────────────────────────────────────────────────────────
@@ -107,7 +91,7 @@ async function getAuditMetrics(
     .from('health_scores')
     .select('overall_score, signal_health, computed_at')
     .eq('user_id', userId)
-    .single();
+    .maybeSingle();
 
   const score = healthScore ? (healthScore.overall_score as number) : null;
   const lastAuditAt = healthScore
@@ -140,7 +124,7 @@ async function getSignalCoverage(
     .from('health_scores')
     .select('signal_health, computed_at')
     .eq('user_id', userId)
-    .single();
+    .maybeSingle();
 
   if (!healthScore || healthScore.signal_health == null) {
     return { coveragePct: null, dataAt: null };
@@ -161,7 +145,7 @@ async function getConsentRate(
     .from('health_scores')
     .select('consent_coverage, computed_at')
     .eq('user_id', userId)
-    .single();
+    .maybeSingle();
 
   if (!healthScore || healthScore.consent_coverage == null) {
     return { consentPct: null, dataAt: null };
@@ -204,7 +188,7 @@ async function getImplementationProgress(
 
   const total = progress.length;
   const done = progress.filter(
-    (p) => p.status === 'done' || p.status === 'complete',
+    (p) => p.status === 'implemented' || p.status === 'verified',
   ).length;
 
   const progressPct = Math.round((done / total) * 100);

@@ -29,7 +29,7 @@ export function HomePage() {
   const isError = loadState === 'error';
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-10 space-y-8">
+    <div className="mx-auto max-w-3xl px-4 sm:px-6 py-8 sm:py-10 space-y-6 sm:space-y-8">
 
       {/* Header */}
       <div className="flex items-center justify-between">
