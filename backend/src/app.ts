@@ -36,7 +36,21 @@ app.use(cors({
   origin: (incoming, callback) => {
     // Allow requests with no origin (server-to-server, curl, etc.)
     if (!incoming) return callback(null, true);
-    if (env.ALLOWED_ORIGINS.includes(incoming)) return callback(null, true);
+
+    const allowed = env.ALLOWED_ORIGINS.some((pattern) => {
+      if (pattern === incoming) return true;
+      // Wildcard support: * in a pattern matches any characters.
+      // Example pattern: https://*-vikramj01s-projects.vercel.app
+      if (pattern.includes('*')) {
+        const regex = new RegExp(
+          '^' + pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$',
+        );
+        return regex.test(incoming);
+      }
+      return false;
+    });
+
+    if (allowed) return callback(null, true);
     callback(new Error(`CORS: origin not allowed: ${incoming}`));
   },
   credentials: true,
