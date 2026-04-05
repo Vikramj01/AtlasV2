@@ -160,3 +160,19 @@ export async function getAdminAlerts(limit = 100): Promise<AdminAlert[]> {
 export async function dismissAdminAlert(alertId: string): Promise<void> {
   await supabaseAdmin.from('health_alerts').update({ is_active: false }).eq('id', alertId);
 }
+
+/**
+ * Permanently deletes a user from Supabase Auth (and cascades to profile via FK).
+ * Also explicitly removes the profile row in case the FK is not set to CASCADE.
+ * Throws if the auth deletion fails.
+ */
+export async function deleteUser(userId: string): Promise<void> {
+  // Remove profile data first (best-effort — cascade may already handle this)
+  await supabaseAdmin.from('profiles').delete().eq('id', userId);
+
+  // Delete from Supabase Auth — this is the authoritative deletion
+  const { error } = await supabaseAdmin.auth.admin.deleteUser(userId);
+  if (error) {
+    throw new Error(`Failed to delete auth user: ${error.message}`);
+  }
+}

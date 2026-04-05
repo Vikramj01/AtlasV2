@@ -8,6 +8,7 @@ import {
   getActivityFeed,
   getAdminAlerts,
   dismissAdminAlert,
+  deleteUser,
 } from '@/services/database/adminQueries';
 import logger from '@/utils/logger';
 
@@ -78,6 +79,18 @@ router.get('/alerts', async (_req: Request, res: Response) => {
   } catch (err) {
     logger.error({ err }, 'Admin: failed to get alerts');
     res.status(500).json({ error: 'Failed to fetch alerts' });
+  }
+});
+
+// DELETE /api/admin/users/:id — permanently delete a user and all their data
+router.delete('/users/:id', async (req: Request, res: Response) => {
+  try {
+    await deleteUser(req.params.id);
+    logger.info({ userId: req.params.id }, 'Admin: user deleted');
+    res.json({ deleted: true });
+  } catch (err) {
+    logger.error({ err, userId: req.params.id }, 'Admin: failed to delete user');
+    res.status(500).json({ error: 'Failed to delete user' });
   }
 });
 
