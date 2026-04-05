@@ -4,10 +4,13 @@ import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { signalApi } from '@/lib/api/signalApi';
+import { healthApi } from '@/lib/api/healthApi';
 import { useSignalStore } from '@/store/signalStore';
 import { SignalCard } from '@/components/signals/SignalCard';
 import { SignalEditor } from '@/components/signals/SignalEditor';
 import { AddToPackModal } from '@/components/signals/AddToPackModal';
+import { MetricGuidance } from '@/components/shared/MetricGuidance';
+import { signalCoverageGuidance } from '@/lib/guidance/metricGuidance';
 import type { Signal } from '@/types/signal';
 
 const CATEGORY_ORDER = ['conversion', 'engagement', 'navigation', 'custom'];
@@ -20,6 +23,7 @@ export function SignalLibraryPage() {
   const [showEditor, setShowEditor] = useState(false);
   const [editingSignal, setEditingSignal] = useState<Signal | null>(null);
   const [addToPackSignal, setAddToPackSignal] = useState<Signal | null>(null);
+  const [signalHealthPct, setSignalHealthPct] = useState<number | null>(null);
 
   useEffect(() => {
     if (!orgId) return;
@@ -27,6 +31,12 @@ export function SignalLibraryPage() {
       .then(setSignals)
       .finally(() => setIsLoading(false));
   }, [orgId, setSignals]);
+
+  useEffect(() => {
+    healthApi.getDashboard()
+      .then((d) => setSignalHealthPct(d.score?.signal_health ?? null))
+      .catch(() => {});
+  }, []);
 
   const filtered = signals.filter(
     (s) =>
@@ -76,6 +86,11 @@ export function SignalLibraryPage() {
           </Button>
         </div>
       </div>
+
+      <MetricGuidance
+        result={signalCoverageGuidance(signalHealthPct)}
+        collapsible
+      />
 
       <Input
         placeholder="Search signals…"

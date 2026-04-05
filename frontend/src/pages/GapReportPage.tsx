@@ -8,6 +8,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import { MetricGuidance } from '@/components/shared/MetricGuidance';
+import { journeyGapGuidance } from '@/lib/guidance/metricGuidance';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -169,31 +171,37 @@ function ResultsSummaryBar({ allGaps }: { allGaps: Gap[] }) {
 
   if (allGaps.length === 0) {
     return (
-      <div className="flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-3 mb-6">
-        <span className="text-green-600 text-lg">✓</span>
-        <span className="text-sm font-semibold text-green-800">All signals healthy</span>
-        <span className="text-sm text-green-600 ml-1">— no tracking gaps detected across your funnel</span>
+      <div className="space-y-3 mb-6">
+        <div className="flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-3">
+          <span className="text-green-600 text-lg">✓</span>
+          <span className="text-sm font-semibold text-green-800">All signals healthy</span>
+          <span className="text-sm text-green-600 ml-1">— no tracking gaps detected across your funnel</span>
+        </div>
+        <MetricGuidance result={journeyGapGuidance(0, 0, 0)} />
       </div>
     );
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 mb-6">
-      <span className="text-sm font-semibold text-foreground">Issues found:</span>
-      {critical > 0 && (
-        <Badge className="bg-red-100 text-red-700 hover:bg-red-100">{critical} Critical</Badge>
-      )}
-      {high > 0 && (
-        <Badge className="bg-orange-100 text-orange-700 hover:bg-orange-100">{high} High</Badge>
-      )}
-      {medium > 0 && (
-        <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100">{medium} Medium</Badge>
-      )}
-      {critical > 0 && (
-        <span className="text-xs text-red-700 ml-auto">
-          Critical issues mean data is being lost right now
-        </span>
-      )}
+    <div className="space-y-3 mb-6">
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+        <span className="text-sm font-semibold text-foreground">Issues found:</span>
+        {critical > 0 && (
+          <Badge className="bg-red-100 text-red-700 hover:bg-red-100">{critical} Critical</Badge>
+        )}
+        {high > 0 && (
+          <Badge className="bg-orange-100 text-orange-700 hover:bg-orange-100">{high} High</Badge>
+        )}
+        {medium > 0 && (
+          <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100">{medium} Medium</Badge>
+        )}
+        {critical > 0 && (
+          <span className="text-xs text-red-700 ml-auto">
+            Critical issues mean data is being lost right now
+          </span>
+        )}
+      </div>
+      <MetricGuidance result={journeyGapGuidance(critical, high, allGaps.length)} collapsible />
     </div>
   );
 }
