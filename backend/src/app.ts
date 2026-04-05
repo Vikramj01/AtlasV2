@@ -17,6 +17,7 @@ import { readinessRouter } from '@/api/routes/readiness';
 import { schedulesRouter } from '@/api/routes/schedules';
 import { adminRouter } from '@/api/routes/admin';
 import { channelsRouter } from '@/api/routes/channels';
+import { dashboardRouter } from '@/api/routes/dashboard';
 import logger from '@/utils/logger';
 import { env } from '@/config/env';
 
@@ -95,6 +96,7 @@ app.use('/api/readiness-score', readinessRouter);
 app.use('/api/schedules', schedulesRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/channels', channelsRouter);
+app.use('/api/dashboard', dashboardRouter);
 
 // ─── 404 handler ─────────────────────────────────────────────────────────────
 
