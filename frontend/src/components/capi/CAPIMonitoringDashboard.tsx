@@ -15,6 +15,8 @@ import { useEffect } from 'react';
 import { capiApi } from '@/lib/api/capiApi';
 import { useCAPIStore } from '@/store/capiStore';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { MetricGuidance } from '@/components/shared/MetricGuidance';
+import { emqGuidance, capiDeliveryGuidance } from '@/lib/guidance/metricGuidance';
 import type { CAPIProviderConfig } from '@/types/capi';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -305,26 +307,35 @@ export function CAPIMonitoringDashboard({ provider, onBack }: CAPIMonitoringDash
 
           {/* EMQ score — Meta only */}
           {dashboard.avg_emq !== null && (
-            <div className="rounded-xl border border-brand-200 bg-brand-50 px-5 py-4 flex items-center justify-between">
-              <div>
-                <p className="text-sm font-semibold text-brand-800">Event Match Quality</p>
-                <p className="text-xs text-brand-700 mt-0.5">
-                  Higher scores mean Meta can match more conversions to the right ads.
-                  Improve by sending email, phone, and click IDs.
-                </p>
+            <div className="space-y-3">
+              <div className="rounded-xl border border-brand-200 bg-brand-50 px-5 py-4 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-brand-800">Event Match Quality</p>
+                  <p className="text-xs text-brand-700 mt-0.5">
+                    Higher scores mean Meta can match more conversions to the right ads.
+                    Improve by sending email, phone, and click IDs.
+                  </p>
+                </div>
+                <div className="text-right shrink-0 ml-6">
+                  <p className={`text-3xl font-bold tabular-nums ${
+                    dashboard.avg_emq >= 7 ? 'text-green-600' :
+                    dashboard.avg_emq >= 5 ? 'text-amber-600' :
+                    'text-red-600'
+                  }`}>
+                    {dashboard.avg_emq.toFixed(1)}
+                  </p>
+                  <p className="text-xs text-brand-600">/ 10</p>
+                </div>
               </div>
-              <div className="text-right shrink-0 ml-6">
-                <p className={`text-3xl font-bold tabular-nums ${
-                  dashboard.avg_emq >= 7 ? 'text-green-600' :
-                  dashboard.avg_emq >= 5 ? 'text-amber-600' :
-                  'text-red-600'
-                }`}>
-                  {dashboard.avg_emq.toFixed(1)}
-                </p>
-                <p className="text-xs text-brand-600">/ 10</p>
-              </div>
+              <MetricGuidance result={emqGuidance(dashboard.avg_emq)} collapsible />
             </div>
           )}
+
+          {/* Delivery rate guidance */}
+          <MetricGuidance
+            result={capiDeliveryGuidance(Math.round(dashboard.delivery_rate * 100))}
+            collapsible
+          />
 
           {/* Event breakdown */}
           <Card>

@@ -18,6 +18,7 @@ import { schedulesRouter } from '@/api/routes/schedules';
 import { adminRouter } from '@/api/routes/admin';
 import { channelsRouter } from '@/api/routes/channels';
 import { dashboardRouter } from '@/api/routes/dashboard';
+import { exportsRouter } from '@/api/routes/exports';
 import logger from '@/utils/logger';
 import { env } from '@/config/env';
 
@@ -97,6 +98,7 @@ app.use('/api/schedules', schedulesRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/channels', channelsRouter);
 app.use('/api/dashboard', dashboardRouter);
+app.use('/api/exports', exportsRouter);
 
 // ─── 404 handler ─────────────────────────────────────────────────────────────
 

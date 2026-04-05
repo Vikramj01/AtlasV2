@@ -13,6 +13,8 @@ import { KeyMetricsRow } from '@/components/health/KeyMetricsRow';
 import { ActiveAlertsFeed } from '@/components/health/ActiveAlertsFeed';
 import { HealthHistoryChart } from '@/components/health/HealthHistoryChart';
 import { ReadinessScore } from '@/components/health/ReadinessScore';
+import { MetricGuidance } from '@/components/shared/MetricGuidance';
+import { auditScoreGuidance, signalCoverageGuidance } from '@/lib/guidance/metricGuidance';
 
 type LoadState = 'loading' | 'loaded' | 'error' | 'empty';
 
@@ -226,6 +228,14 @@ export default function HealthDashboardPage() {
         <div className="flex flex-col justify-center gap-3">
           <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Sub-scores</p>
           <KeyMetricsRow score={score} />
+          <MetricGuidance
+            result={auditScoreGuidance(score.overall_score)}
+            collapsible
+          />
+          <MetricGuidance
+            result={signalCoverageGuidance(score.signal_health)}
+            collapsible
+          />
         </div>
       </div>
 

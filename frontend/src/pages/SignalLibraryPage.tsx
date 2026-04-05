@@ -1,13 +1,17 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Plus } from 'lucide-react';
+import { Plus, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { signalApi } from '@/lib/api/signalApi';
+import { healthApi } from '@/lib/api/healthApi';
+import { exportApi } from '@/lib/api/exportApi';
 import { useSignalStore } from '@/store/signalStore';
 import { SignalCard } from '@/components/signals/SignalCard';
 import { SignalEditor } from '@/components/signals/SignalEditor';
 import { AddToPackModal } from '@/components/signals/AddToPackModal';
+import { MetricGuidance } from '@/components/shared/MetricGuidance';
+import { signalCoverageGuidance } from '@/lib/guidance/metricGuidance';
 import type { Signal } from '@/types/signal';
 
 const CATEGORY_ORDER = ['conversion', 'engagement', 'navigation', 'custom'];
@@ -20,6 +24,19 @@ export function SignalLibraryPage() {
   const [showEditor, setShowEditor] = useState(false);
   const [editingSignal, setEditingSignal] = useState<Signal | null>(null);
   const [addToPackSignal, setAddToPackSignal] = useState<Signal | null>(null);
+  const [signalHealthPct, setSignalHealthPct] = useState<number | null>(null);
+  const [exporting, setExporting] = useState(false);
+
+  async function handleExport() {
+    setExporting(true);
+    try {
+      await exportApi.downloadSignalInventory(orgId);
+    } catch (err) {
+      console.error('Export failed:', err);
+    } finally {
+      setExporting(false);
+    }
+  }
 
   useEffect(() => {
     if (!orgId) return;
@@ -27,6 +44,12 @@ export function SignalLibraryPage() {
       .then(setSignals)
       .finally(() => setIsLoading(false));
   }, [orgId, setSignals]);
+
+  useEffect(() => {
+    healthApi.getDashboard()
+      .then((d) => setSignalHealthPct(d.score?.signal_health ?? null))
+      .catch(() => {});
+  }, []);
 
   const filtered = signals.filter(
     (s) =>
@@ -68,14 +91,29 @@ export function SignalLibraryPage() {
         </div>
         <div className="flex gap-2">
           <Link to={`/org/${orgId}/packs`}>
-            <Button variant="outline" size="sm">Signal Packs</Button>
+            <Button variant="outline" size="sm">Templates</Button>
           </Link>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            onClick={handleExport}
+            disabled={exporting}
+          >
+            <Download className="h-4 w-4" />
+            {exporting ? 'Exporting…' : 'Export XLSX'}
+          </Button>
           <Button size="sm" className="gap-2" onClick={() => { setEditingSignal(null); setShowEditor(true); }}>
             <Plus className="h-4 w-4" />
             Custom signal
           </Button>
         </div>
       </div>
+
+      <MetricGuidance
+        result={signalCoverageGuidance(signalHealthPct)}
+        collapsible
+      />
 
       <Input
         placeholder="Search signals…"

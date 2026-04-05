@@ -14,6 +14,8 @@ import { useParams } from 'react-router-dom';
 import { developerApi } from '@/lib/api/developerApi';
 import { DeveloperHeader } from '@/components/developer/DeveloperHeader';
 import { PageImplementationCard } from '@/components/developer/PageImplementationCard';
+import { MetricGuidance } from '@/components/shared/MetricGuidance';
+import { implementationProgressGuidance } from '@/lib/guidance/metricGuidance';
 import type { DevPortalData, ImplementationStatus, QuickCheckResult } from '@/types/planning';
 
 // ── Download helpers ──────────────────────────────────────────────────────────
@@ -162,6 +164,15 @@ export function DeveloperPortalPage() {
       />
 
       <main className="mx-auto max-w-3xl px-4 sm:px-6 py-6 sm:py-8">
+        {/* Implementation progress guidance */}
+        {!data.progress.all_implemented && (
+          <MetricGuidance
+            result={implementationProgressGuidance(data.progress.percent_complete)}
+            collapsible
+            className="mb-6"
+          />
+        )}
+
         {/* Download buttons */}
         {data.outputs.length > 0 && (
           <div className="mb-6 sm:mb-8 flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-3">
