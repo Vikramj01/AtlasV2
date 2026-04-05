@@ -32,7 +32,15 @@ app.set('trust proxy', 1);
 // ─── Security & parsing middleware ────────────────────────────────────────────
 
 app.use(helmet());
-app.use(cors({ origin: env.FRONTEND_URL, credentials: true }));
+app.use(cors({
+  origin: (incoming, callback) => {
+    // Allow requests with no origin (server-to-server, curl, etc.)
+    if (!incoming) return callback(null, true);
+    if (env.ALLOWED_ORIGINS.includes(incoming)) return callback(null, true);
+    callback(new Error(`CORS: origin not allowed: ${incoming}`));
+  },
+  credentials: true,
+}));
 app.use(express.json({ limit: '1mb' }));
 
 // ─── IP-based rate limiting ───────────────────────────────────────────────────
