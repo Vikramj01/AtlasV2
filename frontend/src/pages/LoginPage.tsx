@@ -32,24 +32,55 @@ export function LoginPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email }),
         });
-        const body = await res.json() as { message?: string; error?: string };
+        // If the response isn't JSON (e.g. Vercel 404 HTML), res.json() throws
+        const body = await res.json().catch(() => ({})) as { message?: string; error?: string };
         setLoading(false);
         if (!res.ok) {
           setError(body.error ?? 'Something went wrong. Please try again.');
         } else {
-          setSuccess(body.message ?? 'Check your email for a password reset link.');
+          setSuccess(body.message ?? 'If an account exists for that email, a reset link has been sent.');
         }
       } catch {
         setLoading(false);
-        setError('Could not reach the server. Please check your connection and try again.');
+        setError('Could not reach the server. Make sure VITE_API_URL is set in your Vercel environment variables.');
       }
       return;
     }
 
-    const { error: authError } = mode === 'signup'
-      ? await supabase.auth.signUp({ email, password })
-      : await supabase.auth.signInWithPassword({ email, password });
+    if (mode === 'signup') {
+      // Sign up via backend so the account is confirmed immediately —
+      // no confirmation email required.
+      try {
+        const res = await fetch(`${API_BASE}/api/auth/signup`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        });
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        if (!res.ok) {
+          setLoading(false);
+          setError(body.error ?? 'Signup failed. Please try again.');
+          return;
+        }
+      } catch {
+        setLoading(false);
+        setError('Could not reach the server. Make sure VITE_API_URL is set in your Vercel environment variables.');
+        return;
+      }
 
+      // Account created and confirmed — sign in immediately
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      setLoading(false);
+      if (signInError) {
+        setError(signInError.message);
+        return;
+      }
+      navigate('/home');
+      return;
+    }
+
+    // Sign in
+    const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
 
     if (authError) {
@@ -57,7 +88,7 @@ export function LoginPage() {
       return;
     }
 
-    navigate('/audit');
+    navigate('/home');
   };
 
   const switchMode = (next: Mode) => {

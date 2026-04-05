@@ -18,9 +18,18 @@ import logger from '@/utils/logger';
 
 const router = Router();
 
-// ── Rate limiter: 5 reset requests per IP per 15 minutes ─────────────────────
-// Prevents email enumeration / abuse without blocking legitimate use.
+// ── Rate limiter: 10 signups per IP per hour ──────────────────────────────────
+const signupLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
+  handler: (_req, res) =>
+    res.status(429).json({ error: 'Too many signup attempts. Please try again later.' }),
+});
 
+// ── Rate limiter: 5 reset requests per IP per 15 minutes ─────────────────────
 const resetLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 5,
@@ -29,6 +38,50 @@ const resetLimiter = rateLimit({
   validate: { xForwardedForHeader: false },
   handler: (_req, res) =>
     res.status(429).json({ error: 'Too many reset requests. Please wait 15 minutes and try again.' }),
+});
+
+// ── POST /api/auth/signup ─────────────────────────────────────────────────────
+//
+// Creates a new user via the admin API with email_confirm: true so no
+// confirmation email is required. Supabase's own SMTP is never involved.
+// The frontend signs in normally after this returns 201.
+
+router.post('/signup', signupLimiter, async (req: Request, res: Response) => {
+  const { email, password } = req.body as { email?: string; password?: string };
+
+  if (!email || typeof email !== 'string' || !email.includes('@')) {
+    return res.status(400).json({ error: 'A valid email address is required.' });
+  }
+  if (!password || typeof password !== 'string' || password.length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters.' });
+  }
+
+  const normalised = email.trim().toLowerCase();
+
+  try {
+    const { data, error } = await supabaseAdmin.auth.admin.createUser({
+      email: normalised,
+      password,
+      email_confirm: true, // skip confirmation email entirely
+    });
+
+    if (error) {
+      // Surface friendly errors for common cases
+      if (error.message.toLowerCase().includes('already registered') ||
+          error.message.toLowerCase().includes('already been registered') ||
+          error.message.toLowerCase().includes('duplicate')) {
+        return res.status(409).json({ error: 'An account with that email already exists.' });
+      }
+      logger.error({ email: normalised, error: error.message }, '[auth] signup failed');
+      return res.status(400).json({ error: error.message });
+    }
+
+    logger.info({ userId: data.user?.id, email: normalised }, '[auth] User created');
+    return res.status(201).json({ id: data.user?.id, email: data.user?.email });
+  } catch (err) {
+    logger.error({ err }, '[auth] Unexpected error in signup');
+    return res.status(500).json({ error: 'Signup failed. Please try again.' });
+  }
 });
 
 // ── POST /api/auth/forgot-password ────────────────────────────────────────────
