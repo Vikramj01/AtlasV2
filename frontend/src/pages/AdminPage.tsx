@@ -70,8 +70,18 @@ function OverviewTab({ stats }: { stats: AdminStats }) {
 
 // ── Users ─────────────────────────────────────────────────────────────────────
 
-function UsersTab({ users, onPlanChange }: { users: AdminUser[]; onPlanChange: (id: string, plan: string) => void }) {
+function UsersTab({
+  users,
+  onPlanChange,
+  onDelete,
+}: {
+  users: AdminUser[];
+  onPlanChange: (id: string, plan: string) => void;
+  onDelete: (id: string) => void;
+}) {
   const [changing, setChanging] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
 
   async function handlePlanChange(userId: string, plan: string) {
     setChanging(userId);
@@ -85,6 +95,19 @@ function UsersTab({ users, onPlanChange }: { users: AdminUser[]; onPlanChange: (
     }
   }
 
+  async function handleDelete(userId: string) {
+    setConfirmId(null);
+    setDeleting(userId);
+    try {
+      await adminApi.deleteUser(userId);
+      onDelete(userId);
+    } catch {
+      // silent — could add toast
+    } finally {
+      setDeleting(null);
+    }
+  }
+
   return (
     <div className="overflow-x-auto rounded-xl border bg-white shadow-sm">
       <table className="w-full text-sm">
@@ -95,6 +118,7 @@ function UsersTab({ users, onPlanChange }: { users: AdminUser[]; onPlanChange: (
             <th className="px-4 py-3 text-center">Audits</th>
             <th className="px-4 py-3 text-center">Planning</th>
             <th className="px-4 py-3">Joined</th>
+            <th className="px-4 py-3"></th>
           </tr>
         </thead>
         <tbody className="divide-y">
@@ -105,7 +129,7 @@ function UsersTab({ users, onPlanChange }: { users: AdminUser[]; onPlanChange: (
                 <div className="relative inline-block">
                   <select
                     value={u.plan}
-                    disabled={changing === u.id}
+                    disabled={changing === u.id || deleting === u.id}
                     onChange={(e) => handlePlanChange(u.id, e.target.value)}
                     className={`appearance-none rounded-full px-3 py-1 pr-7 text-xs font-medium cursor-pointer border-0 outline-none ${PLAN_COLORS[u.plan] ?? 'bg-gray-100 text-gray-700'}`}
                   >
@@ -121,11 +145,39 @@ function UsersTab({ users, onPlanChange }: { users: AdminUser[]; onPlanChange: (
               <td className="px-4 py-3 text-muted-foreground">
                 {new Date(u.created_at).toLocaleDateString()}
               </td>
+              <td className="px-4 py-3 text-right">
+                {confirmId === u.id ? (
+                  <span className="inline-flex items-center gap-2">
+                    <span className="text-xs text-red-600 font-medium">Delete?</span>
+                    <button
+                      onClick={() => void handleDelete(u.id)}
+                      disabled={deleting === u.id}
+                      className="text-xs text-red-600 hover:text-red-800 font-semibold underline disabled:opacity-50"
+                    >
+                      Yes
+                    </button>
+                    <button
+                      onClick={() => setConfirmId(null)}
+                      className="text-xs text-muted-foreground hover:text-foreground underline"
+                    >
+                      No
+                    </button>
+                  </span>
+                ) : (
+                  <button
+                    onClick={() => setConfirmId(u.id)}
+                    disabled={deleting === u.id}
+                    className="text-xs text-muted-foreground hover:text-red-600 underline disabled:opacity-50"
+                  >
+                    {deleting === u.id ? 'Deleting…' : 'Delete'}
+                  </button>
+                )}
+              </td>
             </tr>
           ))}
           {users.length === 0 && (
             <tr>
-              <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">No users found.</td>
+              <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">No users found.</td>
             </tr>
           )}
         </tbody>
@@ -362,6 +414,9 @@ export function AdminPage() {
           users={users}
           onPlanChange={(id, plan) =>
             setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, plan } : u)))
+          }
+          onDelete={(id) =>
+            setUsers((prev) => prev.filter((u) => u.id !== id))
           }
         />
       )}

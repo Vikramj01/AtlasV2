@@ -80,4 +80,7 @@ export const adminApi = {
 
   dismissAlert: (alertId: string) =>
     apiFetch<{ dismissed: boolean }>(`/api/admin/alerts/${alertId}/dismiss`, { method: 'PATCH' }),
+
+  deleteUser: (userId: string) =>
+    apiFetch<{ deleted: boolean }>(`/api/admin/users/${userId}`, { method: 'DELETE' }),
 };

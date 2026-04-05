@@ -6,6 +6,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 
+const API_BASE = import.meta.env.VITE_API_URL ?? '';
+
 type Mode = 'signin' | 'signup' | 'forgot';
 
 export function LoginPage() {
@@ -24,14 +26,22 @@ export function LoginPage() {
     setLoading(true);
 
     if (mode === 'forgot') {
-      const { error: authError } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`,
-      });
-      setLoading(false);
-      if (authError) {
-        setError(authError.message);
-      } else {
-        setSuccess('Check your email for a password reset link.');
+      try {
+        const res = await fetch(`${API_BASE}/api/auth/forgot-password`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email }),
+        });
+        const body = await res.json() as { message?: string; error?: string };
+        setLoading(false);
+        if (!res.ok) {
+          setError(body.error ?? 'Something went wrong. Please try again.');
+        } else {
+          setSuccess(body.message ?? 'Check your email for a password reset link.');
+        }
+      } catch {
+        setLoading(false);
+        setError('Could not reach the server. Please check your connection and try again.');
       }
       return;
     }
