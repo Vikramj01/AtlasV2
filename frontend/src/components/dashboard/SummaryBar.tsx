@@ -25,7 +25,7 @@ function MetricPill({ label, value, unit = '%', status = 'neutral' }: MetricPill
   }[status];
 
   return (
-    <div className="flex flex-col items-center gap-0.5 px-4 first:pl-0 last:pr-0 border-r last:border-r-0 border-border/50">
+    <div className="flex flex-col items-center gap-0.5 sm:px-4 sm:first:pl-0 sm:last:pr-0 sm:border-r sm:last:border-r-0 sm:border-border/50">
       <span className={cn('text-lg font-bold tabular-nums leading-none', valueColor)}>
         {value === null ? '—' : `${value}${unit}`}
       </span>
@@ -59,8 +59,8 @@ export function SummaryBar({ summary, className }: SummaryBarProps) {
 
       <div className="h-5 w-px bg-border/60 shrink-0" />
 
-      {/* Metric pills */}
-      <div className="flex items-center gap-0 flex-wrap">
+      {/* Metric pills — use gap on mobile (avoids broken border-r on wrap) */}
+      <div className="flex items-center flex-wrap gap-x-6 gap-y-3 sm:gap-x-0 sm:gap-y-0">
         <MetricPill
           label="Signal Coverage"
           value={summary.signal_coverage_pct}
@@ -74,7 +74,7 @@ export function SummaryBar({ summary, className }: SummaryBarProps) {
         {summary.avg_emq !== null && (
           <MetricPill
             label="Avg EMQ"
-            value={summary.avg_emq !== null ? summary.avg_emq.toFixed(1) : null}
+            value={summary.avg_emq.toFixed(1)}
             unit=""
             status={metricStatus(summary.avg_emq, 8, 6)}
           />

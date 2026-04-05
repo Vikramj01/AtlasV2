@@ -331,9 +331,9 @@ export function CAPIMonitoringDashboard({ provider, onBack }: CAPIMonitoringDash
             </div>
           )}
 
-          {/* Delivery rate guidance */}
+          {/* Delivery rate guidance — delivery_rate is already stored as 0-100 integer */}
           <MetricGuidance
-            result={capiDeliveryGuidance(Math.round(dashboard.delivery_rate * 100))}
+            result={capiDeliveryGuidance(dashboard.delivery_rate)}
             collapsible
           />
 

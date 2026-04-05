@@ -216,6 +216,13 @@ function deriveSignalStatus(
 
 // ── Sheet 1: Signal Inventory ─────────────────────────────────────────────────
 
+/** Strip control characters that cause xlsx parse errors, preserve all unicode. */
+function safe(s: string | null | undefined): string {
+  if (!s) return '';
+  // Remove ASCII control chars except tab/newline; leave all unicode intact
+  return s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+}
+
 function buildSheet1(
   wb: ExcelJS.Workbook,
   signals: Signal[],
@@ -244,8 +251,9 @@ function buildSheet1(
   ws.views = [{ state: 'frozen', ySplit: 1 }];
 
   signals.forEach((signal, idx) => {
+    const mappings = signal.platform_mappings ?? {};
     const platforms = PLATFORM_KEYS
-      .filter((k) => signal.platform_mappings?.[k])
+      .filter((k) => mappings[k])
       .map((k) => PLATFORM_LABELS[k])
       .join(', ');
 
@@ -264,7 +272,7 @@ function buildSheet1(
     const priority = signal.is_system ? 'Core' : 'Custom';
     const lastVerified = new Date(signal.updated_at).toLocaleDateString('en-GB');
 
-    const row = ws.addRow([signal.name, signal.category, signal.description, platforms, priority, status, lastVerified, pages]);
+    const row = ws.addRow([safe(signal.name), safe(signal.category), safe(signal.description), safe(platforms), priority, status, lastVerified, safe(pages)]);
 
     // Status cell conditional formatting
     const statusCell = row.getCell(6);
@@ -338,12 +346,12 @@ function buildSheet2(
         .replace(/\b\w/g, (c) => c.toUpperCase());
 
       const row = ws.addRow([
-        page.url,
-        rec.event_name,
-        rec.event_name,
-        datalayerKeys,
+        safe(page.url),
+        safe(rec.event_name),
+        safe(rec.event_name),
+        safe(datalayerKeys),
         displayStatus,
-        implNotes,
+        safe(implNotes),
       ]);
 
       // Status fill
@@ -391,14 +399,15 @@ function buildSheet3(wb: ExcelJS.Workbook, signals: Signal[]) {
   ws.views = [{ state: 'frozen', ySplit: 1 }];
 
   signals.forEach((signal, idx) => {
+    const m = signal.platform_mappings ?? {};
     const row = ws.addRow([
-      signal.name,
-      signal.category,
-      signal.platform_mappings?.['ga4']?.event_name ?? '—',
-      signal.platform_mappings?.['google_ads']?.event_name ?? '—',
-      signal.platform_mappings?.['meta']?.event_name ?? '—',
-      signal.platform_mappings?.['tiktok']?.event_name ?? '—',
-      signal.platform_mappings?.['linkedin']?.event_name ?? '—',
+      safe(signal.name),
+      safe(signal.category),
+      safe(m['ga4']?.event_name) || '—',
+      safe(m['google_ads']?.event_name) || '—',
+      safe(m['meta']?.event_name) || '—',
+      safe(m['tiktok']?.event_name) || '—',
+      safe(m['linkedin']?.event_name) || '—',
     ]);
 
     // Grey out unmapped cells
