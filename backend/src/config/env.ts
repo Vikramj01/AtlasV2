@@ -14,12 +14,22 @@ function optional(name: string, fallback: string): string {
 
 const NODE_ENV = optional('NODE_ENV', 'development');
 
-// FRONTEND_URL is required in production to prevent the CORS origin from
-// silently falling back to localhost (which would block all real browser requests).
-const FRONTEND_URL =
+// FRONTEND_URL accepts a single URL or a comma-separated list of URLs.
+// The first value is used as the canonical frontend URL (e.g. for redirect links).
+// All values are added to the CORS allowlist.
+// In production this is required — omitting it would silently fall back to
+// localhost and block all real browser requests.
+const FRONTEND_URL_RAW =
   NODE_ENV === 'production'
     ? requireEnv('FRONTEND_URL')
     : optional('FRONTEND_URL', 'http://localhost:5173');
+
+const ALLOWED_ORIGINS = FRONTEND_URL_RAW
+  .split(',')
+  .map((u) => u.trim())
+  .filter(Boolean);
+
+const FRONTEND_URL = ALLOWED_ORIGINS[0];
 
 export const env = {
   SUPABASE_URL: requireEnv('SUPABASE_URL'),
@@ -56,7 +66,8 @@ export const env = {
 
   PORT: parseInt(optional('PORT', '3001'), 10),
   NODE_ENV,
-  FRONTEND_URL,
+  FRONTEND_URL,      // canonical URL used in redirect links / emails
+  ALLOWED_ORIGINS,   // all origins permitted by CORS (parsed from FRONTEND_URL)
 
   // Queue worker concurrency — tune to match your Browserbase session quota.
   // Each concurrent audit/planning job opens one Browserbase session.
