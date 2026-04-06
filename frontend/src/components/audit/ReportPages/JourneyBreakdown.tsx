@@ -1,14 +1,64 @@
+/**
+ * JourneyBreakdown — Verify Journeys pass/fail node map.
+ *
+ * Design spec:
+ *   "Pass/fail nodes connected by arrows. Navy ring on selected node."
+ *   Pass:    green fill (#F0FDF4), green border (#059669), green label.
+ *   Warning: amber fill (#FFFBEB), amber border (#D97706), amber label.
+ *   Fail:    red fill (#FEF2F2),   red border (#DC2626),   red label.
+ *
+ * Horizontal funnel on desktop (overflow-x-auto), vertical list on mobile.
+ * Click a node to expand its detail panel below the funnel.
+ */
+
 import { useState } from 'react';
+import { CheckCircle2, AlertTriangle, XCircle, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import type { ReportJSON, JourneyStage, RuleStatus } from '@/types/audit';
 
-const STATUS_CONFIG: Record<RuleStatus, { color: string; bg: string; border: string; dot: string; label: string }> = {
-  pass:    { color: 'text-green-700',  bg: 'bg-green-50',  border: 'border-green-300',  dot: 'bg-green-500',  label: 'Healthy' },
-  warning: { color: 'text-yellow-700', bg: 'bg-yellow-50', border: 'border-yellow-300', dot: 'bg-yellow-400', label: 'Warning' },
-  fail:    { color: 'text-red-700',    bg: 'bg-red-50',    border: 'border-red-300',    dot: 'bg-red-500',    label: 'Critical' },
+// ── Status config — aligned to design system palette ──────────────────────────
+
+const STATUS_CONFIG: Record<RuleStatus, {
+  label:      string;
+  bg:         string;
+  border:     string;
+  labelColor: string;
+  Icon:       React.ElementType;
+  iconColor:  string;
+  panelBg:    string;
+}> = {
+  pass: {
+    label:      'Healthy',
+    bg:         '#F0FDF4',
+    border:     '#059669',
+    labelColor: '#059669',
+    Icon:       CheckCircle2,
+    iconColor:  '#059669',
+    panelBg:    '#F0FDF4',
+  },
+  warning: {
+    label:      'Warning',
+    bg:         '#FFFBEB',
+    border:     '#D97706',
+    labelColor: '#D97706',
+    Icon:       AlertTriangle,
+    iconColor:  '#D97706',
+    panelBg:    '#FFFBEB',
+  },
+  fail: {
+    label:      'Critical',
+    bg:         '#FEF2F2',
+    border:     '#DC2626',
+    labelColor: '#DC2626',
+    Icon:       XCircle,
+    iconColor:  '#DC2626',
+    panelBg:    '#FEF2F2',
+  },
 };
+
+const NAVY = '#1B2A4A';
+
+// ── Single stage node ─────────────────────────────────────────────────────────
 
 function StageNode({
   stage,
@@ -22,54 +72,99 @@ function StageNode({
   isLast: boolean;
 }) {
   const c = STATUS_CONFIG[stage.status];
+  const Icon = c.Icon;
+
   return (
     <div className="flex items-center">
       <button
+        type="button"
         onClick={onClick}
-        className="flex flex-col items-center gap-1.5 transition-transform hover:scale-105 focus:outline-none group"
+        className="flex flex-col items-center gap-2 focus:outline-none group"
+        title={`${stage.stage} — ${c.label}`}
       >
+        {/* Node circle */}
         <div
-          className={cn(
-            'flex h-14 w-14 items-center justify-center rounded-full border-2 shadow-sm transition-all',
-            c.bg,
-            active ? `${c.border} ring-2 ring-offset-2 ring-brand-400` : c.border
-          )}
+          className="flex h-14 w-14 items-center justify-center rounded-full border-2 transition-all"
+          style={{
+            backgroundColor: c.bg,
+            borderColor: active ? NAVY : c.border,
+            boxShadow: active
+              ? `0 0 0 3px ${NAVY}20`
+              : 'none',
+          }}
         >
-          <span className={cn('h-4 w-4 rounded-full', c.dot)} />
+          <Icon className="h-6 w-6" strokeWidth={1.5} style={{ color: c.iconColor }} />
         </div>
-        <span className="text-xs font-medium text-center w-16 leading-tight group-hover:text-foreground text-muted-foreground">
+
+        {/* Stage name */}
+        <span
+          className="text-xs font-medium text-center w-16 leading-tight"
+          style={{ color: active ? NAVY : '#6B7280' }}
+        >
           {stage.stage}
         </span>
-        <span className={cn('text-xs font-semibold', c.color)}>{c.label}</span>
+
+        {/* Status label */}
+        <span className="text-[10px] font-semibold" style={{ color: c.labelColor }}>
+          {c.label}
+        </span>
       </button>
+
+      {/* Arrow connector */}
       {!isLast && (
-        <div className="mx-1 h-0.5 w-8 shrink-0 bg-border sm:w-12" aria-hidden="true" />
+        <div className="flex items-center mx-2 mb-8" aria-hidden="true">
+          <div className="h-px w-6 sm:w-10" style={{ backgroundColor: '#E5E7EB' }} />
+          <svg width="8" height="10" viewBox="0 0 8 10" fill="none">
+            <path d="M0 0L8 5L0 10V0Z" fill="#E5E7EB" />
+          </svg>
+        </div>
       )}
     </div>
   );
 }
 
+// ── Detail panel ──────────────────────────────────────────────────────────────
+
 function StagePanel({ stage, onClose }: { stage: JourneyStage; onClose: () => void }) {
   const c = STATUS_CONFIG[stage.status];
+  const Icon = c.Icon;
+
   return (
-    <div className={cn('rounded-xl border-2 p-5 transition-all', c.border, c.bg)}>
-      <div className="flex items-start justify-between">
-        <div>
-          <h3 className={cn('font-semibold', c.color)}>{stage.stage} Stage</h3>
-          <span className={cn('mt-0.5 text-xs font-medium', c.color)}>{c.label}</span>
+    <div
+      className="rounded-lg border-2 p-5"
+      style={{ backgroundColor: c.panelBg, borderColor: c.border }}
+    >
+      <div className="flex items-start justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <Icon className="h-5 w-5 shrink-0" strokeWidth={1.5} style={{ color: c.iconColor }} />
+          <div>
+            <h3 className="text-section-header" style={{ color: '#1A1A1A' }}>
+              {stage.stage} Stage
+            </h3>
+            <p className="text-xs font-semibold mt-0.5" style={{ color: c.labelColor }}>
+              {c.label}
+            </p>
+          </div>
         </div>
-        <Button variant="ghost" size="icon" onClick={onClose} className="h-6 w-6 text-muted-foreground">
-          ×
-        </Button>
+        <button
+          type="button"
+          onClick={onClose}
+          className="p-1 rounded hover:bg-black/5 transition-colors"
+          aria-label="Close panel"
+        >
+          <X className="h-4 w-4 text-[#6B7280]" strokeWidth={1.5} />
+        </button>
       </div>
 
       {stage.issues.length === 0 ? (
-        <p className="mt-3 text-sm text-green-700">No issues detected at this stage.</p>
+        <p className="text-sm" style={{ color: '#059669' }}>
+          No issues detected at this stage.
+        </p>
       ) : (
-        <ul className="mt-3 space-y-2">
+        <ul className="space-y-2">
           {stage.issues.map((issue, i) => (
-            <li key={i} className="flex items-start gap-2 text-sm text-muted-foreground">
-              <span className="mt-0.5 shrink-0 text-red-500" aria-hidden="true">✖</span>
+            <li key={i} className="flex items-start gap-2 text-sm text-[#6B7280]">
+              <XCircle className="h-4 w-4 shrink-0 mt-0.5 text-[#DC2626]" strokeWidth={1.5} />
               {issue}
             </li>
           ))}
@@ -78,6 +173,8 @@ function StagePanel({ stage, onClose }: { stage: JourneyStage; onClose: () => vo
     </div>
   );
 }
+
+// ── Main component ────────────────────────────────────────────────────────────
 
 interface Props {
   report: ReportJSON;
@@ -90,47 +187,54 @@ export function JourneyBreakdown({ report }: Props) {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold">Conversion Journey</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <h2 className="text-page-title">Conversion Journey</h2>
+        <p className="mt-1 text-body text-[#6B7280]">
           Click any stage to see what's happening — and what to fix.
         </p>
       </div>
 
-      {/* Desktop: horizontal funnel */}
-      <Card>
-        <CardContent className="p-6 overflow-x-auto">
-          <div className="flex items-start justify-start gap-0 min-w-max">
-            {journey_stages.map((stage, i) => (
-              <StageNode
-                key={stage.stage}
-                stage={stage}
-                active={activeStage?.stage === stage.stage}
-                onClick={() => setActiveStage(activeStage?.stage === stage.stage ? null : stage)}
-                isLast={i === journey_stages.length - 1}
-              />
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+      {/* ── Desktop: horizontal funnel with arrows ─────────────────────────── */}
+      <div className="hidden sm:block rounded-lg border border-[#E5E7EB] bg-white px-6 py-6 overflow-x-auto">
+        <div className="flex items-start justify-start min-w-max">
+          {journey_stages.map((stage, i) => (
+            <StageNode
+              key={stage.stage}
+              stage={stage}
+              active={activeStage?.stage === stage.stage}
+              onClick={() => setActiveStage(activeStage?.stage === stage.stage ? null : stage)}
+              isLast={i === journey_stages.length - 1}
+            />
+          ))}
+        </div>
+      </div>
 
-      {/* Mobile: vertical stepper */}
-      <div className="flex flex-col gap-3 sm:hidden">
+      {/* ── Mobile: vertical list ──────────────────────────────────────────── */}
+      <div className="flex flex-col gap-2 sm:hidden">
         {journey_stages.map((stage) => {
           const c = STATUS_CONFIG[stage.status];
+          const Icon = c.Icon;
+          const isActive = activeStage?.stage === stage.stage;
+
           return (
             <button
               key={stage.stage}
-              onClick={() => setActiveStage(activeStage?.stage === stage.stage ? null : stage)}
-              className={cn('flex items-center gap-3 rounded-xl border-2 p-4 text-left', c.bg, c.border)}
+              type="button"
+              onClick={() => setActiveStage(isActive ? null : stage)}
+              className="flex items-center gap-3 rounded-lg border-2 px-4 py-3 text-left transition-colors"
+              style={{
+                backgroundColor: c.bg,
+                borderColor: isActive ? NAVY : c.border,
+              }}
             >
-              <span className={cn('h-3 w-3 rounded-full shrink-0', c.dot)} />
-              <span className="font-medium text-sm">{stage.stage}</span>
-              <span className={cn('ml-auto text-xs font-semibold', c.color)}>{c.label}</span>
+              <Icon className="h-4 w-4 shrink-0" strokeWidth={1.5} style={{ color: c.iconColor }} />
+              <span className="flex-1 text-sm font-medium text-[#1A1A1A]">{stage.stage}</span>
+              <span className="text-xs font-semibold" style={{ color: c.labelColor }}>{c.label}</span>
             </button>
           );
         })}
       </div>
 
+      {/* ── Expanded detail panel ──────────────────────────────────────────── */}
       {activeStage && (
         <StagePanel stage={activeStage} onClose={() => setActiveStage(null)} />
       )}

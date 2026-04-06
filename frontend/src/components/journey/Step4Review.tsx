@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { useJourneyWizardStore } from '@/store/journeyWizardStore';
 import { createJourney, generateSpecs, saveTemplate } from '@/lib/api/journeyApi';
@@ -12,6 +11,8 @@ import { ACTION_TOGGLES, PLATFORM_OPTIONS } from '@/types/journey';
 interface Step4Props {
   onBack: () => void;
 }
+
+const NAVY = '#1B2A4A';
 
 export function Step4Review({ onBack }: Step4Props) {
   const navigate = useNavigate();
@@ -58,7 +59,6 @@ export function Step4Review({ onBack }: Step4Props) {
       const journeyId = result.journey.id;
 
       await generateSpecs(journeyId);
-
       reset();
 
       if (mode === 'audit') {
@@ -102,96 +102,118 @@ export function Step4Review({ onBack }: Step4Props) {
 
   return (
     <div>
-      <h2 className="text-2xl font-bold text-center">Here's what Atlas will check</h2>
-      <p className="mt-2 text-center text-muted-foreground text-sm">Review your journey and choose how to proceed.</p>
+      <h2 className="text-page-title text-center">Here's what Atlas will check</h2>
+      <p className="mt-2 text-center text-body text-[#6B7280]">
+        Review your journey and choose how to proceed.
+      </p>
 
-      <Card className="mt-6">
-        <CardContent className="p-5 space-y-4">
-          <section>
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Your Funnel</h3>
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              {stages.map((s, i) => (
-                <span key={s.id} className="flex items-center gap-1">
-                  <span className="rounded-lg bg-brand-50 border border-brand-200 px-2 py-1 text-xs font-medium text-brand-800">
-                    {s.label}
-                  </span>
-                  {i < stages.length - 1 && <span className="text-muted-foreground">→</span>}
+      {/* ── Summary card ──────────────────────────────────────────────────── */}
+      <div className="mt-6 rounded-lg border border-[#E5E7EB] bg-white">
+
+        {/* Funnel flow nodes */}
+        <div className="px-5 pt-5 pb-4">
+          <h3 className="text-caption-upper mb-3">Your Funnel</h3>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {stages.map((s, i) => (
+              <span key={s.id} className="flex items-center gap-1.5">
+                {/* Stage node */}
+                <span
+                  className="inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-semibold"
+                  style={{
+                    backgroundColor: '#EEF1F7',
+                    borderColor: `${NAVY}30`,
+                    color: NAVY,
+                  }}
+                >
+                  {s.label}
                 </span>
-              ))}
+                {/* Arrow */}
+                {i < stages.length - 1 && (
+                  <svg width="14" height="10" viewBox="0 0 14 10" fill="none" aria-hidden="true">
+                    <path d="M0 5H12M8 1L12 5L8 9" stroke="#D1D5DB" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {uniqueActions.length > 0 && (
+          <>
+            <Separator />
+            <div className="px-5 py-4">
+              <h3 className="text-caption-upper mb-2">Key Actions</h3>
+              <ul className="space-y-1">
+                {uniqueActions.map((actionKey) => {
+                  const toggle = ACTION_TOGGLES.find((t) => t.key === actionKey);
+                  const stage  = stages.find((s) => s.actions.includes(actionKey));
+                  return (
+                    <li key={actionKey} className="text-sm text-[#6B7280]">
+                      · {toggle?.label ?? actionKey}
+                      {stage ? <span className="text-[#9CA3AF]"> — {stage.label}</span> : ''}
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
-          </section>
+          </>
+        )}
 
-          {uniqueActions.length > 0 && (
-            <>
-              <Separator />
-              <section>
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Key Actions</h3>
-                <ul className="mt-2 space-y-1">
-                  {uniqueActions.map((actionKey) => {
-                    const toggle = ACTION_TOGGLES.find((t) => t.key === actionKey);
-                    const stage = stages.find((s) => s.actions.includes(actionKey));
-                    return (
-                      <li key={actionKey} className="text-sm text-muted-foreground">
-                        • {toggle?.label ?? actionKey}{stage ? ` — tracked on ${stage.label}` : ''}
-                      </li>
-                    );
-                  })}
-                </ul>
-              </section>
-            </>
-          )}
+        <Separator />
+        <div className="px-5 py-4">
+          <h3 className="text-caption-upper mb-2">Platforms</h3>
+          <p className="text-sm text-[#1A1A1A]">
+            {activePlatforms
+              .map((p) => PLATFORM_OPTIONS.find((o) => o.value === p.platform)?.label ?? p.platform)
+              .join(', ')}
+          </p>
+        </div>
 
-          <Separator />
-          <section>
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Platforms</h3>
-            <p className="mt-2 text-sm">
-              {activePlatforms
-                .map((p) => PLATFORM_OPTIONS.find((o) => o.value === p.platform)?.label ?? p.platform)
-                .join(', ')}
-            </p>
-          </section>
+        <Separator />
+        <div className="px-5 py-4">
+          <h3 className="text-caption-upper mb-2">Implementation Format</h3>
+          <p className="text-sm text-[#1A1A1A]">
+            {implementationFormat === 'gtm'
+              ? 'Google Tag Manager (dataLayer)'
+              : implementationFormat === 'walkeros'
+              ? 'WalkerOS (flow.json)'
+              : 'Both — GTM dataLayer + WalkerOS flow.json'}
+          </p>
+        </div>
 
-          <Separator />
-          <section>
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Implementation Format</h3>
-            <p className="mt-2 text-sm">
-              {implementationFormat === 'gtm'
-                ? 'Google Tag Manager (dataLayer)'
-                : implementationFormat === 'walkeros'
-                ? 'WalkerOS (flow.json)'
-                : 'Both — GTM dataLayer + WalkerOS flow.json'}
-            </p>
-          </section>
-
-          <Separator />
-          <section>
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Atlas Will Check</h3>
-            <p className="mt-2 text-sm">
-              <span className="font-semibold">{ruleCount} signal rules</span> across{' '}
-              <span className="font-semibold">{stages.length} funnel stages</span> for{' '}
-              <span className="font-semibold">{activePlatforms.length} platform{activePlatforms.length !== 1 ? 's' : ''}</span>
-            </p>
-          </section>
-        </CardContent>
-      </Card>
+        <Separator />
+        <div className="px-5 py-4">
+          <h3 className="text-caption-upper mb-2">Atlas Will Check</h3>
+          <p className="text-sm text-[#1A1A1A]">
+            <span className="font-semibold">{ruleCount} signal rules</span> across{' '}
+            <span className="font-semibold">{stages.length} funnel stages</span> for{' '}
+            <span className="font-semibold">
+              {activePlatforms.length} platform{activePlatforms.length !== 1 ? 's' : ''}
+            </span>
+          </p>
+        </div>
+      </div>
 
       {error && (
-        <p className="mt-4 rounded-lg bg-destructive/10 px-4 py-2.5 text-sm text-destructive">{error}</p>
+        <p className="mt-4 rounded-lg border border-[#DC2626]/20 bg-[#FEF2F2] px-4 py-2.5 text-sm text-[#DC2626]">
+          {error}
+        </p>
       )}
 
+      {/* ── Actions ───────────────────────────────────────────────────────── */}
       <div className="mt-6 space-y-3">
         <Button
           type="button"
           onClick={() => submitJourney('audit')}
           disabled={loading !== null}
-          className="w-full bg-brand-600 hover:bg-brand-700 py-3"
+          className="w-full py-3"
         >
           {loading === 'audit' ? 'Setting up audit…' : 'Run Audit'}
         </Button>
 
         <Button
           type="button"
-          variant="outline"
+          variant="secondary"
           onClick={() => submitJourney('spec')}
           disabled={loading !== null}
           className="w-full py-3"
@@ -204,15 +226,18 @@ export function Step4Review({ onBack }: Step4Props) {
           variant="ghost"
           onClick={onBack}
           disabled={loading !== null}
-          className="w-full text-muted-foreground"
+          className="w-full"
         >
           Back
         </Button>
       </div>
 
-      <div className="mt-4 border-t pt-4">
+      {/* ── Template save ─────────────────────────────────────────────────── */}
+      <div className="mt-4 border-t border-[#E5E7EB] pt-4">
         {templateSaved ? (
-          <p className="text-center text-sm text-green-600">Template saved — it will appear on the first step next time.</p>
+          <p className="text-center text-sm text-[#059669]">
+            Template saved — it will appear on the first step next time.
+          </p>
         ) : showTemplateSave ? (
           <div className="flex gap-2">
             <Input
@@ -226,18 +251,10 @@ export function Step4Review({ onBack }: Step4Props) {
               }}
               placeholder="Template name…"
             />
-            <Button
-              type="button"
-              onClick={handleSaveTemplate}
-              disabled={savingTemplate || !templateName.trim()}
-            >
+            <Button type="button" onClick={handleSaveTemplate} disabled={savingTemplate || !templateName.trim()}>
               {savingTemplate ? 'Saving…' : 'Save'}
             </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setShowTemplateSave(false)}
-            >
+            <Button type="button" variant="secondary" onClick={() => setShowTemplateSave(false)}>
               Cancel
             </Button>
           </div>
@@ -245,7 +262,7 @@ export function Step4Review({ onBack }: Step4Props) {
           <button
             type="button"
             onClick={() => setShowTemplateSave(true)}
-            className="w-full text-center text-xs text-muted-foreground hover:text-brand-600 transition-colors"
+            className="w-full text-center text-xs text-[#9CA3AF] hover:text-[#1B2A4A] transition-colors"
           >
             + Save this journey as a reusable template
           </button>
