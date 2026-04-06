@@ -37,7 +37,7 @@ function CodeBlock({ code, label, filename }: { code: string; label: string; fil
       <div className="flex items-center justify-between px-4 py-2 border-b bg-background">
         <span className="text-xs font-semibold text-muted-foreground">{label}</span>
         <div className="flex gap-3">
-          <Button variant="ghost" size="sm" onClick={copy} className="h-auto py-0 px-1 text-xs text-brand-600 hover:text-brand-700">
+          <Button variant="ghost" size="sm" onClick={copy} className="h-auto py-0 px-1 text-xs text-[#1B2A4A] hover:text-[#1B2A4A]">
             {copied ? '✓ Copied' : 'Copy'}
           </Button>
           <Button variant="ghost" size="sm" onClick={download} className="h-auto py-0 px-1 text-xs text-muted-foreground hover:text-foreground">
@@ -112,7 +112,7 @@ export function JourneySpecPage() {
         <p className="mb-6 text-sm text-muted-foreground">
           No audit exists for this journey yet. Would you like to start one?
         </p>
-        <Button asChild className="bg-brand-600 hover:bg-brand-700">
+        <Button asChild className="bg-[#1B2A4A] hover:bg-[#1B2A4A]">
           <Link to="/journey/new">Start a New Audit</Link>
         </Button>
       </div>
@@ -158,7 +158,7 @@ export function JourneySpecPage() {
         </div>
         <Button
           onClick={() => navigate(`/journey/${id}/audit/start`)}
-          className="bg-brand-600 hover:bg-brand-700"
+          className="bg-[#1B2A4A] hover:bg-[#1B2A4A]"
         >
           Run Audit →
         </Button>
@@ -186,13 +186,13 @@ export function JourneySpecPage() {
               className={cn(
                 'pb-2 text-sm font-medium border-b-2 transition-colors',
                 activeTab === tab.id
-                  ? 'border-brand-600 text-brand-600'
+                  ? 'border-[#1B2A4A] text-[#1B2A4A]'
                   : 'border-transparent text-muted-foreground hover:text-foreground'
               )}
             >
               {tab.label}
               {tab.id === journey.implementation_format && (
-                <span className="ml-1.5 rounded bg-brand-50 px-1 py-0.5 text-xs text-brand-600">
+                <span className="ml-1.5 rounded bg-[#EEF1F7] px-1 py-0.5 text-xs text-[#1B2A4A]">
                   selected
                 </span>
               )}

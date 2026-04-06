@@ -16,7 +16,7 @@ function PageStatusIcon({ status }: { status: PlanningPage['status'] }) {
       return <span className="text-red-400">✗</span>;
     case 'scanning':
       return (
-        <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-brand-300 border-t-brand-600" />
+        <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-[#1B2A4A]/30 border-t-[#1B2A4A]" />
       );
     default:
       return <span className="inline-block h-4 w-4 rounded-full border-2 border-border" />;
@@ -87,7 +87,7 @@ export function Step3ScanningProgress() {
             <h2 className="text-xl font-bold">Scan failed</h2>
             <p className="mt-1 text-sm text-muted-foreground">{error ?? 'An unexpected error occurred.'}</p>
             <div className="mt-4 flex justify-center gap-3">
-              <Button onClick={() => { reset(); navigate('/planning/new'); }} className="bg-brand-600 hover:bg-brand-700">
+              <Button onClick={() => { reset(); navigate('/planning/new'); }} className="bg-[#1B2A4A] hover:bg-[#1B2A4A]">
                 Try again with a new session
               </Button>
               <Button variant="outline" onClick={() => { reset(); navigate('/planning'); }}>
@@ -106,7 +106,7 @@ export function Step3ScanningProgress() {
           </>
         ) : (
           <>
-            <div className="mb-3 inline-block h-10 w-10 animate-spin rounded-full border-4 border-brand-200 border-t-brand-600" />
+            <div className="mb-3 inline-block h-10 w-10 animate-spin rounded-full border-4 border-[#1B2A4A]/20 border-t-[#1B2A4A]" />
             <h2 className="mt-2 text-xl font-bold">Scanning your pages…</h2>
             <p className="mt-1 text-sm text-muted-foreground">
               Atlas is visiting each URL, capturing screenshots, and running AI analysis.
@@ -124,7 +124,7 @@ export function Step3ScanningProgress() {
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-muted">
             <div
-              className="h-full rounded-full bg-brand-500 transition-all duration-500"
+              className="h-full rounded-full bg-[#1B2A4A] transition-all duration-500"
               style={{ width: `${progressPct}%` }}
             />
           </div>

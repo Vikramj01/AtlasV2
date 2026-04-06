@@ -257,7 +257,7 @@ function GTMOutputCard({
               size="sm"
               onClick={handleDownload}
               disabled={isDownloading}
-              className="bg-brand-600 hover:bg-brand-700 text-xs"
+              className="bg-[#1B2A4A] hover:bg-[#1B2A4A] text-xs"
             >
               {isDownloading ? 'Downloading…' : 'Download .json'}
             </Button>
@@ -324,7 +324,7 @@ function OutputCard({ output, sessionId }: { output: PlanningOutput; sessionId: 
               size="sm"
               onClick={handleDownload}
               disabled={isDownloading}
-              className="bg-brand-600 hover:bg-brand-700 text-xs"
+              className="bg-[#1B2A4A] hover:bg-[#1B2A4A] text-xs"
             >
               {isDownloading ? 'Downloading…' : `Download .${meta.ext}`}
             </Button>
@@ -388,7 +388,7 @@ export function Step6GeneratedOutputs() {
           onClick={() => setActiveTab('outputs')}
           className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
             activeTab === 'outputs'
-              ? 'border-brand-500 text-brand-700'
+              ? 'border-[#1B2A4A] text-[#1B2A4A]'
               : 'border-transparent text-muted-foreground hover:text-foreground'
           }`}
         >
@@ -399,7 +399,7 @@ export function Step6GeneratedOutputs() {
           onClick={() => setActiveTab('signal_map')}
           className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
             activeTab === 'signal_map'
-              ? 'border-brand-500 text-brand-700'
+              ? 'border-[#1B2A4A] text-[#1B2A4A]'
               : 'border-transparent text-muted-foreground hover:text-foreground'
           }`}
         >
@@ -431,7 +431,7 @@ export function Step6GeneratedOutputs() {
         )}
         {outputs.length === 0 && (
           <div className="py-10 text-center">
-            <div className="mb-3 inline-block h-6 w-6 animate-spin rounded-full border-2 border-brand-200 border-t-brand-600" />
+            <div className="mb-3 inline-block h-6 w-6 animate-spin rounded-full border-2 border-[#1B2A4A]/20 border-t-[#1B2A4A]" />
             <p className="text-sm text-muted-foreground">Outputs are still being generated…</p>
             <Button
               variant="outline"
@@ -463,7 +463,7 @@ export function Step6GeneratedOutputs() {
 
       <div className="flex items-center justify-between">
         <Button variant="ghost" onClick={prevStep} className="text-muted-foreground">← Back</Button>
-        <Button onClick={nextStep} className="bg-brand-600 hover:bg-brand-700">
+        <Button onClick={nextStep} className="bg-[#1B2A4A] hover:bg-[#1B2A4A]">
           Next: Handoff to Audit Mode →
         </Button>
       </div>

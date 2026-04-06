@@ -37,7 +37,7 @@ export function Step3PlatformSelector({ onNext, onBack }: Step3Props) {
               key={option.value}
               className={cn(
                 'rounded-xl border-2 p-4 transition-all',
-                selection.isActive ? 'border-brand-500 bg-brand-50' : 'border-border bg-background'
+                selection.isActive ? 'border-[#1B2A4A] bg-[#EEF1F7]' : 'border-border bg-background'
               )}
             >
               <label className="flex items-center gap-2 cursor-pointer">
@@ -45,7 +45,7 @@ export function Step3PlatformSelector({ onNext, onBack }: Step3Props) {
                   type="checkbox"
                   checked={selection.isActive}
                   onChange={() => togglePlatform(option.value as Platform)}
-                  className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+                  className="h-4 w-4 rounded border-gray-300 text-[#1B2A4A] focus:ring-[#1B2A4A]"
                 />
                 <div>
                   <span className="inline-block rounded bg-muted px-1.5 py-0.5 text-xs font-mono font-semibold mr-1">
@@ -80,13 +80,13 @@ export function Step3PlatformSelector({ onNext, onBack }: Step3Props) {
         <h3 className="text-sm font-semibold">How is tracking set up on your site?</h3>
         <div className="mt-3 space-y-2">
           {FORMAT_OPTIONS.map((fmt) => (
-            <label key={fmt.value} className="flex items-start gap-3 cursor-pointer rounded-lg border p-3 hover:border-brand-300 transition-colors">
+            <label key={fmt.value} className="flex items-start gap-3 cursor-pointer rounded-lg border p-3 hover:border-[#1B2A4A]/30 transition-colors">
               <input
                 type="radio"
                 value={fmt.value}
                 checked={implementationFormat === fmt.value}
                 onChange={() => setImplementationFormat(fmt.value)}
-                className="mt-0.5 h-4 w-4 border-gray-300 text-brand-600 focus:ring-brand-500"
+                className="mt-0.5 h-4 w-4 border-gray-300 text-[#1B2A4A] focus:ring-[#1B2A4A]"
               />
               <div>
                 <span className="text-sm font-medium">{fmt.label}</span>
@@ -105,7 +105,7 @@ export function Step3PlatformSelector({ onNext, onBack }: Step3Props) {
           type="button"
           onClick={onNext}
           disabled={!canProceed}
-          className="flex-1 bg-brand-600 hover:bg-brand-700"
+          className="flex-1 bg-[#1B2A4A] hover:bg-[#1B2A4A]"
         >
           Next: Review
         </Button>

@@ -94,7 +94,7 @@ export function ResetPasswordPage() {
 
             {error && <p className="text-sm text-destructive">{error}</p>}
 
-            <Button type="submit" disabled={loading} className="w-full bg-brand-600 hover:bg-brand-700">
+            <Button type="submit" disabled={loading} className="w-full bg-[#1B2A4A] hover:bg-[#1B2A4A]">
               {loading ? 'Please wait...' : 'Update password'}
             </Button>
           </form>

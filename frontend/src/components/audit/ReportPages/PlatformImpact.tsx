@@ -116,7 +116,7 @@ function PlatformCard({ platform, validationResults }: PlatformCardProps) {
           {platform.failed_rules.length > 0 && (
             <>
               <Separator className="mt-4" />
-              <a href="#issues" className="mt-3 block text-sm font-medium text-brand-600 hover:text-brand-700">
+              <a href="#issues" className="mt-3 block text-sm font-medium text-[#1B2A4A] hover:text-[#1B2A4A]">
                 View fixes for {label} →
               </a>
             </>

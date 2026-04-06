@@ -212,7 +212,7 @@ export function Step1PlanningSetup() {
           <Button
             onClick={handleScan}
             disabled={detectionLoading || !url.trim()}
-            className="bg-brand-600 hover:bg-brand-700 shrink-0"
+            className="bg-[#1B2A4A] hover:bg-[#1B2A4A] shrink-0"
           >
             {detectionLoading ? (
               <span className="flex items-center gap-2">
@@ -363,7 +363,7 @@ export function Step1PlanningSetup() {
               className={cn(
                 'rounded-lg border p-3 text-left transition-colors',
                 businessType === value
-                  ? 'border-brand-500 bg-brand-50 ring-1 ring-brand-500'
+                  ? 'border-[#1B2A4A] bg-[#EEF1F7] ring-1 ring-[#1B2A4A]'
                   : 'border-border hover:border-border/80 hover:bg-muted/40',
               )}
             >
@@ -387,7 +387,7 @@ export function Step1PlanningSetup() {
               className={cn(
                 'flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors',
                 platforms.includes(value)
-                  ? 'border-brand-500 bg-brand-50'
+                  ? 'border-[#1B2A4A] bg-[#EEF1F7]'
                   : 'border-border hover:border-border/60',
               )}
             >
@@ -395,7 +395,7 @@ export function Step1PlanningSetup() {
                 type="checkbox"
                 checked={platforms.includes(value)}
                 onChange={() => togglePlatform(value)}
-                className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+                className="h-4 w-4 rounded border-gray-300 text-[#1B2A4A] focus:ring-[#1B2A4A]"
               />
               <span className="text-base" aria-hidden="true">{icon}</span>
               <span className="text-sm font-medium">{label}</span>
@@ -426,7 +426,7 @@ export function Step1PlanningSetup() {
         <Button
           onClick={handleContinue}
           disabled={platforms.length === 0}
-          className="bg-brand-600 hover:bg-brand-700"
+          className="bg-[#1B2A4A] hover:bg-[#1B2A4A]"
         >
           Continue →
         </Button>

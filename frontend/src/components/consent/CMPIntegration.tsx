@@ -237,7 +237,7 @@ export function CMPIntegration({
                 onClick={() => setSelectedProvider(provider)}
                 className={`flex flex-col items-center justify-center rounded-lg border-2 p-4 text-sm font-medium transition-colors ${
                   selectedProvider === provider
-                    ? 'border-brand-600 bg-brand-50 text-brand-700'
+                    ? 'border-[#1B2A4A] bg-[#EEF1F7] text-[#1B2A4A]'
                     : 'border-border hover:border-muted-foreground/50 text-muted-foreground hover:text-foreground'
                 }`}
               >

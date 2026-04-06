@@ -147,7 +147,7 @@ export function RunAuditForm() {
               variant="ghost"
               size="sm"
               onClick={() => setShowAdvanced(!showAdvanced)}
-              className="text-brand-600 hover:text-brand-700 px-0"
+              className="text-[#1B2A4A] hover:text-[#1B2A4A] px-0"
             >
               {showAdvanced ? '▲ Hide' : '▼ Advanced settings'}
             </Button>
@@ -184,7 +184,7 @@ export function RunAuditForm() {
             <p className="rounded-lg bg-destructive/10 px-4 py-2.5 text-sm text-destructive">{error}</p>
           )}
 
-          <Button type="submit" disabled={loading} className="w-full bg-brand-600 hover:bg-brand-700">
+          <Button type="submit" disabled={loading} className="w-full bg-[#1B2A4A] hover:bg-[#1B2A4A]">
             {loading ? 'Starting audit…' : 'Run Signal Audit'}
           </Button>
         </form>

@@ -16,7 +16,7 @@ const CHANGE_TYPE_CONFIG: Record<
   { label: string; icon: string; border: string; bg: string; text: string }
 > = {
   unchanged:       { label: 'Unchanged',         icon: '✓', border: 'border-green-200',  bg: 'bg-green-50',  text: 'text-green-700'  },
-  new_elements:    { label: 'New Elements Found', icon: '+', border: 'border-brand-200',  bg: 'bg-brand-50',  text: 'text-brand-700'  },
+  new_elements:    { label: 'New Elements Found', icon: '+', border: 'border-[#1B2A4A]/20',  bg: 'bg-[#EEF1F7]',  text: 'text-[#1B2A4A]'  },
   removed_elements:{ label: 'Elements Removed',  icon: '−', border: 'border-red-200',    bg: 'bg-red-50',    text: 'text-red-700'    },
   modified:        { label: 'Modified',           icon: '~', border: 'border-amber-200',  bg: 'bg-amber-50',  text: 'text-amber-700'  },
   page_not_found:  { label: 'Page Not Found',     icon: '✗', border: 'border-gray-200',   bg: 'bg-gray-50',   text: 'text-gray-600'   },
@@ -84,7 +84,7 @@ function PageChangeCard({
         </div>
         <div className="flex items-center gap-2 shrink-0 ml-3">
           {page.new_elements.length > 0 && (
-            <span className="text-xs rounded-full bg-brand-100 text-brand-700 px-2 py-0.5">
+            <span className="text-xs rounded-full bg-[#EEF1F7] text-[#1B2A4A] px-2 py-0.5">
               {page.new_elements.length} new
             </span>
           )}
@@ -99,7 +99,7 @@ function PageChangeCard({
           {/* New elements */}
           {page.new_elements.length > 0 && (
             <div>
-              <p className="text-xs font-semibold text-brand-700 mb-2">
+              <p className="text-xs font-semibold text-[#1B2A4A] mb-2">
                 New trackable elements found
               </p>
               <div className="space-y-2">
@@ -108,11 +108,11 @@ function PageChangeCard({
                   const isApproving = approving === el.event_name;
                   const pri = PRIORITY_CONFIG[el.priority] ?? PRIORITY_CONFIG.should_have;
                   return (
-                    <div key={el.event_name} className="rounded-lg border border-brand-100 bg-brand-50/50 p-3">
+                    <div key={el.event_name} className="rounded-lg border border-[#EEF1F7] bg-[#EEF1F7]/50 p-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
-                            <code className="text-xs font-mono font-bold text-brand-800">
+                            <code className="text-xs font-mono font-bold text-[#1B2A4A]">
                               {el.event_name}
                             </code>
                             <span className={`text-xs rounded-full px-1.5 py-0.5 ${pri.cls}`}>
@@ -133,7 +133,7 @@ function PageChangeCard({
                           className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
                             isApproved
                               ? 'bg-green-100 text-green-700 cursor-default'
-                              : 'bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-60'
+                              : 'bg-[#1B2A4A] text-white hover:bg-[#1B2A4A] disabled:opacity-60'
                           }`}
                         >
                           {isApproved ? '✓ Added' : isApproving ? 'Adding…' : 'Add to Plan'}
@@ -250,7 +250,7 @@ export function ChangeDetectionResults({
             <p className="text-xs text-muted-foreground">Modified</p>
           </div>
           <div className="text-center">
-            <p className="text-lg font-bold text-brand-700">{summary.new_elements_found}</p>
+            <p className="text-lg font-bold text-[#1B2A4A]">{summary.new_elements_found}</p>
             <p className="text-xs text-muted-foreground">New elements</p>
           </div>
           <div className="text-center">
@@ -294,7 +294,7 @@ export function ChangeDetectionResults({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg bg-brand-600 px-5 py-2 text-sm font-medium text-white hover:bg-brand-700 transition-colors"
+            className="rounded-lg bg-[#1B2A4A] px-5 py-2 text-sm font-medium text-white hover:bg-[#1B2A4A] transition-colors"
           >
             Done
           </button>

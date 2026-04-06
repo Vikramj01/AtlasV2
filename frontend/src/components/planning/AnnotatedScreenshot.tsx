@@ -75,16 +75,16 @@ export function AnnotatedScreenshot({
               className={cn(
                 'group cursor-pointer rounded transition-all',
                 isSelected
-                  ? 'bg-brand-500/20 ring-2 ring-brand-500'
-                  : 'bg-transparent hover:bg-brand-400/10 hover:ring-2 hover:ring-brand-400'
+                  ? 'bg-[#1B2A4A]/20 ring-2 ring-[#1B2A4A]'
+                  : 'bg-transparent hover:bg-[#1B2A4A]/10 hover:ring-2 hover:ring-[#1B2A4A]/40'
               )}
             >
               <span
                 className={cn(
                   'absolute -top-3 -left-1 flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold shadow',
                   isSelected
-                    ? 'bg-brand-600 text-white'
-                    : 'bg-background text-foreground ring-1 ring-border group-hover:bg-brand-100 group-hover:text-brand-700'
+                    ? 'bg-[#1B2A4A] text-white'
+                    : 'bg-background text-foreground ring-1 ring-border group-hover:bg-[#EEF1F7] group-hover:text-[#1B2A4A]'
                 )}
               >
                 {number}
