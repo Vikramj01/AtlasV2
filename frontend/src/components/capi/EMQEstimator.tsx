@@ -20,9 +20,9 @@ interface EMQEstimatorProps {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function scoreColor(score: number): string {
-  if (score >= 7) return 'text-green-600';
-  if (score >= 5) return 'text-amber-600';
-  return 'text-red-600';
+  if (score >= 7) return 'text-[#059669]';
+  if (score >= 5) return 'text-[#D97706]';
+  return 'text-[#DC2626]';
 }
 
 function thumbPosition(score: number): number {
@@ -127,7 +127,7 @@ export function EMQEstimator({
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-sm font-semibold">Event Match Quality</CardTitle>
+        <CardTitle className="text-section-header">Event Match Quality</CardTitle>
       </CardHeader>
       <CardContent className="pt-0 space-y-6">
         {/* Score gauge */}
@@ -144,7 +144,7 @@ export function EMQEstimator({
         {/* Per-event breakdown */}
         {!isLoading && breakdown && breakdown.length > 0 && (
           <div>
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+            <p className="text-caption-upper mb-3">
               Per-Event Breakdown
             </p>
             <BreakdownTable rows={breakdown} />
@@ -154,7 +154,7 @@ export function EMQEstimator({
         {/* Recommendations */}
         {!isLoading && recommendations && recommendations.length > 0 && (
           <div>
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+            <p className="text-caption-upper mb-2">
               Recommendations
             </p>
             <ul className="space-y-1.5">

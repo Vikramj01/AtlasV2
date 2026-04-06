@@ -310,6 +310,13 @@ export interface ProviderDashboardResponse {
     delivered: number;
     failed: number;
   }>;
+  errors?: Array<{
+    event_name: string;
+    error_code: string;
+    error_message: string | null;
+    count: number;
+    last_seen: string;
+  }>;
 }
 
 // --- Error Types ---

@@ -1,5 +1,4 @@
-'use client';
-
+import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 
@@ -31,11 +30,11 @@ function formatLastSeen(isoDate: string): string {
   });
 }
 
-function errorCodeBadgeClass(errorCode: string): string {
+function errorCodeBadgeStyle(errorCode: string): React.CSSProperties {
   if (errorCode === 'CONSENT_BLOCKED') {
-    return 'bg-amber-100 text-amber-800 border-amber-200';
+    return { backgroundColor: '#FEF3C7', color: '#D97706', borderColor: '#D97706' };
   }
-  return 'bg-red-100 text-red-800 border-red-200';
+  return { backgroundColor: '#FEE2E2', color: '#DC2626', borderColor: '#DC2626' };
 }
 
 // ── Skeleton ──────────────────────────────────────────────────────────────────
@@ -98,14 +97,14 @@ export function ErrorLog({
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-sm font-semibold">Error Log</CardTitle>
+        <CardTitle className="text-section-header">Error Log</CardTitle>
       </CardHeader>
       <CardContent className="pt-0">
         {isLoading ? (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b text-xs text-muted-foreground uppercase tracking-wide">
+                <tr className="border-b border-[#E5E7EB] bg-[#F9FAFB]">
                   <th className="text-left pb-2 px-3 font-medium">Event</th>
                   <th className="text-left pb-2 px-3 font-medium">Error Code</th>
                   <th className="text-left pb-2 px-3 font-medium">Message</th>
@@ -127,7 +126,7 @@ export function ErrorLog({
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b text-xs text-muted-foreground uppercase tracking-wide">
+                <tr className="border-b border-[#E5E7EB] bg-[#F9FAFB]">
                   <th className="text-left pb-2 px-3 font-medium">Event</th>
                   <th className="text-left pb-2 px-3 font-medium">Error Code</th>
                   <th className="text-left pb-2 px-3 font-medium">Message</th>
@@ -147,7 +146,8 @@ export function ErrorLog({
                     {/* Error code badge */}
                     <td className="py-3 px-3">
                       <span
-                        className={`inline-block font-mono text-xs px-2 py-0.5 rounded border ${errorCodeBadgeClass(entry.error_code)}`}
+                        className="inline-block font-mono text-xs px-2 py-0.5 rounded border"
+                        style={errorCodeBadgeStyle(entry.error_code)}
                       >
                         {entry.error_code}
                       </span>
