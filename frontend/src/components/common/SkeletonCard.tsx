@@ -88,10 +88,10 @@ function ChartSkeleton() {
       {/* Chart area */}
       <div className="flex items-end gap-1 h-32">
         {[60, 80, 45, 90, 70, 55, 85, 40, 75, 65, 95, 50].map((h, i) => (
-          <Shimmer
+          <div
             key={i}
             style={{ height: `${h}%` }}
-            className="flex-1 rounded-t"
+            className="flex-1 rounded-t bg-gray-100 animate-pulse"
           />
         ))}
       </div>
