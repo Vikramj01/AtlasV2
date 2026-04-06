@@ -1,10 +1,20 @@
 /**
- * HealthDashboardPage — Data Health Dashboard (Phase 2)
- * 5-zone layout: score ring → key metrics → alerts → trend chart → quick actions
+ * HealthDashboardPage — Signal Health (Screen 2).
+ *
+ * Design spec (Screen 2):
+ *   "Score Circle: 180px diameter, Navy stroke."
+ *   "Guidance: Plain-language interpretation is critical below the score."
+ *
+ * 5-zone layout:
+ *   1. Score ring + key metrics row
+ *   2. Active alerts feed
+ *   3. 30-day trend chart
+ *   4. Readiness score checklist
+ *   5. Quick actions
  */
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { RefreshCw, ExternalLink, ShieldCheck, Zap, BarChart3, ChevronDown } from 'lucide-react';
+import { RefreshCw, BarChart3, Zap, ShieldCheck, ChevronDown } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { healthApi } from '@/lib/api/healthApi';
 import type { HealthDashboardResponse, HealthSnapshot, SiteOption } from '@/types/health';
@@ -13,8 +23,9 @@ import { KeyMetricsRow } from '@/components/health/KeyMetricsRow';
 import { ActiveAlertsFeed } from '@/components/health/ActiveAlertsFeed';
 import { HealthHistoryChart } from '@/components/health/HealthHistoryChart';
 import { ReadinessScore } from '@/components/health/ReadinessScore';
-import { MetricGuidance } from '@/components/shared/MetricGuidance';
-import { auditScoreGuidance, signalCoverageGuidance } from '@/lib/guidance/metricGuidance';
+import { EmptyState } from '@/components/common/EmptyState';
+import { PageSkeleton } from '@/components/common/SkeletonCard';
+import { Button } from '@/components/ui/button';
 
 type LoadState = 'loading' | 'loaded' | 'error' | 'empty';
 
@@ -50,8 +61,6 @@ export default function HealthDashboardPage() {
       setDashboard(dash);
       setHistory(hist.snapshots);
       setSites(resolvedSites);
-      // Only show loaded state if the user has actual completed audits.
-      // A stale health_scores row with no audits should show the empty state.
       setLoadState((dash.score && resolvedSites.length > 0) ? 'loaded' : 'empty');
       setLastRefresh(new Date());
     } catch {
@@ -70,7 +79,6 @@ export default function HealthDashboardPage() {
     setComputing(true);
     try {
       await healthApi.triggerCompute(selectedSite ?? undefined);
-      // Poll for update after a short delay
       setTimeout(async () => {
         await load(selectedSite ?? undefined);
         setComputing(false);
@@ -85,53 +93,38 @@ export default function HealthDashboardPage() {
     catch { return url; }
   }
 
-  // ── Loading skeleton ────────────────────────────────────────────────────────
+  // ── Loading — Sprint 0 PageSkeleton ──────────────────────────────────────
   if (loadState === 'loading') {
-    return (
-      <div className="p-6 space-y-6 animate-pulse">
-        <div className="h-8 bg-muted rounded w-64" />
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <div className="h-48 bg-muted rounded-xl" />
-          <div className="lg:col-span-2 h-48 bg-muted rounded-xl" />
-        </div>
-        <div className="h-32 bg-muted rounded-xl" />
-        <div className="h-40 bg-muted rounded-xl" />
-      </div>
-    );
+    return <PageSkeleton />;
   }
 
-  // ── Error state ─────────────────────────────────────────────────────────────
+  // ── Error ─────────────────────────────────────────────────────────────────
   if (loadState === 'error') {
     return (
-      <div className="p-6 flex flex-col items-center justify-center min-h-[50vh] gap-4">
-        <p className="text-sm text-muted-foreground">Failed to load health dashboard.</p>
-        <button
-          type="button"
-          onClick={() => load(selectedSite ?? undefined)}
-          className="text-sm px-4 py-2 rounded-lg border hover:bg-muted transition-colors"
-        >
+      <div className="px-6 py-16 flex flex-col items-center gap-3 text-center">
+        <p className="text-sm text-[#6B7280]">Failed to load health dashboard.</p>
+        <Button variant="secondary" size="sm" onClick={() => load(selectedSite ?? undefined)}>
           Retry
-        </button>
+        </Button>
       </div>
     );
   }
 
-  // ── Empty state (no completed audits yet) ───────────────────────────────────
+  // ── Empty — common EmptyState ─────────────────────────────────────────────
   if (loadState === 'empty' || !dashboard?.score) {
     return (
-      <div className="p-6 flex flex-col items-center justify-center min-h-[50vh] gap-4 text-center">
-        <BarChart3 className="h-10 w-10 text-muted-foreground/40" />
-        <p className="text-base font-semibold">No health data yet</p>
-        <p className="text-sm text-muted-foreground max-w-sm">
-          Run your first audit to see your Data Health Score, alerts, and 30-day trend.
-        </p>
-        <button
-          type="button"
-          onClick={() => navigate('/journey/new')}
-          className="text-sm px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-        >
-          Run your first audit
-        </button>
+      <div className="px-6 py-8">
+        <EmptyState
+          icon="chart"
+          title="No health data yet"
+          description="Run your first audit to see your Signal Health score, active alerts, and 30-day trend."
+          action={
+            <Button onClick={() => navigate('/journey/new')} className="gap-2">
+              <BarChart3 className="h-4 w-4" strokeWidth={1.5} />
+              Run your first audit
+            </Button>
+          }
+        />
       </div>
     );
   }
@@ -139,32 +132,33 @@ export default function HealthDashboardPage() {
   const { score, alerts } = dashboard;
 
   return (
-    <div className="p-6 space-y-6 max-w-5xl">
+    <div className="px-6 py-8 max-w-5xl space-y-8">
 
-      {/* ── Page header ────────────────────────────────────────────────────── */}
+      {/* ── Page header ───────────────────────────────────────────────────── */}
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-xl font-semibold tracking-tight">Data Health</h1>
-            {/* Site selector — multi-site */}
+            <h1 className="text-page-title">Signal Health</h1>
+
+            {/* Site selector */}
             {sites.length > 1 && (
               <div className="relative" ref={dropdownRef}>
                 <button
                   type="button"
                   onClick={() => setSiteDropdownOpen((o) => !o)}
-                  className="flex items-center gap-1 text-sm font-medium px-2.5 py-1 rounded-lg border bg-muted/50 hover:bg-muted transition-colors max-w-[240px]"
+                  className="flex items-center gap-1 text-sm font-medium px-2.5 py-1 rounded-md border border-[#E5E7EB] bg-[#F9FAFB] hover:bg-white transition-colors max-w-[240px]"
                 >
-                  <span className="truncate">
+                  <span className="truncate text-[#6B7280]">
                     {selectedSite ? formatDomain(selectedSite) : 'All Sites'}
                   </span>
-                  <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0 text-[#9CA3AF]" strokeWidth={1.5} />
                 </button>
                 {siteDropdownOpen && (
-                  <div className="absolute left-0 top-full mt-1 z-50 min-w-[200px] rounded-lg border bg-popover shadow-md py-1">
+                  <div className="absolute left-0 top-full mt-1 z-50 min-w-[200px] rounded-lg border border-[#E5E7EB] bg-white shadow-md py-1">
                     <button
                       type="button"
                       onClick={() => handleSiteChange(null)}
-                      className={`w-full text-left px-3 py-1.5 text-sm hover:bg-muted transition-colors ${selectedSite === null ? 'font-semibold text-primary' : ''}`}
+                      className={`w-full text-left px-3 py-1.5 text-sm hover:bg-[#F9FAFB] transition-colors ${selectedSite === null ? 'font-semibold text-[#1B2A4A]' : 'text-[#6B7280]'}`}
                     >
                       All Sites
                     </button>
@@ -173,7 +167,7 @@ export default function HealthDashboardPage() {
                         key={s.website_url}
                         type="button"
                         onClick={() => handleSiteChange(s.website_url)}
-                        className={`w-full text-left px-3 py-1.5 text-sm hover:bg-muted transition-colors truncate ${selectedSite === s.website_url ? 'font-semibold text-primary' : ''}`}
+                        className={`w-full text-left px-3 py-1.5 text-sm hover:bg-[#F9FAFB] transition-colors truncate ${selectedSite === s.website_url ? 'font-semibold text-[#1B2A4A]' : 'text-[#6B7280]'}`}
                       >
                         {formatDomain(s.website_url)}
                       </button>
@@ -182,112 +176,99 @@ export default function HealthDashboardPage() {
                 )}
               </div>
             )}
-            {/* Single-site label — static badge when only one site exists */}
+
             {sites.length === 1 && (
-              <span className="text-sm font-medium px-2.5 py-1 rounded-lg border bg-muted/50 text-muted-foreground max-w-[240px] truncate">
+              <span className="text-sm px-2.5 py-1 rounded-md border border-[#E5E7EB] bg-[#F9FAFB] text-[#6B7280] max-w-[240px] truncate">
                 {formatDomain(sites[0].website_url)}
               </span>
             )}
-            {/* Fallback: show URL from the score record if sites list is empty */}
             {sites.length === 0 && score.website_url && (
-              <span className="text-sm font-medium px-2.5 py-1 rounded-lg border bg-muted/50 text-muted-foreground max-w-[240px] truncate">
+              <span className="text-sm px-2.5 py-1 rounded-md border border-[#E5E7EB] bg-[#F9FAFB] text-[#6B7280] max-w-[240px] truncate">
                 {formatDomain(score.website_url)}
               </span>
             )}
           </div>
+
           {lastRefresh && (
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Last refreshed {lastRefresh.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
-              {(selectedSite ?? (sites.length === 0 ? score.website_url : null)) && (
-                <span className="ml-1 text-muted-foreground/60">
-                  · {formatDomain(selectedSite ?? score.website_url ?? '')}
-                </span>
-              )}
+            <p className="text-body text-[#6B7280] mt-1">
+              Last updated {lastRefresh.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
             </p>
           )}
         </div>
+
         <button
           type="button"
           onClick={handleCompute}
           disabled={computing}
-          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border hover:bg-muted disabled:opacity-60 transition-colors shrink-0"
+          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border border-[#E5E7EB] hover:bg-[#F9FAFB] disabled:opacity-60 transition-colors shrink-0"
         >
-          <RefreshCw className={`h-3.5 w-3.5 ${computing ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`h-3.5 w-3.5 ${computing ? 'animate-spin' : ''}`} strokeWidth={1.5} />
           {computing ? 'Computing…' : 'Refresh'}
         </button>
       </div>
 
-      {/* ── Zone 1 + 2: Score ring + Key metrics ───────────────────────────── */}
+      {/* ── Zone 1: Score ring + key metrics ──────────────────────────────── */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[auto_1fr]">
-        {/* Score ring */}
-        <div className="flex items-center justify-center rounded-xl border bg-card px-8 py-6">
+        {/* Score ring — centered in its own card */}
+        <div className="flex items-center justify-center rounded-lg border border-[#E5E7EB] bg-white px-10 py-8">
           <OverallScoreRing score={score.overall_score} computedAt={score.computed_at} />
         </div>
 
-        {/* Key metrics */}
-        <div className="flex flex-col justify-center gap-3">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Sub-scores</p>
+        {/* Key metrics sub-scores */}
+        <div className="flex flex-col justify-center gap-4">
+          <p className="text-caption-upper">Sub-scores</p>
           <KeyMetricsRow score={score} />
-          <MetricGuidance
-            result={auditScoreGuidance(score.overall_score)}
-            collapsible
-          />
-          <MetricGuidance
-            result={signalCoverageGuidance(score.signal_health)}
-            collapsible
-          />
         </div>
       </div>
 
-      {/* ── Zone 3: Active alerts ───────────────────────────────────────────── */}
+      {/* ── Zone 2: Active alerts ──────────────────────────────────────────── */}
       <section>
-        <h2 className="text-sm font-semibold mb-3">
-          Active Alerts
+        <div className="flex items-center gap-2 mb-3">
+          <h2 className="text-section-header">Active Alerts</h2>
           {alerts.length > 0 && (
-            <span className="ml-2 inline-flex items-center justify-center w-5 h-5 rounded-full bg-red-100 text-red-700 text-[10px] font-bold">
+            <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-[#FEF2F2] text-[#DC2626] text-[10px] font-bold border border-[#DC2626]/20">
               {alerts.length}
             </span>
           )}
-        </h2>
+        </div>
         <ActiveAlertsFeed alerts={alerts} />
       </section>
 
-      {/* ── Zone 4: Trend chart ─────────────────────────────────────────────── */}
+      {/* ── Zone 3: 30-day trend chart ─────────────────────────────────────── */}
       <section>
-        <h2 className="text-sm font-semibold mb-3">30-Day Trend</h2>
-        <div className="rounded-xl border bg-card px-5 py-4">
+        <h2 className="text-section-header mb-3">30-Day Trend</h2>
+        <div className="rounded-lg border border-[#E5E7EB] bg-white px-5 py-4">
           <HealthHistoryChart snapshots={history} />
         </div>
       </section>
 
-      {/* ── Zone 5: Readiness score ─────────────────────────────────────────── */}
+      {/* ── Zone 4: First-party data readiness ────────────────────────────── */}
       <section>
-        <h2 className="text-sm font-semibold mb-3">First-Party Data Readiness</h2>
+        <h2 className="text-section-header mb-3">First-Party Data Readiness</h2>
         <ReadinessScore />
       </section>
 
-      {/* ── Zone 6: Quick actions ───────────────────────────────────────────── */}
+      {/* ── Zone 5: Quick actions ──────────────────────────────────────────── */}
       <section>
-        <h2 className="text-sm font-semibold mb-3">Quick Actions</h2>
+        <h2 className="text-section-header mb-3">Quick Actions</h2>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <QuickActionCard
-            icon={<BarChart3 className="h-4 w-4" />}
+            Icon={BarChart3}
             title="Run Audit"
             description="Check your latest conversion tracking against 26 rules"
             onClick={() => navigate('/audit/new')}
           />
           <QuickActionCard
-            icon={<Zap className="h-4 w-4" />}
+            Icon={Zap}
             title="Set Up CAPI"
             description="Connect server-side event delivery to improve your score"
-            onClick={() => navigate('/settings')}
+            onClick={() => navigate('/integrations/capi')}
           />
           <QuickActionCard
-            icon={<ShieldCheck className="h-4 w-4" />}
+            Icon={ShieldCheck}
             title="Configure Consent"
             description="Activate Consent Hub to hit 100% consent coverage"
-            onClick={() => navigate('/settings')}
-            trailingIcon={<ExternalLink className="h-3 w-3 opacity-40" />}
+            onClick={() => navigate('/consent')}
           />
         </div>
       </section>
@@ -298,28 +279,25 @@ export default function HealthDashboardPage() {
 // ── Quick action card ──────────────────────────────────────────────────────────
 
 interface QuickActionCardProps {
-  icon: React.ReactNode;
+  Icon: React.ElementType;
   title: string;
   description: string;
   onClick: () => void;
-  trailingIcon?: React.ReactNode;
 }
 
-function QuickActionCard({ icon, title, description, onClick, trailingIcon }: QuickActionCardProps) {
+function QuickActionCard({ Icon, title, description, onClick }: QuickActionCardProps) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="text-left rounded-xl border bg-card px-4 py-4 hover:bg-muted/50 transition-colors group"
+      className="text-left rounded-lg border border-[#E5E7EB] bg-white px-4 py-4 hover:bg-[#F9FAFB] hover:border-[#1B2A4A]/20 transition-colors group"
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="p-1.5 rounded-lg bg-primary/10 text-primary shrink-0">
-          {icon}
-        </div>
-        {trailingIcon && <span className="mt-1">{trailingIcon}</span>}
+      {/* Icon in navy bg square */}
+      <div className="flex h-9 w-9 items-center justify-center rounded-md bg-[#EEF1F7] mb-3">
+        <Icon className="h-4.5 w-4.5 text-[#1B2A4A]" strokeWidth={1.5} />
       </div>
-      <p className="text-sm font-semibold mt-3">{title}</p>
-      <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{description}</p>
+      <p className="text-section-header text-[#1A1A1A]">{title}</p>
+      <p className="text-xs text-[#6B7280] mt-1 leading-relaxed">{description}</p>
     </button>
   );
 }
