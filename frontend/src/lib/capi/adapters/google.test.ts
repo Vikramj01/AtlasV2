@@ -36,13 +36,12 @@ const BASE_EVENT: AtlasEvent = {
     content_ids: undefined,
     num_items: undefined,
   },
-  consent_state: { analytics: true, marketing: true },
+  consent_state: { analytics: 'granted', marketing: 'granted', personalisation: 'denied', functional: 'granted' },
 };
 
 const MAPPING: EventMapping = {
   atlas_event: 'purchase',
   provider_event: 'PURCHASE',
-  enabled: true,
 };
 
 const HASHED_IDS: HashedIdentifier[] = [
