@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ProtectedRoute } from '@/components/layout/ProtectedRoute';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { AppErrorBoundary, SectionErrorBoundary } from '@/components/common/ErrorBoundary';
 import { LoginPage } from '@/pages/LoginPage';
 import { HomePage } from '@/pages/HomePage';
 import { DashboardPage } from '@/pages/DashboardPage';
@@ -35,58 +36,59 @@ import { ResetPasswordPage } from '@/pages/ResetPasswordPage';
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        {/* Public */}
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/reset-password" element={<ResetPasswordPage />} />
+    <AppErrorBoundary>
+      <BrowserRouter>
+        <Routes>
+          {/* Public */}
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
 
-        {/* Protected — wrapped in AppLayout (sidebar + topbar) */}
-        <Route element={<ProtectedRoute />}>
-          <Route element={<AppLayout />}>
-            <Route path="/home" element={<HomePage />} />
-            <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/report/:auditId" element={<ReportPage />} />
-            <Route path="/journey/new" element={<JourneyBuilderPage />} />
-            <Route path="/journey/:id/spec" element={<JourneySpecPage />} />
-            <Route path="/journey/:id/audit/:auditId" element={<GapReportPage />} />
-            {/* Planning Mode */}
-            <Route path="/planning" element={<PlanningDashboard />} />
-            {/* Settings */}
-            <Route path="/settings" element={<SettingsPage />} />
-            {/* Consent Hub */}
-            <Route path="/consent" element={<ConsentPage />} />
-            {/* CAPI Integrations */}
-            <Route path="/integrations/capi" element={<CAPIPage />} />
-            {/* Data Health Dashboard */}
-            <Route path="/health" element={<HealthDashboardPage />} />
-            {/* Channel Insights */}
-            <Route path="/channels" element={<ChannelInsightsPage />} />
-            {/* Admin */}
-            <Route path="/admin" element={<AdminPage />} />
-            {/* Agency Workspaces */}
-            <Route path="/org/:orgId" element={<OrgDashboardPage />} />
-            <Route path="/org/:orgId/clients" element={<ClientListPage />} />
-            <Route path="/org/:orgId/clients/:clientId" element={<ClientDetailPage />} />
-            <Route path="/org/:orgId/signals" element={<SignalLibraryPage />} />
-            <Route path="/org/:orgId/packs" element={<SignalPacksPage />} />
-            <Route path="/org/:orgId/packs/:packId" element={<PackDetailPage />} />
-            <Route path="/org/:orgId/settings" element={<OrgSettingsPage />} />
+          {/* Protected — wrapped in AppLayout (sidebar + topbar) */}
+          <Route element={<ProtectedRoute />}>
+            <Route element={<AppLayout />}>
+              <Route path="/home"      element={<SectionErrorBoundary label="Home"><HomePage /></SectionErrorBoundary>} />
+              <Route path="/dashboard" element={<SectionErrorBoundary label="Dashboard"><DashboardPage /></SectionErrorBoundary>} />
+              <Route path="/report/:auditId" element={<SectionErrorBoundary label="Audit report"><ReportPage /></SectionErrorBoundary>} />
+              <Route path="/journey/new" element={<SectionErrorBoundary label="Journey builder"><JourneyBuilderPage /></SectionErrorBoundary>} />
+              <Route path="/journey/:id/spec" element={<SectionErrorBoundary label="Journey spec"><JourneySpecPage /></SectionErrorBoundary>} />
+              <Route path="/journey/:id/audit/:auditId" element={<SectionErrorBoundary label="Gap report"><GapReportPage /></SectionErrorBoundary>} />
+              {/* Planning Mode */}
+              <Route path="/planning" element={<SectionErrorBoundary label="Planning sessions"><PlanningDashboard /></SectionErrorBoundary>} />
+              {/* Settings */}
+              <Route path="/settings" element={<SectionErrorBoundary label="Settings"><SettingsPage /></SectionErrorBoundary>} />
+              {/* Consent Hub */}
+              <Route path="/consent" element={<SectionErrorBoundary label="Consent & Privacy"><ConsentPage /></SectionErrorBoundary>} />
+              {/* CAPI Integrations */}
+              <Route path="/integrations/capi" element={<SectionErrorBoundary label="Conversion API"><CAPIPage /></SectionErrorBoundary>} />
+              {/* Data Health Dashboard */}
+              <Route path="/health" element={<SectionErrorBoundary label="Health dashboard"><HealthDashboardPage /></SectionErrorBoundary>} />
+              {/* Channel Insights */}
+              <Route path="/channels" element={<SectionErrorBoundary label="Channel insights"><ChannelInsightsPage /></SectionErrorBoundary>} />
+              {/* Admin */}
+              <Route path="/admin" element={<SectionErrorBoundary label="Admin"><AdminPage /></SectionErrorBoundary>} />
+              {/* Agency Workspaces */}
+              <Route path="/org/:orgId" element={<SectionErrorBoundary label="Organisation"><OrgDashboardPage /></SectionErrorBoundary>} />
+              <Route path="/org/:orgId/clients" element={<SectionErrorBoundary label="Clients"><ClientListPage /></SectionErrorBoundary>} />
+              <Route path="/org/:orgId/clients/:clientId" element={<SectionErrorBoundary label="Client detail"><ClientDetailPage /></SectionErrorBoundary>} />
+              <Route path="/org/:orgId/signals" element={<SectionErrorBoundary label="Tracking map"><SignalLibraryPage /></SectionErrorBoundary>} />
+              <Route path="/org/:orgId/packs" element={<SectionErrorBoundary label="Signal packs"><SignalPacksPage /></SectionErrorBoundary>} />
+              <Route path="/org/:orgId/packs/:packId" element={<SectionErrorBoundary label="Pack detail"><PackDetailPage /></SectionErrorBoundary>} />
+              <Route path="/org/:orgId/settings" element={<SectionErrorBoundary label="Organisation settings"><OrgSettingsPage /></SectionErrorBoundary>} />
+            </Route>
+            {/* Full-screen routes (no sidebar) */}
+            <Route path="/audit/:auditId/progress" element={<SectionErrorBoundary label="Audit progress"><AuditProgressPage /></SectionErrorBoundary>} />
+            <Route path="/planning/new"        element={<SectionErrorBoundary label="Set up tracking"><PlanningModePage /></SectionErrorBoundary>} />
+            <Route path="/planning/:sessionId" element={<SectionErrorBoundary label="Set up tracking"><PlanningModePage /></SectionErrorBoundary>} />
           </Route>
-          {/* Progress page: full-screen, no sidebar */}
-          <Route path="/audit/:auditId/progress" element={<AuditProgressPage />} />
-          {/* Planning wizard: full-screen, no sidebar */}
-          <Route path="/planning/new" element={<PlanningModePage />} />
-          <Route path="/planning/:sessionId" element={<PlanningModePage />} />
-        </Route>
 
-        {/* Developer Portal — public, no auth required */}
-        <Route path="/dev/:shareToken" element={<DeveloperPortalPage />} />
+          {/* Developer Portal — public, no auth required */}
+          <Route path="/dev/:shareToken" element={<SectionErrorBoundary label="Developer portal"><DeveloperPortalPage /></SectionErrorBoundary>} />
 
-        {/* Redirects */}
-        <Route path="/" element={<Navigate to="/health" replace />} />
-        <Route path="*" element={<Navigate to="/health" replace />} />
-      </Routes>
-    </BrowserRouter>
+          {/* Redirects */}
+          <Route path="/" element={<Navigate to="/health" replace />} />
+          <Route path="*" element={<Navigate to="/health" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </AppErrorBoundary>
   );
 }
