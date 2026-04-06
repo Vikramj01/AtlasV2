@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ProgressBar } from '@/components/developer/ProgressBar';
 import { ChangeDetectionResults } from '@/components/planning/ChangeDetectionResults';
+import { SkeletonCard } from '@/components/common/SkeletonCard';
 
 const STATUS_LABELS: Record<PlanningSession['status'], string> = {
   setup:         'Setup',
@@ -100,7 +101,7 @@ function RescanCell({
         <button
           type="button"
           onClick={() => onViewResults(session.id)}
-          className="text-xs text-brand-600 hover:text-brand-700 font-medium"
+          className="text-xs text-[#1B2A4A] hover:text-[#1B2A4A]/80 font-medium"
         >
           {rescanResults?.summary?.action_required ? '⚠ View changes' : '✓ View results'}
         </button>
@@ -259,17 +260,13 @@ export function PlanningDashboard() {
             Scan your website and get a ready-to-import GTM container with AI-recommended tracking.
           </p>
         </div>
-        <Button onClick={handleNew} className="bg-brand-600 hover:bg-brand-700">
+        <Button onClick={handleNew}>
           + New Plan
         </Button>
       </div>
 
       {/* Body */}
-      {isLoading && (
-        <div className="flex items-center justify-center py-20 text-sm text-muted-foreground">
-          Loading sessions…
-        </div>
-      )}
+      {isLoading && <SkeletonCard variant="page" />}
 
       {!isLoading && error && (
         <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
@@ -284,7 +281,7 @@ export function PlanningDashboard() {
           <p className="mt-1 text-xs text-muted-foreground/60">
             Create your first plan to generate a GTM container and implementation guide.
           </p>
-          <Button onClick={handleNew} className="mt-5 bg-brand-600 hover:bg-brand-700">
+          <Button onClick={handleNew} className="mt-5">
             Get Started
           </Button>
         </div>
@@ -335,7 +332,7 @@ export function PlanningDashboard() {
                     <div className="flex items-center justify-end gap-3">
                       <button
                         onClick={() => handleOpen(s)}
-                        className="text-xs font-medium text-brand-600 hover:text-brand-700"
+                        className="text-xs font-medium text-[#1B2A4A] hover:text-[#1B2A4A]/80"
                       >
                         Open →
                       </button>

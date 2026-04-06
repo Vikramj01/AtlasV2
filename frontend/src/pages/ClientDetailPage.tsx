@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { clientApi } from '@/lib/api/organisationApi';
 import { DeploymentWizard } from '@/components/signals/DeploymentWizard';
 import { WalkerOSAdvantageCard } from '@/components/signals/WalkerOSAdvantageCard';
+import { SkeletonCard } from '@/components/common/SkeletonCard';
 import type { ClientWithDetails, ClientDeployment, ClientOutput } from '@/types/organisation';
 
 const OUTPUT_LABELS: Record<string, string> = {
@@ -87,7 +88,7 @@ export function ClientDetailPage() {
   }
 
   if (isLoading) {
-    return <div className="flex justify-center py-16"><div className="h-6 w-6 animate-spin rounded-full border-2 border-primary/30 border-t-primary" /></div>;
+    return <SkeletonCard variant="page" />;
   }
   if (!client) return <div className="p-6 text-sm text-red-600">Client not found.</div>;
 

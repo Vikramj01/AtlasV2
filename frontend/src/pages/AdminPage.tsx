@@ -112,7 +112,7 @@ function UsersTab({
     <div className="overflow-x-auto rounded-xl border bg-white shadow-sm">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <tr className="border-b bg-[#F9FAFB] text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             <th className="px-4 py-3">Email</th>
             <th className="px-4 py-3">Plan</th>
             <th className="px-4 py-3 text-center">Audits</th>
@@ -193,7 +193,7 @@ function ActivityTab({ items }: { items: ActivityItem[] }) {
     <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <tr className="border-b bg-[#F9FAFB] text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             <th className="px-4 py-3">Type</th>
             <th className="px-4 py-3">Site</th>
             <th className="px-4 py-3">User</th>
@@ -255,7 +255,7 @@ function AlertsTab({ alerts, onDismiss }: { alerts: AdminAlert[]; onDismiss: (id
     <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <tr className="border-b bg-[#F9FAFB] text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             <th className="px-4 py-3">Severity</th>
             <th className="px-4 py-3">Title</th>
             <th className="px-4 py-3">Message</th>
