@@ -6,38 +6,39 @@
 
 @layer base {
   :root {
-    /* ── Neutrals ─────────────────────────────────────── */
-    --background:           0 0% 100%;
-    --foreground:           220 13% 9%;
+    /* ── Canvas ──────────────────────────────────────── */
+    --background:           0 0% 100%;          /* #FFFFFF */
+    --foreground:           0 0% 10%;           /* #1A1A1A — design spec text primary */
 
     --card:                 0 0% 100%;
-    --card-foreground:      220 13% 9%;
+    --card-foreground:      0 0% 10%;
 
     --popover:              0 0% 100%;
-    --popover-foreground:   220 13% 9%;
+    --popover-foreground:   0 0% 10%;
 
-    /* ── Brand primary = Atlas sky-blue ──────────────── */
-    --primary:              200 98% 39%;
+    /* ── Brand primary = Atlas Navy #1B2A4A ─────────── */
+    --primary:              218 47% 20%;        /* #1B2A4A */
     --primary-foreground:   0 0% 100%;
 
-    /* ── Neutrals cont. ──────────────────────────────── */
-    --secondary:            220 9% 94%;
-    --secondary-foreground: 220 13% 9%;
+    /* ── Secondary surface ───────────────────────────── */
+    --secondary:            220 14% 98%;        /* #F9FAFB — card surface */
+    --secondary-foreground: 0 0% 10%;
 
-    --muted:                220 9% 95%;
-    --muted-foreground:     220 9% 46%;
+    --muted:                220 14% 96%;
+    --muted-foreground:     220 9% 46%;         /* #6B7280 — design spec text secondary */
 
-    --accent:               220 9% 94%;
-    --accent-foreground:    220 13% 9%;
+    /* ── Accent = Atlas Medium Blue #2E75B6 ──────────── */
+    --accent:               210 60% 45%;        /* #2E75B6 */
+    --accent-foreground:    0 0% 100%;
 
-    --destructive:          0 84% 60%;
+    --destructive:          0 72% 51%;          /* #DC2626 — severity critical */
     --destructive-foreground: 0 0% 98%;
 
-    --border:               220 13% 91%;
+    --border:               220 13% 91%;        /* #E5E7EB — design spec border */
     --input:                220 13% 91%;
-    --ring:                 200 98% 39%;
+    --ring:                 218 47% 20%;        /* navy ring */
 
-    --radius:               0.625rem;
+    --radius:               0.5rem;             /* 8px — design spec card radius */
   }
 
   .dark {
@@ -50,7 +51,7 @@
     --popover:              224 13% 10%;
     --popover-foreground:   210 17% 95%;
 
-    --primary:              200 98% 50%;
+    --primary:              218 47% 30%;
     --primary-foreground:   0 0% 100%;
 
     --secondary:            224 10% 16%;
@@ -59,15 +60,15 @@
     --muted:                224 10% 16%;
     --muted-foreground:     220 9% 55%;
 
-    --accent:               224 10% 16%;
-    --accent-foreground:    210 17% 95%;
+    --accent:               210 60% 45%;
+    --accent-foreground:    0 0% 100%;
 
     --destructive:          0 63% 40%;
     --destructive-foreground: 0 0% 98%;
 
     --border:               224 10% 18%;
     --input:                224 10% 18%;
-    --ring:                 200 98% 50%;
+    --ring:                 218 47% 30%;
   }
 }
 
@@ -91,8 +92,8 @@
 
   /* Better text selection */
   ::selection {
-    background-color: hsl(200 98% 39% / 0.15);
-    color: hsl(200 98% 20%);
+    background-color: hsl(218 47% 20% / 0.12);
+    color: hsl(218 47% 20%);
   }
 
   /* Subtle custom scrollbars */
@@ -101,8 +102,21 @@
   ::-webkit-scrollbar-thumb  { @apply rounded-full bg-border; }
   ::-webkit-scrollbar-thumb:hover { background: hsl(220 9% 75%); }
 
-  /* Heading rhythm */
-  h1 { @apply text-2xl font-bold tracking-tight; }
-  h2 { @apply text-xl font-semibold tracking-tight; }
-  h3 { @apply text-base font-semibold; }
+  /* Heading rhythm — matches design spec type scale */
+  h1 { @apply text-2xl font-semibold tracking-tight text-foreground; }   /* 24px semibold */
+  h2 { @apply text-base font-semibold text-foreground; }                  /* 16px semibold */
+  h3 { @apply text-sm font-semibold text-foreground; }                    /* 14px semibold */
+}
+
+@layer utilities {
+  /* ── Design-spec typography helpers ─────────────────────────────────── */
+  /* Use these classes directly when semantic h1/h2/h3 isn't appropriate */
+  .text-page-title    { @apply text-2xl font-semibold leading-8 text-foreground; }
+  .text-section-header { @apply text-base font-semibold leading-6 text-foreground; }
+  .text-body          { @apply text-sm font-normal leading-5 text-foreground; }
+  .text-caption       { @apply text-xs font-medium leading-4 text-muted-foreground; }
+  .text-caption-upper { @apply text-xs font-medium leading-4 uppercase tracking-wide text-muted-foreground; }
+
+  /* ── Minimum width floor (design is data-dense, designed for 1280px+) ─ */
+  .layout-min-width   { min-width: 1280px; }
 }
