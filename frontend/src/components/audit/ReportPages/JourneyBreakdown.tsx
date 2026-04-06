@@ -13,7 +13,6 @@
 
 import { useState } from 'react';
 import { CheckCircle2, AlertTriangle, XCircle, X } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import type { ReportJSON, JourneyStage, RuleStatus } from '@/types/audit';
 
 // ── Status config — aligned to design system palette ──────────────────────────
