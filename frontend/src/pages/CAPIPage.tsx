@@ -65,7 +65,7 @@ export function CAPIPage() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6 p-6">
+    <div className="px-6 py-8 max-w-3xl space-y-6">
       {view === 'wizard' && (
         <SetupWizard
           onComplete={handleWizardComplete}
@@ -84,10 +84,10 @@ export function CAPIPage() {
         <>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-semibold tracking-tight">Conversions API</h1>
+              <h1 className="text-page-title">Conversion APIs</h1>
               <InfoTooltip contentKey="capi.why_server_side" />
             </div>
-            <p className="text-muted-foreground text-sm mt-1">
+            <p className="text-body text-[#6B7280] mt-1">
               Send server-side conversion events directly to ad platforms. Improves attribution accuracy and fills gaps left by browser-side tracking.
             </p>
           </div>
