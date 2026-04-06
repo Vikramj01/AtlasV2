@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -11,6 +11,12 @@ import type { OutputType } from '@/types/planning';
 
 // ── Share with Developer modal/inline reveal ──────────────────────────────────
 
+/**
+ * ShareReveal — shown after the share link is generated.
+ *
+ * Auto-copies the URL to clipboard on mount (one-click handoff).
+ * User sees the confirmation immediately with the URL below for manual copy.
+ */
 function ShareReveal({
   shareUrl,
   onClose,
@@ -20,30 +26,67 @@ function ShareReveal({
 }) {
   const [copied, setCopied] = useState(false);
 
-  async function handleCopy() {
-    await navigator.clipboard.writeText(shareUrl).catch(() => {});
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  // Auto-copy on mount
+  useEffect(() => {
+    navigator.clipboard.writeText(shareUrl).then(() => {
+      setCopied(true);
+    }).catch(() => {
+      // clipboard not available — degrade gracefully
+    });
+  }, [shareUrl]);
+
+  function handleManualCopy() {
+    navigator.clipboard.writeText(shareUrl).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {});
   }
 
   return (
-    <div className="rounded-xl border border-brand-200 bg-brand-50 p-4">
-      <div className="mb-2 flex items-center justify-between">
-        <p className="text-sm font-semibold text-brand-800">Share link generated</p>
-        <button type="button" onClick={onClose} className="text-xs text-muted-foreground hover:text-foreground">✕</button>
+    <div
+      className="rounded-lg border px-4 py-4 space-y-3"
+      style={{ backgroundColor: '#EEF1F7', borderColor: `#1B2A4A20` }}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <div
+            className="flex h-7 w-7 items-center justify-center rounded-full shrink-0"
+            style={{ backgroundColor: copied ? '#059669' : '#1B2A4A', color: '#fff' }}
+          >
+            {copied ? '✓' : '🔗'}
+          </div>
+          <div>
+            <p className="text-sm font-semibold" style={{ color: '#1B2A4A' }}>
+              {copied ? 'Link copied to clipboard!' : 'Share link generated'}
+            </p>
+            <p className="text-xs text-[#6B7280]">
+              Send this to your developer — no Atlas account needed. Expires in 90 days.
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="text-[#9CA3AF] hover:text-[#1A1A1A] transition-colors text-lg leading-none shrink-0"
+          aria-label="Dismiss"
+        >
+          ×
+        </button>
       </div>
-      <p className="mb-3 text-xs text-brand-700">
-        Send this link to your developer. They can open it without an Atlas account.
-        The link expires in 90 days.
-      </p>
+
       <div className="flex gap-2">
         <input
           readOnly
           value={shareUrl}
-          className="flex-1 rounded-lg border border-brand-200 bg-white px-3 py-2 text-xs font-mono text-foreground select-all"
+          className="flex-1 rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-xs font-mono text-[#1A1A1A] select-all"
           onClick={(e) => (e.target as HTMLInputElement).select()}
         />
-        <Button size="sm" variant="outline" onClick={handleCopy} className="shrink-0 text-xs">
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={handleManualCopy}
+          className="shrink-0 text-xs"
+        >
           {copied ? '✓ Copied' : 'Copy'}
         </Button>
       </div>
@@ -266,7 +309,7 @@ export function Step7DownloadAndHandoff() {
               { step: '4', title: 'Verify with Atlas Audit Mode', body: 'Come back here to run an automated audit that validates every signal end-to-end.' },
             ].map(({ step, title, body }) => (
               <li key={step} className="flex gap-3">
-                <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-brand-100 text-xs font-bold text-brand-700">
+                <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-[#EEF1F7] text-xs font-bold text-[#1B2A4A]">
                   {step}
                 </span>
                 <div>
@@ -289,7 +332,7 @@ export function Step7DownloadAndHandoff() {
         <Button
           onClick={handleStartAudit}
           disabled={isHandingOff}
-          className="w-full bg-brand-600 hover:bg-brand-700 py-3"
+          className="w-full py-3"
         >
           {isHandingOff ? (
             <span className="flex items-center justify-center gap-2">

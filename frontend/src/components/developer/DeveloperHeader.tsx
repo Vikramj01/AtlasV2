@@ -8,6 +8,8 @@ interface DeveloperHeaderProps {
   progress: ImplementationProgress;
 }
 
+const NAVY = '#1B2A4A';
+
 export function DeveloperHeader({
   siteUrl,
   preparedBy,
@@ -21,23 +23,28 @@ export function DeveloperHeader({
   });
 
   return (
-    <header className="border-b border-border bg-background">
+    <header className="border-b border-[#E5E7EB] bg-white" style={{ paddingTop: 0 }}>
       <div className="mx-auto max-w-3xl px-6 py-5">
-        {/* Top row: brand + title */}
+        {/* Brand + title */}
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-lg font-bold tracking-tight text-foreground">Atlas</span>
-            <span className="text-xs text-muted-foreground/60">|</span>
-            <span className="text-sm text-muted-foreground">Developer Implementation View</span>
+            {/* Navy square logo mark */}
+            <div
+              className="flex h-7 w-7 items-center justify-center rounded"
+              style={{ backgroundColor: NAVY }}
+            >
+              <span className="text-xs font-bold text-white select-none">A</span>
+            </div>
+            <span className="text-sm font-semibold text-[#1A1A1A]">Atlas</span>
+            <span className="text-[#D1D5DB] text-sm">|</span>
+            <span className="text-sm text-[#6B7280]">Developer Handoff</span>
           </div>
         </div>
 
-        {/* Site info */}
-        <div className="mb-4 grid gap-1 text-sm">
-          <div className="flex items-baseline gap-2">
-            <span className="font-medium text-foreground">{siteUrl}</span>
-          </div>
-          <p className="text-xs text-muted-foreground">
+        {/* Site + meta */}
+        <div className="mb-4 space-y-0.5">
+          <p className="text-sm font-semibold text-[#1A1A1A]">{siteUrl}</p>
+          <p className="text-xs text-[#9CA3AF]">
             Prepared by {preparedBy} · Generated {date}
           </p>
         </div>
