@@ -86,7 +86,7 @@ export function Step5TrackingPlanSummary() {
                   <p className="mb-1 text-xs font-medium text-muted-foreground truncate">{pageLabel}</p>
                   <div className="flex flex-wrap gap-1.5">
                     {events.map((ev) => (
-                      <span key={ev} className="rounded bg-brand-50 px-2 py-0.5 font-mono text-xs text-brand-700">
+                      <span key={ev} className="rounded bg-[#EEF1F7] px-2 py-0.5 font-mono text-xs text-[#1B2A4A]">
                         {ev}
                       </span>
                     ))}
@@ -146,7 +146,7 @@ export function Step5TrackingPlanSummary() {
         <Button
           onClick={nextStep}
           disabled={approved.length === 0}
-          className="bg-brand-600 hover:bg-brand-700"
+          className="bg-[#1B2A4A] hover:bg-[#1B2A4A]"
         >
           Continue to Consent →
         </Button>

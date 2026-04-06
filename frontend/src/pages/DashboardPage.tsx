@@ -73,7 +73,7 @@ export function DashboardPage() {
       </div>
 
       {/* CTA card */}
-      <Card className="border-brand-200 bg-brand-50">
+      <Card className="border-[#1B2A4A]/20 bg-[#EEF1F7]">
         <CardContent className="flex items-center justify-between p-6">
           <div>
             <h2 className="text-lg font-semibold">Audit your conversion tracking</h2>
@@ -81,7 +81,7 @@ export function DashboardPage() {
               Define your funnel, select platforms, and Atlas will validate every signal.
             </p>
           </div>
-          <Button asChild className="ml-6 flex-shrink-0 bg-brand-600 hover:bg-brand-700">
+          <Button asChild className="ml-6 flex-shrink-0 bg-[#1B2A4A] hover:bg-[#1B2A4A]">
             <Link to="/journey/new">New Audit</Link>
           </Button>
         </CardContent>

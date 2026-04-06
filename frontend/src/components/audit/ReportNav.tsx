@@ -28,7 +28,7 @@ export function ReportNav({ currentPage, onPageChange }: Props) {
           className={cn(
             'pb-3 px-1 text-sm font-medium border-b-2 transition-colors whitespace-nowrap',
             currentPage === p.id
-              ? 'border-brand-500 text-brand-600'
+              ? 'border-[#1B2A4A] text-[#1B2A4A]'
               : 'border-transparent text-muted-foreground hover:text-foreground'
           )}
         >

@@ -47,7 +47,7 @@ export function ReportPage() {
     return (
       <div className="flex h-full min-h-64 flex-col items-center justify-center gap-3">
         <p className="text-sm text-destructive">{error ?? 'Report not found.'}</p>
-        <Link to="/dashboard" className="text-sm font-medium text-brand-600 hover:underline">
+        <Link to="/dashboard" className="text-sm font-medium text-[#1B2A4A] hover:underline">
           ← Back to dashboard
         </Link>
       </div>
@@ -61,7 +61,7 @@ export function ReportPage() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 text-sm text-muted-foreground/60 mb-1">
-              <Link to="/dashboard" className="hover:text-brand-600">← Audits</Link>
+              <Link to="/dashboard" className="hover:text-[#1B2A4A]">← Audits</Link>
             </div>
             <h1 className="text-xl font-bold text-foreground">Signal Health Report</h1>
             <p className="mt-0.5 text-sm text-muted-foreground">

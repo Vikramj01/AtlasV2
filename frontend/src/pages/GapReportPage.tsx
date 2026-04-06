@@ -104,7 +104,7 @@ function GapCard({ gap }: { gap: Gap }) {
             <div className="mt-2">
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-medium text-muted-foreground">Fix:</span>
-                <Button variant="ghost" size="sm" onClick={copy} className="h-auto py-0 px-1 text-xs text-brand-600 hover:text-brand-700">
+                <Button variant="ghost" size="sm" onClick={copy} className="h-auto py-0 px-1 text-xs text-[#1B2A4A] hover:text-[#1B2A4A]">
                   {copied ? '✓ Copied' : 'Copy code'}
                 </Button>
               </div>
@@ -243,10 +243,10 @@ function NextSteps({
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <Link
                 to={`/journey/${journeyId}/spec`}
-                className="flex flex-col gap-1 rounded-xl border-2 border-brand-500 bg-brand-50 px-4 py-3 hover:bg-brand-100 transition-colors"
+                className="flex flex-col gap-1 rounded-xl border-2 border-[#1B2A4A] bg-[#EEF1F7] px-4 py-3 hover:bg-[#EEF1F7] transition-colors"
               >
-                <span className="text-sm font-semibold text-brand-700">View Implementation Spec</span>
-                <span className="text-xs text-brand-600">
+                <span className="text-sm font-semibold text-[#1B2A4A]">View Implementation Spec</span>
+                <span className="text-xs text-[#1B2A4A]">
                   Send to your dev team — per-page tracking code and requirements
                 </span>
               </Link>
@@ -297,10 +297,10 @@ function NextSteps({
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Link
                 to={`/journey/${journeyId}/spec`}
-                className="flex flex-col gap-1 rounded-xl border-2 border-brand-500 bg-brand-50 px-4 py-3 hover:bg-brand-100 transition-colors"
+                className="flex flex-col gap-1 rounded-xl border-2 border-[#1B2A4A] bg-[#EEF1F7] px-4 py-3 hover:bg-[#EEF1F7] transition-colors"
               >
-                <span className="text-sm font-semibold text-brand-700">View Implementation Spec</span>
-                <span className="text-xs text-brand-600">
+                <span className="text-sm font-semibold text-[#1B2A4A]">View Implementation Spec</span>
+                <span className="text-xs text-[#1B2A4A]">
                   The full per-page tracking code your dev team should implement to fix these gaps
                 </span>
               </Link>
@@ -344,19 +344,19 @@ function PlanningContextBanner({
   const issueCount = context.planned_events.length - missingEvents.length;
 
   return (
-    <div className="mb-6 rounded-xl border border-brand-200 bg-brand-50 overflow-hidden">
+    <div className="mb-6 rounded-xl border border-[#1B2A4A]/20 bg-[#EEF1F7] overflow-hidden">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         className="flex w-full items-center justify-between px-4 py-3 text-left"
       >
         <div className="flex items-center gap-2">
-          <span className="text-brand-600 text-base">◎</span>
+          <span className="text-[#1B2A4A] text-base">◎</span>
           <div>
-            <p className="text-sm font-semibold text-brand-800">
+            <p className="text-sm font-semibold text-[#1B2A4A]">
               Created from Planning Mode
             </p>
-            <p className="text-xs text-brand-700">
+            <p className="text-xs text-[#1B2A4A]">
               {context.planned_events.length} events planned for{' '}
               <span className="font-medium">{context.website_url}</span>
               {issueCount > 0 && (
@@ -367,12 +367,12 @@ function PlanningContextBanner({
             </p>
           </div>
         </div>
-        <span className={`text-xs text-brand-600 transition-transform ${open ? 'rotate-180' : ''}`}>▼</span>
+        <span className={`text-xs text-[#1B2A4A] transition-transform ${open ? 'rotate-180' : ''}`}>▼</span>
       </button>
 
       {open && (
-        <div className="border-t border-brand-100 bg-white/60 px-4 py-3">
-          <p className="mb-2 text-xs font-medium text-brand-800">Planned events</p>
+        <div className="border-t border-[#EEF1F7] bg-white/60 px-4 py-3">
+          <p className="mb-2 text-xs font-medium text-[#1B2A4A]">Planned events</p>
           <div className="flex flex-wrap gap-1.5">
             {context.planned_events.map((event) => {
               const hasGap =
@@ -457,7 +457,7 @@ export function GapReportPage() {
     return (
       <div className="mx-auto max-w-3xl px-6 py-10">
         <p className="text-sm text-destructive">{error ?? 'Report not found'}</p>
-        <Link to="/journey/new" className="mt-4 inline-block text-sm text-brand-600 hover:underline">
+        <Link to="/journey/new" className="mt-4 inline-block text-sm text-[#1B2A4A] hover:underline">
           Start a new audit
         </Link>
       </div>
@@ -488,7 +488,7 @@ export function GapReportPage() {
           <Button variant="outline" size="sm" asChild>
             <Link to={`/journey/${id}/spec`}>View Tracking Spec</Link>
           </Button>
-          <Button size="sm" onClick={downloadPDF} className="bg-brand-600 hover:bg-brand-700">
+          <Button size="sm" onClick={downloadPDF} className="bg-[#1B2A4A] hover:bg-[#1B2A4A]">
             Download PDF
           </Button>
         </div>

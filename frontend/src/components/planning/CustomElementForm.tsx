@@ -157,7 +157,7 @@ export function CustomElementForm({ sessionId, pageId, onClose }: CustomElementF
             <Button
               type="submit"
               disabled={isSaving || !eventName.trim()}
-              className="bg-brand-600 hover:bg-brand-700"
+              className="bg-[#1B2A4A] hover:bg-[#1B2A4A]"
             >
               {isSaving ? 'Adding…' : 'Add Element'}
             </Button>

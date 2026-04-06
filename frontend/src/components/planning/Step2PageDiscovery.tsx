@@ -171,7 +171,7 @@ export function Step2PageDiscovery() {
               <button
                 key={slug}
                 onClick={() => addSuggested(slug)}
-                className="rounded-full border px-3 py-1 text-xs text-muted-foreground hover:border-brand-400 hover:text-brand-700"
+                className="rounded-full border px-3 py-1 text-xs text-muted-foreground hover:border-[#1B2A4A]/40 hover:text-[#1B2A4A]"
               >
                 + {label}
               </button>
@@ -193,7 +193,7 @@ export function Step2PageDiscovery() {
         <Button
           onClick={handleStart}
           disabled={urls.length === 0 || isLoading}
-          className="bg-brand-600 hover:bg-brand-700"
+          className="bg-[#1B2A4A] hover:bg-[#1B2A4A]"
         >
           {isLoading ? 'Starting scan…' : `Scan ${urls.length} page${urls.length !== 1 ? 's' : ''} →`}
         </Button>

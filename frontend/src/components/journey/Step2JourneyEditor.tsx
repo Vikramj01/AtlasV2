@@ -94,7 +94,7 @@ export function Step2JourneyEditor({ onNext, onBack }: Step2Props) {
           type="button"
           onClick={onNext}
           disabled={!canProceed}
-          className="flex-1 bg-brand-600 hover:bg-brand-700"
+          className="flex-1 bg-[#1B2A4A] hover:bg-[#1B2A4A]"
         >
           Next: Select Platforms
         </Button>
@@ -108,7 +108,7 @@ function AddStageButton({ onAdd, label = '+ Add Stage' }: { onAdd: () => void; l
     <button
       type="button"
       onClick={onAdd}
-      className="mx-2 flex-shrink-0 rounded-full border border-dashed px-3 py-0.5 text-xs text-muted-foreground hover:border-brand-400 hover:text-brand-600 transition-colors"
+      className="mx-2 flex-shrink-0 rounded-full border border-dashed px-3 py-0.5 text-xs text-muted-foreground hover:border-[#1B2A4A]/40 hover:text-[#1B2A4A] transition-colors"
     >
       {label}
     </button>

@@ -103,7 +103,7 @@ export function AuditHistoryTable({ audits, loading, onDelete }: Props) {
                     {audit.status === 'completed' && (
                       <Link
                         to={`/report/${audit.id}`}
-                        className="text-sm font-medium text-brand-600 hover:text-brand-700"
+                        className="text-sm font-medium text-[#1B2A4A] hover:text-[#1B2A4A]"
                       >
                         View →
                       </Link>

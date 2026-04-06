@@ -173,7 +173,7 @@ export function Step4ReviewRecommendations() {
                 className={cn(
                   'flex-shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors',
                   page.id === activePageId
-                    ? 'bg-brand-600 text-white'
+                    ? 'bg-[#1B2A4A] text-white'
                     : 'bg-muted text-muted-foreground hover:bg-muted/80'
                 )}
               >
@@ -230,7 +230,7 @@ export function Step4ReviewRecommendations() {
                 <Button
                   size="sm"
                   onClick={() => setShowCustomForm(true)}
-                  className="mt-4 bg-brand-600 hover:bg-brand-700"
+                  className="mt-4 bg-[#1B2A4A] hover:bg-[#1B2A4A]"
                 >
                   + Add Element for This Page
                 </Button>
@@ -258,7 +258,7 @@ export function Step4ReviewRecommendations() {
               <Button
                 onClick={nextStep}
                 disabled={!canContinue}
-                className="bg-brand-600 hover:bg-brand-700"
+                className="bg-[#1B2A4A] hover:bg-[#1B2A4A]"
                 title={canContinue ? undefined : 'Approve at least one recommendation to continue'}
               >
                 Continue to Summary →
@@ -267,7 +267,7 @@ export function Step4ReviewRecommendations() {
 
             <div className="mt-2 h-1 overflow-hidden rounded-full bg-muted">
               <div
-                className="h-full rounded-full bg-brand-400 transition-all duration-300"
+                className="h-full rounded-full bg-[#1B2A4A]/60 transition-all duration-300"
                 style={{ width: totalRecs > 0 ? `${(approvedRecs / totalRecs) * 100}%` : '0%' }}
               />
             </div>

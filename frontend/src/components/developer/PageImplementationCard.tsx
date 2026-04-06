@@ -192,12 +192,12 @@ export function PageImplementationCard({
                   'rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors',
                   isChecking
                     ? 'border-border text-muted-foreground cursor-not-allowed'
-                    : 'border-brand-300 text-brand-700 hover:bg-brand-50',
+                    : 'border-[#1B2A4A]/30 text-[#1B2A4A] hover:bg-[#EEF1F7]',
                 )}
               >
                 {isChecking ? (
                   <span className="flex items-center gap-1.5">
-                    <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-brand-300 border-t-brand-700" />
+                    <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-[#1B2A4A]/30 border-t-[#1B2A4A]" />
                     Checking live page…
                   </span>
                 ) : (
@@ -256,7 +256,7 @@ export function PageImplementationCard({
               onBlur={handleNotesSave}
               rows={2}
               placeholder="e.g. Added dataLayer push in checkout-success.js on line 42"
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-brand-500 resize-none"
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-[#1B2A4A] resize-none"
             />
           </div>
         </div>

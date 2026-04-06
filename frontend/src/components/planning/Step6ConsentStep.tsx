@@ -109,16 +109,16 @@ export function Step6ConsentStep() {
           onClick={() => setChoice('configured')}
           className={`w-full text-left rounded-xl border-2 px-5 py-4 transition-colors ${
             choice === 'configured'
-              ? 'border-brand-500 bg-brand-50'
-              : 'border-border hover:border-brand-300 bg-background'
+              ? 'border-[#1B2A4A] bg-[#EEF1F7]'
+              : 'border-border hover:border-[#1B2A4A]/30 bg-background'
           }`}
         >
           <div className="flex items-start gap-3">
             <div className={`mt-0.5 h-4 w-4 rounded-full border-2 flex items-center justify-center shrink-0 ${
-              choice === 'configured' ? 'border-brand-500' : 'border-muted-foreground/30'
+              choice === 'configured' ? 'border-[#1B2A4A]' : 'border-muted-foreground/30'
             }`}>
               {choice === 'configured' && (
-                <div className="h-2 w-2 rounded-full bg-brand-500" />
+                <div className="h-2 w-2 rounded-full bg-[#1B2A4A]" />
               )}
             </div>
             <div>
@@ -143,7 +143,7 @@ export function Step6ConsentStep() {
                         e.stopPropagation();
                         handleOpenConsent();
                       }}
-                      className="flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700 underline"
+                      className="flex items-center gap-1 text-xs text-[#1B2A4A] hover:text-[#1B2A4A] underline"
                     >
                       View Consent Hub
                       <ExternalLink className="h-3 w-3" />
@@ -251,7 +251,7 @@ export function Step6ConsentStep() {
           type="button"
           onClick={handleContinue}
           disabled={!canContinue || isSaving}
-          className="bg-brand-600 hover:bg-brand-700 text-white"
+          className="bg-[#1B2A4A] hover:bg-[#1B2A4A] text-white"
         >
           {isSaving ? 'Saving & generating…' : 'Continue to outputs →'}
         </Button>

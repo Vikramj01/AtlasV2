@@ -125,7 +125,7 @@ export function LoginPage() {
             {error && <p className="text-sm text-destructive">{error}</p>}
             {success && <p className="text-sm text-green-600">{success}</p>}
 
-            <Button type="submit" disabled={loading} className="w-full bg-brand-600 hover:bg-brand-700">
+            <Button type="submit" disabled={loading} className="w-full bg-[#1B2A4A] hover:bg-[#1B2A4A]">
               {loading ? 'Please wait...' : mode === 'signup' ? 'Create account' : mode === 'forgot' ? 'Send reset link' : 'Sign in'}
             </Button>
           </form>

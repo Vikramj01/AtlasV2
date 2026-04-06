@@ -13,7 +13,7 @@ const PLAN_CONFIG = {
   },
   pro: {
     label: 'Pro',
-    badge: 'bg-brand-100 text-brand-700',
+    badge: 'bg-[#EEF1F7] text-[#1B2A4A]',
     description: '20 audits / month · 10 planning sessions / month',
   },
   agency: {
@@ -63,7 +63,7 @@ export function SettingsPage() {
   if (isLoading) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-brand-200 border-t-brand-600" />
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-[#1B2A4A]/20 border-t-[#1B2A4A]" />
       </div>
     );
   }
@@ -122,7 +122,7 @@ export function SettingsPage() {
 
               {/* Pro */}
               {plan === 'free' && (
-                <div className="flex items-center justify-between rounded-lg border border-brand-200 bg-brand-50 px-4 py-4">
+                <div className="flex items-center justify-between rounded-lg border border-[#1B2A4A]/20 bg-[#EEF1F7] px-4 py-4">
                   <div>
                     <p className="text-sm font-semibold text-foreground">
                       Pro
@@ -166,7 +166,7 @@ function UpgradeButton({ priceEnvKey, label }: { priceEnvKey: string; label: str
     return (
       <a
         href={stripeUrl}
-        className="flex-shrink-0 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700"
+        className="flex-shrink-0 rounded-lg bg-[#1B2A4A] px-4 py-2 text-sm font-medium text-white hover:bg-[#1B2A4A]"
       >
         {label}
       </a>

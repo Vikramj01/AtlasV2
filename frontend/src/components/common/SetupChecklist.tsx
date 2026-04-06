@@ -141,7 +141,7 @@ export function SetupChecklist() {
       {/* Progress bar */}
       <div className="h-1 bg-muted">
         <div
-          className="h-full bg-brand-500 transition-all duration-500"
+          className="h-full bg-[#1B2A4A] transition-all duration-500"
           style={{ width: `${data.overall_progress_pct}%` }}
         />
       </div>
@@ -165,8 +165,8 @@ export function SetupChecklist() {
                   {isComplete ? (
                     <CheckCircle2 className="h-5 w-5 text-green-500" />
                   ) : isNext ? (
-                    <div className="h-5 w-5 rounded-full border-2 border-brand-500 flex items-center justify-center">
-                      <span className="text-[10px] font-bold text-brand-600">{idx + 1}</span>
+                    <div className="h-5 w-5 rounded-full border-2 border-[#1B2A4A] flex items-center justify-center">
+                      <span className="text-[10px] font-bold text-[#1B2A4A]">{idx + 1}</span>
                     </div>
                   ) : (
                     <Circle className="h-5 w-5 text-muted-foreground/30" />
@@ -187,7 +187,7 @@ export function SetupChecklist() {
 
                 {/* Arrow for next recommended step */}
                 {isNext && (
-                  <ChevronRight className="h-4 w-4 text-brand-500 shrink-0 group-hover:translate-x-0.5 transition-transform" />
+                  <ChevronRight className="h-4 w-4 text-[#1B2A4A] shrink-0 group-hover:translate-x-0.5 transition-transform" />
                 )}
               </button>
             </li>

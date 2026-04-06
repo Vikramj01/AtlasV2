@@ -39,7 +39,7 @@ const CONFIDENCE_COLORS = {
 const DECISION_STYLES: Record<UserDecision, string> = {
   approved: 'border-green-300 bg-green-50',
   skipped:  'border-border bg-muted/40 opacity-60',
-  edited:   'border-brand-300 bg-brand-50',
+  edited:   'border-[#1B2A4A]/30 bg-[#EEF1F7]',
 };
 
 export function RecommendationCard({ rec, index, sessionId, isSelected, onSelect, packCoverage }: RecommendationCardProps) {
@@ -72,7 +72,7 @@ export function RecommendationCard({ rec, index, sessionId, isSelected, onSelect
   const cardBorder = rec.user_decision
     ? DECISION_STYLES[rec.user_decision]
     : isSelected
-    ? 'border-brand-400 bg-background'
+    ? 'border-[#1B2A4A]/40 bg-background'
     : 'border-border bg-background hover:border-border/60';
 
   return (
@@ -146,7 +146,7 @@ export function RecommendationCard({ rec, index, sessionId, isSelected, onSelect
               size="sm"
               onClick={() => decide('edited', editedEventName)}
               disabled={isSaving || !editedEventName.trim()}
-              className="h-7 text-xs bg-brand-600 hover:bg-brand-700"
+              className="h-7 text-xs bg-[#1B2A4A] hover:bg-[#1B2A4A]"
             >
               {isSaving ? 'Saving…' : 'Save'}
             </Button>
@@ -169,7 +169,7 @@ export function RecommendationCard({ rec, index, sessionId, isSelected, onSelect
             {rec.user_decision === 'skipped'  && '— Skipped'}
             {rec.user_decision === 'edited'   && '✎ Customised'}
             {' · '}
-            <button onClick={() => decide('approved')} className="text-brand-600 hover:underline">
+            <button onClick={() => decide('approved')} className="text-[#1B2A4A] hover:underline">
               change
             </button>
           </span>
@@ -188,7 +188,7 @@ export function RecommendationCard({ rec, index, sessionId, isSelected, onSelect
               size="sm"
               onClick={() => { setIsEditing(true); onSelect(); }}
               disabled={isSaving}
-              className="h-7 border-brand-200 bg-brand-50 text-brand-700 hover:bg-brand-100 text-xs"
+              className="h-7 border-[#1B2A4A]/20 bg-[#EEF1F7] text-[#1B2A4A] hover:bg-[#EEF1F7] text-xs"
               variant="outline"
             >
               ✎ Edit
