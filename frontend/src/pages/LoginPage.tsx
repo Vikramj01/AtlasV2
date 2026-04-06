@@ -48,34 +48,23 @@ export function LoginPage() {
     }
 
     if (mode === 'signup') {
-      // Sign up via backend so the account is confirmed immediately —
-      // no confirmation email required.
       try {
         const res = await fetch(`${API_BASE}/api/auth/signup`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, password }),
         });
-        const body = await res.json().catch(() => ({})) as { error?: string };
+        const body = await res.json().catch(() => ({})) as { error?: string; message?: string };
+        setLoading(false);
         if (!res.ok) {
-          setLoading(false);
           setError(body.error ?? 'Signup failed. Please try again.');
-          return;
+        } else {
+          setSuccess(body.message ?? 'Account created! Check your email to confirm your address before signing in.');
         }
       } catch {
         setLoading(false);
         setError('Could not reach the server. Make sure VITE_API_URL is set in your Vercel environment variables.');
-        return;
       }
-
-      // Account created and confirmed — sign in immediately
-      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-      setLoading(false);
-      if (signInError) {
-        setError(signInError.message);
-        return;
-      }
-      navigate('/home');
       return;
     }
 
