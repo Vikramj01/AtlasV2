@@ -30,6 +30,8 @@ interface SeverityCardProps {
   children?: React.ReactNode;
   /** Render as a compact row (less padding) */
   compact?: boolean;
+  /** Click handler — makes the card interactive */
+  onClick?: () => void;
 }
 
 // ── Style maps ───────────────────────────────────────────────────────────────
@@ -74,9 +76,14 @@ export function SeverityCard({
   className,
   children,
   compact = false,
+  onClick,
 }: SeverityCardProps) {
   return (
     <div
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => (e.key === 'Enter' || e.key === ' ') && onClick() : undefined}
+      onClick={onClick}
       className={cn(
         // Base card styles
         'rounded-lg border border-[#E5E7EB] border-l-[3px]',

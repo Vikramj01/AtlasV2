@@ -1,45 +1,115 @@
-'use client';
+/**
+ * SummaryBar — 4-cell metric bar at the top of the Home Dashboard.
+ *
+ * Design spec:
+ *   "Metric Bar: 4 equal cells. Health status cell should have a subtle
+ *    tint matching its severity level."
+ *   Label: 12px uppercase. Value: 24px semibold.
+ */
 
 import { cn } from '@/lib/utils';
+import { MetricSkeleton } from '@/components/common/SkeletonCard';
 import type { DashboardSummary, OverallHealth } from '@/types/dashboard';
 
-const HEALTH_CONFIG: Record<OverallHealth, { label: string; dot: string; bar: string }> = {
-  healthy:   { label: 'Healthy',   dot: 'bg-green-500',  bar: 'bg-green-50 border-green-200' },
-  attention: { label: 'Attention', dot: 'bg-amber-500',  bar: 'bg-amber-50 border-amber-200' },
-  critical:  { label: 'Critical',  dot: 'bg-red-500',    bar: 'bg-red-50 border-red-200' },
+// ── Health severity config ────────────────────────────────────────────────────
+
+const HEALTH_CONFIG: Record<OverallHealth, {
+  label: string;
+  dot: string;
+  cellBg: string;
+  cellBorder: string;
+  valueColor: string;
+}> = {
+  healthy: {
+    label:       'Healthy',
+    dot:         'bg-[#059669]',
+    cellBg:      'bg-[#F0FDF4]',
+    cellBorder:  'border-[#059669]/30',
+    valueColor:  'text-[#059669]',
+  },
+  attention: {
+    label:       'Attention',
+    dot:         'bg-[#D97706]',
+    cellBg:      'bg-[#FFFBEB]',
+    cellBorder:  'border-[#D97706]/30',
+    valueColor:  'text-[#D97706]',
+  },
+  critical: {
+    label:       'Critical',
+    dot:         'bg-[#DC2626]',
+    cellBg:      'bg-[#FEF2F2]',
+    cellBorder:  'border-[#DC2626]/30',
+    valueColor:  'text-[#DC2626]',
+  },
 };
 
-interface MetricPillProps {
-  label: string;
-  value: number | string | null;
-  unit?: string;
-  status?: 'good' | 'warn' | 'bad' | 'neutral';
+// ── Metric value colour helpers ───────────────────────────────────────────────
+
+function metricColor(value: number | null, warnBelow: number, badBelow: number): string {
+  if (value === null) return 'text-[#6B7280]';
+  if (value < badBelow)  return 'text-[#DC2626]';
+  if (value < warnBelow) return 'text-[#D97706]';
+  return 'text-[#059669]';
 }
 
-function MetricPill({ label, value, unit = '%', status = 'neutral' }: MetricPillProps) {
-  const valueColor = {
-    good:    'text-green-700',
-    warn:    'text-amber-700',
-    bad:     'text-red-700',
-    neutral: 'text-foreground',
-  }[status];
+// ── Single metric cell ────────────────────────────────────────────────────────
 
+interface MetricCellProps {
+  label: string;
+  value: React.ReactNode;
+  valueColor?: string;
+  subLabel?: string;
+  /** Tinted background for the health cell */
+  bg?: string;
+  borderColor?: string;
+}
+
+function MetricCell({ label, value, valueColor, subLabel, bg, borderColor }: MetricCellProps) {
   return (
-    <div className="flex flex-col items-center gap-0.5 sm:px-4 sm:first:pl-0 sm:last:pr-0 sm:border-r sm:last:border-r-0 sm:border-border/50">
-      <span className={cn('text-lg font-bold tabular-nums leading-none', valueColor)}>
-        {value === null ? '—' : `${value}${unit}`}
+    <div
+      className={cn(
+        'rounded-lg border px-5 py-4 flex flex-col gap-1',
+        bg ?? 'bg-white',
+        borderColor ?? 'border-[#E5E7EB]',
+      )}
+    >
+      {/* Label — 12px uppercase per spec */}
+      <span className="text-caption-upper">{label}</span>
+      {/* Value — 24px semibold per spec */}
+      <span className={cn('text-2xl font-semibold leading-tight tabular-nums', valueColor ?? 'text-[#1A1A1A]')}>
+        {value}
       </span>
-      <span className="text-[11px] text-muted-foreground font-medium">{label}</span>
+      {subLabel && (
+        <span className="text-caption">{subLabel}</span>
+      )}
     </div>
   );
 }
 
-function metricStatus(value: number | null, warnBelow: number, badBelow: number): MetricPillProps['status'] {
-  if (value === null) return 'neutral';
-  if (value < badBelow) return 'bad';
-  if (value < warnBelow) return 'warn';
-  return 'good';
+// ── Health cell (first cell, has dot + severity tint) ─────────────────────────
+
+function HealthCell({ health }: { health: OverallHealth }) {
+  const cfg = HEALTH_CONFIG[health];
+  return (
+    <div
+      className={cn(
+        'rounded-lg border px-5 py-4 flex flex-col gap-1',
+        cfg.cellBg,
+        cfg.cellBorder,
+      )}
+    >
+      <span className="text-caption-upper">Overall Health</span>
+      <div className="flex items-center gap-2">
+        <span className={cn('h-2.5 w-2.5 rounded-full shrink-0', cfg.dot)} />
+        <span className={cn('text-2xl font-semibold leading-tight', cfg.valueColor)}>
+          {cfg.label}
+        </span>
+      </div>
+    </div>
+  );
 }
+
+// ── Main component ────────────────────────────────────────────────────────────
 
 interface SummaryBarProps {
   summary: DashboardSummary;
@@ -47,62 +117,49 @@ interface SummaryBarProps {
 }
 
 export function SummaryBar({ summary, className }: SummaryBarProps) {
-  const health = HEALTH_CONFIG[summary.overall_health];
+  const cov = summary.signal_coverage_pct;
+  const del = summary.capi_delivery_pct;
+  const imp = summary.implementation_progress;
 
   return (
-    <div className={cn('rounded-xl border px-5 py-4 flex items-center gap-6 flex-wrap', health.bar, className)}>
-      {/* Overall health badge */}
-      <div className="flex items-center gap-2 shrink-0">
-        <span className={cn('h-2.5 w-2.5 rounded-full', health.dot)} />
-        <span className="text-sm font-semibold text-foreground">{health.label}</span>
-      </div>
+    <div className={cn('grid grid-cols-4 gap-4', className)}>
+      {/* Cell 1 — Overall Health (severity tint) */}
+      <HealthCell health={summary.overall_health} />
 
-      <div className="h-5 w-px bg-border/60 shrink-0" />
+      {/* Cell 2 — Signal Coverage */}
+      <MetricCell
+        label="Signal Coverage"
+        value={cov !== null ? `${cov}%` : '—'}
+        valueColor={metricColor(cov, 70, 50)}
+        subLabel="of key events tracked"
+      />
 
-      {/* Metric pills — use gap on mobile (avoids broken border-r on wrap) */}
-      <div className="flex items-center flex-wrap gap-x-6 gap-y-3 sm:gap-x-0 sm:gap-y-0">
-        <MetricPill
-          label="Signal Coverage"
-          value={summary.signal_coverage_pct}
-          status={metricStatus(summary.signal_coverage_pct, 70, 50)}
-        />
-        <MetricPill
-          label="CAPI Delivery"
-          value={summary.capi_delivery_pct}
-          status={metricStatus(summary.capi_delivery_pct, 90, 75)}
-        />
-        {summary.avg_emq !== null && (
-          <MetricPill
-            label="Avg EMQ"
-            value={summary.avg_emq.toFixed(1)}
-            unit=""
-            status={metricStatus(summary.avg_emq, 8, 6)}
-          />
-        )}
-        <MetricPill
-          label="Implementation"
-          value={summary.implementation_progress}
-          status={metricStatus(summary.implementation_progress, 70, 0)}
-        />
-      </div>
+      {/* Cell 3 — CAPI Delivery */}
+      <MetricCell
+        label="CAPI Delivery"
+        value={del !== null ? `${del}%` : '—'}
+        valueColor={metricColor(del, 90, 75)}
+        subLabel="server-side delivery rate"
+      />
+
+      {/* Cell 4 — Implementation */}
+      <MetricCell
+        label="Implementation"
+        value={imp !== null ? `${imp}%` : '—'}
+        valueColor={metricColor(imp, 70, 0)}
+        subLabel="of recommended events live"
+      />
     </div>
   );
 }
 
-/** Skeleton shown while loading */
+/** Skeleton shown while loading — 4 metric cells */
 export function SummaryBarSkeleton({ className }: { className?: string }) {
   return (
-    <div className={cn('rounded-xl border bg-muted/30 px-5 py-4 flex items-center gap-6 animate-pulse', className)}>
-      <div className="h-4 w-20 rounded bg-muted" />
-      <div className="h-5 w-px bg-muted" />
-      <div className="flex gap-6">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="flex flex-col gap-1 items-center">
-            <div className="h-5 w-12 rounded bg-muted" />
-            <div className="h-3 w-16 rounded bg-muted" />
-          </div>
-        ))}
-      </div>
+    <div className={cn('grid grid-cols-4 gap-4', className)}>
+      {Array.from({ length: 4 }).map((_, i) => (
+        <MetricSkeleton key={i} />
+      ))}
     </div>
   );
 }

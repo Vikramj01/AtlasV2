@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { adminApi } from '@/lib/api/adminApi';
+import { useOrganisationStore } from '@/store/organisationStore';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 
@@ -9,6 +10,7 @@ export function AppLayout() {
   const [email, setEmail] = useState<string>();
   const [plan, setPlan] = useState('free');
   const [isAdmin, setIsAdmin] = useState(false);
+  const { currentOrg } = useOrganisationStore();
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
@@ -22,17 +24,18 @@ export function AppLayout() {
         .single();
       if (data?.plan) setPlan(data.plan as string);
 
-      // Check admin access silently — 403 just means not an admin
       adminApi.check().then(() => setIsAdmin(true)).catch(() => { /* not admin */ });
     });
   }, []);
 
+  const workspaceName = currentOrg?.name ?? 'Personal';
+
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-50">
+    <div className="flex h-screen overflow-hidden bg-white">
       <Sidebar isAdmin={isAdmin} />
       <div className="flex flex-1 flex-col min-w-0">
-        <TopBar email={email} plan={plan} />
-        <main className="flex-1 overflow-y-auto">
+        <TopBar email={email} plan={plan} workspaceName={workspaceName} />
+        <main className="flex-1 overflow-y-auto bg-white">
           <Outlet />
         </main>
       </div>
