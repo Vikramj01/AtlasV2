@@ -19,12 +19,12 @@ export function ActionToggles({ stageId, actions }: ActionTogglesProps) {
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="text-xs text-brand-600 hover:text-brand-700 flex items-center gap-1"
+        className="text-xs text-[#1B2A4A] hover:text-[#1B2A4A]/80 flex items-center gap-1"
       >
         <span>{open ? '▲' : '▼'}</span>
         <span>What happens here?</span>
         {activeCount > 0 && (
-          <span className="ml-1 rounded-full bg-brand-100 px-1.5 py-0.5 text-brand-700">
+          <span className="ml-1 rounded-full bg-[#EEF1F7] px-1.5 py-0.5 text-[#1B2A4A]">
             {activeCount}
           </span>
         )}
@@ -43,7 +43,7 @@ export function ActionToggles({ stageId, actions }: ActionTogglesProps) {
                   onClick={() => toggleAction(stageId, toggle.key)}
                   className={cn(
                     'relative h-5 w-9 flex-shrink-0 rounded-full transition-colors',
-                    isOn ? 'bg-brand-500' : 'bg-muted-foreground/30'
+                    isOn ? 'bg-[#1B2A4A]' : 'bg-[#D1D5DB]'
                   )}
                 >
                   <span

@@ -49,7 +49,7 @@ export function StageCard({ stage, canRemove }: StageCardProps) {
               ⠿
             </span>
 
-            <span className="flex-shrink-0 h-6 w-6 rounded-full bg-brand-100 text-brand-700 text-xs font-semibold flex items-center justify-center">
+            <span className="flex-shrink-0 h-6 w-6 rounded-full bg-[#EEF1F7] text-[#1B2A4A] text-xs font-semibold flex items-center justify-center">
               {stage.order}
             </span>
 
@@ -63,13 +63,13 @@ export function StageCard({ stage, canRemove }: StageCardProps) {
                   if (e.key === 'Enter') commitLabel();
                   if (e.key === 'Escape') { setLabelDraft(stage.label); setEditingLabel(false); }
                 }}
-                className="flex-1 min-w-0 rounded border border-brand-400 px-2 py-0.5 text-sm font-medium focus:outline-none focus:ring-1 focus:ring-brand-500"
+                className="flex-1 min-w-0 rounded border border-[#1B2A4A]/40 px-2 py-0.5 text-sm font-medium focus:outline-none focus:ring-1 focus:ring-[#1B2A4A]/40"
               />
             ) : (
               <button
                 type="button"
                 onClick={() => setEditingLabel(true)}
-                className="flex-1 min-w-0 text-left text-sm font-medium hover:text-brand-600 truncate"
+                className="flex-1 min-w-0 text-left text-sm font-medium hover:text-[#1B2A4A] truncate"
                 title="Click to rename"
               >
                 {stage.label}
