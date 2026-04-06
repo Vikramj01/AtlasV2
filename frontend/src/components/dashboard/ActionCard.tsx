@@ -1,46 +1,48 @@
-'use client';
+/**
+ * ActionCard — individual action item on the Home Dashboard.
+ *
+ * Design spec:
+ *   "Action Cards: Must support dynamic severity (3px left border)."
+ *   Title: 16px semibold. Body: 14px.
+ *
+ * Uses SeverityCard from Sprint 0 for the 3px left border + tinted bg.
+ */
 
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, AlertCircle, Info, CheckCircle2, ArrowRight, TrendingUp } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { Card, CardContent } from '@/components/ui/card';
+import { ArrowRight, TrendingUp } from 'lucide-react';
+import { SeverityCard } from '@/components/common/SeverityCard';
+import type { SeverityLevel } from '@/components/common/SeverityCard';
 import type { DashboardCard, CardSeverity } from '@/types/dashboard';
 
-const SEVERITY_CONFIG: Record<CardSeverity, {
-  Icon: React.ElementType;
-  iconColor: string;
-  border: string;
-  badge: string;
-  badgeText: string;
-}> = {
-  critical: {
-    Icon: AlertTriangle,
-    iconColor: 'text-red-500',
-    border: 'border-red-200 hover:border-red-300',
-    badge: 'bg-red-100 text-red-700',
-    badgeText: 'Critical',
-  },
-  warning: {
-    Icon: AlertCircle,
-    iconColor: 'text-amber-500',
-    border: 'border-amber-200 hover:border-amber-300',
-    badge: 'bg-amber-100 text-amber-700',
-    badgeText: 'Warning',
-  },
-  info: {
-    Icon: Info,
-    iconColor: 'text-blue-500',
-    border: 'border-blue-200 hover:border-blue-300',
-    badge: 'bg-blue-100 text-blue-700',
-    badgeText: 'Info',
-  },
-  success: {
-    Icon: CheckCircle2,
-    iconColor: 'text-green-500',
-    border: 'border-green-200 hover:border-green-300',
-    badge: 'bg-green-100 text-green-700',
-    badgeText: 'Healthy',
-  },
+// Map dashboard severity → SeverityCard's SeverityLevel
+const SEVERITY_MAP: Record<CardSeverity, SeverityLevel> = {
+  critical: 'critical',
+  warning:  'warning',
+  success:  'success',
+  info:     'info',
+};
+
+// Badge colours per severity (sits next to the title)
+const BADGE_STYLES: Record<CardSeverity, string> = {
+  critical: 'bg-[#FEF2F2] text-[#DC2626] border border-[#DC2626]/20',
+  warning:  'bg-[#FFFBEB] text-[#D97706] border border-[#D97706]/20',
+  info:     'bg-[#EFF6FF] text-[#2E75B6] border border-[#2E75B6]/20',
+  success:  'bg-[#F0FDF4] text-[#059669] border border-[#059669]/20',
+};
+
+const BADGE_LABELS: Record<CardSeverity, string> = {
+  critical: 'Critical',
+  warning:  'Warning',
+  info:     'Info',
+  success:  'Healthy',
+};
+
+// CTA arrow colour
+const CTA_COLOR: Record<CardSeverity, string> = {
+  critical: 'text-[#DC2626]',
+  warning:  'text-[#D97706]',
+  info:     'text-[#2E75B6]',
+  success:  'text-[#059669]',
 };
 
 interface ActionCardProps {
@@ -49,39 +51,34 @@ interface ActionCardProps {
 
 export function ActionCard({ card }: ActionCardProps) {
   const navigate = useNavigate();
-  const config = SEVERITY_CONFIG[card.severity];
-  const { Icon } = config;
+  const severity = SEVERITY_MAP[card.severity];
 
   return (
-    <Card
-      className={cn(
-        'cursor-pointer transition-all duration-150 hover:shadow-md',
-        config.border,
-      )}
+    <SeverityCard
+      severity={severity}
+      className="cursor-pointer transition-shadow duration-150 hover:shadow-sm"
       onClick={() => navigate(card.action_url)}
     >
-      <CardContent className="p-5 flex items-start gap-4">
-        {/* Icon */}
-        <div className="shrink-0 mt-0.5">
-          <Icon className={cn('h-5 w-5', config.iconColor)} strokeWidth={2} />
-        </div>
-
+      <div className="flex items-start gap-4">
         {/* Body */}
-        <div className="flex-1 min-w-0 space-y-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-semibold text-foreground">{card.title}</span>
-            <span className={cn('text-[11px] font-semibold px-1.5 py-0.5 rounded-full', config.badge)}>
-              {config.badgeText}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap mb-1">
+            {/* Title — 16px semibold per spec */}
+            <span className="text-section-header text-[#1A1A1A]">{card.title}</span>
+            {/* Severity badge */}
+            <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${BADGE_STYLES[card.severity]}`}>
+              {BADGE_LABELS[card.severity]}
             </span>
           </div>
-          <p className="text-sm text-muted-foreground leading-relaxed">{card.message}</p>
+          {/* Message — 14px per spec */}
+          <p className="text-body text-[#6B7280] leading-relaxed">{card.message}</p>
         </div>
 
         {/* Metric + CTA */}
         <div className="shrink-0 flex flex-col items-end gap-2">
           {card.metric_value !== null && (
-            <div className="flex items-center gap-1 text-foreground">
-              <TrendingUp className="h-3.5 w-3.5 text-muted-foreground/60" />
+            <div className="flex items-center gap-1 text-[#1A1A1A]">
+              <TrendingUp className="h-3.5 w-3.5 text-[#6B7280]" strokeWidth={1.5} />
               <span className="text-base font-bold tabular-nums">
                 {Number.isInteger(card.metric_value)
                   ? `${card.metric_value}%`
@@ -89,12 +86,12 @@ export function ActionCard({ card }: ActionCardProps) {
               </span>
             </div>
           )}
-          <div className="flex items-center gap-1 text-xs font-medium text-primary">
+          <div className={`flex items-center gap-1 text-xs font-medium ${CTA_COLOR[card.severity]}`}>
             {card.action_label}
-            <ArrowRight className="h-3.5 w-3.5" />
+            <ArrowRight className="h-3.5 w-3.5" strokeWidth={1.5} />
           </div>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </SeverityCard>
   );
 }

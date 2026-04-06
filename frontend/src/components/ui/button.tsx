@@ -8,23 +8,29 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: 'bg-primary text-primary-foreground hover:bg-primary/90',
+        // Primary — navy fill, white text (design spec: "Primary: Navy fill, White text")
+        default:     'bg-primary text-primary-foreground hover:bg-primary/90',
+        // Secondary — white fill, navy border + text (design spec: "Secondary: White fill, Navy border")
+        secondary:   'border border-primary bg-white text-primary hover:bg-primary/5',
+        // Ghost — text only, accent-blue underline on hover (design spec: "Ghost: Text only, blue underline on hover")
+        ghost:       'text-muted-foreground hover:text-[#2E75B6] hover:underline hover:decoration-[#2E75B6] bg-transparent',
+        // Destructive — kept for delete/danger actions
         destructive: 'bg-destructive text-destructive-foreground hover:bg-destructive/90',
-        outline: 'border border-input bg-background hover:bg-accent hover:text-accent-foreground',
-        secondary: 'bg-secondary text-secondary-foreground hover:bg-secondary/80',
-        ghost: 'hover:bg-accent hover:text-accent-foreground',
-        link: 'text-primary underline-offset-4 hover:underline',
+        // Outline — subtle outlined variant (kept for internal use, e.g. icon buttons)
+        outline:     'border border-input bg-background hover:bg-secondary hover:text-foreground',
+        // Link — inline text link style
+        link:        'text-[#2E75B6] underline-offset-4 hover:underline',
       },
       size: {
         default: 'h-10 px-4 py-2',
-        sm: 'h-9 rounded-md px-3',
-        lg: 'h-11 rounded-md px-8',
-        icon: 'h-10 w-10',
+        sm:      'h-8 rounded-md px-3 text-xs',
+        lg:      'h-11 rounded-md px-8',
+        icon:    'h-9 w-9',
       },
     },
     defaultVariants: {
       variant: 'default',
-      size: 'default',
+      size:    'default',
     },
   },
 );

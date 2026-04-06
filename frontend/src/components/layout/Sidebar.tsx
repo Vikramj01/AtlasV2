@@ -1,98 +1,112 @@
 import { useEffect } from 'react';
 import { NavLink, useParams } from 'react-router-dom';
-import { Home, MapPin, CheckCircle, Clock, Settings, Building2, LayoutGrid, ShieldCheck, Activity, HeartPulse, ShieldAlert, GitBranch } from 'lucide-react';
+import {
+  Home, MapPin, CheckCircle, Clock, Settings,
+  Building2, LayoutGrid, ShieldCheck, Activity,
+  HeartPulse, ShieldAlert, GitBranch,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { OrgSwitcher } from '@/components/organisation/OrgSwitcher';
 import { useOrganisationStore } from '@/store/organisationStore';
 import { organisationApi } from '@/lib/api/organisationApi';
 
 const PERSONAL_NAV = [
-  { label: 'Signal Health',     to: '/health',             Icon: HeartPulse },
-  { label: 'Home',              to: '/home',               Icon: Home },
-  { label: 'Set Up Tracking',   to: '/planning',           Icon: MapPin },
-  { label: 'Verify Journeys',   to: '/journey/new',        Icon: CheckCircle },
-  { label: 'Audit History',     to: '/dashboard',          Icon: Clock },
-  { label: 'Channel Insights',  to: '/channels',           Icon: GitBranch },
-  { label: 'Conversion API',    to: '/integrations/capi',  Icon: Activity },
-  { label: 'Consent & Privacy', to: '/consent',            Icon: ShieldCheck },
-  { label: 'Settings',          to: '/settings',           Icon: Settings },
+  { label: 'Signal Health',     to: '/health',            Icon: HeartPulse },
+  { label: 'Home',              to: '/home',              Icon: Home },
+  { label: 'Set Up Tracking',   to: '/planning',          Icon: MapPin },
+  { label: 'Verify Journeys',   to: '/journey/new',       Icon: CheckCircle },
+  { label: 'Audit History',     to: '/dashboard',         Icon: Clock },
+  { label: 'Channel Insights',  to: '/channels',          Icon: GitBranch },
+  { label: 'Conversion API',    to: '/integrations/capi', Icon: Activity },
+  { label: 'Consent & Privacy', to: '/consent',           Icon: ShieldCheck },
+  { label: 'Settings',          to: '/settings',          Icon: Settings },
 ];
 
 function orgNav(orgId: string) {
   return [
-    { label: 'Signal Health',     to: '/health',                 Icon: HeartPulse },
-    { label: 'Overview',          to: `/org/${orgId}`,           Icon: Home },
-    { label: 'Clients',           to: `/org/${orgId}/clients`,   Icon: Building2 },
-    { label: 'Tracking Map',      to: `/org/${orgId}/signals`,   Icon: MapPin },
-    { label: 'Templates',         to: `/org/${orgId}/packs`,     Icon: LayoutGrid },
-    { label: 'Set Up Tracking',   to: '/planning',               Icon: MapPin },
-    { label: 'Audit History',     to: '/dashboard',              Icon: Clock },
-    { label: 'Channel Insights',  to: '/channels',               Icon: GitBranch },
-    { label: 'Conversion API',    to: '/integrations/capi',      Icon: Activity },
-    { label: 'Consent & Privacy', to: '/consent',                Icon: ShieldCheck },
-    { label: 'Team & Settings',   to: `/org/${orgId}/settings`,  Icon: Settings },
+    { label: 'Signal Health',     to: '/health',                Icon: HeartPulse },
+    { label: 'Overview',          to: `/org/${orgId}`,          Icon: Home },
+    { label: 'Clients',           to: `/org/${orgId}/clients`,  Icon: Building2 },
+    { label: 'Tracking Map',      to: `/org/${orgId}/signals`,  Icon: MapPin },
+    { label: 'Templates',         to: `/org/${orgId}/packs`,    Icon: LayoutGrid },
+    { label: 'Set Up Tracking',   to: '/planning',              Icon: MapPin },
+    { label: 'Audit History',     to: '/dashboard',             Icon: Clock },
+    { label: 'Channel Insights',  to: '/channels',              Icon: GitBranch },
+    { label: 'Conversion API',    to: '/integrations/capi',     Icon: Activity },
+    { label: 'Consent & Privacy', to: '/consent',               Icon: ShieldCheck },
+    { label: 'Team & Settings',   to: `/org/${orgId}/settings`, Icon: Settings },
   ];
 }
+
+// ── Shared nav item styles ────────────────────────────────────────────────────
+
+const NAV_BASE =
+  'group flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-100 w-full';
+
+const NAV_ACTIVE =
+  'bg-[#1B2A4A] text-white';
+
+const NAV_INACTIVE =
+  'text-[#6B7280] hover:bg-[#F9FAFB] hover:text-[#1A1A1A]';
+
+// ── Component ─────────────────────────────────────────────────────────────────
 
 export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
   const { currentOrg, organisations, setOrganisations } = useOrganisationStore();
   const params = useParams<{ orgId?: string }>();
 
-  // Load user's organisations once
   useEffect(() => {
     organisationApi.list()
       .then(setOrganisations)
-      .catch(() => { /* not blocking */ });
+      .catch(() => { /* non-blocking */ });
   }, [setOrganisations]);
 
-  // If we're on an org route, use org nav; otherwise personal nav
   const activeOrgId = params.orgId ?? currentOrg?.id;
   const nav = activeOrgId ? orgNav(activeOrgId) : PERSONAL_NAV;
 
   return (
-    <aside className="flex h-full w-56 flex-col border-r bg-[hsl(220,9%,98%)] px-3 py-5">
-
-      {/* Logo */}
-      <div className="mb-4 flex items-center gap-2 px-3">
+    <aside
+      className="flex h-full flex-col border-r border-[#E5E7EB] bg-white"
+      style={{ width: 240, minWidth: 240 }}
+    >
+      {/* ── Logo ──────────────────────────────────────────────────────────── */}
+      <div className="flex items-center gap-2.5 px-5 py-5 border-b border-[#E5E7EB]">
         <img
           src="/atlas_logo.svg"
           alt="Atlas logo"
-          className="h-[31px] w-[31px] rounded-md object-contain"
+          className="h-7 w-7 rounded-md object-contain shrink-0"
         />
-        <span className="text-[16.5px] font-bold tracking-tight text-foreground">Atlas</span>
+        <span className="text-base font-semibold tracking-tight text-[#1B2A4A]">Atlas</span>
       </div>
 
-      {/* Workspace switcher — only show if user has orgs */}
+      {/* ── Workspace switcher ────────────────────────────────────────────── */}
       {organisations.length > 0 && (
-        <OrgSwitcher />
+        <div className="px-3 pt-3">
+          <OrgSwitcher />
+        </div>
       )}
 
-      {/* Nav */}
-      <nav className="flex flex-col gap-0.5">
-        <p className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+      {/* ── Navigation ───────────────────────────────────────────────────── */}
+      <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-0.5">
+        <p className="text-caption-upper px-3 pb-2 pt-1">
           {activeOrgId ? (currentOrg?.name ?? 'Organisation') : 'Workspace'}
         </p>
+
         {nav.map(({ label, to, Icon }) => (
           <NavLink
             key={`${to}-${label}`}
             to={to}
-            className={({ isActive }) =>
-              cn(
-                'group flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-150',
-                isActive
-                  ? 'bg-primary/10 text-primary'
-                  : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-              )
-            }
+            className={({ isActive }) => cn(NAV_BASE, isActive ? NAV_ACTIVE : NAV_INACTIVE)}
           >
             {({ isActive }) => (
               <>
                 <Icon
                   className={cn(
-                    'h-4 w-4 shrink-0 transition-colors',
-                    isActive ? 'text-primary' : 'text-muted-foreground/70 group-hover:text-foreground'
+                    'h-5 w-5 shrink-0',
+                    /* design spec: 20px icons, 1.5px stroke */
+                    isActive ? 'text-white' : 'text-[#9CA3AF] group-hover:text-[#1A1A1A]',
                   )}
-                  strokeWidth={isActive ? 2.5 : 2}
+                  strokeWidth={1.5}
                 />
                 {label}
               </>
@@ -101,31 +115,22 @@ export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
         ))}
       </nav>
 
-      {/* Admin link — only shown to admin users */}
+      {/* ── Admin section ─────────────────────────────────────────────────── */}
       {isAdmin && (
-        <div className="mt-auto pt-4 border-t">
-          <p className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
-            Admin
-          </p>
+        <div className="border-t border-[#E5E7EB] px-3 py-3">
+          <p className="text-caption-upper px-3 pb-2">Admin</p>
           <NavLink
             to="/admin"
-            className={({ isActive }) =>
-              cn(
-                'group flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-150',
-                isActive
-                  ? 'bg-primary/10 text-primary'
-                  : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-              )
-            }
+            className={({ isActive }) => cn(NAV_BASE, isActive ? NAV_ACTIVE : NAV_INACTIVE)}
           >
             {({ isActive }) => (
               <>
                 <ShieldAlert
                   className={cn(
-                    'h-4 w-4 shrink-0 transition-colors',
-                    isActive ? 'text-primary' : 'text-muted-foreground/70 group-hover:text-foreground'
+                    'h-5 w-5 shrink-0',
+                    isActive ? 'text-white' : 'text-[#9CA3AF] group-hover:text-[#1A1A1A]',
                   )}
-                  strokeWidth={isActive ? 2.5 : 2}
+                  strokeWidth={1.5}
                 />
                 Platform Admin
               </>
@@ -133,8 +138,6 @@ export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
           </NavLink>
         </div>
       )}
-
-
     </aside>
   );
 }

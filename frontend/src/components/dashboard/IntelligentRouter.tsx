@@ -19,8 +19,8 @@ function RouterButton({ Icon, iconBg, iconColor, label, description, ctaColor, o
     <button
       onClick={onClick}
       className={cn(
-        'group flex items-center gap-4 rounded-xl border bg-background px-5 py-4',
-        'w-full text-left transition-all duration-150 hover:shadow-md hover:border-primary/20',
+        'group flex items-center gap-4 rounded-lg border border-[#E5E7EB] bg-white px-5 py-4',
+        'w-full text-left transition-all duration-150 hover:shadow-sm hover:border-[#1B2A4A]/20',
       )}
     >
       <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-lg', iconBg)}>
@@ -49,17 +49,15 @@ export function IntelligentRouter({ className }: { className?: string }) {
 
   return (
     <div className={cn('space-y-2', className)}>
-      <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground/60 px-1">
-        Get started
-      </p>
+      <p className="text-caption-upper px-1">Get started</p>
 
       <RouterButton
         Icon={MapPin}
-        iconBg="bg-primary/10"
-        iconColor="text-primary"
+        iconBg="bg-[#EEF1F7]"
+        iconColor="text-[#1B2A4A]"
         label="Set up tracking on a site"
         description="Scan a URL with AI and get a GTM container + implementation guide ready to deploy."
-        ctaColor="text-primary"
+        ctaColor="text-[#1B2A4A]"
         onClick={() => navigate('/planning/new')}
       />
 

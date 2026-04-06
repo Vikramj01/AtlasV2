@@ -150,15 +150,21 @@ const TooltipPopover = React.forwardRef<
     <div
       ref={ref}
       style={style}
-      className="rounded-xl border bg-popover shadow-lg px-4 py-3.5 text-popover-foreground pointer-events-none"
+      className="rounded-lg border border-[#E5E7EB] bg-white shadow-lg px-4 py-3.5 text-foreground pointer-events-none"
       role="tooltip"
     >
-      <p className="text-xs font-semibold mb-1.5">{content.title}</p>
-      <p className="text-xs leading-relaxed text-muted-foreground">{content.body}</p>
+      {/* Title */}
+      <p className="text-xs font-semibold text-[#1A1A1A] mb-1">{content.title}</p>
+      {/* Body */}
+      <p className="text-xs leading-relaxed text-[#6B7280]">{content.body}</p>
+      {/* "So What?" stat callout — design spec: all ℹ icons show "So What?" guidance */}
       {content.stat && (
-        <div className="mt-2.5 flex items-start gap-1.5 rounded-lg bg-primary/5 border border-primary/10 px-2.5 py-2">
-          <TrendingUp className="h-3.5 w-3.5 shrink-0 text-primary mt-0.5" />
-          <p className="text-[11px] font-medium text-primary leading-snug">{content.stat}</p>
+        <div className="mt-2.5 flex items-start gap-1.5 rounded-md bg-[#EFF6FF] border border-[#2E75B6]/20 px-2.5 py-2">
+          <TrendingUp className="h-3.5 w-3.5 shrink-0 text-[#2E75B6] mt-0.5" />
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-[#2E75B6] mb-0.5">So What?</p>
+            <p className="text-[11px] font-medium text-[#1E5A8A] leading-snug">{content.stat}</p>
+          </div>
         </div>
       )}
       {/* Arrow */}
@@ -168,7 +174,7 @@ const TooltipPopover = React.forwardRef<
           style={{
             borderLeft: '6px solid transparent',
             borderRight: '6px solid transparent',
-            borderTop: '6px solid hsl(var(--border))',
+            borderTop: '6px solid #E5E7EB',
           }}
         />
       )}
