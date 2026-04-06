@@ -67,8 +67,11 @@ export function Step4ReviewRecommendations() {
 
   useEffect(() => {
     if (activePageId) return;
-    const pagesWithRecs = pages.filter((p) => recommendations.some((r) => r.page_id === p.id));
-    if (pagesWithRecs.length > 0) setActivePageId(pagesWithRecs[0].id);
+    // Default to first page with recs, fall back to first scanned page
+    const firstWithRecs = pages.find((p) => recommendations.some((r) => r.page_id === p.id));
+    const firstScanned = pages.find((p) => p.status === 'done' || p.screenshot_url);
+    const target = firstWithRecs ?? firstScanned;
+    if (target) setActivePageId(target.id);
   }, [pages, recommendations, activePageId]);
 
   useEffect(() => {
@@ -85,7 +88,11 @@ export function Step4ReviewRecommendations() {
       });
   }, [activePageId, pages]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const pagesWithRecs: PlanningPage[] = pages.filter((p) => recommendations.some((r) => r.page_id === p.id));
+  // Show ALL scanned pages, not just pages that have AI recommendations.
+  // This lets users see every screenshot and add elements manually.
+  const reviewablePages: PlanningPage[] = pages.filter(
+    (p) => p.status === 'done' || p.screenshot_url,
+  );
   const activePageRecs: PlanningRecommendation[] = recommendations.filter((r) => r.page_id === activePageId);
 
   const totalRecs = recommendations.length;
@@ -138,23 +145,14 @@ export function Step4ReviewRecommendations() {
     );
   }
 
-  if (pagesWithRecs.length === 0) {
-    const fallbackPageId = pages[0]?.id ?? null;
+  // If no pages are reviewable at all, show a minimal fallback
+  if (reviewablePages.length === 0) {
     return (
       <div className="mx-auto max-w-xl px-6 py-20 text-center">
-        <p className="text-lg font-medium">No recommendations found</p>
+        <p className="text-lg font-medium">No scanned pages found</p>
         <p className="mt-1 text-sm text-muted-foreground">
-          The AI didn't identify any tracking elements. You can add elements manually or go back and rescan.
+          Go back to the Scan step and make sure at least one page completes successfully.
         </p>
-        <Button
-          onClick={() => { if (fallbackPageId) setActivePageId(fallbackPageId); setShowCustomForm(true); }}
-          className="mt-4 bg-brand-600 hover:bg-brand-700"
-        >
-          + Add Custom Element
-        </Button>
-        {showCustomForm && fallbackPageId && (
-          <CustomElementForm sessionId={sessionId} pageId={fallbackPageId} onClose={() => setShowCustomForm(false)} />
-        )}
       </div>
     );
   }
@@ -164,9 +162,10 @@ export function Step4ReviewRecommendations() {
       {/* Top bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-background px-6 py-3">
         <div className="flex gap-1 overflow-x-auto">
-          {pagesWithRecs.map((page) => {
+          {reviewablePages.map((page) => {
             const pageRecs = recommendations.filter((r) => r.page_id === page.id);
             const pageDecided = pageRecs.filter((r) => r.user_decision).length;
+            const hasRecs = pageRecs.length > 0;
             return (
               <button
                 key={page.id}
@@ -178,8 +177,10 @@ export function Step4ReviewRecommendations() {
                     : 'bg-muted text-muted-foreground hover:bg-muted/80'
                 )}
               >
-                {page.page_title ?? new URL(page.url).pathname}{' '}
-                <span className="opacity-70">({pageDecided}/{pageRecs.length})</span>
+                {page.page_title ?? (() => { try { return new URL(page.url).pathname; } catch { return page.url; } })()}
+                {hasRecs && (
+                  <span className="ml-1 opacity-70">({pageDecided}/{pageRecs.length})</span>
+                )}
               </button>
             );
           })}
@@ -221,7 +222,19 @@ export function Step4ReviewRecommendations() {
         <div className="flex w-full flex-col lg:w-1/2">
           <div className="flex-1 space-y-2 overflow-y-auto p-4">
             {activePageRecs.length === 0 ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">No recommendations for this page.</p>
+              <div className="flex flex-col items-center py-12 text-center">
+                <p className="text-sm font-medium text-foreground">No tracking elements found by AI</p>
+                <p className="mt-1 max-w-xs text-xs text-muted-foreground">
+                  Review the screenshot on the left and add any elements you want to track manually.
+                </p>
+                <Button
+                  size="sm"
+                  onClick={() => setShowCustomForm(true)}
+                  className="mt-4 bg-brand-600 hover:bg-brand-700"
+                >
+                  + Add Element for This Page
+                </Button>
+              </div>
             ) : (
               activePageRecs.map((rec, idx) => (
                 <RecommendationCard
