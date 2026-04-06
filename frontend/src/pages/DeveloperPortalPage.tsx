@@ -37,7 +37,7 @@ function LoadingState() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background">
       <div className="text-center">
-        <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-brand-600" />
+        <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-[#EEF1F7] border-t-[#1B2A4A]" />
         <p className="text-sm text-muted-foreground">Loading implementation guide…</p>
       </div>
     </div>

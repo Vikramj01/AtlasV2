@@ -21,7 +21,7 @@ export function ProgressBar({ value, label, className }: ProgressBarProps) {
         <div
           className={cn(
             'h-full rounded-full transition-all duration-500',
-            clamped === 100 ? 'bg-green-500' : 'bg-brand-500',
+            clamped === 100 ? 'bg-[#059669]' : 'bg-[#1B2A4A]',
           )}
           style={{ width: `${clamped}%` }}
         />

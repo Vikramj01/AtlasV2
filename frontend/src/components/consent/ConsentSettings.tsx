@@ -15,6 +15,7 @@ import { consentApi } from '@/lib/api/consentApi';
 import { useConsentStore } from '@/store/consentStore';
 import { generateBannerSnippet } from '@/lib/consent/banner-generator';
 import { CMPIntegration } from '@/components/consent/CMPIntegration';
+import { BannerPreview } from '@/components/consent/BannerPreview';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
@@ -222,15 +223,15 @@ export function ConsentSettings() {
   return (
     <div className="space-y-6">
       {/* Tab bar */}
-      <div className="flex gap-1 border-b">
+      <div className="flex gap-0 border-b border-[#E5E7EB]">
         {(['settings', 'banner', 'integrations', 'analytics'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors capitalize ${
               activeTab === tab
-                ? 'border-brand-600 text-brand-600'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
+                ? 'border-[#1B2A4A] text-[#1B2A4A]'
+                : 'border-transparent text-muted-foreground hover:text-[#1A1A1A]'
             }`}
           >
             {tab}
@@ -338,115 +339,123 @@ export function ConsentSettings() {
 
       {/* ── Banner tab ─────────────────────────────────────────────────────── */}
       {activeTab === 'banner' && (
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Banner Configuration</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Position</label>
-                <select
-                  value={banner.position}
-                  onChange={(e) => setBanner({ ...banner, position: e.target.value as BannerPosition })}
-                  className="w-full border rounded px-3 py-2 text-sm bg-background"
-                >
-                  <option value="bottom_bar">Bottom bar</option>
-                  <option value="modal">Centred modal</option>
-                  <option value="corner">Corner widget</option>
-                </select>
-              </div>
+        <div className="grid grid-cols-1 xl:grid-cols-[1fr_340px] gap-6 items-start">
+          {/* Left column — config form */}
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Banner Configuration</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Position</label>
+                  <select
+                    value={banner.position}
+                    onChange={(e) => setBanner({ ...banner, position: e.target.value as BannerPosition })}
+                    className="w-full border rounded px-3 py-2 text-sm bg-background"
+                  >
+                    <option value="bottom_bar">Bottom bar</option>
+                    <option value="modal">Centred modal</option>
+                    <option value="corner">Corner widget</option>
+                  </select>
+                </div>
 
-              <div>
-                <label className="block text-sm font-medium mb-1">Consent duration (days)</label>
-                <input
-                  type="number"
-                  min={7}
-                  max={365}
-                  value={banner.ttl_days}
-                  onChange={(e) => setBanner({ ...banner, ttl_days: Number(e.target.value) })}
-                  className="w-full border rounded px-3 py-2 text-sm bg-background"
-                />
-              </div>
-
-              <Separator />
-              <p className="text-sm font-medium">Copy</p>
-
-              {(
-                [
-                  ['heading', 'Heading'],
-                  ['body', 'Body text'],
-                  ['accept_button', 'Accept button'],
-                  ['reject_button', 'Reject button'],
-                  ['manage_link', 'Manage link'],
-                ] as [keyof typeof banner.copy, string][]
-              ).map(([field, label]) => (
-                <div key={field}>
-                  <label className="block text-xs text-muted-foreground mb-1">{label}</label>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Consent duration (days)</label>
                   <input
-                    type="text"
-                    value={banner.copy[field]}
-                    onChange={(e) =>
-                      setBanner({ ...banner, copy: { ...banner.copy, [field]: e.target.value } })
-                    }
+                    type="number"
+                    min={7}
+                    max={365}
+                    value={banner.ttl_days}
+                    onChange={(e) => setBanner({ ...banner, ttl_days: Number(e.target.value) })}
                     className="w-full border rounded px-3 py-2 text-sm bg-background"
                   />
                 </div>
-              ))}
 
-              <Separator />
-              <p className="text-sm font-medium">Colours</p>
+                <Separator />
+                <p className="text-sm font-medium">Copy</p>
 
-              {(
-                [
-                  ['background', 'Background'],
-                  ['button_primary', 'Primary button'],
-                  ['button_secondary', 'Secondary button'],
-                  ['text', 'Text'],
-                ] as [keyof typeof banner.colors, string][]
-              ).map(([field, label]) => (
-                <div key={field} className="flex items-center gap-3">
-                  <input
-                    type="color"
-                    value={banner.colors[field]}
-                    onChange={(e) =>
-                      setBanner({ ...banner, colors: { ...banner.colors, [field]: e.target.value } })
-                    }
-                    className="h-8 w-8 rounded border cursor-pointer"
-                  />
-                  <span className="text-sm">{label}</span>
-                  <code className="text-xs text-muted-foreground">{banner.colors[field]}</code>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
+                {(
+                  [
+                    ['heading', 'Heading'],
+                    ['body', 'Body text'],
+                    ['accept_button', 'Accept button'],
+                    ['reject_button', 'Reject button'],
+                    ['manage_link', 'Manage link'],
+                  ] as [keyof typeof banner.copy, string][]
+                ).map(([field, label]) => (
+                  <div key={field}>
+                    <label className="block text-xs text-muted-foreground mb-1">{label}</label>
+                    <input
+                      type="text"
+                      value={banner.copy[field]}
+                      onChange={(e) =>
+                        setBanner({ ...banner, copy: { ...banner.copy, [field]: e.target.value } })
+                      }
+                      className="w-full border rounded px-3 py-2 text-sm bg-background"
+                    />
+                  </div>
+                ))}
 
-          <div className="flex items-center gap-3">
-            <Button onClick={handleSave} disabled={saving || !resolvedProjectId}>
-              {saving ? 'Saving…' : 'Save banner settings'}
-            </Button>
-            {saveSuccess && <span className="text-sm text-green-600">Saved!</span>}
+                <Separator />
+                <p className="text-sm font-medium">Colours</p>
+
+                {(
+                  [
+                    ['background', 'Background'],
+                    ['button_primary', 'Primary button'],
+                    ['button_secondary', 'Secondary button'],
+                    ['text', 'Text'],
+                  ] as [keyof typeof banner.colors, string][]
+                ).map(([field, label]) => (
+                  <div key={field} className="flex items-center gap-3">
+                    <input
+                      type="color"
+                      value={banner.colors[field]}
+                      onChange={(e) =>
+                        setBanner({ ...banner, colors: { ...banner.colors, [field]: e.target.value } })
+                      }
+                      className="h-8 w-8 rounded border cursor-pointer"
+                    />
+                    <span className="text-sm">{label}</span>
+                    <code className="text-xs text-muted-foreground">{banner.colors[field]}</code>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+
+            <div className="flex items-center gap-3">
+              <Button onClick={handleSave} disabled={saving || !resolvedProjectId}>
+                {saving ? 'Saving…' : 'Save banner settings'}
+              </Button>
+              {saveSuccess && <span className="text-sm text-green-600">Saved!</span>}
+            </div>
+
+            {/* Snippet preview */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center justify-between">
+                  Installation snippet
+                  <Button variant="outline" size="sm" onClick={handleCopySnippet}>
+                    {snippetCopied ? 'Copied!' : 'Copy snippet'}
+                  </Button>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Paste this inside your &lt;head&gt; tag, <strong>before</strong> any GTM or GA4 snippets.
+                </p>
+                <pre className="bg-muted rounded p-4 text-xs overflow-x-auto max-h-64 select-all">
+                  {`<!-- Atlas Consent Banner -->\n<script>\n${snippet}\n</script>`}
+                </pre>
+              </CardContent>
+            </Card>
           </div>
 
-          {/* Snippet preview */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base flex items-center justify-between">
-                Installation snippet
-                <Button variant="outline" size="sm" onClick={handleCopySnippet}>
-                  {snippetCopied ? 'Copied!' : 'Copy snippet'}
-                </Button>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-xs text-muted-foreground mb-3">
-                Paste this inside your &lt;head&gt; tag, <strong>before</strong> any GTM or GA4 snippets.
-              </p>
-              <pre className="bg-muted rounded p-4 text-xs overflow-x-auto max-h-64 select-all">
-                {`<!-- Atlas Consent Banner -->\n<script>\n${snippet}\n</script>`}
-              </pre>
-            </CardContent>
-          </Card>
+          {/* Right column — sticky live preview */}
+          <div className="sticky top-6">
+            <BannerPreview config={banner} />
+          </div>
         </div>
       )}
 
