@@ -12,7 +12,7 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { supabaseAdmin } from '@/services/database/supabase';
-import { sendPasswordResetEmail } from '@/services/email/emailService';
+import { sendPasswordResetEmail, sendSignupConfirmationEmail } from '@/services/email/emailService';
 import { env } from '@/config/env';
 import logger from '@/utils/logger';
 
@@ -59,25 +59,42 @@ router.post('/signup', signupLimiter, async (req: Request, res: Response) => {
   const normalised = email.trim().toLowerCase();
 
   try {
-    const { data, error } = await supabaseAdmin.auth.admin.createUser({
+    // generateLink creates the user (unconfirmed) and returns a signed
+    // confirmation URL. We send it via Resend — Supabase SMTP is never used.
+    const { data, error } = await supabaseAdmin.auth.admin.generateLink({
+      type: 'signup',
       email: normalised,
       password,
-      email_confirm: true, // skip confirmation email entirely
+      options: {
+        redirectTo: `${env.FRONTEND_URL}/login`,
+      },
     });
 
     if (error) {
-      // Surface friendly errors for common cases
       if (error.message.toLowerCase().includes('already registered') ||
           error.message.toLowerCase().includes('already been registered') ||
           error.message.toLowerCase().includes('duplicate')) {
         return res.status(409).json({ error: 'An account with that email already exists.' });
       }
-      logger.error({ email: normalised, error: error.message }, '[auth] signup failed');
+      logger.error({ email: normalised, error: error.message }, '[auth] signup generateLink failed');
       return res.status(400).json({ error: error.message });
     }
 
-    logger.info({ userId: data.user?.id, email: normalised }, '[auth] User created');
-    return res.status(201).json({ id: data.user?.id, email: data.user?.email });
+    const confirmUrl = data?.properties?.action_link;
+    if (!confirmUrl) {
+      logger.error({ email: normalised }, '[auth] signup: no action_link returned');
+      return res.status(500).json({ error: 'Signup failed. Please try again.' });
+    }
+
+    const result = await sendSignupConfirmationEmail({ to: normalised, confirmUrl });
+    if (!result.ok) {
+      logger.error({ email: normalised, error: result.error }, '[auth] Failed to send confirmation email');
+    }
+
+    logger.info({ email: normalised }, '[auth] Signup confirmation email sent');
+    return res.status(201).json({
+      message: 'Account created. Please check your email to confirm your address before signing in.',
+    });
   } catch (err) {
     logger.error({ err }, '[auth] Unexpected error in signup');
     return res.status(500).json({ error: 'Signup failed. Please try again.' });
