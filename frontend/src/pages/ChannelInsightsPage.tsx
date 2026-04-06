@@ -3,17 +3,20 @@
  *
  * Three tabs:
  *   Overview    — per-channel comparison table (sessions, conversion rate, SCS, health)
- *   Journeys    — side-by-side funnel flow (Landing → Engagement → Micro-Conv → Conversion)
- *   Diagnostics — prioritised signal gap, journey divergence, and engagement anomaly list
+ *   Journeys    — side-by-side funnel flow
+ *   Diagnostics — prioritised signal gap and journey divergence list
  */
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { RefreshCw, GitBranch, ChevronDown, Code2, BarChart2, Zap } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Button } from '@/components/ui/button';
 import { channelApi } from '@/lib/api/channelApi';
 import { ChannelOverviewTable } from '@/components/channels/ChannelOverviewTable';
 import { JourneyFlowComparison } from '@/components/channels/JourneyFlowComparison';
 import { DiagnosticsFeed } from '@/components/channels/DiagnosticsFeed';
+import { EmptyState } from '@/components/common/EmptyState';
+import { PageSkeleton } from '@/components/common/SkeletonCard';
 import type {
   ChannelOverview,
   ChannelJourneyMap,
@@ -21,6 +24,8 @@ import type {
 } from '@/types/channel';
 
 type LoadState = 'loading' | 'loaded' | 'error' | 'empty';
+
+const NAVY = '#1B2A4A';
 
 export function ChannelInsightsPage() {
   const [overviews, setOverviews] = useState<ChannelOverview[]>([]);
@@ -54,7 +59,6 @@ export function ChannelInsightsPage() {
         channelApi.getJourneys(site, daysWindow),
         channelApi.getDiagnostics(site),
       ]);
-
       setOverviews(overviewRes.overviews);
       setJourneys(journeysRes.journeys);
       setDiagnostics(diagnosticsRes.diagnostics);
@@ -98,41 +102,41 @@ export function ChannelInsightsPage() {
     catch { return url; }
   }
 
-  // ── Loading skeleton ──────────────────────────────────────────────────────
+  // ── Loading ────────────────────────────────────────────────────────────────
   if (loadState === 'loading') {
     return (
-      <div className="p-6 space-y-4 animate-pulse max-w-5xl">
-        <div className="h-8 bg-muted rounded w-48" />
-        <div className="h-10 bg-muted rounded w-64" />
-        <div className="h-64 bg-muted rounded-xl" />
+      <div className="px-6 py-8 max-w-5xl">
+        <PageSkeleton />
       </div>
     );
   }
 
-  // ── Error state ───────────────────────────────────────────────────────────
+  // ── Error ──────────────────────────────────────────────────────────────────
   if (loadState === 'error') {
     return (
-      <div className="p-6 flex flex-col items-center justify-center min-h-[50vh] gap-4">
-        <p className="text-sm text-muted-foreground">Failed to load channel insights.</p>
-        <button
-          type="button"
-          onClick={() => load(selectedSite ?? undefined, days)}
-          className="text-sm px-4 py-2 rounded-lg border hover:bg-muted transition-colors"
-        >
-          Retry
-        </button>
+      <div className="px-6 py-8 max-w-5xl flex flex-col items-center justify-center min-h-[50vh] gap-4">
+        <EmptyState
+          icon="signals"
+          title="Failed to load channel insights"
+          description="Something went wrong loading your channel data. Please try again."
+          action={
+            <Button variant="secondary" onClick={() => load(selectedSite ?? undefined, days)}>
+              Retry
+            </Button>
+          }
+        />
       </div>
     );
   }
 
   return (
-    <div className="p-6 space-y-5 max-w-5xl">
+    <div className="px-6 py-8 max-w-5xl space-y-5">
 
       {/* ── Page header ─────────────────────────────────────────────────── */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-xl font-semibold tracking-tight">Channel Insights</h1>
+            <h1 className="text-page-title">Channel Insights</h1>
 
             {/* Site selector */}
             {sites.length > 1 && (
@@ -140,19 +144,19 @@ export function ChannelInsightsPage() {
                 <button
                   type="button"
                   onClick={() => setSiteDropdownOpen((o) => !o)}
-                  className="flex items-center gap-1 text-sm font-medium px-2.5 py-1 rounded-lg border bg-muted/50 hover:bg-muted transition-colors max-w-[240px]"
+                  className="flex items-center gap-1 text-sm font-medium px-2.5 py-1 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] hover:bg-[#F3F4F6] transition-colors max-w-[240px]"
                 >
                   <span className="truncate">
                     {selectedSite ? formatDomain(selectedSite) : 'All Sites'}
                   </span>
-                  <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0 text-[#9CA3AF]" />
                 </button>
                 {siteDropdownOpen && (
-                  <div className="absolute left-0 top-full mt-1 z-50 min-w-[200px] rounded-lg border bg-popover shadow-md py-1">
+                  <div className="absolute left-0 top-full mt-1 z-50 min-w-[200px] rounded-lg border border-[#E5E7EB] bg-white shadow-md py-1">
                     <button
                       type="button"
                       onClick={() => { setSelectedSite(null); setSiteDropdownOpen(false); }}
-                      className={`w-full text-left px-3 py-1.5 text-sm hover:bg-muted transition-colors ${selectedSite === null ? 'font-semibold text-primary' : ''}`}
+                      className={`w-full text-left px-3 py-1.5 text-sm hover:bg-[#F9FAFB] transition-colors ${selectedSite === null ? 'font-semibold text-[#1B2A4A]' : 'text-[#6B7280]'}`}
                     >
                       All Sites
                     </button>
@@ -161,7 +165,7 @@ export function ChannelInsightsPage() {
                         key={s}
                         type="button"
                         onClick={() => { setSelectedSite(s); setSiteDropdownOpen(false); }}
-                        className={`w-full text-left px-3 py-1.5 text-sm hover:bg-muted transition-colors truncate ${selectedSite === s ? 'font-semibold text-primary' : ''}`}
+                        className={`w-full text-left px-3 py-1.5 text-sm hover:bg-[#F9FAFB] transition-colors truncate ${selectedSite === s ? 'font-semibold text-[#1B2A4A]' : 'text-[#6B7280]'}`}
                       >
                         {formatDomain(s)}
                       </button>
@@ -175,7 +179,7 @@ export function ChannelInsightsPage() {
             <select
               value={days}
               onChange={(e) => setDays(Number(e.target.value))}
-              className="text-sm font-medium px-2.5 py-1 rounded-lg border bg-muted/50 hover:bg-muted transition-colors cursor-pointer"
+              className="text-sm font-medium px-2.5 py-1 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] hover:bg-[#F3F4F6] transition-colors cursor-pointer text-[#1A1A1A]"
             >
               <option value={7}>Last 7 days</option>
               <option value={30}>Last 30 days</option>
@@ -183,7 +187,7 @@ export function ChannelInsightsPage() {
             </select>
           </div>
           {lastRefresh && (
-            <p className="text-xs text-muted-foreground mt-0.5">
+            <p className="text-xs text-[#9CA3AF] mt-0.5">
               Last refreshed {lastRefresh.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
             </p>
           )}
@@ -193,7 +197,7 @@ export function ChannelInsightsPage() {
           type="button"
           onClick={handleCompute}
           disabled={computing}
-          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border hover:bg-muted disabled:opacity-60 transition-colors shrink-0"
+          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-[#E5E7EB] hover:bg-[#F9FAFB] disabled:opacity-60 transition-colors shrink-0 text-[#6B7280]"
         >
           <RefreshCw className={`h-3.5 w-3.5 ${computing ? 'animate-spin' : ''}`} />
           {computing ? 'Computing…' : 'Refresh'}
@@ -202,95 +206,81 @@ export function ChannelInsightsPage() {
 
       {/* ── Empty state ───────────────────────────────────────────────────── */}
       {loadState === 'empty' ? (
-        <div className="rounded-xl border border-dashed py-14 px-6">
+        <div className="rounded-lg border border-dashed border-[#E5E7EB] py-14 px-6">
           <div className="flex flex-col items-center text-center gap-3 mb-10">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-              <GitBranch className="h-6 w-6 text-muted-foreground" />
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#EEF1F7]">
+              <GitBranch className="h-6 w-6" style={{ color: NAVY }} strokeWidth={1.5} />
             </div>
             <div>
-              <p className="text-base font-semibold">No channel data yet</p>
-              <p className="mt-1 text-sm text-muted-foreground max-w-md mx-auto">
-                Channel Insights shows how each traffic source — Google Ads, Meta, organic search,
-                and more — performs in terms of signal quality, journey completion, and conversions.
-                To get started, add the Atlas tracking snippet to your website.
+              <p className="text-section-header">No channel data yet</p>
+              <p className="mt-1 text-body text-[#6B7280] max-w-md mx-auto">
+                Channel Insights shows how each traffic source performs in terms of signal quality,
+                journey completion, and conversions. Add the Atlas tracking snippet to get started.
               </p>
             </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-2xl mx-auto">
-            <div className="flex flex-col gap-2 rounded-lg border bg-muted/30 p-4">
-              <div className="flex items-center gap-2 text-sm font-medium">
-                <Code2 className="h-4 w-4 text-muted-foreground shrink-0" />
-                Step 1
+            {[
+              { Icon: Code2, step: 'Step 1', text: <>Run a <strong>New Audit</strong> or open <strong>Set Up Tracking</strong> to generate your Atlas snippet.</> },
+              { Icon: Zap,   step: 'Step 2', text: <>Paste the snippet into your <code className="text-xs bg-[#F3F4F6] px-1 py-0.5 rounded">&lt;head&gt;</code> or deploy via GTM. Sessions are captured automatically.</> },
+              { Icon: BarChart2, step: 'Step 3', text: <>Once traffic flows, click <strong>Refresh</strong> above to compute channel journey maps.</> },
+            ].map(({ Icon, step, text }) => (
+              <div key={step} className="flex flex-col gap-2 rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] p-4">
+                <div className="flex items-center gap-2 text-sm font-semibold text-[#1A1A1A]">
+                  <Icon className="h-4 w-4 text-[#9CA3AF] shrink-0" strokeWidth={1.5} />
+                  {step}
+                </div>
+                <p className="text-sm text-[#6B7280]">{text}</p>
               </div>
-              <p className="text-sm text-muted-foreground">
-                Run a <span className="font-medium text-foreground">New Audit</span> or open{' '}
-                <span className="font-medium text-foreground">Plan Tracking</span> to generate
-                your Atlas tracking snippet for your website.
-              </p>
-            </div>
-
-            <div className="flex flex-col gap-2 rounded-lg border bg-muted/30 p-4">
-              <div className="flex items-center gap-2 text-sm font-medium">
-                <Zap className="h-4 w-4 text-muted-foreground shrink-0" />
-                Step 2
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Paste the snippet into your website's{' '}
-                <code className="text-xs bg-muted px-1 py-0.5 rounded">&lt;head&gt;</code> tag,
-                or deploy it via Google Tag Manager. Sessions will be captured automatically.
-              </p>
-            </div>
-
-            <div className="flex flex-col gap-2 rounded-lg border bg-muted/30 p-4">
-              <div className="flex items-center gap-2 text-sm font-medium">
-                <BarChart2 className="h-4 w-4 text-muted-foreground shrink-0" />
-                Step 3
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Once traffic starts flowing, click{' '}
-                <span className="font-medium text-foreground">Refresh</span> above to compute
-                channel journey maps and surface signal diagnostics.
-              </p>
-            </div>
+            ))}
           </div>
         </div>
       ) : (
         /* ── Tabs ─────────────────────────────────────────────────────────── */
         <Tabs defaultValue="overview">
-          <TabsList>
-            <TabsTrigger value="overview">
+          {/* Navy underline tab bar */}
+          <TabsList className="h-auto rounded-none border-b border-[#E5E7EB] bg-transparent p-0 gap-0 w-full justify-start">
+            <TabsTrigger
+              value="overview"
+              className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#1B2A4A] data-[state=active]:text-[#1B2A4A] data-[state=active]:bg-transparent data-[state=active]:shadow-none text-[#6B7280] hover:text-[#1A1A1A] px-4 py-2.5 text-sm font-medium bg-transparent h-auto transition-colors"
+            >
               Overview
               {overviews.length > 0 && (
-                <span className="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground">
+                <span className="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-[#EEF1F7] text-[#1B2A4A]">
                   {overviews.length}
                 </span>
               )}
             </TabsTrigger>
-            <TabsTrigger value="journeys">
+
+            <TabsTrigger
+              value="journeys"
+              className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#1B2A4A] data-[state=active]:text-[#1B2A4A] data-[state=active]:bg-transparent data-[state=active]:shadow-none text-[#6B7280] hover:text-[#1A1A1A] px-4 py-2.5 text-sm font-medium bg-transparent h-auto transition-colors"
+            >
               Journeys
             </TabsTrigger>
-            <TabsTrigger value="diagnostics">
+
+            <TabsTrigger
+              value="diagnostics"
+              className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#1B2A4A] data-[state=active]:text-[#1B2A4A] data-[state=active]:bg-transparent data-[state=active]:shadow-none text-[#6B7280] hover:text-[#1A1A1A] px-4 py-2.5 text-sm font-medium bg-transparent h-auto transition-colors"
+            >
               Diagnostics
               {diagnostics.length > 0 && (
-                <span className="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-red-100 text-red-700">
+                <span className="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-[#FEF2F2] text-[#DC2626]">
                   {diagnostics.length}
                 </span>
               )}
             </TabsTrigger>
           </TabsList>
 
-          {/* Overview Tab */}
           <TabsContent value="overview" className="mt-4">
             <ChannelOverviewTable overviews={overviews} />
           </TabsContent>
 
-          {/* Journeys Tab */}
           <TabsContent value="journeys" className="mt-4">
             <JourneyFlowComparison journeys={journeys} />
           </TabsContent>
 
-          {/* Diagnostics Tab */}
           <TabsContent value="diagnostics" className="mt-4">
             <DiagnosticsFeed
               diagnostics={diagnostics}

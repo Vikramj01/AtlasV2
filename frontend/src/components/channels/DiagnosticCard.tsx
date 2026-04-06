@@ -1,3 +1,10 @@
+/**
+ * DiagnosticCard — single channel diagnostic alert.
+ *
+ * Uses the 3px left border severity pattern from Sprint 0 (SeverityCard).
+ * Severity colors aligned to the design system palette.
+ */
+
 import { AlertTriangle, Info, XCircle, CheckCircle2 } from 'lucide-react';
 import type { ChannelDiagnostic, ChannelType } from '@/types/channel';
 
@@ -16,27 +23,34 @@ const CHANNEL_LABELS: Record<ChannelType, string> = {
   other:             'Other',
 };
 
+// Design system severity palette
 const SEVERITY_CONFIG = {
   critical: {
-    icon: XCircle,
-    iconClass: 'text-red-500',
-    border: 'border-l-red-500',
-    badge: 'bg-red-100 text-red-700',
-    label: 'Critical',
+    Icon:       XCircle,
+    iconColor:  '#DC2626',
+    bg:         '#FEF2F2',
+    border:     '#DC2626',
+    badgeBg:    '#FEE2E2',
+    badgeColor: '#DC2626',
+    label:      'Critical',
   },
   warning: {
-    icon: AlertTriangle,
-    iconClass: 'text-amber-500',
-    border: 'border-l-amber-500',
-    badge: 'bg-amber-100 text-amber-700',
-    label: 'Warning',
+    Icon:       AlertTriangle,
+    iconColor:  '#D97706',
+    bg:         '#FFFBEB',
+    border:     '#D97706',
+    badgeBg:    '#FEF3C7',
+    badgeColor: '#D97706',
+    label:      'Warning',
   },
   info: {
-    icon: Info,
-    iconClass: 'text-blue-500',
-    border: 'border-l-blue-500',
-    badge: 'bg-blue-100 text-blue-700',
-    label: 'Info',
+    Icon:       Info,
+    iconColor:  '#1B2A4A',
+    bg:         '#EEF1F7',
+    border:     '#1B2A4A',
+    badgeBg:    '#EEF1F7',
+    badgeColor: '#1B2A4A',
+    label:      'Info',
   },
 };
 
@@ -48,64 +62,76 @@ interface DiagnosticCardProps {
 
 export function DiagnosticCard({ diagnostic, onResolve, resolving }: DiagnosticCardProps) {
   const config = SEVERITY_CONFIG[diagnostic.severity];
-  const Icon = config.icon;
+  const Icon = config.Icon;
 
   return (
-    <div className={`rounded-lg border border-l-4 ${config.border} bg-card px-4 py-3 space-y-2`}>
-      {/* Header */}
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-start gap-2.5 min-w-0">
-          <Icon className={`h-4 w-4 shrink-0 mt-0.5 ${config.iconClass}`} />
-          <div className="min-w-0">
-            <p className="text-sm font-medium leading-snug">{diagnostic.title}</p>
-            <div className="flex items-center gap-2 mt-1 flex-wrap">
-              <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${config.badge}`}>
-                {config.label}
-              </span>
-              <span className="text-[10px] text-muted-foreground">
-                {CHANNEL_LABELS[diagnostic.channel] ?? diagnostic.channel}
-              </span>
-              <span className="text-[10px] text-muted-foreground">
-                {new Date(diagnostic.created_at).toLocaleDateString()}
-              </span>
+    <div
+      className="rounded-lg border bg-white overflow-hidden"
+      style={{
+        borderColor: '#E5E7EB',
+        borderLeftColor: config.border,
+        borderLeftWidth: 3,
+        backgroundColor: config.bg,
+      }}
+    >
+      <div className="px-4 py-3 space-y-2">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-2.5 min-w-0">
+            <Icon className="h-4 w-4 shrink-0 mt-0.5" strokeWidth={1.5} style={{ color: config.iconColor }} />
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-[#1A1A1A] leading-snug">{diagnostic.title}</p>
+              <div className="flex items-center gap-2 mt-1 flex-wrap">
+                <span
+                  className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
+                  style={{ backgroundColor: config.badgeBg, color: config.badgeColor }}
+                >
+                  {config.label}
+                </span>
+                <span className="text-[10px] text-[#9CA3AF]">
+                  {CHANNEL_LABELS[diagnostic.channel] ?? diagnostic.channel}
+                </span>
+                <span className="text-[10px] text-[#9CA3AF]">
+                  {new Date(diagnostic.created_at).toLocaleDateString()}
+                </span>
+              </div>
             </div>
           </div>
+
+          {onResolve && (
+            <button
+              type="button"
+              onClick={() => onResolve(diagnostic.id)}
+              disabled={resolving}
+              className="flex items-center gap-1 text-xs text-[#9CA3AF] hover:text-[#059669] transition-colors shrink-0 disabled:opacity-50"
+            >
+              <CheckCircle2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+              {resolving ? 'Resolving…' : 'Resolve'}
+            </button>
+          )}
         </div>
-        {onResolve && (
-          <button
-            type="button"
-            onClick={() => onResolve(diagnostic.id)}
-            disabled={resolving}
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors shrink-0 disabled:opacity-50"
-          >
-            <CheckCircle2 className="h-3.5 w-3.5" />
-            Resolve
-          </button>
+
+        {/* Description */}
+        <p className="text-xs text-[#6B7280] leading-relaxed pl-7">{diagnostic.description}</p>
+
+        {/* Recommended action */}
+        {diagnostic.recommended_action && (
+          <div className="pl-7">
+            <p className="text-xs font-semibold text-[#1A1A1A]">Recommended action</p>
+            <p className="text-xs text-[#6B7280] mt-0.5">{diagnostic.recommended_action}</p>
+          </div>
+        )}
+
+        {/* Meta row */}
+        {(diagnostic.affected_pages.length > 0 || diagnostic.estimated_impact) && (
+          <div className="pl-7 flex gap-4 text-[11px] text-[#9CA3AF]">
+            {diagnostic.estimated_impact && <span>Impact: {diagnostic.estimated_impact}</span>}
+            {diagnostic.affected_pages.length > 0 && (
+              <span>{diagnostic.affected_pages.length} page(s) affected</span>
+            )}
+          </div>
         )}
       </div>
-
-      {/* Description */}
-      <p className="text-xs text-muted-foreground leading-relaxed pl-6">{diagnostic.description}</p>
-
-      {/* Recommended action */}
-      {diagnostic.recommended_action && (
-        <div className="pl-6">
-          <p className="text-xs font-medium text-foreground">Recommended action</p>
-          <p className="text-xs text-muted-foreground mt-0.5">{diagnostic.recommended_action}</p>
-        </div>
-      )}
-
-      {/* Affected pages + estimated impact */}
-      {(diagnostic.affected_pages.length > 0 || diagnostic.estimated_impact) && (
-        <div className="pl-6 flex gap-4 text-[11px] text-muted-foreground/70">
-          {diagnostic.estimated_impact && (
-            <span>Impact: {diagnostic.estimated_impact}</span>
-          )}
-          {diagnostic.affected_pages.length > 0 && (
-            <span>{diagnostic.affected_pages.length} page(s) affected</span>
-          )}
-        </div>
-      )}
     </div>
   );
 }
