@@ -8,6 +8,7 @@ import { signalApi } from '@/lib/api/signalApi';
 import { SignalCard } from '@/components/signals/SignalCard';
 import { WalkerOSAdvantageCard } from '@/components/signals/WalkerOSAdvantageCard';
 import { PackDeploymentView } from '@/components/signals/PackDeploymentView';
+import { SkeletonCard } from '@/components/common/SkeletonCard';
 import type { SignalPackWithSignals } from '@/types/signal';
 
 export function PackDetailPage() {
@@ -55,7 +56,7 @@ export function PackDetailPage() {
   }
 
   if (isLoading) {
-    return <div className="flex justify-center py-16"><div className="h-6 w-6 animate-spin rounded-full border-2 border-primary/30 border-t-primary" /></div>;
+    return <SkeletonCard variant="page" />;
   }
   if (!pack || error) {
     return <div className="p-6 text-sm text-red-600">{error ?? 'Pack not found.'}</div>;

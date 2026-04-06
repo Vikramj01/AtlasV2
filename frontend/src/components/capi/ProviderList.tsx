@@ -43,6 +43,7 @@ export function ProviderList({ onAddProvider, onSelectProvider }: ProviderListPr
   } = useCAPIStore();
 
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     setProvidersLoading(true);
@@ -53,11 +54,14 @@ export function ProviderList({ onAddProvider, onSelectProvider }: ProviderListPr
   }, [setProviders, setProvidersLoading, setProvidersError]);
 
   async function handleDelete(id: string) {
+    setDeletingId(id);
     try {
       await capiApi.deleteProvider(id);
       removeProvider(id);
     } catch {
       // silent — user will see the item still listed
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -69,7 +73,13 @@ export function ProviderList({ onAddProvider, onSelectProvider }: ProviderListPr
   }
 
   if (providersLoading) {
-    return <div className="text-sm text-muted-foreground py-8 text-center">Loading providers…</div>;
+    return (
+      <div className="space-y-3">
+        {[0, 1].map((i) => (
+          <div key={i} className="h-16 animate-pulse rounded-lg border border-[#E5E7EB] bg-[#F9FAFB]" />
+        ))}
+      </div>
+    );
   }
 
   return (
@@ -118,7 +128,7 @@ export function ProviderList({ onAddProvider, onSelectProvider }: ProviderListPr
           </div>
           <div className="space-y-3">
             {providers.map((p: CAPIProviderConfig) => (
-              <Card key={p.id} className="cursor-pointer hover:border-brand-400 transition-colors" onClick={() => onSelectProvider(p.id)}>
+              <Card key={p.id} className="cursor-pointer hover:border-[#1B2A4A] transition-colors" onClick={() => onSelectProvider(p.id)}>
                 <CardContent className="flex items-center justify-between py-4 px-5">
                   <div className="flex items-center gap-4">
                     <div>
@@ -134,11 +144,15 @@ export function ProviderList({ onAddProvider, onSelectProvider }: ProviderListPr
                       {p.status}
                     </span>
                     <button
-                      className="text-muted-foreground hover:text-red-600 text-sm transition-colors"
+                      className="text-muted-foreground hover:text-red-600 text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                       onClick={e => { e.stopPropagation(); void handleDelete(p.id); }}
+                      disabled={deletingId === p.id}
                       title="Delete provider"
+                      aria-label={`Delete ${PROVIDER_LABELS[p.provider] ?? p.provider}`}
                     >
-                      ✕
+                      {deletingId === p.id ? (
+                        <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
+                      ) : '✕'}
                     </button>
                   </div>
                 </CardContent>

@@ -7,6 +7,7 @@ import { clientApi } from '@/lib/api/organisationApi';
 import { useOrganisationStore } from '@/store/organisationStore';
 import { ClientCard } from '@/components/organisation/ClientCard';
 import { ClientSetupWizard } from '@/components/organisation/ClientSetupWizard';
+import { SkeletonCard } from '@/components/common/SkeletonCard';
 import type { ClientWithDetails } from '@/types/organisation';
 
 export function ClientListPage() {
@@ -56,9 +57,7 @@ export function ClientListPage() {
       )}
 
       {isLoading ? (
-        <div className="flex justify-center py-16">
-          <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
-        </div>
+        <SkeletonCard variant="page" />
       ) : filtered.length === 0 ? (
         <div className="py-16 text-center">
           <p className="text-sm text-muted-foreground">
