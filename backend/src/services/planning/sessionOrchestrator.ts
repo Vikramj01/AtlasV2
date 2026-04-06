@@ -205,10 +205,17 @@ async function scanOnePage(
       scanned_at: new Date().toISOString(),
     });
 
-    logger.info(
-      { sessionId, pageId, recCount: recInputs.length, pageType: aiResponse.page_classification.page_type },
-      'Page scan done',
-    );
+    if (recInputs.length === 0) {
+      logger.warn(
+        { sessionId, pageId, url, pageType: aiResponse.page_classification.page_type, pageSummary: aiResponse.page_summary.slice(0, 200) },
+        'Page scan completed with 0 recommendations — check AI response',
+      );
+    } else {
+      logger.info(
+        { sessionId, pageId, recCount: recInputs.length, pageType: aiResponse.page_classification.page_type },
+        'Page scan done',
+      );
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     logger.error({ sessionId, pageId, url, err: msg }, 'Page scan error');

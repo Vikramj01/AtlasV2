@@ -40,12 +40,16 @@ Your job is to analyse a web page and identify which interactive elements should
 You always output valid JSON matching the specified schema exactly — no prose, no markdown fences, just the raw JSON object.
 
 Key principles:
-- Prioritise conversion events (purchases, sign-ups, lead forms) over engagement events
+- ALWAYS include at least one recommendation — even a page_view event if the page has no interactive elements
+- Prioritise conversion events (purchases, sign-ups, lead forms, add to cart, checkout steps) over engagement events
 - Every recommendation must have a clear business justification
 - Use GA4-standard event names where they apply (purchase, add_to_cart, begin_checkout, generate_lead, sign_up, view_item, search)
 - Confidence scores reflect how certain you are this element is worth tracking (not how certain it exists on the page)
-- Only recommend tracking elements that have genuine business value — do not recommend tracking every link or navigation item
-- If an element is already tracked by existing infrastructure, still include it but note this in the justification`;
+- Be INCLUSIVE rather than exclusive — if an element could plausibly be worth tracking, recommend it
+- Include page_view tracking for EVERY page — it is always valuable for funnel analysis
+- If an element is already tracked by existing infrastructure, still include it but note this in the justification
+- On checkout/cart/product pages always recommend the relevant ecommerce events (add_to_cart, begin_checkout, purchase, view_item)
+- Do NOT return an empty recommended_elements array — the minimum is always a page_view recommendation`;
 
 function buildUserPrompt(req: AIAnalysisRequest): string {
   const actionPrimitiveList = ACTION_PRIMITIVES.map((a) => `  - "${a.key}": ${a.description}`).join('\n');
@@ -145,11 +149,12 @@ Return ONLY a JSON object with this exact structure:
 }
 
 Rules:
-- Include 1–8 recommendations (quality over quantity)
+- ALWAYS include at least 1 recommendation — a page_view event at minimum
+- Include 1–8 recommendations total
 - confidence between 0.0 and 1.0
 - screenshot_annotation coordinates must be in pixels, relative to the 1280×800 viewport; use the bounding_box values from the element list above
-- For page-level events (page_view), use element_reference: "page_level" and selector: "document"
-- If no elements are worth tracking (very unlikely), return an empty recommended_elements array`;
+- For page-level events (page_view), use element_reference: "page_level" and selector: "document", screenshot_annotation x:0 y:0 width:1280 height:800
+- NEVER return an empty recommended_elements array — if the page has no specific interactive elements, add a page_view recommendation`;
 }
 
 // ── Main analysis function ───────────────────────────────────────────────────
@@ -205,7 +210,19 @@ export async function analysePageWithAI(
         .map((b) => (b as { text: string }).text)
         .join('');
 
-      return parseAndValidateResponse(rawText, req);
+      const result = parseAndValidateResponse(rawText, req);
+
+      // Safety net: if AI returned 0 recommendations despite our instructions,
+      // inject a page_view event so the user always sees something actionable.
+      if (result.recommended_elements.length === 0) {
+        logger.warn(
+          { url: req.page_url, rawPreview: rawText.slice(0, 300) },
+          'AI returned 0 recommendations — injecting fallback page_view',
+        );
+        result.recommended_elements = [buildFallbackPageView(req)];
+      }
+
+      return result;
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
       logger.warn({ url: req.page_url, attempt, err: lastError.message }, 'AI analysis attempt failed');
@@ -217,6 +234,39 @@ export async function analysePageWithAI(
   }
 
   throw new Error(`AI analysis failed after ${MAX_RETRIES} attempts: ${lastError?.message}`);
+}
+
+// ── Fallback recommendation ──────────────────────────────────────────────────
+
+function buildFallbackPageView(req: AIAnalysisRequest): RecommendedElement {
+  return {
+    element_reference: 'page_level',
+    selector: 'document',
+    recommendation_type: 'track_page_view',
+    action_primitive_key: 'view_item',
+    suggested_event_name: 'page_view',
+    suggested_event_category: 'engagement',
+    business_justification: `Track page views on ${req.page_title || req.page_url} to measure traffic and support funnel analysis.`,
+    priority: 'must_have',
+    parameters_to_capture: [
+      {
+        param_key: 'page_title',
+        param_label: 'Page Title',
+        source: 'page_url',
+        source_detail: 'document.title',
+        example_value: req.page_title || req.page_url,
+      },
+      {
+        param_key: 'page_location',
+        param_label: 'Page URL',
+        source: 'page_url',
+        source_detail: 'window.location.href',
+        example_value: req.page_url,
+      },
+    ],
+    confidence: 1.0,
+    screenshot_annotation: { x: 0, y: 0, width: 1280, height: 800, label: 'Page View' },
+  };
 }
 
 // ── Response parsing ─────────────────────────────────────────────────────────
