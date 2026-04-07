@@ -20,6 +20,7 @@ import { authRouter } from '@/api/routes/auth';
 import { channelsRouter } from '@/api/routes/channels';
 import { dashboardRouter } from '@/api/routes/dashboard';
 import { exportsRouter } from '@/api/routes/exports';
+import { offlineConversionsRouter } from '@/api/routes/offlineConversions';
 import logger from '@/utils/logger';
 import { env } from '@/config/env';
 
@@ -123,6 +124,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/channels', channelsRouter);
 app.use('/api/dashboard', dashboardRouter);
 app.use('/api/exports', exportsRouter);
+app.use('/api/offline-conversions', offlineConversionsRouter);
 
 // ─── 404 handler ─────────────────────────────────────────────────────────────
 

@@ -182,3 +182,41 @@ scheduleRunnerQueue.on('failed', (job, err) => {
   logger.error({ jobId: job?.id, err: err.message }, 'Schedule runner job failed');
 });
 
+// ── Offline Conversion Upload Queue ───────────────────────────────────────────
+// Processes a confirmed CSV batch: hashes PII, uploads to Google Ads,
+// persists per-row results, and calls purge_raw_pii().
+// Retries: 3 attempts with 30s/60s/120s exponential backoff (PRD spec).
+// PII is intentionally NOT included in the job payload — the upload_id
+// is used to load rows from the DB inside the worker.
+
+export interface OfflineConversionJobData {
+  upload_id: string;
+  organization_id: string;
+}
+
+export const offlineConversionQueue = new Bull<OfflineConversionJobData>('offline-conversion-upload', {
+  redis: buildRedisOpts(env.REDIS_URL),
+  defaultJobOptions: {
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 30_000 },
+    removeOnComplete: 100,
+    removeOnFail: 50,
+  },
+});
+
+offlineConversionQueue.on('error', (err) => {
+  logger.error({ err }, 'Offline conversion queue error');
+});
+
+offlineConversionQueue.on('completed', (job) => {
+  logger.info({ jobId: job.id, uploadId: job.data.upload_id }, 'Offline conversion upload job completed');
+});
+
+offlineConversionQueue.on('failed', (job, err) => {
+  logger.error({ jobId: job?.id, uploadId: job?.data?.upload_id, err: err.message }, 'Offline conversion upload job failed');
+});
+
+offlineConversionQueue.on('stalled', (job) => {
+  logger.warn({ jobId: job.id, uploadId: job.data.upload_id }, 'Offline conversion upload job stalled');
+});
+

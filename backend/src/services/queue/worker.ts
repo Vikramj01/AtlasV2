@@ -1,4 +1,4 @@
-import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue } from './jobQueue';
+import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue } from './jobQueue';
 import { env } from '@/config/env';
 import { runAuditOrchestrator } from '@/services/audit/orchestrator';
 import { runPlanningOrchestrator, runRescanOrchestrator } from '@/services/planning/sessionOrchestrator';
@@ -204,3 +204,121 @@ scheduleRunnerQueue.add(
   { trigger: 'scheduled' },
   { repeat: { cron: '*/5 * * * *' }, jobId: 'schedule-runner-tick' },
 ).catch((err) => logger.error({ err }, 'Failed to schedule the schedule runner'));
+
+// ── Offline Conversion Upload worker ─────────────────────────────────────────
+// Processes a confirmed CSV batch end-to-end:
+//   1. Load config + valid rows from DB
+//   2. Decrypt Google OAuth credentials from capi_providers
+//   3. Upload to Google Ads (in 2,000-row batches with retry)
+//   4. Persist per-row results
+//   5. Purge raw PII
+//   6. Mark upload completed/partial/failed
+//
+// PII is never stored in the job payload — only upload_id + org_id.
+
+offlineConversionQueue.process(1, async (job) => {
+  const { upload_id, organization_id } = job.data;
+  logger.info({ upload_id, jobId: job.id }, 'Offline conversion upload job received');
+
+  // Import here to avoid circular dependency issues at startup
+  const {
+    getUpload,
+    getConfig,
+    getRowsForUpload,
+    setUploadStatus,
+    setUploadCompleted,
+    bulkUpdateRowStatuses,
+    purgeRawPii,
+  } = await import('@/services/database/offlineConversionQueries');
+  const { supabaseAdmin } = await import('@/services/database/supabase');
+  const { safeDecryptCredentials } = await import('@/services/capi/credentials');
+  const { uploadOfflineConversions, hashRowIdentifiers } = await import('@/services/offline-conversions/googleOfflineUpload');
+  const { refreshGoogleToken } = await import('@/services/capi/googleDelivery');
+
+  // ── Load upload record ─────────────────────────────────────────────────────
+
+  const upload = await getUpload(upload_id, organization_id);
+  if (!upload) throw new Error(`Upload ${upload_id} not found`);
+  if (upload.status !== 'confirmed') {
+    logger.warn({ upload_id, status: upload.status }, 'Upload not in confirmed state — skipping');
+    return;
+  }
+
+  await setUploadStatus(upload_id, 'uploading', {
+    processing_started_at: new Date().toISOString(),
+  });
+
+  // ── Load config + credentials ──────────────────────────────────────────────
+
+  const config = await getConfig(organization_id);
+  if (!config) throw new Error(`No offline conversion config for org ${organization_id}`);
+  if (!config.capi_provider_id) throw new Error('No CAPI provider linked to offline conversion config');
+
+  const { data: providerRow, error: providerErr } = await supabaseAdmin
+    .from('capi_providers')
+    .select('credentials')
+    .eq('id', config.capi_provider_id)
+    .eq('organization_id', organization_id)
+    .single();
+
+  if (providerErr || !providerRow) {
+    throw new Error(`Failed to load Google CAPI provider credentials: ${providerErr?.message ?? 'not found'}`);
+  }
+
+  const creds = safeDecryptCredentials(providerRow.credentials) as import('@/types/capi').GoogleCredentials;
+
+  // Obtain fresh access token
+  let accessToken = creds.oauth_access_token;
+  try {
+    accessToken = await refreshGoogleToken(creds);
+  } catch (refreshErr) {
+    logger.warn({ err: refreshErr instanceof Error ? refreshErr.message : String(refreshErr) }, 'Token refresh failed — using stored access token');
+  }
+
+  // ── Load valid rows (skip invalid/duplicate) ───────────────────────────────
+
+  const validRows = await getRowsForUpload(upload_id, ['valid']);
+  if (validRows.length === 0) {
+    logger.info({ upload_id }, 'No valid rows to upload');
+    await setUploadStatus(upload_id, 'completed', { completed_at: new Date().toISOString() });
+    await purgeRawPii(upload_id);
+    return;
+  }
+
+  // ── Persist hashed identifiers (before purging raw PII) ───────────────────
+
+  const hashedData = hashRowIdentifiers(validRows);
+  for (const h of hashedData) {
+    await supabaseAdmin
+      .from('offline_conversion_rows')
+      .update({ hashed_email: h.hashed_email, hashed_phone: h.hashed_phone })
+      .eq('id', h.row_id);
+  }
+
+  // ── Upload to Google Ads ──────────────────────────────────────────────────
+
+  const uploadResult = await uploadOfflineConversions(validRows, config, creds, accessToken);
+
+  // ── Persist per-row results ────────────────────────────────────────────────
+
+  await bulkUpdateRowStatuses(upload_id, uploadResult.row_results);
+
+  const uploadedCount = uploadResult.row_results.filter((r) => r.status === 'uploaded').length;
+  const rejectedCount = uploadResult.row_results.filter((r) => r.status === 'rejected').length;
+
+  // ── Complete upload record ─────────────────────────────────────────────────
+
+  await setUploadCompleted(upload_id, uploadResult, uploadedCount, rejectedCount);
+
+  // ── Purge raw PII ──────────────────────────────────────────────────────────
+
+  const purgedCount = await purgeRawPii(upload_id);
+  logger.info({ upload_id, purgedCount }, 'Raw PII purged after upload');
+
+  logger.info(
+    { upload_id, uploadedCount, rejectedCount, partialFailure: uploadResult.partial_failure },
+    'Offline conversion upload job complete',
+  );
+});
+
+logger.info('Offline conversion upload worker registered');
