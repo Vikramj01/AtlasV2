@@ -173,7 +173,8 @@ offlineConversionsRouter.get('/conversion-actions', async (req: Request, res: Re
 
     const creds = safeDecryptCredentials(provider.credentials) as GoogleCredentials;
     const actions = await fetchConversionActions(creds);
-    res.json({ actions });
+    // Return customer_id so frontend can store it in the wizard draft
+    res.json({ actions, customer_id: creds.customer_id });
   } catch (err) {
     sendInternalError(res, err, 'Failed to fetch conversion actions');
   }
