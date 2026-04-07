@@ -19,6 +19,7 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import multer from 'multer';
 import { authMiddleware } from '../middleware/authMiddleware';
+import { offlineUploadLimiter } from '../middleware/offlineUploadLimiter';
 import { sendInternalError } from '@/utils/apiError';
 import {
   getConfig,
@@ -186,6 +187,7 @@ offlineConversionsRouter.get('/conversion-actions', async (req: Request, res: Re
 
 offlineConversionsRouter.post(
   '/upload',
+  offlineUploadLimiter,
   (req: Request, res: Response, next) => {
     upload.single('file')(req, res, (err) => {
       if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
