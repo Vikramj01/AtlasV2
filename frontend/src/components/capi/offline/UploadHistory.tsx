@@ -9,7 +9,6 @@
 
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { offlineConversionsApi } from '@/lib/api/offlineConversionsApi';
 import { useOfflineConversionsStore } from '@/store/offlineConversionsStore';
 import type { OfflineConversionUpload } from '@/types/offline-conversions';

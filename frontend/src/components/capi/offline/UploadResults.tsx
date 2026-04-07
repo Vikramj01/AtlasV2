@@ -15,7 +15,6 @@
 
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import type { OfflineConversionUpload } from '@/types/offline-conversions';
 
 const PAGE_SIZE = 20;

@@ -11,7 +11,6 @@
 
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { offlineConversionsApi } from '@/lib/api/offlineConversionsApi';
 import { useOfflineConversionsStore } from '@/store/offlineConversionsStore';
 import type { OfflineConversionUpload, OfflineConversionRow, ValidationSummary } from '@/types/offline-conversions';
