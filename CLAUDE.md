@@ -1,283 +1,347 @@
-# CLAUDE.md — Atlas Phase 1: Consent Integration Hub + Conversion API Module
+# CLAUDE.md — Atlas V2
 
-## Project Context
+## Project Overview
 
-Atlas is a marketing signal optimisation and tracking infrastructure platform built for agencies, consultancies, and SMB marketers. It's hosted at atlas.spi3l.com.
+Atlas is a marketing signal optimisation and tracking infrastructure platform for agencies, consultancies, and SMB marketers. Hosted at atlas.spi3l.com.
 
-### What Atlas Does Today
-- **Journey Builder**: Guided wizard + AI-assisted flow for defining customer journeys and generating composable tracking tags
-- **Planning Mode**: AI agent that scans sites, recommends tagging, and generates GTM container JSON
-- **Validation Engine**: 26 rules across 3 layers (signal initiation, parameter completeness, persistence)
-- **Chrome Extension**: Scans website tracking tags and identifies existing implementations
-- **Dual GTM Output**: Generates both client-side and server-side GTM container configurations
-- **WalkerOS Integration**: Uses WalkerOS as the vendor-neutral event collection/data layer
+---
 
-### Tech Stack
-- **Frontend**: Next.js (App Router), TypeScript, Tailwind CSS, shadcn/ui
-- **Backend**: Next.js API routes + Supabase Edge Functions
-- **Database**: Supabase (PostgreSQL) for app state; DuckDB/MotherDuck for analytics
-- **Auth**: Supabase Auth (email + OAuth)
-- **Hosting**: Vercel
-- **State Management**: Zustand
-- **Forms**: react-hook-form + zod
-- **Payments**: Stripe (future)
+## What Atlas Does (Current Capabilities)
 
-### Existing Supabase Schema (tables you must NOT modify)
-```sql
--- These tables exist and are in use. Do not alter them.
-organizations (id, name, type, plan, created_at)
-profiles (id [FK auth.users], organization_id, full_name, role, created_at)
-clients (id, organization_id, name, website_url, industry, created_at)
-projects (id, organization_id, client_id, name, status, phase_data, created_by, created_at, updated_at)
-planning_sessions (id, user_id, site_url, business_type, business_context, platforms, implementation_format, status, created_at, updated_at)
-planning_pages (id, session_id, url, label, page_type, scan_status, is_selected, page_capture, ai_analysis, error, created_at)
-planning_recommendations (id, session_id, page_id, element_reference, selector, recommendation_type, ...)
+### Core Features
+- **Journey Builder** — Guided multi-step wizard for defining customer journeys. Generates composable tracking tags, WalkerOS event specs, and GTM container JSON (client-side + server-side).
+- **AI Planning Mode** — Agent that scans sites using Browserbase/Playwright, captures DOM, runs AI analysis (Claude API), recommends tagging, detects PII, and produces full implementation guides + GTM container exports.
+- **Validation Engine** — 26 rules across 3 layers: signal initiation, parameter completeness, and persistence. Scores event quality.
+- **Audit Engine** — Runs a headless browser journey simulation, classifies gaps per funnel stage, generates scored audit reports (PDF export). Supports one-off and scheduled audits.
+- **Health Dashboard** — Live health score, alert feed, and historical trend for signal quality across all journeys.
+- **Channel Insights** — Session ingestion + diagnostic engine that maps signal behaviour per channel, compares journeys, surfaces anomalies.
+- **Signal Library & Packs** — Signal inventory (per-event specs with platform mappings), composable signal packs with deployment wizard. Outputs WalkerOS specs and composable GTM data layer.
+- **Consent Integration Hub** — Built-in consent banner (self-contained JS snippet) + bidirectional sync with external CMPs (OneTrust, Cookiebot, Usercentrics). Google Consent Mode v2 signal generation. Consent analytics dashboard.
+- **Realtime CAPI Module** — Server-side Conversions API integrations: Meta CAPI, Google Enhanced Conversions (TikTok and LinkedIn stubs ready). SHA-256 PII hashing, event deduplication, consent gating, EMQ monitoring, delivery dashboard.
+- **Offline Conversions** — CSV upload of closed CRM deals to Google Ads `uploadClickConversions`. Full validation pipeline, cross-upload dedup, async processing via Bull queue, per-row error reporting.
+- **Organisation & Client Management** — Multi-tenant workspace with org switching, member management (roles), and per-client configuration.
+- **Developer Portal** — Public share link with no-auth report view, quick-check implementation verification.
+- **Readiness Scoring** — Scores org readiness across dimensions; onboarding checklist.
+- **Audit Scheduling** — Cron-based scheduled audits.
+- **PDF/CSV Exports** — Audit reports and signal inventory exported as PDF or Excel.
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| **Frontend** | Vite + React 19, TypeScript, Tailwind CSS, shadcn/ui (Radix UI primitives) |
+| **Routing** | React Router v6 |
+| **State** | Zustand |
+| **Backend** | Express.js (Node.js), TypeScript |
+| **Database** | Supabase (PostgreSQL) |
+| **Auth** | Supabase Auth (email + OAuth) |
+| **Queue** | Bull + Redis (async job processing) |
+| **Browser Automation** | Browserbase + Playwright Core |
+| **AI** | Anthropic Claude API (`@anthropic-ai/sdk`) |
+| **Hosting** | Vercel (frontend), separate Node.js host (backend) |
+| **Payments** | Stripe (integrated, available) |
+
+> **IMPORTANT**: The frontend is **Vite + React** (not Next.js). There is no `app/api/` directory and no Next.js App Router. All API routes are Express.js route handlers in `backend/src/api/routes/`.
+
+---
+
+## Repository Structure
+
 ```
-
-RLS is enabled with organization-level isolation. All new tables MUST follow this pattern.
-
-### Existing Folder Structure
-```
-atlas/
-├── frontend/src/
-│   ├── app/                    # Next.js App Router pages
-│   ├── components/
-│   │   ├── layout/             # Sidebar, Header, Layout
-│   │   ├── wizard/             # Journey Builder wizard phases
-│   │   ├── journey/            # JourneyList, JourneyCard, StepEditor
-│   │   ├── conversion/         # ConversionConfig, PlatformMapper
-│   │   └── clients/            # ClientList, ClientCard
-│   ├── pages/                  # Dashboard, Projects, Clients, Templates
-│   ├── services/               # api.ts, gtm-generator.ts
-│   ├── store/                  # Zustand stores
-│   ├── types/                  # TypeScript interfaces
-│   └── utils/                  # validation.ts, formatting.ts
-├── backend/src/                # (if separate — some logic in Next.js API routes)
+AtlasV2/
+├── frontend/
+│   └── src/
+│       ├── app/                        # React Router page components
+│       │   └── (dashboard)/            # Authenticated routes
+│       │       ├── integrations/
+│       │       │   └── capi/page.tsx   # CAPI + Offline Conversions tab page
+│       │       └── consent/page.tsx    # Consent settings page
+│       ├── components/
+│       │   ├── audit/                  # AuditHistoryTable, AuditProgressSteps, RunAuditForm,
+│       │   │                           # ScheduleModal, ReportNav, ReportPages/*
+│       │   ├── capi/                   # ProviderList, SetupWizard, CAPIMonitoringDashboard,
+│       │   │   │                       # EMQEstimator, DeliveryTimeline, ErrorLog
+│       │   │   ├── offline/            # OfflineConversionsTab, UploadArea, ValidationReview,
+│       │   │   │   │                   # UploadProgress, UploadResults, UploadHistory,
+│       │   │   │   │                   # SetupWizard (offline), GCLIDCapturePanel
+│       │   │   │   └── steps/          # Step1–5 for offline setup wizard
+│       │   │   └── steps/              # ConnectAccount, MapEvents, ConfigureIdentifiers,
+│       │   │                           # TestVerify, Activate (realtime wizard)
+│       │   ├── channels/               # ChannelHealthIndicator, ChannelOverviewTable,
+│       │   │                           # DiagnosticCard, JourneyFlowComparison, JourneyStep
+│       │   ├── common/                 # EducationTooltip, EmptyState, ErrorBoundary,
+│       │   │                           # HealthBadge, ScoreCard, SeverityBadge, StatusBanner
+│       │   ├── consent/                # ConsentSettings, BannerConfigurator, BannerPreview,
+│       │   │                           # CMPIntegration, CategoryEditor, ConsentAnalyticsDashboard
+│       │   ├── dashboard/              # ActionCard, IntelligentRouter, SummaryBar
+│       │   ├── developer/              # CodeSnippet, DeveloperHeader, PageImplementationCard
+│       │   ├── health/                 # ActiveAlertsFeed, HealthHistoryChart, OverallScoreRing
+│       │   ├── journey/                # JourneyWizard, StageCard, Step1–4, WizardProgress
+│       │   ├── layout/                 # AppLayout, ProtectedRoute, Sidebar, TopBar
+│       │   ├── organisation/           # ClientCard, ClientSetupWizard, MemberManagement, OrgSwitcher
+│       │   ├── planning/               # AnnotatedScreenshot, GTMContainerPreview, RecommendationCard,
+│       │   │                           # Step1–7 (full planning wizard)
+│       │   ├── signals/                # SignalCard, SignalEditor, PackCard, PackEditor,
+│       │   │                           # DeploymentWizard, WalkerOSAdvantageCard
+│       │   └── ui/                     # shadcn/ui primitives (button, card, dialog, input,
+│       │                               # badge, select, table, tabs, progress, etc.)
+│       ├── lib/
+│       │   ├── api/                    # One client module per feature area:
+│       │   │                           # adminApi, auditApi, capiApi, channelApi, checklistApi,
+│       │   │                           # consentApi, dashboardApi, developerApi, exportApi,
+│       │   │                           # healthApi, journeyApi, offlineConversionsApi,
+│       │   │                           # organisationApi, clientApi, planningApi,
+│       │   │                           # readinessApi, scheduleApi, signalApi
+│       │   ├── capi/
+│       │   │   ├── adapters/           # types.ts (CAPIProviderAdapter interface),
+│       │   │   │                       # meta.ts, google.ts, google-offline.ts,
+│       │   │   │                       # tiktok.ts (stub), linkedin.ts (stub)
+│       │   │   ├── hash-pii.ts         # SHA-256 PII hashing
+│       │   │   ├── dedup.ts            # Event deduplication
+│       │   │   ├── pipeline.ts         # Event transformation pipeline
+│       │   │   └── queue.ts            # Client-side event queue
+│       │   ├── consent/
+│       │   │   ├── banner-generator.ts # Self-contained JS banner snippet
+│       │   │   ├── cmp-listeners.ts    # OneTrust / Cookiebot / Usercentrics bridges
+│       │   │   ├── consent-engine.ts   # Consent state management
+│       │   │   └── gcm-mapper.ts       # Google Consent Mode v2 mapping
+│       │   └── shared/
+│       │       └── crypto.ts           # Shared hashing utilities
+│       ├── pages/                      # React Router page-level components
+│       │   # (HomePage, LoginPage, DashboardPage, AuditProgressPage, ReportPage,
+│       │   #  JourneyBuilderPage, PlanningDashboard, ConsentPage, CAPIPage,
+│       │   #  HealthDashboardPage, ChannelInsightsPage, ClientListPage, etc.)
+│       ├── store/
+│       │   ├── auditStore.ts
+│       │   ├── capiStore.ts
+│       │   ├── consentStore.ts
+│       │   ├── dashboardStore.ts
+│       │   ├── journeyWizardStore.ts
+│       │   ├── offlineConversionsStore.ts
+│       │   ├── organisationStore.ts
+│       │   ├── planningStore.ts
+│       │   └── signalStore.ts
+│       └── types/
+│           # audit.ts, capi.ts, channel.ts, consent.ts, dashboard.ts,
+│           # health.ts, journey.ts, offline-conversions.ts,
+│           # organisation.ts, planning.ts, schedule.ts, signal.ts
+│
+├── backend/
+│   └── src/
+│       ├── api/
+│       │   ├── middleware/             # authMiddleware, rateLimiter, errorHandler
+│       │   └── routes/
+│       │       # admin.ts, audit.ts, auth.ts, capi.ts, channels.ts,
+│       │       # checklist.ts, clients.ts, consent.ts, dashboard.ts,
+│       │       # developer.ts, exports.ts, health.ts, journeys.ts,
+│       │       # offlineConversions.ts, organisations.ts, planning.ts,
+│       │       # readiness.ts, schedules.ts, signals.ts
+│       ├── services/
+│       │   ├── audit/                  # orchestrator, journeySimulator, gapClassifier, dataCapture
+│       │   ├── browserbase/            # client.ts, journeyConfigs.ts
+│       │   ├── capi/                   # credentials.ts, pipeline.ts, googleDelivery.ts, metaDelivery.ts
+│       │   ├── channels/               # sessionIngestion, journeyComputation, diagnosticEngine
+│       │   ├── consent/                # gcmMapper.ts
+│       │   ├── dashboard/              # dashboardService.ts
+│       │   ├── database/               # One query module per feature area (17 modules)
+│       │   │                           # + supabase.ts client
+│       │   ├── developer/              # quickCheckService, shareService
+│       │   ├── email/                  # emailService.ts
+│       │   ├── export/                 # pdfGenerator.ts, signalInventoryExport.ts
+│       │   ├── health/                 # scoreEngine, alertEngine, healthOrchestrator
+│       │   ├── interpretation/         # engine.ts (Claude API — AI audit interpretation)
+│       │   ├── journey/                # specOrchestrator, platformSchemas, actionPrimitives,
+│       │   │                           # generators/ (gtmDataLayer, validationSpec, walkerosFlow)
+│       │   ├── offline-conversions/    # csvValidator.ts, googleOfflineUpload.ts
+│       │   ├── planning/               # sessionOrchestrator, siteDetectionService,
+│       │   │                           # pageCaptureService, aiAnalysisService,
+│       │   │                           # changeDetectionService, piiDetectionService,
+│       │   │                           # generators/ (gtmContainer, dataLayerSpec, output, guide)
+│       │   ├── queue/                  # jobQueue.ts (Bull), worker.ts
+│       │   ├── reporting/              # generator.ts
+│       │   ├── scoring/                # engine.ts
+│       │   ├── signals/                # composableOutputGenerator, walkerosComposableGenerator
+│       │   └── validation/             # engine.ts, signalInitiation, parameterCompleteness, persistence
+│       ├── types/                      # Backend-scoped mirror types (offline-conversions.ts, etc.)
+│       └── app.ts                      # Express app setup + route mounting
+│
 ├── supabase/
-│   └── migrations/             # SQL migration files
-└── package.json
+│   └── migrations/
+│       ├── 20260317_001_consent_and_capi_tables.sql    # consent_configs, consent_records,
+│       │                                               # capi_providers, capi_events, capi_event_queue
+│       ├── 20260325_001_channel_tables.sql             # channel_sessions, channel_session_events,
+│       │                                               # channel_journey_maps, channel_diagnostics
+│       ├── 20260405_001_fix_user_deletion_cascade.sql  # CASCADE fixes for user deletion
+│       └── 20260406_001_offline_conversion_tables.sql  # offline_conversion_configs,
+│                                                       # offline_conversion_uploads,
+│                                                       # offline_conversion_rows
+│
+└── docs/
+    ├── atlas-prd-consent-capi.docx
+    └── ATLAS_Offline_Conversion_Upload_PRD.md
 ```
 
 ---
 
-## What You Are Building
+## Supabase Schema (Do Not Modify Without Migration)
 
-Two features that extend Atlas's existing event pipeline:
-
-### Feature 1: Consent Integration Hub
-A consent management layer with two modes:
-- **Built-in Mode**: Lightweight consent banner Atlas generates and injects alongside tracking tags
-- **Integration Mode**: Bidirectional sync with external CMPs (OneTrust, Cookiebot, Usercentrics)
-
-Key capabilities: consent collection, storage, enforcement (gates tag firing + CAPI forwarding), Google Consent Mode v2 signal generation, consent analytics dashboard.
-
-### Feature 2: Conversion API Module
-Server-side conversion API integrations with a provider-abstracted architecture:
-- **Meta Conversions API** (ships first)
-- **Google Enhanced Conversions** (ships alongside or immediately after)
-- Architecture designed so TikTok, LinkedIn, Snapchat adapters plug in later
-
-Key capabilities: guided setup wizard, automatic PII hashing (SHA-256), event deduplication, consent gating, EMQ monitoring, delivery dashboard.
-
-### How They Connect
+### Original tables (in use, never alter)
+```sql
+organizations      (id, name, type, plan, created_at)
+profiles           (id [FK auth.users], organization_id, full_name, role, created_at)
+clients            (id, organization_id, name, website_url, industry, created_at)
+projects           (id, organization_id, client_id, name, status, phase_data, created_by, created_at, updated_at)
+planning_sessions  (id, user_id, site_url, business_type, business_context, platforms,
+                    implementation_format, status, created_at, updated_at)
+planning_pages     (id, session_id, url, label, page_type, scan_status, is_selected,
+                    page_capture, ai_analysis, error, created_at)
+planning_recommendations (id, session_id, page_id, element_reference, selector,
+                          recommendation_type, ...)
 ```
-User visits site
-  → Consent banner/CMP collects decision
-  → Consent state stored in Atlas + propagated to data layer
-  → WalkerOS collects events (with consent state attached)
-  → Atlas validation engine checks quality + consent compliance
-  → Consented conversion events route to CAPI Module
-  → CAPI Module hashes PII, formats payload, sends to Meta/Google
-  → Delivery confirmation + EMQ scores logged to dashboard
+
+### Consent & CAPI tables (migration 20260317)
+```sql
+consent_configs    (id, organization_id, mode, categories JSONB, banner_config JSONB,
+                    gcm_mapping JSONB, cmp_provider, cmp_config JSONB, ...)
+consent_records    (id, organization_id, project_id, visitor_id, categories JSONB,
+                    consent_string, ip_country, user_agent, ...)
+capi_providers     (id, organization_id, provider, name, credentials JSONB [encrypted],
+                    status, last_tested_at, ...)
+capi_events        (id, organization_id, provider_id, event_name, event_time,
+                    hashed_email, hashed_phone, gclid, fbclid, value, currency,
+                    consent_state, status, ...)
+capi_event_queue   (id, organization_id, provider_id, payload JSONB, status,
+                    attempts, last_error, next_retry_at, ...)
 ```
+
+### Channel tables (migration 20260325)
+```sql
+channel_sessions        (id, organization_id, session_id, channel, utm_source, ...)
+channel_session_events  (id, session_id, event_name, event_data JSONB, ...)
+channel_journey_maps    (id, organization_id, channel, journey_id, ...)
+channel_diagnostics     (id, organization_id, diagnostic_type, severity, ...)
+```
+
+### Offline conversion tables (migration 20260406)
+```sql
+offline_conversion_configs  (id, organization_id [UNIQUE], capi_provider_id [FK capi_providers],
+                              google_customer_id, conversion_action_id, conversion_action_name,
+                              column_mapping JSONB, default_currency, default_conversion_value,
+                              status, error_message, created_at, updated_at)
+
+offline_conversion_uploads  (id, organization_id, config_id, filename, file_size_bytes,
+                              row_count_total, status, row_count_valid, row_count_invalid,
+                              row_count_duplicate, row_count_uploaded, row_count_rejected,
+                              validation_summary JSONB, upload_result JSONB, error_message,
+                              uploaded_by, created_at, validated_at, confirmed_at,
+                              processing_started_at, completed_at, updated_at)
+
+offline_conversion_rows     (id, upload_id, organization_id, row_index,
+                              raw_email, raw_phone, raw_gclid,    -- nulled by purge_raw_pii() post-upload
+                              hashed_email, hashed_phone,         -- retained permanently
+                              conversion_time, conversion_value, currency, order_id,
+                              status, validation_errors JSONB, validation_warnings JSONB,
+                              google_error_code, google_error_message, uploaded_at, created_at)
+```
+
+**RLS is enabled on every table.** All new tables MUST use the `organization_id = auth.uid()` pattern.
+
+---
+
+## Backend API Routes
+
+| Route prefix | File | Key endpoints |
+|---|---|---|
+| `/api/admin` | admin.ts | GET /me, /stats, /users, /alerts; PATCH /users/:id/plan |
+| `/api/audit` | audit.ts | POST /start, /start-from-journey; GET /:id, /report, /gaps; POST /:id/export |
+| `/api/auth` | auth.ts | POST /signup, /forgot-password |
+| `/api/capi` | capi.ts | GET /providers, /:id; POST /providers, /:id/activate, /:id/test, /process; DELETE /:id |
+| `/api/channels` | channels.ts | GET /sessions, /diagnostics; POST /ingest-session |
+| `/api/checklist` | checklist.ts | GET /checklist; POST /mark-complete |
+| `/api/clients` | clients.ts | Full CRUD + generate/deploy/audit |
+| `/api/consent` | consent.ts | GET /config; POST /record, /process; PUT /config |
+| `/api/dashboard` | dashboard.ts | GET /summary |
+| `/api/developer` | developer.ts | GET /share/:token; POST /quick-check, /page-summary |
+| `/api/exports` | exports.ts | POST /audit/:auditId/pdf; POST /signals/inventory |
+| `/api/health` | health.ts | GET /score, /alerts, /history |
+| `/api/journeys` | journeys.ts | Full CRUD + spec generation |
+| `/api/offline-conversions` | offlineConversions.ts | GET /config, /history, /upload/:id; POST /upload, /upload/:id/confirm, /upload/:id/cancel; GET /conversion-actions, /template |
+| `/api/organisations` | organisations.ts | Full CRUD + member management |
+| `/api/planning` | planning.ts | POST /sessions, /detect, /rescan, /generate; GET /sessions, /:id, /outputs |
+| `/api/readiness` | readiness.ts | GET /score, /breakdown, /checklist |
+| `/api/schedules` | schedules.ts | Full CRUD for scheduled audits |
+| `/api/signals` | signals.ts | Full CRUD for signals and packs + deploy |
+
+---
+
+## Key Technical Decisions
+
+1. **Vite + React 19, not Next.js** — frontend is a pure SPA with React Router v6. No server components. No `app/api/` directory.
+2. **Express.js backend** — all API logic lives in `backend/src/`. Not Supabase Edge Functions.
+3. **Bull + Redis for async jobs** — audit simulation, CAPI event delivery, and offline conversion uploads all run as Bull jobs. Workers are in `backend/src/services/queue/worker.ts`.
+4. **Credentials encrypted at rest** — `capi_providers.credentials` uses AES-256-GCM via `@noble/ciphers`. Never log or expose decrypted credentials.
+5. **No PII in job payloads** — Bull queue payloads contain only IDs (e.g. `upload_id`, `organization_id`). Raw PII is only in the DB during the validation review window, then nulled by `purge_raw_pii()`.
+6. **Provider adapter pattern** — `CAPIProviderAdapter` interface in `frontend/src/lib/capi/adapters/types.ts`. All providers implement it. Never put Meta-specific or Google-specific logic in the core pipeline.
+7. **Cross-upload dedup** — `offline_conversion_rows` has indexes on `hashed_email` and `order_id` for fast cross-upload duplicate detection.
+8. **Google Offline CAPI** — uses `uploadClickConversions` endpoint (not `conversionAdjustments`). 2,000-row batches, 1s inter-batch delay, 3 retries with exponential backoff (30s/60s/120s). Reuses `capi_providers` Google OAuth credentials.
+9. **Supabase for everything** — no separate DuckDB. All tables in Supabase PostgreSQL.
+10. **Claude API for AI features** — planning mode AI analysis and audit interpretation use `@anthropic-ai/sdk`. Default to the latest capable model (currently `claude-sonnet-4-6`).
 
 ---
 
 ## Implementation Rules
 
 ### Must Follow
-1. **All new tables** go in `supabase/migrations/` as numbered SQL files
-2. **RLS required** on every new table — use the org_isolation pattern from existing tables
-3. **Credentials encryption** — provider tokens/API keys stored in `capi_providers.credentials` must be encrypted. Use Supabase Vault if available, otherwise AES-256 at the application layer
-4. **No PII in logs** — never log unhashed email, phone, or other personal data
-5. **Consent-first** — every event entering or leaving Atlas must carry a consent state. No data processing without consent validation
-6. **Provider adapter pattern** — the CAPI module uses a TypeScript interface (`CAPIProviderAdapter`) that all providers implement. Never put Meta-specific or Google-specific logic in the core pipeline
-7. **shadcn/ui components** — use existing shadcn/ui components for all new UI. Install additional components as needed via `npx shadcn add [component]`
-8. **Zod validation** — all API request/response bodies validated with Zod schemas
-9. **Error boundaries** — wrap all new pages/features in React error boundaries
-10. **Loading states** — every async operation shows a loading indicator (use shadcn Skeleton)
+1. **New tables** → `supabase/migrations/` as numbered `.sql` files. RLS required on every table.
+2. **Credentials encryption** — provider tokens encrypted. Use `@noble/ciphers` AES-256-GCM.
+3. **No PII in logs or queue payloads** — never log unhashed email, phone, or personal data.
+4. **Consent-first** — every event must carry consent state. No data processing without consent validation.
+5. **shadcn/ui** — use existing Radix UI / shadcn components. Add new ones via `npx shadcn add [component]`.
+6. **Zod validation** — all API request/response bodies validated with Zod schemas in the backend.
+7. **Error boundaries** — wrap new pages in React error boundaries.
+8. **Loading states** — every async operation shows a loading indicator (shadcn Skeleton or spinner).
 
 ### Code Style
-- TypeScript strict mode
-- Functional components only (no class components)
-- Server components by default; 'use client' only when needed
-- API routes use Next.js Route Handlers (app/api/...)
-- Database queries via Supabase JS client (not raw SQL in application code)
-- Zustand for client-side state; server state via React Query or SWR
+- TypeScript strict mode (`noUnusedLocals: true`, `noUnusedParameters: true` — enforced by Vercel build)
+- Build command: `tsc && vite build` — `tsc` runs first. Unused imports = build failure.
+- Functional React components only. No class components.
+- `'use client'` not applicable (not Next.js) — all components are client-side by default.
+- Database queries via Supabase JS client in `backend/src/services/database/` query modules.
+- Zustand for client state. No React Query or SWR currently.
+- API responses follow consistent `{ data, error, message }` shape.
 
 ### Testing
-- Unit tests for PII hashing (critical path — must not leak unhashed data)
-- Unit tests for provider adapter payload formatting
-- Integration tests for consent → CAPI pipeline flow
-- E2E tests for the setup wizard flows
+- Unit tests: PII hashing, provider adapter payload formatting (critical path)
+- Integration tests: consent → CAPI pipeline, CSV validation pipeline
+- E2E: setup wizard flows, upload flow
+- Test runner: Vitest (both frontend and backend)
 
 ---
 
-## File Placement Guide
+## Active Development Branch
 
-Place new files in these locations:
+Current feature branch: `claude/offline-conversions-integration-odB7J`
 
+### Offline Conversions — Implementation Status
+- ✅ **Sprint 1** — DB migration, TypeScript types, Zustand store, adapter utilities
+- ✅ **Sprint 2** — Backend pipeline: CSV validator, Google upload service, API routes, Bull worker
+- ✅ **Sprint 3** — Frontend wizard (5 steps), `OfflineConversionsTab`, CAPI page two-tab layout
+- ✅ **Sprint 4** — Upload flow UI: `UploadArea`, `ValidationReview`, `UploadProgress`, `UploadResults`, `UploadHistory`
+- ⬜ **Sprint 5** — Unit/integration tests + security hardening (pending)
+
+### Offline Conversions Upload Status Lifecycle
 ```
-atlas/
-├── frontend/src/
-│   ├── app/
-│   │   ├── (dashboard)/
-│   │   │   ├── consent/                    # Consent settings + analytics pages
-│   │   │   │   ├── page.tsx
-│   │   │   │   └── analytics/page.tsx
-│   │   │   └── integrations/
-│   │   │       └── capi/                   # CAPI provider setup + dashboard
-│   │   │           ├── page.tsx
-│   │   │           ├── [providerId]/
-│   │   │           │   ├── setup/page.tsx  # 5-step wizard
-│   │   │           │   └── dashboard/page.tsx
-│   │   │           └── layout.tsx
-│   │   └── api/
-│   │       └── v1/
-│   │           ├── consent/
-│   │           │   ├── route.ts            # POST (record consent)
-│   │           │   ├── [projectId]/
-│   │           │   │   ├── [visitorId]/route.ts  # GET, DELETE
-│   │           │   │   └── analytics/route.ts    # GET
-│   │           │   └── config/route.ts     # GET, PUT consent config
-│   │           └── capi/
-│   │               ├── providers/
-│   │               │   ├── route.ts        # POST (create provider)
-│   │               │   └── [id]/
-│   │               │       ├── route.ts    # GET, PUT, DELETE
-│   │               │       ├── test/route.ts     # POST (test events)
-│   │               │       ├── activate/route.ts # PUT
-│   │               │       └── dashboard/route.ts # GET
-│   │               └── process/route.ts    # Internal: event processing endpoint
-│   ├── components/
-│   │   ├── consent/
-│   │   │   ├── ConsentSettings.tsx
-│   │   │   ├── BannerConfigurator.tsx
-│   │   │   ├── CMPIntegration.tsx
-│   │   │   ├── CategoryEditor.tsx
-│   │   │   ├── ConsentAnalyticsDashboard.tsx
-│   │   │   └── BannerPreview.tsx
-│   │   └── capi/
-│   │       ├── ProviderList.tsx
-│   │       ├── SetupWizard.tsx
-│   │       ├── steps/
-│   │       │   ├── ConnectAccount.tsx
-│   │       │   ├── MapEvents.tsx
-│   │       │   ├── ConfigureIdentifiers.tsx
-│   │       │   ├── TestVerify.tsx
-│   │       │   └── Activate.tsx
-│   │       ├── EMQEstimator.tsx
-│   │       ├── CAPIMonitoringDashboard.tsx
-│   │       ├── DeliveryTimeline.tsx
-│   │       └── ErrorLog.tsx
-│   ├── lib/
-│   │   ├── consent/
-│   │   │   ├── consent-engine.ts           # Consent state management
-│   │   │   ├── gcm-mapper.ts              # Google Consent Mode mapping
-│   │   │   ├── banner-generator.ts        # Generate banner JS snippet
-│   │   │   └── cmp-listeners.ts           # OneTrust/Cookiebot/Usercentrics bridges
-│   │   ├── capi/
-│   │   │   ├── pipeline.ts                # Core event processing pipeline
-│   │   │   ├── hash-pii.ts               # SHA-256 PII hashing
-│   │   │   ├── dedup.ts                   # Event deduplication logic
-│   │   │   ├── queue.ts                   # Event queue management
-│   │   │   └── adapters/
-│   │   │       ├── types.ts               # CAPIProviderAdapter interface
-│   │   │       ├── meta.ts               # Meta Conversions API adapter
-│   │   │       ├── google.ts             # Google Enhanced Conversions adapter
-│   │   │       ├── tiktok.ts             # (stub for Phase 1.5)
-│   │   │       └── linkedin.ts           # (stub for Phase 1.5)
-│   │   └── shared/
-│   │       └── crypto.ts                  # Shared hashing utilities
-│   ├── store/
-│   │   ├── consentStore.ts
-│   │   └── capiStore.ts
-│   └── types/
-│       ├── consent.ts
-│       └── capi.ts
-├── supabase/
-│   └── migrations/
-│       ├── 20260317_001_consent_tables.sql
-│       └── 20260317_002_capi_tables.sql
-└── scripts/
-    └── generate-consent-banner.ts  # CLI tool to preview banner output
+pending → validating → validated → confirmed → uploading → completed
+                                                          → partial
+                                                          → failed
+                                                          → cancelled
 ```
-
----
-
-## Development Sequence
-
-### Sprint 0 (Week 1-2): Shared Foundation
-1. Run the Supabase migration (creates all new tables)
-2. Implement `types/consent.ts` and `types/capi.ts`
-3. Implement `lib/shared/crypto.ts` (SHA-256 hashing)
-4. Implement `lib/capi/hash-pii.ts`
-5. Implement `lib/capi/adapters/types.ts` (provider interface)
-
-### Sprint 1 (Week 3-4): Consent Core
-1. Consent API routes (POST, GET, DELETE)
-2. `ConsentSettings.tsx` page with built-in banner configurator
-3. `banner-generator.ts` — generates the JS snippet
-4. `consent-engine.ts` — state management + GCM mapping
-5. Basic consent analytics API route
-
-### Sprint 2 (Week 5-6): Meta CAPI Adapter
-1. `lib/capi/adapters/meta.ts` — full Meta adapter
-2. `lib/capi/pipeline.ts` — core processing pipeline
-3. `lib/capi/dedup.ts` — event deduplication
-4. CAPI provider API routes (create, test, activate)
-5. `SetupWizard.tsx` with all 5 steps (Meta-specific)
-
-### Sprint 3 (Week 7-8): Google Adapter + CMP Integration
-1. `lib/capi/adapters/google.ts` — Google Enhanced Conversions adapter
-2. `lib/consent/cmp-listeners.ts` — OneTrust, Cookiebot, Usercentrics
-3. `CMPIntegration.tsx` component
-4. Extend SetupWizard for Google (OAuth flow, conversion action selection)
-
-### Sprint 4 (Week 9-10): Dashboards + Consent Enforcement
-1. `ConsentAnalyticsDashboard.tsx`
-2. `CAPIMonitoringDashboard.tsx`
-3. Consent enforcement in the event pipeline (consent gates CAPI)
-4. `lib/capi/queue.ts` — retry logic, dead letter handling
-5. Error log UI
-
-### Sprint 5 (Week 11-12): Integration Testing + Polish
-1. End-to-end consent → CAPI pipeline testing
-2. Load testing (5,000 events/min target)
-3. Edge case handling (token expiry, rate limiting, burst traffic)
-4. Documentation
-5. Beta launch prep
-
----
-
-## Key Technical Decisions (Already Made)
-
-1. **Supabase for everything** — no new database systems. Consent records and CAPI events go in Supabase tables, not DuckDB.
-2. **Next.js API routes for CAPI processing** — not Supabase Edge Functions. The CAPI pipeline needs access to encryption keys and provider credentials that are easier to manage in the Next.js server environment.
-3. **Provider credentials encrypted at rest** — use `@noble/ciphers` for AES-256-GCM encryption of tokens stored in JSONB columns.
-4. **Event queue in Supabase** — for Phase 1, the event queue is a Supabase table with status-based polling. If throughput becomes an issue in Phase 2, migrate to a proper queue (Inngest, Trigger.dev, or Supabase Realtime).
-5. **No external CMP dependency for built-in mode** — the built-in consent banner is a self-contained JS snippet that Atlas generates. It does NOT require OneTrust or any other third-party service.
 
 ---
 
 ## Reference Documents
 
-The full PRD with detailed specs is in: `docs/atlas-prd-consent-capi.docx`
-
-Key sections to reference:
-- **Section 6**: Consent data models (complete column definitions)
-- **Section 7**: Consent API specifications (request/response formats)
-- **Section 13**: CAPI data models (complete column definitions)
-- **Section 14**: CAPI API specifications + Meta/Google payload formats
-- **Section 9 & 16**: Error handling & edge cases
-- **Section 10 & 17**: Acceptance criteria & test plans
+- `docs/ATLAS_Offline_Conversion_Upload_PRD.md` — Offline conversions feature PRD
+- `docs/atlas-prd-consent-capi.docx` — Consent + Realtime CAPI PRD (Sections 6, 7, 13, 14 for data models and API specs)
