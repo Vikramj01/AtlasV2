@@ -349,7 +349,12 @@ export async function uploadOfflineConversions(
     if (response.error) {
       // Whole batch failed (auth error, quota, etc.)
       const errMsg = response.error.message;
-      logger.error({ error: response.error }, 'Google Ads batch upload failed');
+      // Log only the structured error fields — never log the full response which
+      // may include echoed conversion data in the details array.
+      logger.error(
+        { code: response.error.code, status: response.error.status, message: response.error.message },
+        'Google Ads batch upload failed',
+      );
       for (const row of batchRows) {
         allResults.push({
           row_index: row.row_index,
