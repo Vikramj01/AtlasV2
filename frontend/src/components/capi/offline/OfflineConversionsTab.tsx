@@ -3,20 +3,46 @@
  *
  * Main content for the "Offline Conversions" tab in the CAPI integrations page.
  *
- * States:
+ * Top-level states:
  *   - Loading: skeleton while fetching config
+ *   - Config error: red banner
  *   - Not configured: "Get started" empty state → opens wizard
- *   - Wizard open: renders OfflineSetupWizard full-page
- *   - Configured: config summary + upload CTA (Sprint 4) + GCLID panel
+ *   - Wizard open: full-page OfflineSetupWizard
+ *   - Configured: two sub-panels
+ *       • Upload panel  (uploadPhase drives which sub-component renders)
+ *       • GCLID capture panel (always visible below)
+ *
+ * Upload phases (within the configured view):
+ *   'idle'       → UploadArea (drag-and-drop)
+ *   'reviewing'  → ValidationReview (confirm / cancel)
+ *   'processing' → UploadProgress (polling)
+ *   'done'       → UploadResults (success / partial / failed)
+ *   'history'    → UploadHistory (paginated table)
  */
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { offlineConversionsApi } from '@/lib/api/offlineConversionsApi';
 import { useOfflineConversionsStore } from '@/store/offlineConversionsStore';
 import { OfflineSetupWizard } from './SetupWizard';
 import { GCLIDCapturePanel } from './GCLIDCapturePanel';
+import { UploadArea } from './UploadArea';
+import { ValidationReview } from './ValidationReview';
+import { UploadProgress } from './UploadProgress';
+import { UploadResults } from './UploadResults';
+import { UploadHistory } from './UploadHistory';
+import type { UploadValidationResponse, OfflineConversionRow, ValidationSummary, OfflineConversionUpload } from '@/types/offline-conversions';
+
+// ── Upload phase machine ──────────────────────────────────────────────────────
+
+type UploadPhase = 'idle' | 'reviewing' | 'processing' | 'done' | 'history';
+
+interface ReviewState {
+  upload: OfflineConversionUpload;
+  summary: ValidationSummary;
+  errorSample: OfflineConversionRow[];
+}
 
 const STATUS_COLOR: Record<string, string> = {
   active:  'bg-green-100 text-green-700',
@@ -24,12 +50,22 @@ const STATUS_COLOR: Record<string, string> = {
   error:   'bg-red-100 text-red-700',
 };
 
+// ── Component ─────────────────────────────────────────────────────────────────
+
 export function OfflineConversionsTab() {
   const {
     config, configLoading, configError,
     setConfig, setConfigLoading, setConfigError,
     wizardOpen, openWizard, closeWizard,
+    activeUpload, setActiveUpload, clearActiveUpload,
+    uploadError,
   } = useOfflineConversionsStore();
+
+  const [uploadPhase, setUploadPhase] = useState<UploadPhase>('idle');
+  const [reviewState, setReviewState] = useState<ReviewState | null>(null);
+  const [completedUpload, setCompletedUpload] = useState<OfflineConversionUpload | null>(null);
+
+  // ── Fetch config on mount ─────────────────────────────────────────────────
 
   useEffect(() => {
     setConfigLoading(true);
@@ -37,7 +73,6 @@ export function OfflineConversionsTab() {
     offlineConversionsApi.getConfig()
       .then(setConfig)
       .catch((err: Error) => {
-        // 404 = not configured yet — not an error, just no config
         if (!err.message.includes('CONFIG_NOT_FOUND') && !err.message.includes('404')) {
           setConfigError(err.message);
         }
@@ -45,6 +80,74 @@ export function OfflineConversionsTab() {
       })
       .finally(() => setConfigLoading(false));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Handlers ──────────────────────────────────────────────────────────────
+
+  function handleValidated(response: UploadValidationResponse) {
+    // We need the full upload object — reconstruct a minimal one from the response
+    // The real upload object will be fetched during polling; use what we have for now
+    const minimalUpload = {
+      id: response.upload_id,
+      status: 'validated',
+      filename: '',          // filled in by polling
+      file_size_bytes: 0,
+      row_count_total: response.validation_summary.total_rows,
+      row_count_valid: response.validation_summary.valid_rows,
+      row_count_invalid: response.validation_summary.invalid_rows,
+      row_count_duplicate: response.validation_summary.duplicate_rows,
+      row_count_uploaded: 0,
+      row_count_rejected: 0,
+      organization_id: '',
+      config_id: '',
+      validation_summary: response.validation_summary,
+      upload_result: null,
+      error_message: null,
+      uploaded_by: '',
+      created_at: new Date().toISOString(),
+      validated_at: new Date().toISOString(),
+      confirmed_at: null,
+      processing_started_at: null,
+      completed_at: null,
+      updated_at: new Date().toISOString(),
+    } as OfflineConversionUpload;
+
+    setReviewState({
+      upload: minimalUpload,
+      summary: response.validation_summary,
+      errorSample: response.error_sample,
+    });
+    setActiveUpload(minimalUpload);
+    setUploadPhase('reviewing');
+  }
+
+  function handleReviewConfirmed() {
+    setUploadPhase('processing');
+  }
+
+  function handleReviewCancel() {
+    clearActiveUpload();
+    setReviewState(null);
+    setUploadPhase('idle');
+  }
+
+  function handleProcessingComplete(upload: OfflineConversionUpload) {
+    setCompletedUpload(upload);
+    setUploadPhase('done');
+  }
+
+  function handleUploadAnother() {
+    clearActiveUpload();
+    setReviewState(null);
+    setCompletedUpload(null);
+    setUploadPhase('idle');
+  }
+
+  function handleViewHistory() {
+    clearActiveUpload();
+    setReviewState(null);
+    setCompletedUpload(null);
+    setUploadPhase('history');
+  }
 
   // ── Wizard view ───────────────────────────────────────────────────────────
 
@@ -68,7 +171,7 @@ export function OfflineConversionsTab() {
     );
   }
 
-  // ── Error ─────────────────────────────────────────────────────────────────
+  // ── Config error ──────────────────────────────────────────────────────────
 
   if (configError) {
     return (
@@ -142,31 +245,80 @@ export function OfflineConversionsTab() {
         </CardContent>
       </Card>
 
-      {/* Upload CTA (Sprint 4 — placeholder) */}
+      {/* Upload panel */}
       <Card>
-        <CardContent className="py-8 flex flex-col items-center gap-4 text-center">
-          <div className="space-y-1">
-            <h3 className="text-sm font-semibold">Upload a CSV of closed deals</h3>
-            <p className="text-sm text-muted-foreground max-w-sm">
-              Export closed deals from your CRM and upload them here. Atlas validates, hashes PII,
-              and sends conversions to Google Ads within the 90-day lookback window.
-            </p>
-          </div>
-          <div className="flex gap-3">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+          <CardTitle className="text-sm font-semibold">Upload conversions</CardTitle>
+          <div className="flex items-center gap-2">
+            {uploadPhase !== 'history' && (
+              <button
+                type="button"
+                onClick={handleViewHistory}
+                className="text-xs text-muted-foreground hover:text-foreground"
+              >
+                View history
+              </button>
+            )}
+            {uploadPhase === 'history' && (
+              <button
+                type="button"
+                onClick={() => setUploadPhase('idle')}
+                className="text-xs text-muted-foreground hover:text-foreground"
+              >
+                ← Back to upload
+              </button>
+            )}
             <Button
               variant="outline"
+              size="sm"
               onClick={() => offlineConversionsApi.downloadTemplate().catch(() => {})}
             >
               Download Template
             </Button>
-            {/* Upload button wired in Sprint 4 */}
-            <Button disabled title="Upload flow coming in Sprint 4">
-              Upload CSV
-            </Button>
           </div>
-          <p className="text-xs text-muted-foreground">
-            Max 10 MB per file · ~50,000 rows · CSV format only
-          </p>
+        </CardHeader>
+
+        <CardContent className="pt-0">
+          {/* Upload-level error banner (from store, e.g. confirm failure) */}
+          {uploadError && uploadPhase !== 'idle' && (
+            <div className="mb-4 rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 flex items-start gap-2">
+              <span className="mt-0.5">⚠</span>
+              <span>{uploadError}</span>
+            </div>
+          )}
+
+          {uploadPhase === 'idle' && (
+            <UploadArea onValidated={handleValidated} />
+          )}
+
+          {uploadPhase === 'reviewing' && reviewState && (
+            <ValidationReview
+              upload={reviewState.upload}
+              summary={reviewState.summary}
+              errorSample={reviewState.errorSample}
+              onConfirmed={handleReviewConfirmed}
+              onCancel={handleReviewCancel}
+            />
+          )}
+
+          {uploadPhase === 'processing' && activeUpload && (
+            <UploadProgress
+              upload={activeUpload}
+              onComplete={handleProcessingComplete}
+            />
+          )}
+
+          {uploadPhase === 'done' && completedUpload && (
+            <UploadResults
+              upload={completedUpload}
+              onUploadAnother={handleUploadAnother}
+              onViewHistory={handleViewHistory}
+            />
+          )}
+
+          {uploadPhase === 'history' && (
+            <UploadHistory onStartUpload={() => setUploadPhase('idle')} />
+          )}
         </CardContent>
       </Card>
 

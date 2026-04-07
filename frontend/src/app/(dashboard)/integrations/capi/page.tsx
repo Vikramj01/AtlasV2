@@ -18,7 +18,7 @@ type PageTab = 'realtime' | 'offline';
 
 export default function CAPIPage() {
   const [activeTab, setActiveTab] = useState<PageTab>('realtime');
-  const { wizardOpen, wizardStep, openWizard, closeWizard, setProviders, selectProvider, selectedProviderId } = useCAPIStore();
+  const { wizardOpen, wizardStep, openWizard, closeWizard, setProviders, selectProvider, selectedProviderId, providers } = useCAPIStore();
 
   // ── Realtime CAPI: wizard flow ─────────────────────────────────────────────
 
@@ -54,17 +54,14 @@ export default function CAPIPage() {
       );
     }
 
-    if (selectedProviderId) {
+    const selectedProvider = providers.find((p) => p.id === selectedProviderId) ?? null;
+    if (selectedProvider) {
       return (
         <div className="mt-6 space-y-4">
-          <button
-            type="button"
-            onClick={() => selectProvider(null)}
-            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-          >
-            ← Back to providers
-          </button>
-          <CAPIMonitoringDashboard providerId={selectedProviderId} />
+          <CAPIMonitoringDashboard
+            provider={selectedProvider}
+            onBack={() => selectProvider(null)}
+          />
         </div>
       );
     }
