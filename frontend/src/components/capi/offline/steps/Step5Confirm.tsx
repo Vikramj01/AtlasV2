@@ -1,8 +1,8 @@
 /**
  * Offline Conversions Setup Wizard — Step 5: Confirm & Download Template
  *
- * Shows a summary of the wizard configuration, saves it to the backend,
- * and prompts the user to download the CSV template to use for uploads.
+ * Shows a provider-aware summary of the wizard configuration, saves it to
+ * the backend, and prompts the user to download the CSV template.
  */
 
 import { useState } from 'react';
@@ -28,19 +28,33 @@ export function Step5Confirm({ onComplete, onBack }: Props) {
   const [saved, setSaved] = useState(false);
   const [downloading, setDownloading] = useState(false);
 
+  const isGoogle = wizardDraft.provider_type !== 'meta';
+
   async function handleSaveAndFinish() {
     setWizardSaving(true);
     setWizardError(null);
     try {
-      const config = await offlineConversionsApi.saveConfig({
-        google_customer_id: wizardDraft.google_customer_id,
-        conversion_action_id: wizardDraft.conversion_action_id,
-        conversion_action_name: wizardDraft.conversion_action_name,
-        column_mapping: wizardDraft.column_mapping,
-        default_currency: wizardDraft.default_currency,
-        default_conversion_value: wizardDraft.default_conversion_value,
-        capi_provider_id: wizardDraft.capi_provider_id,
-      });
+      const input = isGoogle
+        ? {
+            provider_type: wizardDraft.provider_type,
+            capi_provider_id: wizardDraft.capi_provider_id,
+            google_customer_id: wizardDraft.google_customer_id,
+            conversion_action_id: wizardDraft.conversion_action_id,
+            conversion_action_name: wizardDraft.conversion_action_name,
+            column_mapping: wizardDraft.column_mapping,
+            default_currency: wizardDraft.default_currency,
+            default_conversion_value: wizardDraft.default_conversion_value,
+          }
+        : {
+            provider_type: wizardDraft.provider_type,
+            capi_provider_id: wizardDraft.capi_provider_id,
+            meta_event_name: wizardDraft.meta_event_name,
+            column_mapping: wizardDraft.column_mapping,
+            default_currency: wizardDraft.default_currency,
+            default_conversion_value: wizardDraft.default_conversion_value,
+          };
+
+      const config = await offlineConversionsApi.saveConfig(input);
       setConfig(config);
       setSaved(true);
     } catch (err) {
@@ -61,8 +75,6 @@ export function Step5Confirm({ onComplete, onBack }: Props) {
     }
   }
 
-  const actionDisplayId = wizardDraft.conversion_action_id.split('/').at(-1) ?? wizardDraft.conversion_action_id;
-
   if (saved) {
     return (
       <div className="space-y-6 text-center">
@@ -78,11 +90,7 @@ export function Step5Confirm({ onComplete, onBack }: Props) {
         </div>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
-          <Button
-            variant="outline"
-            onClick={handleDownloadTemplate}
-            disabled={downloading}
-          >
+          <Button variant="outline" onClick={handleDownloadTemplate} disabled={downloading}>
             {downloading ? 'Downloading…' : 'Download CSV Template'}
           </Button>
           <Button onClick={onComplete}>Go to Upload</Button>
@@ -93,20 +101,32 @@ export function Step5Confirm({ onComplete, onBack }: Props) {
 
   return (
     <div className="space-y-5">
-      <div>
-        <p className="text-sm text-muted-foreground">
-          Review your configuration before saving. You can update it any time from the Offline
-          Conversions tab settings.
-        </p>
-      </div>
+      <p className="text-sm text-muted-foreground">
+        Review your configuration before saving. You can update it any time from the Offline
+        Conversions tab settings.
+      </p>
 
       {/* Config summary */}
       <div className="rounded-lg border border-input divide-y divide-input">
-        <SummaryRow label="Google Ads Account" value={wizardDraft.google_customer_id || '—'} />
         <SummaryRow
-          label="Conversion Action"
-          value={wizardDraft.conversion_action_name || actionDisplayId || '—'}
+          label="Platform"
+          value={isGoogle ? 'Google Ads' : 'Meta (Facebook)'}
         />
+        {isGoogle ? (
+          <>
+            <SummaryRow label="Google Ads Account" value={wizardDraft.google_customer_id || '—'} />
+            <SummaryRow
+              label="Conversion Action"
+              value={
+                wizardDraft.conversion_action_name ||
+                wizardDraft.conversion_action_id.split('/').at(-1) ||
+                '—'
+              }
+            />
+          </>
+        ) : (
+          <SummaryRow label="Event Name" value={wizardDraft.meta_event_name || '—'} />
+        )}
         <SummaryRow label="Default Currency" value={wizardDraft.default_currency || '—'} />
         <SummaryRow
           label="Default Value"

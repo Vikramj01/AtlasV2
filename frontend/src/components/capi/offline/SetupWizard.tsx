@@ -73,13 +73,23 @@ function StepIndicator({ current }: { current: 1 | 2 | 3 | 4 | 5 }) {
 
 // ── Step titles ───────────────────────────────────────────────────────────────
 
-const STEP_TITLES: Record<number, string> = {
-  1: 'Verify Google Ads connection',
-  2: 'Select conversion action',
-  3: 'Map CSV columns',
-  4: 'Set defaults',
-  5: 'Confirm & download template',
-};
+function useStepTitle(step: number, providerType: string): string {
+  const titles: Record<number, string | Record<string, string>> = {
+    1: 'Select ad platform connection',
+    2: {
+      google: 'Select conversion action',
+      meta:   'Select event type',
+      _default: 'Select conversion action',
+    },
+    3: 'Map CSV columns',
+    4: 'Set defaults',
+    5: 'Confirm & download template',
+  };
+  const entry = titles[step];
+  if (typeof entry === 'string') return entry;
+  if (entry) return (entry as Record<string, string>)[providerType] ?? (entry as Record<string, string>)['_default'] ?? '';
+  return '';
+}
 
 // ── Wizard container ───────────────────────────────────────────────────────────
 
@@ -94,7 +104,10 @@ export function OfflineSetupWizard({ onComplete, onCancel }: Props) {
     setWizardStep,
     wizardSaving,
     wizardError,
+    wizardDraft,
   } = useOfflineConversionsStore();
+
+  const stepTitle = useStepTitle(wizardStep, wizardDraft.provider_type);
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-10">
@@ -113,7 +126,7 @@ export function OfflineSetupWizard({ onComplete, onCancel }: Props) {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">{STEP_TITLES[wizardStep]}</CardTitle>
+          <CardTitle className="text-base">{stepTitle}</CardTitle>
         </CardHeader>
         <CardContent className="p-6">
           {/* Global error banner */}

@@ -192,16 +192,16 @@ export function OfflineConversionsTab() {
               📊
             </div>
             <div className="space-y-1 max-w-sm">
-              <h3 className="text-base font-semibold">Send closed deal data to Google Ads</h3>
+              <h3 className="text-base font-semibold">Send closed deal data to Google or Meta</h3>
               <p className="text-sm text-muted-foreground">
-                Upload CSV exports of closed deals so Google can optimise your campaigns for
+                Upload CSV exports of closed deals so your ad platforms can optimise campaigns for
                 revenue rather than form submissions. Typical improvement: 20–40% lead quality lift.
               </p>
             </div>
             <div className="grid grid-cols-3 gap-4 text-center max-w-sm">
-              <StatCallout value="~90%" label="match rate with GCLID" />
+              <StatCallout value="~90%" label="match rate with click ID" />
               <StatCallout value="90 days" label="upload lookback window" />
-              <StatCallout value="2,000" label="rows per upload batch" />
+              <StatCallout value="2×" label="platforms supported" />
             </div>
             <Button onClick={openWizard} size="lg">
               Set up offline conversions
@@ -221,7 +221,10 @@ export function OfflineConversionsTab() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
           <CardTitle className="text-sm font-semibold">Configuration</CardTitle>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs px-2 py-0.5 rounded font-medium bg-blue-100 text-blue-700">
+              {config.provider_type === 'meta' ? 'Meta' : 'Google'}
+            </span>
             <span className={`text-xs px-2 py-0.5 rounded font-medium ${STATUS_COLOR[config.status] ?? 'bg-gray-100 text-gray-600'}`}>
               {config.status}
             </span>
@@ -231,8 +234,21 @@ export function OfflineConversionsTab() {
           </div>
         </CardHeader>
         <CardContent className="divide-y divide-input">
-          <ConfigRow label="Google Ads Account" value={config.google_customer_id} />
-          <ConfigRow label="Conversion Action" value={config.conversion_action_name || config.conversion_action_id} />
+          <ConfigRow
+            label="Platform"
+            value={config.provider_type === 'meta' ? 'Meta (Facebook)' : 'Google Ads'}
+          />
+          {config.provider_type === 'meta' ? (
+            <ConfigRow label="Event Name" value={config.meta_event_name ?? '—'} />
+          ) : (
+            <>
+              <ConfigRow label="Google Ads Account" value={config.google_customer_id ?? '—'} />
+              <ConfigRow
+                label="Conversion Action"
+                value={config.conversion_action_name ?? config.conversion_action_id ?? '—'}
+              />
+            </>
+          )}
           <ConfigRow label="Default Currency" value={config.default_currency} />
           <ConfigRow
             label="Default Value"
@@ -339,7 +355,7 @@ function StatCallout({ value, label }: { value: string; label: string }) {
   );
 }
 
-function ConfigRow({ label, value }: { label: string; value: string }) {
+function ConfigRow({ label, value }: { label: string; value: string | null | undefined }) {
   return (
     <div className="flex items-center justify-between py-2.5">
       <span className="text-sm text-muted-foreground">{label}</span>

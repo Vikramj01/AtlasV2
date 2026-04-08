@@ -2,8 +2,8 @@
  * Offline Conversions Setup Wizard — Step 3: Map CSV Columns
  *
  * Users specify what their CRM export CSV headers are called so Atlas
- * can extract the right values from each row. Pre-populated with the
- * Atlas template headers — users who download the template can skip this step.
+ * can extract the right values from each row. The click ID field is
+ * provider-aware: gclid for Google, fbclid for Meta.
  */
 
 import { useState } from 'react';
@@ -15,61 +15,71 @@ interface Props {
   onBack: () => void;
 }
 
-// Atlas field → { label, description, required }
-const ATLAS_FIELDS: Array<{
+interface FieldDef {
   key: string;
   label: string;
   description: string;
   required: boolean;
   defaultHeader: string;
-}> = [
+}
+
+const CLICK_ID_GOOGLE: FieldDef = {
+  key:           'gclid',
+  label:         'Google Click ID (GCLID)',
+  description:   'The gclid URL parameter captured at form fill. Highest match rate (~90%).',
+  required:      false,
+  defaultHeader: 'Click ID (GCLID)',
+};
+
+const CLICK_ID_META: FieldDef = {
+  key:           'fbclid',
+  label:         'Facebook Click ID (FBCLID)',
+  description:   'The _fbc cookie or fbclid URL parameter captured at form fill. Required for click-based matching.',
+  required:      false,
+  defaultHeader: 'Click ID (FBCLID)',
+};
+
+const SHARED_FIELDS: FieldDef[] = [
   {
-    key: 'gclid',
-    label: 'Google Click ID (GCLID)',
-    description: 'The gclid URL parameter captured at form fill. Highest match rate (~90%).',
-    required: false,
-    defaultHeader: 'Click ID (GCLID)',
-  },
-  {
-    key: 'email',
-    label: 'Email Address',
-    description: 'Lead / customer email. Required if no GCLID. Match rate ~30–50% without GCLID.',
-    required: false,
+    key:           'email',
+    label:         'Email Address',
+    description:   'Lead / customer email. Required if no click ID. Match rate ~30–50% without click ID.',
+    required:      false,
     defaultHeader: 'Email Address',
   },
   {
-    key: 'phone',
-    label: 'Phone Number',
-    description: 'Normalised to E.164 (+country code). Optional but improves match rate.',
-    required: false,
+    key:           'phone',
+    label:         'Phone Number',
+    description:   'Normalised to E.164 (+country code). Optional but improves match rate.',
+    required:      false,
     defaultHeader: 'Phone',
   },
   {
-    key: 'conversion_time',
-    label: 'Conversion Date / Time',
-    description: 'When the deal closed. ISO 8601 or YYYY-MM-DD. Must be within 90 days.',
-    required: true,
+    key:           'conversion_time',
+    label:         'Conversion Date / Time',
+    description:   'When the deal closed. ISO 8601 or YYYY-MM-DD. Must be within 90 days.',
+    required:      true,
     defaultHeader: 'Conversion Date',
   },
   {
-    key: 'conversion_value',
-    label: 'Deal Value',
-    description: 'Revenue amount. Leave blank to use the default value set in the next step.',
-    required: false,
+    key:           'conversion_value',
+    label:         'Deal Value',
+    description:   'Revenue amount. Leave blank to use the default value set in the next step.',
+    required:      false,
     defaultHeader: 'Deal Value',
   },
   {
-    key: 'currency',
-    label: 'Currency',
-    description: 'ISO 4217 code (USD, GBP, EUR…). Falls back to your default currency.',
-    required: false,
+    key:           'currency',
+    label:         'Currency',
+    description:   'ISO 4217 code (USD, GBP, EUR…). Falls back to your default currency.',
+    required:      false,
     defaultHeader: 'Currency',
   },
   {
-    key: 'order_id',
-    label: 'Order / Deal ID',
-    description: 'Used for deduplication on Google\'s side. Highly recommended.',
-    required: false,
+    key:           'order_id',
+    label:         'Order / Deal ID',
+    description:   'Used for deduplication. Highly recommended for both Google and Meta.',
+    required:      false,
     defaultHeader: 'Order ID',
   },
 ];
@@ -77,11 +87,15 @@ const ATLAS_FIELDS: Array<{
 export function Step3MapColumns({ onNext, onBack }: Props) {
   const { wizardDraft, setWizardDraft } = useOfflineConversionsStore();
 
+  const isGoogle = wizardDraft.provider_type !== 'meta';
+  const clickIdField = isGoogle ? CLICK_ID_GOOGLE : CLICK_ID_META;
+  const allFields: FieldDef[] = [clickIdField, ...SHARED_FIELDS];
+
   // Initialise mapping from store, falling back to default headers
   const [mapping, setMapping] = useState<Record<string, string>>(() => {
     const stored = wizardDraft.column_mapping as Record<string, string | undefined>;
     return Object.fromEntries(
-      ATLAS_FIELDS.map((f) => [f.key, stored[f.key] ?? f.defaultHeader]),
+      allFields.map((f) => [f.key, stored[f.key] ?? f.defaultHeader]),
     );
   });
 
@@ -89,13 +103,15 @@ export function Step3MapColumns({ onNext, onBack }: Props) {
 
   function validate(): boolean {
     const next: Record<string, string> = {};
-    // conversion_time is the only required column mapping
     if (!mapping.conversion_time?.trim()) {
       next.conversion_time = 'Conversion date column header is required.';
     }
-    // At least gclid or email must be mapped
-    if (!mapping.gclid?.trim() && !mapping.email?.trim()) {
-      next.gclid = 'Map at least one identifier: GCLID or email.';
+    // At least click ID or email must be mapped
+    const clickIdKey = isGoogle ? 'gclid' : 'fbclid';
+    if (!mapping[clickIdKey]?.trim() && !mapping.email?.trim()) {
+      next[clickIdKey] = isGoogle
+        ? 'Map at least one identifier: GCLID or email.'
+        : 'Map at least one identifier: FBCLID or email.';
     }
     setErrors(next);
     return Object.keys(next).length === 0;
@@ -113,21 +129,19 @@ export function Step3MapColumns({ onNext, onBack }: Props) {
   }
 
   function resetToDefaults() {
-    setMapping(Object.fromEntries(ATLAS_FIELDS.map((f) => [f.key, f.defaultHeader])));
+    setMapping(Object.fromEntries(allFields.map((f) => [f.key, f.defaultHeader])));
     setErrors({});
   }
 
   return (
     <div className="space-y-5">
-      <div>
-        <p className="text-sm text-muted-foreground">
-          Enter the exact column headers from your CRM export CSV. Leave blank to skip a field.
-          If you download the Atlas template (Step 5), these are already filled in correctly.
-        </p>
-      </div>
+      <p className="text-sm text-muted-foreground">
+        Enter the exact column headers from your CRM export CSV. Leave blank to skip a field.
+        If you download the Atlas template, these are already filled in correctly.
+      </p>
 
       <div className="space-y-4">
-        {ATLAS_FIELDS.map((field) => (
+        {allFields.map((field) => (
           <div key={field.key} className="space-y-1">
             <div className="flex items-center gap-1.5">
               <label htmlFor={`col-${field.key}`} className="block text-sm font-medium">
