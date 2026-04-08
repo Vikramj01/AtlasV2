@@ -32,10 +32,11 @@ export type OfflineRowStatus =
 
 /**
  * Maps Atlas field names to CSV column headers provided by the user.
- * All fields are optional — at least `gclid` or `email` must be present.
+ * All fields are optional — at least `gclid`/`fbclid` or `email` must be present.
  */
 export interface ColumnMapping {
-  gclid?: string;
+  gclid?: string;        // Google Click ID — required for Google provider
+  fbclid?: string;       // Facebook Click ID — required for Meta provider
   email?: string;
   phone?: string;
   conversion_time?: string;
@@ -47,14 +48,25 @@ export interface ColumnMapping {
 
 // ── Configuration ────────────────────────────────────────────────────────────
 
-/** One-time Google Ads setup per organisation. Matches `offline_conversion_configs` table. */
+/** Which ad platform this config routes offline conversions to. */
+export type OfflineProviderType = 'google' | 'meta';
+
+/** One per organisation. Matches `offline_conversion_configs` table. */
 export interface OfflineConversionConfig {
   id: string;
   organization_id: string;
 
-  google_customer_id: string;
-  conversion_action_id: string;
-  conversion_action_name: string;
+  /** 'google' | 'meta' — drives worker routing. */
+  provider_type: OfflineProviderType;
+
+  // ── Google-specific (null for Meta configs) ───────────────────────────
+  google_customer_id: string | null;
+  conversion_action_id: string | null;
+  conversion_action_name: string | null;
+
+  // ── Meta-specific (null for Google configs) ───────────────────────────
+  /** Meta Conversions API event name, e.g. 'Purchase', 'Lead'. */
+  meta_event_name: string | null;
 
   column_mapping: ColumnMapping;
 
@@ -64,7 +76,7 @@ export interface OfflineConversionConfig {
   status: OfflineConfigStatus;
   error_message: string | null;
 
-  /** FK to capi_providers — the Google OAuth credentials to reuse. */
+  /** FK to capi_providers — reuses existing OAuth / access token credentials. */
   capi_provider_id: string | null;
 
   created_at: string;
@@ -73,13 +85,17 @@ export interface OfflineConversionConfig {
 
 /** Input shape for POST /api/offline-conversions/config */
 export interface CreateOfflineConfigInput {
-  google_customer_id: string;
-  conversion_action_id: string;
-  conversion_action_name: string;
+  provider_type: OfflineProviderType;
+  capi_provider_id: string;
   column_mapping: ColumnMapping;
   default_currency: string;
   default_conversion_value?: number | null;
-  capi_provider_id: string;
+  // Google-specific
+  google_customer_id?: string;
+  conversion_action_id?: string;
+  conversion_action_name?: string;
+  // Meta-specific
+  meta_event_name?: string;
 }
 
 /** Input shape for PUT /api/offline-conversions/config */
@@ -173,7 +189,8 @@ export interface OfflineConversionRow {
   // Raw PII — only present during validation phase, nulled after upload
   raw_email: string | null;
   raw_phone: string | null;
-  raw_gclid: string | null;
+  raw_gclid: string | null;    // Google Click ID
+  raw_fbclid: string | null;   // Facebook Click ID (Meta provider)
 
   // Hashed identifiers (retained permanently)
   hashed_email: string | null;
@@ -235,13 +252,17 @@ export type SetupWizardStep = 1 | 2 | 3 | 4 | 5;
 
 /** Draft state accumulated across wizard steps. */
 export interface SetupWizardDraft {
-  /** Step 1: Selected Google OAuth provider from capi_providers */
+  /** Step 1: Selected provider + detected type */
   capi_provider_id: string;
+  provider_type: OfflineProviderType;
 
-  /** Step 2: Selected conversion action */
+  /** Step 2 (Google): conversion action */
   google_customer_id: string;
   conversion_action_id: string;
   conversion_action_name: string;
+
+  /** Step 2 (Meta): event name */
+  meta_event_name: string;
 
   /** Step 3: Column mapping */
   column_mapping: ColumnMapping;
@@ -253,9 +274,11 @@ export interface SetupWizardDraft {
 
 export const DEFAULT_WIZARD_DRAFT: SetupWizardDraft = {
   capi_provider_id: '',
+  provider_type: 'google',
   google_customer_id: '',
   conversion_action_id: '',
   conversion_action_name: '',
+  meta_event_name: '',
   column_mapping: {},
   default_currency: 'USD',
   default_conversion_value: null,

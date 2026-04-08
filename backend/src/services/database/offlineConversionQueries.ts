@@ -32,13 +32,17 @@ export async function upsertConfig(input: UpsertConfigInput): Promise<OfflineCon
     .upsert(
       {
         organization_id: input.organization_id,
-        google_customer_id: input.google_customer_id,
-        conversion_action_id: input.conversion_action_id,
-        conversion_action_name: input.conversion_action_name,
+        provider_type: input.provider_type,
+        capi_provider_id: input.capi_provider_id,
+        // Google-specific (null for Meta)
+        google_customer_id: input.google_customer_id ?? null,
+        conversion_action_id: input.conversion_action_id ?? null,
+        conversion_action_name: input.conversion_action_name ?? null,
+        // Meta-specific (null for Google)
+        meta_event_name: input.meta_event_name ?? null,
         column_mapping: input.column_mapping,
         default_currency: input.default_currency,
         default_conversion_value: input.default_conversion_value ?? null,
-        capi_provider_id: input.capi_provider_id,
         status: 'active',
         error_message: null,
       },

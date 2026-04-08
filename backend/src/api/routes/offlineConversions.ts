@@ -96,10 +96,29 @@ offlineConversionsRouter.get('/config', async (req: Request, res: Response): Pro
 offlineConversionsRouter.post('/config', async (req: Request, res: Response): Promise<void> => {
   const body = req.body as Partial<UpsertConfigInput>;
 
-  if (!body.google_customer_id || !body.conversion_action_id || !body.capi_provider_id || !body.default_currency) {
+  const providerType = body.provider_type ?? 'google';
+
+  if (!body.capi_provider_id || !body.default_currency) {
     res.status(400).json({
       error: 'MISSING_FIELDS',
-      message: 'google_customer_id, conversion_action_id, capi_provider_id, and default_currency are required',
+      message: 'capi_provider_id and default_currency are required',
+    });
+    return;
+  }
+
+  // Provider-specific required fields
+  if (providerType === 'google' && (!body.google_customer_id || !body.conversion_action_id)) {
+    res.status(400).json({
+      error: 'MISSING_FIELDS',
+      message: 'google_customer_id and conversion_action_id are required for Google provider',
+    });
+    return;
+  }
+
+  if (providerType === 'meta' && !body.meta_event_name) {
+    res.status(400).json({
+      error: 'MISSING_FIELDS',
+      message: 'meta_event_name is required for Meta provider',
     });
     return;
   }
@@ -109,7 +128,7 @@ offlineConversionsRouter.post('/config', async (req: Request, res: Response): Pr
     return;
   }
 
-  // Verify the capi_provider belongs to this user and is a Google provider
+  // Verify the capi_provider belongs to this user and matches the provider type
   const { data: provider, error: providerErr } = await supabaseAdmin
     .from('capi_providers')
     .select('id, provider')
@@ -122,21 +141,28 @@ offlineConversionsRouter.post('/config', async (req: Request, res: Response): Pr
     return;
   }
 
-  if (provider.provider !== 'google') {
-    res.status(400).json({ error: 'INVALID_PROVIDER', message: 'Offline conversions require a Google CAPI provider' });
+  if (provider.provider !== providerType) {
+    res.status(400).json({
+      error: 'INVALID_PROVIDER',
+      message: `Selected CAPI provider is a "${provider.provider}" provider but config specifies "${providerType}"`,
+    });
     return;
   }
 
   try {
     const config = await upsertConfig({
       organization_id: req.user.id,
-      google_customer_id: body.google_customer_id,
-      conversion_action_id: body.conversion_action_id,
-      conversion_action_name: body.conversion_action_name ?? '',
+      provider_type: providerType,
+      capi_provider_id: body.capi_provider_id,
+      // Google-specific (null for Meta)
+      google_customer_id: body.google_customer_id ?? null,
+      conversion_action_id: body.conversion_action_id ?? null,
+      conversion_action_name: body.conversion_action_name ?? null,
+      // Meta-specific (null for Google)
+      meta_event_name: body.meta_event_name ?? null,
       column_mapping: body.column_mapping ?? DEFAULT_COLUMN_MAPPING,
       default_currency: body.default_currency.toUpperCase(),
       default_conversion_value: body.default_conversion_value ?? null,
-      capi_provider_id: body.capi_provider_id,
     });
     res.status(201).json(config);
   } catch (err) {
@@ -220,7 +246,7 @@ offlineConversionsRouter.post(
       }
 
       if (config.status !== 'active') {
-        res.status(400).json({ error: 'CONFIG_NOT_ACTIVE', message: `Offline conversion config is ${config.status}. Check your Google Ads connection.` });
+        res.status(400).json({ error: 'CONFIG_NOT_ACTIVE', message: `Offline conversion config is ${config.status}. Check your ad platform connection.` });
         return;
       }
 
@@ -405,7 +431,7 @@ offlineConversionsRouter.post('/upload/:uploadId/confirm', async (req: Request, 
     res.json({
       upload_id: req.params.uploadId,
       status: 'confirmed',
-      message: `${uploadRecord.row_count_valid} conversions queued for upload to Google Ads. Processing typically completes within 24 hours.`,
+      message: `${uploadRecord.row_count_valid} conversions queued for upload. Processing typically completes within 24 hours.`,
     });
   } catch (err) {
     sendInternalError(res, err, 'Failed to confirm upload');
