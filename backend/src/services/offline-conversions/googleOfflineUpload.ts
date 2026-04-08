@@ -152,7 +152,7 @@ function buildClickConversion(
   hashedEmail: string | null,
   hashedPhone: string | null,
 ): GoogleClickConversion {
-  const cid = cleanCustomerId(config.google_customer_id);
+  const cid = cleanCustomerId(config.google_customer_id!);
   const conversionAction = `customers/${cid}/conversionActions/${config.conversion_action_id}`;
 
   const payload: GoogleClickConversion = {

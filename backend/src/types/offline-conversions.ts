@@ -32,8 +32,11 @@ export type OfflineRowStatus =
 
 // ── Column Mapping ───────────────────────────────────────────────────────────
 
+export type OfflineProviderType = 'google' | 'meta';
+
 export interface ColumnMapping {
-  gclid?: string;
+  gclid?: string;       // Google Click ID
+  fbclid?: string;      // Facebook Click ID (Meta provider)
   email?: string;
   phone?: string;
   conversion_time?: string;
@@ -48,9 +51,13 @@ export interface ColumnMapping {
 export interface OfflineConversionConfig {
   id: string;
   organization_id: string;
-  google_customer_id: string;
-  conversion_action_id: string;
-  conversion_action_name: string;
+  provider_type: OfflineProviderType;
+  // Google-specific (null for Meta)
+  google_customer_id: string | null;
+  conversion_action_id: string | null;
+  conversion_action_name: string | null;
+  // Meta-specific (null for Google)
+  meta_event_name: string | null;
   column_mapping: ColumnMapping;
   default_currency: string;
   default_conversion_value: number | null;
@@ -63,13 +70,17 @@ export interface OfflineConversionConfig {
 
 export interface UpsertConfigInput {
   organization_id: string;
-  google_customer_id: string;
-  conversion_action_id: string;
-  conversion_action_name: string;
+  provider_type: OfflineProviderType;
+  capi_provider_id: string;
   column_mapping: ColumnMapping;
   default_currency: string;
   default_conversion_value?: number | null;
-  capi_provider_id: string;
+  // Google-specific
+  google_customer_id?: string | null;
+  conversion_action_id?: string | null;
+  conversion_action_name?: string | null;
+  // Meta-specific
+  meta_event_name?: string | null;
 }
 
 // ── Uploads ──────────────────────────────────────────────────────────────────
@@ -116,7 +127,8 @@ export interface OfflineConversionRow {
   row_index: number;
   raw_email: string | null;
   raw_phone: string | null;
-  raw_gclid: string | null;
+  raw_gclid: string | null;    // Google Click ID
+  raw_fbclid: string | null;   // Facebook Click ID (Meta provider)
   hashed_email: string | null;
   hashed_phone: string | null;
   conversion_time: string | null;
@@ -139,6 +151,7 @@ export interface InsertRowInput {
   raw_email?: string | null;
   raw_phone?: string | null;
   raw_gclid?: string | null;
+  raw_fbclid?: string | null;
   hashed_email?: string | null;
   hashed_phone?: string | null;
   conversion_time?: string | null;

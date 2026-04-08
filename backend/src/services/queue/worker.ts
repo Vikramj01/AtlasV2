@@ -208,8 +208,8 @@ scheduleRunnerQueue.add(
 // ── Offline Conversion Upload worker ─────────────────────────────────────────
 // Processes a confirmed CSV batch end-to-end:
 //   1. Load config + valid rows from DB
-//   2. Decrypt Google OAuth credentials from capi_providers
-//   3. Upload to Google Ads (in 2,000-row batches with retry)
+//   2. Decrypt provider credentials from capi_providers
+//   3. Route to Google or Meta upload service based on config.provider_type
 //   4. Persist per-row results
 //   5. Purge raw PII
 //   6. Mark upload completed/partial/failed
@@ -232,8 +232,6 @@ offlineConversionQueue.process(1, async (job) => {
   } = await import('@/services/database/offlineConversionQueries');
   const { supabaseAdmin } = await import('@/services/database/supabase');
   const { safeDecryptCredentials } = await import('@/services/capi/credentials');
-  const { uploadOfflineConversions, hashRowIdentifiers } = await import('@/services/offline-conversions/googleOfflineUpload');
-  const { refreshGoogleToken } = await import('@/services/capi/googleDelivery');
 
   // ── Load upload record ─────────────────────────────────────────────────────
 
@@ -262,18 +260,10 @@ offlineConversionQueue.process(1, async (job) => {
     .single();
 
   if (providerErr || !providerRow) {
-    throw new Error(`Failed to load Google CAPI provider credentials: ${providerErr?.message ?? 'not found'}`);
+    throw new Error(`Failed to load CAPI provider credentials: ${providerErr?.message ?? 'not found'}`);
   }
 
-  const creds = safeDecryptCredentials(providerRow.credentials) as import('@/types/capi').GoogleCredentials;
-
-  // Obtain fresh access token
-  let accessToken = creds.oauth_access_token;
-  try {
-    accessToken = await refreshGoogleToken(creds);
-  } catch (refreshErr) {
-    logger.warn({ err: refreshErr instanceof Error ? refreshErr.message : String(refreshErr) }, 'Token refresh failed — using stored access token');
-  }
+  const creds = safeDecryptCredentials(providerRow.credentials);
 
   // ── Load valid rows (skip invalid/duplicate) ───────────────────────────────
 
@@ -285,19 +275,53 @@ offlineConversionQueue.process(1, async (job) => {
     return;
   }
 
+  // ── Route to provider-specific upload service ──────────────────────────────
+
+  let uploadResult: import('@/types/offline-conversions').UploadResult;
+  let hashedData: Array<{ row_id: string; hashed_email: string | null; hashed_phone: string | null }>;
+
+  if (config.provider_type === 'meta') {
+    const { uploadMetaOfflineConversions, hashMetaRowIdentifiers } = await import(
+      '@/services/offline-conversions/metaOfflineUpload'
+    );
+
+    // Meta uses long-lived access tokens — no refresh needed
+    hashedData = hashMetaRowIdentifiers(validRows);
+    uploadResult = await uploadMetaOfflineConversions(
+      validRows,
+      config,
+      creds as import('@/types/capi').MetaCredentials,
+    );
+  } else {
+    // Default: Google
+    const { uploadOfflineConversions, hashRowIdentifiers } = await import(
+      '@/services/offline-conversions/googleOfflineUpload'
+    );
+    const { refreshGoogleToken } = await import('@/services/capi/googleDelivery');
+
+    const googleCreds = creds as import('@/types/capi').GoogleCredentials;
+    let accessToken = googleCreds.oauth_access_token;
+    try {
+      accessToken = await refreshGoogleToken(googleCreds);
+    } catch (refreshErr) {
+      logger.warn(
+        { err: refreshErr instanceof Error ? refreshErr.message : String(refreshErr) },
+        'Google token refresh failed — using stored access token',
+      );
+    }
+
+    hashedData = hashRowIdentifiers(validRows);
+    uploadResult = await uploadOfflineConversions(validRows, config, googleCreds, accessToken);
+  }
+
   // ── Persist hashed identifiers (before purging raw PII) ───────────────────
 
-  const hashedData = hashRowIdentifiers(validRows);
   for (const h of hashedData) {
     await supabaseAdmin
       .from('offline_conversion_rows')
       .update({ hashed_email: h.hashed_email, hashed_phone: h.hashed_phone })
       .eq('id', h.row_id);
   }
-
-  // ── Upload to Google Ads ──────────────────────────────────────────────────
-
-  const uploadResult = await uploadOfflineConversions(validRows, config, creds, accessToken);
 
   // ── Persist per-row results ────────────────────────────────────────────────
 
@@ -316,7 +340,7 @@ offlineConversionQueue.process(1, async (job) => {
   logger.info({ upload_id, purgedCount }, 'Raw PII purged after upload');
 
   logger.info(
-    { upload_id, uploadedCount, rejectedCount, partialFailure: uploadResult.partial_failure },
+    { upload_id, uploadedCount, rejectedCount, partialFailure: uploadResult.partial_failure, provider_type: config.provider_type },
     'Offline conversion upload job complete',
   );
 });

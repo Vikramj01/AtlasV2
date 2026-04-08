@@ -91,7 +91,7 @@ export function buildClickConversionPayload(
   }
 
   const payload: GoogleClickConversion = {
-    conversionAction: config.conversion_action_id,
+    conversionAction: config.conversion_action_id ?? '',
     conversionDateTime: formatGoogleDateTime(row.conversion_time ?? new Date().toISOString()),
     conversionValue: row.conversion_value ?? config.default_conversion_value ?? undefined,
     currencyCode: row.currency ?? config.default_currency,
