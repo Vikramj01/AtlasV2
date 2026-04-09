@@ -21,6 +21,7 @@ import { channelsRouter } from '@/api/routes/channels';
 import { dashboardRouter } from '@/api/routes/dashboard';
 import { exportsRouter } from '@/api/routes/exports';
 import { offlineConversionsRouter } from '@/api/routes/offlineConversions';
+import { billingRouter } from '@/api/routes/billing';
 import logger from '@/utils/logger';
 import { env } from '@/config/env';
 
@@ -31,6 +32,11 @@ const app = express();
 app.set('trust proxy', 1);
 
 // ─── Security & parsing middleware ────────────────────────────────────────────
+
+// Stripe webhook requires the raw request body for signature verification.
+// Register express.raw() for this exact path BEFORE express.json() so the
+// global JSON parser does not consume the body first.
+app.use('/api/billing/webhook', express.raw({ type: 'application/json' }));
 
 app.use(helmet());
 app.use(cors({
@@ -125,6 +131,7 @@ app.use('/api/channels', channelsRouter);
 app.use('/api/dashboard', dashboardRouter);
 app.use('/api/exports', exportsRouter);
 app.use('/api/offline-conversions', offlineConversionsRouter);
+app.use('/api/billing', billingRouter);
 
 // ─── 404 handler ─────────────────────────────────────────────────────────────
 
