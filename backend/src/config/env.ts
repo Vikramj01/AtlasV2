@@ -49,6 +49,11 @@ export const env = {
 
   STRIPE_SECRET_KEY: optional('STRIPE_SECRET_KEY', ''),
   STRIPE_WEBHOOK_SECRET: optional('STRIPE_WEBHOOK_SECRET', ''),
+  // Price IDs from the Stripe dashboard — required for checkout sessions.
+  // Pro:    Stripe dashboard → Products → Pro plan → Price ID
+  // Agency: Stripe dashboard → Products → Agency plan → Price ID
+  STRIPE_PRICE_PRO: optional('STRIPE_PRICE_PRO', ''),
+  STRIPE_PRICE_AGENCY: optional('STRIPE_PRICE_AGENCY', ''),
 
   // CAPI credential encryption — 32-byte hex key (64 hex chars = 256 bits)
   // Generate: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
