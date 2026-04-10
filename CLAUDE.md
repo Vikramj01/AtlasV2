@@ -24,6 +24,8 @@ Atlas is a marketing signal optimisation and tracking infrastructure platform fo
 - **Readiness Scoring** — Scores org readiness across dimensions; onboarding checklist.
 - **Audit Scheduling** — Cron-based scheduled audits.
 - **PDF/CSV Exports** — Audit reports and signal inventory exported as PDF or Excel.
+- **Billing & Subscriptions** — Stripe-powered checkout, billing portal, and webhook-driven subscription sync. Three plans: `free`, `pro`, `agency`. Plan gates enforced on backend (middleware) and frontend (PlanGate component).
+- **Super Admin Accounts** — 2–3 trusted accounts declared via `SUPER_ADMIN_EMAILS` env var. Full platform access, bypass all plan gates, not connected to Stripe billing.
 
 ---
 
@@ -41,7 +43,7 @@ Atlas is a marketing signal optimisation and tracking infrastructure platform fo
 | **Browser Automation** | Browserbase + Playwright Core |
 | **AI** | Anthropic Claude API (`@anthropic-ai/sdk`) |
 | **Hosting** | Vercel (frontend), separate Node.js host (backend) |
-| **Payments** | Stripe (integrated, available) |
+| **Payments** | Stripe (Checkout Sessions, Billing Portal, Webhooks — fully integrated) |
 
 > **IMPORTANT**: The frontend is **Vite + React** (not Next.js). There is no `app/api/` directory and no Next.js App Router. All API routes are Express.js route handlers in `backend/src/api/routes/`.
 
@@ -72,7 +74,8 @@ AtlasV2/
 │       │   ├── channels/               # ChannelHealthIndicator, ChannelOverviewTable,
 │       │   │                           # DiagnosticCard, JourneyFlowComparison, JourneyStep
 │       │   ├── common/                 # EducationTooltip, EmptyState, ErrorBoundary,
-│       │   │                           # HealthBadge, ScoreCard, SeverityBadge, StatusBanner
+│       │   │                           # HealthBadge, ScoreCard, SeverityBadge, StatusBanner,
+│       │   │                           # PlanGate (plan-enforcement wrapper component)
 │       │   ├── consent/                # ConsentSettings, BannerConfigurator, BannerPreview,
 │       │   │                           # CMPIntegration, CategoryEditor, ConsentAnalyticsDashboard
 │       │   ├── dashboard/              # ActionCard, IntelligentRouter, SummaryBar
@@ -89,9 +92,9 @@ AtlasV2/
 │       │                               # badge, select, table, tabs, progress, etc.)
 │       ├── lib/
 │       │   ├── api/                    # One client module per feature area:
-│       │   │                           # adminApi, auditApi, capiApi, channelApi, checklistApi,
-│       │   │                           # consentApi, dashboardApi, developerApi, exportApi,
-│       │   │                           # healthApi, journeyApi, offlineConversionsApi,
+│       │   │                           # adminApi, auditApi, billingApi, capiApi, channelApi,
+│       │   │                           # checklistApi, consentApi, dashboardApi, developerApi,
+│       │   │                           # exportApi, healthApi, journeyApi, offlineConversionsApi,
 │       │   │                           # organisationApi, clientApi, planningApi,
 │       │   │                           # readinessApi, scheduleApi, signalApi
 │       │   ├── capi/
@@ -110,11 +113,14 @@ AtlasV2/
 │       │   └── shared/
 │       │       └── crypto.ts           # Shared hashing utilities
 │       ├── pages/                      # React Router page-level components
-│       │   # (HomePage, LoginPage, DashboardPage, AuditProgressPage, ReportPage,
-│       │   #  JourneyBuilderPage, PlanningDashboard, ConsentPage, CAPIPage,
-│       │   #  HealthDashboardPage, ChannelInsightsPage, ClientListPage, etc.)
+│       │   # (HomePage, LoginPage [split-screen redesign], DashboardPage,
+│       │   #  AuditProgressPage, ReportPage, JourneyBuilderPage, PlanningDashboard,
+│       │   #  ConsentPage, CAPIPage, HealthDashboardPage, ChannelInsightsPage,
+│       │   #  ClientListPage, SettingsPage [billing UI],
+│       │   #  BillingSuccessPage, BillingCancelPage)
 │       ├── store/
 │       │   ├── auditStore.ts
+│       │   ├── billingStore.ts         # Stripe billing state (plan, status, checkout/portal actions)
 │       │   ├── capiStore.ts
 │       │   ├── consentStore.ts
 │       │   ├── dashboardStore.ts
@@ -131,14 +137,16 @@ AtlasV2/
 ├── backend/
 │   └── src/
 │       ├── api/
-│       │   ├── middleware/             # authMiddleware, rateLimiter, errorHandler
+│       │   ├── middleware/             # authMiddleware, rateLimiter, errorHandler,
+│       │   │                          # planGuard (plan-enforcement middleware)
 │       │   └── routes/
-│       │       # admin.ts, audit.ts, auth.ts, capi.ts, channels.ts,
+│       │       # admin.ts, audit.ts, auth.ts, billing.ts, capi.ts, channels.ts,
 │       │       # checklist.ts, clients.ts, consent.ts, dashboard.ts,
 │       │       # developer.ts, exports.ts, health.ts, journeys.ts,
 │       │       # offlineConversions.ts, organisations.ts, planning.ts,
 │       │       # readiness.ts, schedules.ts, signals.ts
 │       ├── services/
+│       │   ├── stripe/                 # client.ts (lazy singleton), subscriptionService.ts
 │       │   ├── audit/                  # orchestrator, journeySimulator, gapClassifier, dataCapture
 │       │   ├── browserbase/            # client.ts, journeyConfigs.ts
 │       │   ├── capi/                   # credentials.ts, pipeline.ts, googleDelivery.ts, metaDelivery.ts
@@ -174,9 +182,11 @@ AtlasV2/
 │       ├── 20260325_001_channel_tables.sql             # channel_sessions, channel_session_events,
 │       │                                               # channel_journey_maps, channel_diagnostics
 │       ├── 20260405_001_fix_user_deletion_cascade.sql  # CASCADE fixes for user deletion
-│       └── 20260406_001_offline_conversion_tables.sql  # offline_conversion_configs,
-│                                                       # offline_conversion_uploads,
-│                                                       # offline_conversion_rows
+│       ├── 20260406_001_offline_conversion_tables.sql  # offline_conversion_configs,
+│       │                                               # offline_conversion_uploads,
+│       │                                               # offline_conversion_rows
+│       └── 20260409_001_stripe_subscriptions.sql       # Adds stripe_customer_id, stripe_subscription_id,
+│                                                       # subscription_status, current_period_end to profiles
 │
 └── docs/
     ├── atlas-prd-consent-capi.docx
@@ -224,6 +234,15 @@ channel_journey_maps    (id, organization_id, channel, journey_id, ...)
 channel_diagnostics     (id, organization_id, diagnostic_type, severity, ...)
 ```
 
+### Stripe subscription columns (migration 20260409)
+Added to `profiles` table:
+```sql
+stripe_customer_id      TEXT UNIQUE
+stripe_subscription_id  TEXT UNIQUE
+subscription_status     TEXT DEFAULT 'inactive'  -- inactive | active | past_due | canceled | unpaid
+current_period_end      TIMESTAMPTZ
+```
+
 ### Offline conversion tables (migration 20260406)
 ```sql
 offline_conversion_configs  (id, organization_id [UNIQUE], capi_provider_id [FK capi_providers],
@@ -257,6 +276,7 @@ offline_conversion_rows     (id, upload_id, organization_id, row_index,
 | `/api/admin` | admin.ts | GET /me, /stats, /users, /alerts; PATCH /users/:id/plan |
 | `/api/audit` | audit.ts | POST /start, /start-from-journey; GET /:id, /report, /gaps; POST /:id/export |
 | `/api/auth` | auth.ts | POST /signup, /forgot-password |
+| `/api/billing` | billing.ts | POST /checkout, /portal, /webhook; GET /status |
 | `/api/capi` | capi.ts | GET /providers, /:id; POST /providers, /:id/activate, /:id/test, /process; DELETE /:id |
 | `/api/channels` | channels.ts | GET /sessions, /diagnostics; POST /ingest-session |
 | `/api/checklist` | checklist.ts | GET /checklist; POST /mark-complete |
@@ -288,6 +308,10 @@ offline_conversion_rows     (id, upload_id, organization_id, row_index,
 8. **Google Offline CAPI** — uses `uploadClickConversions` endpoint (not `conversionAdjustments`). 2,000-row batches, 1s inter-batch delay, 3 retries with exponential backoff (30s/60s/120s). Reuses `capi_providers` Google OAuth credentials.
 9. **Supabase for everything** — no separate DuckDB. All tables in Supabase PostgreSQL.
 10. **Claude API for AI features** — planning mode AI analysis and audit interpretation use `@anthropic-ai/sdk`. Default to the latest capable model (currently `claude-sonnet-4-6`).
+11. **Stripe billing** — Checkout Sessions and Billing Portal only (no Elements). Frontend sends `{ plan: 'pro'|'agency' }`, backend resolves price ID from `STRIPE_PRICE_PRO`/`STRIPE_PRICE_AGENCY` env vars. Webhook handler mounted with `express.raw()` **before** `express.json()` in `app.ts`.
+12. **Plan hierarchy** — `free (0) < pro (1) < agency (2)`. Enforced by `planGuard(minPlan)` middleware on backend routes and `<PlanGate minPlan="...">` wrapper on frontend. Super admins bypass both.
+13. **Super admin** — declared via `SUPER_ADMIN_EMAILS` (comma-separated, distinct from `ADMIN_EMAILS` which gates the `/api/admin` panel). Sets `req.user.isSuperAdmin = true` in `authMiddleware`. No Stripe customer created.
+14. **Login page** — split-screen enterprise layout (left 7/12 navy gradient panel, right 5/12 white form). Uses Material Symbols Outlined font. Three modes: signin / signup / forgot. All auth logic via Supabase `signInWithPassword` and `/api/auth/*` endpoints.
 
 ---
 
@@ -322,7 +346,14 @@ offline_conversion_rows     (id, upload_id, organization_id, row_index,
 
 ## Active Development Branch
 
-Current feature branch: `claude/offline-conversions-integration-odB7J`
+Current feature branch: `claude/integrate-stripe-payments-TQKdo`
+
+### Stripe Payments — Implementation Status
+- ✅ **Sprint 1** — DB migration, Stripe client singleton, subscriptionService, billing routes
+- ✅ **Sprint 2** — Frontend billingApi, billingStore, SettingsPage billing UI, BillingSuccessPage, BillingCancelPage
+- ✅ **Sprint 3** — planGuard middleware, PlanGate component, plan gates applied to planning/schedules/CAPI/offline conversions routes
+- ✅ **Super Admin** — SUPER_ADMIN_EMAILS env var, isSuperAdmin flag in authMiddleware, billing-exempt full access
+- ✅ **Login page redesign** — split-screen enterprise layout with Material Symbols, glass-panel CSS, fixed accent stripe
 
 ### Offline Conversions — Implementation Status
 - ✅ **Sprint 1** — DB migration, TypeScript types, Zustand store, adapter utilities
