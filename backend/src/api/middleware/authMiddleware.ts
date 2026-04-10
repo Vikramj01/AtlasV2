@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { supabaseAdmin } from '@/services/database/supabase';
+import { env } from '@/config/env';
 import logger from '@/utils/logger';
 
 export async function authMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -26,10 +27,12 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
     .eq('id', user.id)
     .single();
 
+  const email = user.email ?? '';
   req.user = {
     id: user.id,
-    email: user.email ?? '',
+    email,
     plan: (profile?.plan as 'free' | 'pro' | 'agency') ?? 'free',
+    isSuperAdmin: env.SUPER_ADMIN_EMAILS.includes(email.toLowerCase()),
   };
 
   next();

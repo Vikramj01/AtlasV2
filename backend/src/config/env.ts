@@ -86,4 +86,12 @@ export const env = {
     .split(',')
     .map((e) => e.trim().toLowerCase())
     .filter(Boolean),
+
+  // Super admin accounts — full platform access, no billing required.
+  // These accounts bypass all plan gates. Keep this list to 2–3 trusted emails.
+  // Example: SUPER_ADMIN_EMAILS=founder@example.com,cto@example.com
+  SUPER_ADMIN_EMAILS: optional('SUPER_ADMIN_EMAILS', '')
+    .split(',')
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean),
 } as const;
