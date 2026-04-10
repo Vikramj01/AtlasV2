@@ -17,6 +17,7 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { authMiddleware } from '../middleware/authMiddleware';
+import { planGuard } from '../middleware/planGuard';
 import { sendInternalError } from '@/utils/apiError';
 import {
   createProvider,
@@ -48,7 +49,7 @@ capiRouter.use(authMiddleware);
 
 // ── POST /api/capi/providers ───────────────────────────────────────────────────
 
-capiRouter.post('/providers', async (req: Request, res: Response): Promise<void> => {
+capiRouter.post('/providers', planGuard('pro'), async (req: Request, res: Response): Promise<void> => {
   const body = req.body as CreateProviderRequest;
 
   if (!body.project_id || !body.provider || !body.credentials) {

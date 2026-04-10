@@ -11,6 +11,7 @@ import type { Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { generateAllOutputs } from '@/services/planning/generators/outputGenerator';
 import { authMiddleware } from '../middleware/authMiddleware';
+import { planGuard } from '../middleware/planGuard';
 import { planningLimiter } from '../middleware/planningLimiter';
 import { validateUrl, validateUrls } from '@/utils/urlValidator';
 import { sendInternalError } from '@/utils/apiError';
@@ -47,7 +48,7 @@ import type { Platform as JourneyPlatform } from '@/types/journey';
 import type { CreateSessionInput, UpdateDecisionInput } from '@/types/planning';
 
 const router = Router();
-router.use(authMiddleware);
+router.use(authMiddleware, planGuard('pro'));
 
 // ── Rate limiter for site detection (10 req/min per user) ────────────────────
 const detectRateLimit = rateLimit({

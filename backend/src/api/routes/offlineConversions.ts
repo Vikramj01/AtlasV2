@@ -19,6 +19,7 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import multer from 'multer';
 import { authMiddleware } from '../middleware/authMiddleware';
+import { planGuard } from '../middleware/planGuard';
 import { offlineUploadLimiter } from '../middleware/offlineUploadLimiter';
 import { sendInternalError } from '@/utils/apiError';
 import {
@@ -49,8 +50,8 @@ import logger from '@/utils/logger';
 
 export const offlineConversionsRouter = Router();
 
-// All routes require auth
-offlineConversionsRouter.use(authMiddleware);
+// All routes require auth + agency plan
+offlineConversionsRouter.use(authMiddleware, planGuard('agency'));
 
 // ── Multer: in-memory storage, 10MB limit, CSV only ───────────────────────────
 

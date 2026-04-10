@@ -12,6 +12,7 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { authMiddleware } from '../middleware/authMiddleware';
+import { planGuard } from '../middleware/planGuard';
 import { sendInternalError } from '@/utils/apiError';
 import { validateUrl, validateUrls } from '@/utils/urlValidator';
 import { createAudit } from '@/services/database/queries';
@@ -29,7 +30,7 @@ import type { FunnelType, Region } from '@/types/audit';
 import logger from '@/utils/logger';
 
 export const schedulesRouter = Router();
-schedulesRouter.use(authMiddleware);
+schedulesRouter.use(authMiddleware, planGuard('pro'));
 
 const VALID_FUNNEL_TYPES: FunnelType[] = ['ecommerce', 'saas', 'lead_gen'];
 const VALID_FREQUENCIES = ['daily', 'weekly'] as const;
