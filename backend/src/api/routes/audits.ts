@@ -16,6 +16,7 @@ interface AuthenticatedRequest extends Request {
     id: string;
     email: string;
     plan: 'free' | 'pro' | 'agency';
+    isSuperAdmin: boolean;
   };
 }
 
