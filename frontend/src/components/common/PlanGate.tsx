@@ -43,6 +43,9 @@ export function PlanGate({ minPlan, children, featureName }: PlanGateProps) {
     return <>{children}</>;
   }
 
+  // Super admins have full access regardless of plan
+  if (status?.isSuperAdmin) return <>{children}</>;
+
   const currentPlan: Plan = (status?.plan ?? 'free') as Plan;
   const hasAccess = PLAN_RANK[currentPlan] >= PLAN_RANK[minPlan];
 

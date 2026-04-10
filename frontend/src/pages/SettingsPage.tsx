@@ -65,6 +65,7 @@ export function SettingsPage() {
   }
 
   const isLoading = isAuthLoading || loadState === 'loading';
+  const isSuperAdmin = status?.isSuperAdmin ?? false;
   const plan: Plan = (status?.plan ?? 'free') as Plan;
   const planInfo = PLAN_CONFIG[plan];
 
@@ -137,88 +138,103 @@ export function SettingsPage() {
         </CardHeader>
         <Separator />
         <CardContent className="pt-5">
-          {/* Current plan */}
-          <div className="flex items-center justify-between mb-6">
+
+          {/* ── Super admin — no billing UI ── */}
+          {isSuperAdmin ? (
             <div className="flex items-center gap-3">
-              <span className={`rounded-full px-3 py-1 text-xs font-semibold ${planInfo.badge}`}>
-                {planInfo.label}
+              <span className="rounded-full bg-[#1B2A4A] px-3 py-1 text-xs font-semibold text-white">
+                Super Admin
               </span>
-              <span className="text-sm text-muted-foreground">{planInfo.description}</span>
+              <span className="text-sm text-muted-foreground">
+                Full platform access · Not connected to billing
+              </span>
             </div>
+          ) : (
+            <>
+              {/* Current plan */}
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                  <span className={`rounded-full px-3 py-1 text-xs font-semibold ${planInfo.badge}`}>
+                    {planInfo.label}
+                  </span>
+                  <span className="text-sm text-muted-foreground">{planInfo.description}</span>
+                </div>
 
-            {/* Manage subscription — shown for paying customers */}
-            {plan !== 'free' && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => openPortal()}
-                disabled={portalLoading}
-              >
-                {portalLoading ? 'Opening…' : 'Manage subscription'}
-              </Button>
-            )}
-          </div>
-
-          {/* Renewal info */}
-          {status?.current_period_end && plan !== 'free' && (
-            <p className="mb-5 text-xs text-muted-foreground">
-              {status.subscription_status === 'canceled'
-                ? `Access until ${new Date(status.current_period_end).toLocaleDateString()}`
-                : `Renews ${new Date(status.current_period_end).toLocaleDateString()}`}
-            </p>
-          )}
-
-          {/* Upgrade options */}
-          {plan !== 'agency' && (
-            <div className="space-y-3">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Upgrade</p>
-
-              {plan === 'free' && (
-                <div className="flex items-center justify-between rounded-lg border border-[#1B2A4A]/20 bg-[#EEF1F7] px-4 py-4">
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">
-                      Pro
-                      <span className="ml-2 text-xs font-normal text-muted-foreground">
-                        20 audits · 10 planning sessions / month
-                      </span>
-                    </p>
-                  </div>
+                {/* Manage subscription — shown for paying customers */}
+                {plan !== 'free' && (
                   <Button
+                    variant="outline"
                     size="sm"
-                    className="bg-[#1B2A4A] text-white hover:bg-[#1B2A4A]/90 flex-shrink-0"
-                    onClick={() => startCheckout('pro')}
-                    disabled={checkoutLoading}
+                    onClick={() => openPortal()}
+                    disabled={portalLoading}
                   >
-                    {checkoutLoading ? 'Redirecting…' : 'Upgrade to Pro'}
+                    {portalLoading ? 'Opening…' : 'Manage subscription'}
                   </Button>
+                )}
+              </div>
+
+              {/* Renewal info */}
+              {status?.current_period_end && plan !== 'free' && (
+                <p className="mb-5 text-xs text-muted-foreground">
+                  {status.subscription_status === 'canceled'
+                    ? `Access until ${new Date(status.current_period_end).toLocaleDateString()}`
+                    : `Renews ${new Date(status.current_period_end).toLocaleDateString()}`}
+                </p>
+              )}
+
+              {/* Upgrade options */}
+              {plan !== 'agency' && (
+                <div className="space-y-3">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Upgrade</p>
+
+                  {plan === 'free' && (
+                    <div className="flex items-center justify-between rounded-lg border border-[#1B2A4A]/20 bg-[#EEF1F7] px-4 py-4">
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">
+                          Pro
+                          <span className="ml-2 text-xs font-normal text-muted-foreground">
+                            20 audits · 10 planning sessions / month
+                          </span>
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        className="bg-[#1B2A4A] text-white hover:bg-[#1B2A4A]/90 flex-shrink-0"
+                        onClick={() => startCheckout('pro')}
+                        disabled={checkoutLoading}
+                      >
+                        {checkoutLoading ? 'Redirecting…' : 'Upgrade to Pro'}
+                      </Button>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between rounded-lg border border-purple-200 bg-purple-50 px-4 py-4">
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">
+                        Agency
+                        <span className="ml-2 text-xs font-normal text-muted-foreground">
+                          Unlimited audits · Unlimited planning sessions
+                        </span>
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      className="bg-purple-700 text-white hover:bg-purple-800 flex-shrink-0"
+                      onClick={() => startCheckout('agency')}
+                      disabled={checkoutLoading}
+                    >
+                      {checkoutLoading ? 'Redirecting…' : 'Upgrade to Agency'}
+                    </Button>
+                  </div>
                 </div>
               )}
 
-              <div className="flex items-center justify-between rounded-lg border border-purple-200 bg-purple-50 px-4 py-4">
-                <div>
-                  <p className="text-sm font-semibold text-foreground">
-                    Agency
-                    <span className="ml-2 text-xs font-normal text-muted-foreground">
-                      Unlimited audits · Unlimited planning sessions
-                    </span>
-                  </p>
-                </div>
-                <Button
-                  size="sm"
-                  className="bg-purple-700 text-white hover:bg-purple-800 flex-shrink-0"
-                  onClick={() => startCheckout('agency')}
-                  disabled={checkoutLoading}
-                >
-                  {checkoutLoading ? 'Redirecting…' : 'Upgrade to Agency'}
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {plan === 'agency' && (
-            <p className="text-sm text-muted-foreground">
-              You're on the Agency plan — all features are unlimited.
-            </p>
+              {plan === 'agency' && (
+                <p className="text-sm text-muted-foreground">
+                  You're on the Agency plan — all features are unlimited.
+                </p>
+              )}
+            </>
           )}
         </CardContent>
       </Card>

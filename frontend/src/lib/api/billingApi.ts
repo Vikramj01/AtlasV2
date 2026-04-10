@@ -29,6 +29,8 @@ export interface BillingStatus {
   subscription_status: SubscriptionStatus;
   current_period_end: string | null;
   stripe_customer_id: string | null;
+  /** True for accounts in SUPER_ADMIN_EMAILS — bypasses all plan gates. */
+  isSuperAdmin: boolean;
 }
 
 export const billingApi = {

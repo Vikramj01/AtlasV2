@@ -23,6 +23,11 @@ const PLAN_RANK: Record<'free' | 'pro' | 'agency', number> = {
 
 export function planGuard(minPlan: 'pro' | 'agency') {
   return (req: Request, res: Response, next: NextFunction): void => {
+    // Super admins bypass all plan gates unconditionally
+    if (req.user.isSuperAdmin) {
+      next();
+      return;
+    }
     const current = req.user.plan;
     if (PLAN_RANK[current] >= PLAN_RANK[minPlan]) {
       next();

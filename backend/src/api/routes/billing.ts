@@ -95,7 +95,7 @@ router.post('/portal', authMiddleware, async (req: Request, res: Response) => {
 router.get('/status', authMiddleware, async (req: Request, res: Response) => {
   try {
     const status = await getBillingStatus(req.user.id);
-    res.json({ data: status });
+    res.json({ data: { ...status, isSuperAdmin: req.user.isSuperAdmin } });
   } catch (err) {
     logger.error({ err, userId: req.user.id }, 'Billing: status fetch failed');
     res.status(500).json({ error: 'Failed to fetch billing status' });
