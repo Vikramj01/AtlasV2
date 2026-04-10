@@ -22,6 +22,8 @@ import { dashboardRouter } from '@/api/routes/dashboard';
 import { exportsRouter } from '@/api/routes/exports';
 import { offlineConversionsRouter } from '@/api/routes/offlineConversions';
 import { billingRouter } from '@/api/routes/billing';
+import { taxonomyRouter } from '@/api/routes/taxonomy';
+import { namingConventionsRouter } from '@/api/routes/namingConventions';
 import logger from '@/utils/logger';
 import { env } from '@/config/env';
 
@@ -132,6 +134,8 @@ app.use('/api/dashboard', dashboardRouter);
 app.use('/api/exports', exportsRouter);
 app.use('/api/offline-conversions', offlineConversionsRouter);
 app.use('/api/billing', billingRouter);
+app.use('/api/taxonomy', taxonomyRouter);
+app.use('/api/naming-convention', namingConventionsRouter);
 
 // ─── 404 handler ─────────────────────────────────────────────────────────────
 

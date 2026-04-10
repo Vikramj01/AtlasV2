@@ -41,7 +41,10 @@ export async function getSignal(signalId: string): Promise<Signal | null> {
   return (data as Signal | null);
 }
 
-export async function createSignal(data: CreateSignalRequest): Promise<Signal> {
+export async function createSignal(data: CreateSignalRequest & {
+  taxonomy_event_id?: string;
+  taxonomy_path?: string;
+}): Promise<Signal> {
   const { data: signal, error } = await supabase
     .from('signals')
     .insert({
@@ -56,6 +59,8 @@ export async function createSignal(data: CreateSignalRequest): Promise<Signal> {
       optional_params: data.optional_params ?? [],
       platform_mappings: data.platform_mappings ?? {},
       walkeros_mapping: data.walkeros_mapping ?? null,
+      taxonomy_event_id: data.taxonomy_event_id ?? null,
+      taxonomy_path: data.taxonomy_path ?? null,
     })
     .select('*')
     .single();
