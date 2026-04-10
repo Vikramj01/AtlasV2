@@ -18,9 +18,11 @@ export function getStripe(): Stripe {
     );
   }
 
+  // Cast allows the Stripe client to work with the account's active API version
+  // regardless of which stripe npm version is installed.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   _stripe = new Stripe(env.STRIPE_SECRET_KEY, {
-    apiVersion: '2025-04-30.basil',
-    typescript: true,
+    apiVersion: '2025-04-30.basil' as any,
   });
 
   return _stripe;
