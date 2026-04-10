@@ -30,6 +30,9 @@ import {
 } from '@/services/database/signalQueries';
 import { getClientsByPack, getClient } from '@/services/database/clientQueries';
 import { generateComposableOutputs } from '@/services/signals/composableOutputGenerator';
+import { fetchTaxonomyNode } from '@/services/database/taxonomyQueries';
+import { getNamingConvention } from '@/services/database/namingConventionQueries';
+import { validateEventName } from '@/services/signals/namingConvention';
 import type { CreateSignalRequest, UpdateSignalRequest, CreatePackRequest } from '@/types/signal';
 
 const router = Router();
@@ -66,14 +69,67 @@ router.get('/', async (req: Request, res: Response) => {
 });
 
 // ── POST /api/signals ─────────────────────────────────────────────────────────
+// Supports optional taxonomy_event_id: pre-populates fields from the taxonomy
+// node and validates the key against the org's naming convention.
 
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const body = req.body as CreateSignalRequest;
+    const body = req.body as CreateSignalRequest & { taxonomy_event_id?: string };
     if (!body.organisation_id || !body.key || !body.name || !body.description || !body.category) {
       return res.status(400).json({ error: 'organisation_id, key, name, description, and category are required' });
     }
     if (!(await assertOrgMember(body.organisation_id, req.user!.id, res))) return;
+
+    // If a taxonomy event is linked, validate the key and merge schema fields
+    if (body.taxonomy_event_id) {
+      const taxNode = await fetchTaxonomyNode(body.taxonomy_event_id);
+      if (!taxNode) {
+        return res.status(404).json({ error: 'Taxonomy event not found' });
+      }
+      if (taxNode.node_type !== 'event') {
+        return res.status(400).json({ error: 'taxonomy_event_id must reference a leaf event node, not a category' });
+      }
+
+      // Validate key against org naming convention
+      const convention = await getNamingConvention(body.organisation_id);
+      const validation = validateEventName(body.key as string, convention);
+      if (!validation.valid) {
+        return res.status(422).json({
+          error: 'Signal key does not match your naming convention',
+          validation_errors: validation.errors,
+          suggestions: validation.suggestions,
+        });
+      }
+
+      // Merge taxonomy schema if caller didn't provide explicit params
+      if (!body.required_params?.length && taxNode.parameter_schema?.required) {
+        body.required_params = taxNode.parameter_schema.required.map(p => ({
+          key: p.key,
+          label: p.label,
+          type: p.type as 'string' | 'number' | 'array' | 'boolean',
+        }));
+      }
+      if (!body.optional_params?.length && taxNode.parameter_schema?.optional) {
+        body.optional_params = taxNode.parameter_schema.optional.map(p => ({
+          key: p.key,
+          label: p.label,
+          type: p.type as 'string' | 'number' | 'array' | 'boolean',
+        }));
+      }
+      if (!body.platform_mappings && taxNode.platform_mappings) {
+        // Coerce taxonomy PlatformMappings to signal Record<string, PlatformEventMapping>
+        body.platform_mappings = Object.fromEntries(
+          Object.entries(taxNode.platform_mappings).map(([k, v]) => [k, {
+            event_name: v.event_name,
+            param_mapping: v.param_mapping,
+            additional: v.additional_params,
+          }]),
+        );
+      }
+
+      // Store denormalised taxonomy_path for createSignal
+      (body as CreateSignalRequest & { taxonomy_event_id?: string; taxonomy_path?: string })['taxonomy_path'] = taxNode.path;
+    }
 
     const signal = await createSignal(body);
     res.status(201).json(signal);
