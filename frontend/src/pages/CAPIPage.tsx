@@ -13,6 +13,7 @@ import { InfoTooltip } from '@/components/common/EducationTooltip';
 import { ProviderList } from '@/components/capi/ProviderList';
 import { SetupWizard } from '@/components/capi/SetupWizard';
 import { CAPIMonitoringDashboard } from '@/components/capi/CAPIMonitoringDashboard';
+import { PlanGate } from '@/components/common/PlanGate';
 import { useCAPIStore } from '@/store/capiStore';
 import { capiApi } from '@/lib/api/capiApi';
 import type { CAPIProvider, CAPIProviderConfig } from '@/types/capi';
@@ -67,10 +68,12 @@ export function CAPIPage() {
   return (
     <div className="px-6 py-8 max-w-3xl space-y-6">
       {view === 'wizard' && (
-        <SetupWizard
-          onComplete={handleWizardComplete}
-          onCancel={handleWizardCancel}
-        />
+        <PlanGate minPlan="pro" featureName="Conversion API integrations">
+          <SetupWizard
+            onComplete={handleWizardComplete}
+            onCancel={handleWizardCancel}
+          />
+        </PlanGate>
       )}
 
       {view === 'dashboard' && selectedProvider && (
