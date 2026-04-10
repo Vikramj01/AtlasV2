@@ -11,6 +11,7 @@ import { ProviderList } from '@/components/capi/ProviderList';
 import { SetupWizard } from '@/components/capi/SetupWizard';
 import { CAPIMonitoringDashboard } from '@/components/capi/CAPIMonitoringDashboard';
 import { OfflineConversionsTab } from '@/components/capi/offline/OfflineConversionsTab';
+import { PlanGate } from '@/components/common/PlanGate';
 import { useCAPIStore } from '@/store/capiStore';
 import type { CAPIProvider } from '@/types/capi';
 
@@ -39,18 +40,20 @@ export default function CAPIPage() {
   function renderRealtimeTab() {
     if (wizardOpen) {
       return (
-        <SetupWizard
-          onComplete={handleWizardComplete}
-          onCancel={() => {
-            closeWizard();
-            // If we created a provider (step > 1), go back to list — don't lose it
-            if (wizardStep > 1) {
-              import('@/lib/api/capiApi').then(({ capiApi }) => {
-                capiApi.listProviders().then(setProviders).catch(() => {});
-              });
-            }
-          }}
-        />
+        <PlanGate minPlan="pro" featureName="Conversion API integrations">
+          <SetupWizard
+            onComplete={handleWizardComplete}
+            onCancel={() => {
+              closeWizard();
+              // If we created a provider (step > 1), go back to list — don't lose it
+              if (wizardStep > 1) {
+                import('@/lib/api/capiApi').then(({ capiApi }) => {
+                  capiApi.listProviders().then(setProviders).catch(() => {});
+                });
+              }
+            }}
+          />
+        </PlanGate>
       );
     }
 
@@ -109,7 +112,11 @@ export default function CAPIPage() {
 
       {/* Tab content */}
       {activeTab === 'realtime' && renderRealtimeTab()}
-      {activeTab === 'offline' && <OfflineConversionsTab />}
+      {activeTab === 'offline' && (
+        <PlanGate minPlan="agency" featureName="Offline Conversions">
+          <OfflineConversionsTab />
+        </PlanGate>
+      )}
     </div>
   );
 }

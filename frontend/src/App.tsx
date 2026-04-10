@@ -35,6 +35,7 @@ import { AdminPage } from '@/pages/AdminPage';
 import { ResetPasswordPage } from '@/pages/ResetPasswordPage';
 import { BillingSuccessPage } from '@/pages/BillingSuccessPage';
 import { BillingCancelPage } from '@/pages/BillingCancelPage';
+import { PlanGate } from '@/components/common/PlanGate';
 
 export default function App() {
   return (
@@ -54,8 +55,8 @@ export default function App() {
               <Route path="/journey/new" element={<SectionErrorBoundary label="Journey builder"><JourneyBuilderPage /></SectionErrorBoundary>} />
               <Route path="/journey/:id/spec" element={<SectionErrorBoundary label="Journey spec"><JourneySpecPage /></SectionErrorBoundary>} />
               <Route path="/journey/:id/audit/:auditId" element={<SectionErrorBoundary label="Gap report"><GapReportPage /></SectionErrorBoundary>} />
-              {/* Planning Mode */}
-              <Route path="/planning" element={<SectionErrorBoundary label="Planning sessions"><PlanningDashboard /></SectionErrorBoundary>} />
+              {/* Planning Mode — Pro+ */}
+              <Route path="/planning" element={<SectionErrorBoundary label="Planning sessions"><PlanGate minPlan="pro" featureName="AI Planning Mode"><PlanningDashboard /></PlanGate></SectionErrorBoundary>} />
               {/* Settings */}
               <Route path="/settings" element={<SectionErrorBoundary label="Settings"><SettingsPage /></SectionErrorBoundary>} />
               <Route path="/settings/billing/success" element={<BillingSuccessPage />} />
@@ -81,8 +82,8 @@ export default function App() {
             </Route>
             {/* Full-screen routes (no sidebar) */}
             <Route path="/audit/:auditId/progress" element={<SectionErrorBoundary label="Audit progress"><AuditProgressPage /></SectionErrorBoundary>} />
-            <Route path="/planning/new"        element={<SectionErrorBoundary label="Set up tracking"><PlanningModePage /></SectionErrorBoundary>} />
-            <Route path="/planning/:sessionId" element={<SectionErrorBoundary label="Set up tracking"><PlanningModePage /></SectionErrorBoundary>} />
+            <Route path="/planning/new"        element={<SectionErrorBoundary label="Set up tracking"><PlanGate minPlan="pro" featureName="AI Planning Mode"><PlanningModePage /></PlanGate></SectionErrorBoundary>} />
+            <Route path="/planning/:sessionId" element={<SectionErrorBoundary label="Set up tracking"><PlanGate minPlan="pro" featureName="AI Planning Mode"><PlanningModePage /></PlanGate></SectionErrorBoundary>} />
           </Route>
 
           {/* Developer Portal — public, no auth required */}
