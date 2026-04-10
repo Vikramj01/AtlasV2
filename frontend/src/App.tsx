@@ -33,6 +33,8 @@ import { ChannelInsightsPage } from '@/pages/ChannelInsightsPage';
 // Admin
 import { AdminPage } from '@/pages/AdminPage';
 import { ResetPasswordPage } from '@/pages/ResetPasswordPage';
+import { BillingSuccessPage } from '@/pages/BillingSuccessPage';
+import { BillingCancelPage } from '@/pages/BillingCancelPage';
 
 export default function App() {
   return (
@@ -56,6 +58,8 @@ export default function App() {
               <Route path="/planning" element={<SectionErrorBoundary label="Planning sessions"><PlanningDashboard /></SectionErrorBoundary>} />
               {/* Settings */}
               <Route path="/settings" element={<SectionErrorBoundary label="Settings"><SettingsPage /></SectionErrorBoundary>} />
+              <Route path="/settings/billing/success" element={<BillingSuccessPage />} />
+              <Route path="/settings/billing/cancel" element={<BillingCancelPage />} />
               {/* Consent Hub */}
               <Route path="/consent" element={<SectionErrorBoundary label="Consent & Privacy"><ConsentPage /></SectionErrorBoundary>} />
               {/* CAPI Integrations */}

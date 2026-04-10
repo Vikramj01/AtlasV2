@@ -19,7 +19,7 @@ export function getStripe(): Stripe {
   }
 
   _stripe = new Stripe(env.STRIPE_SECRET_KEY, {
-    apiVersion: '2024-11-20.acacia',
+    apiVersion: '2025-04-30.basil',
     typescript: true,
   });
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
+import { useBillingStore } from '@/store/billingStore';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
@@ -28,29 +29,34 @@ type Plan = keyof typeof PLAN_CONFIG;
 export function SettingsPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState<string>('');
-  const [plan, setPlan] = useState<Plan>('free');
-  const [isLoading, setIsLoading] = useState(true);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [isSigningOut, setIsSigningOut] = useState(false);
 
+  const {
+    status,
+    loadState,
+    checkoutLoading,
+    portalLoading,
+    error,
+    fetchStatus,
+    startCheckout,
+    openPortal,
+  } = useBillingStore();
+
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session?.user) {
         navigate('/login');
         return;
       }
       setEmail(session.user.email ?? '');
-
-      const { data } = await supabase
-        .from('profiles')
-        .select('plan')
-        .eq('id', session.user.id)
-        .single();
-      if (data?.plan && data.plan in PLAN_CONFIG) {
-        setPlan(data.plan as Plan);
-      }
-      setIsLoading(false);
+      setIsAuthLoading(false);
     });
   }, [navigate]);
+
+  useEffect(() => {
+    if (!isAuthLoading) fetchStatus();
+  }, [isAuthLoading, fetchStatus]);
 
   async function handleSignOut() {
     setIsSigningOut(true);
@@ -58,6 +64,8 @@ export function SettingsPage() {
     navigate('/login');
   }
 
+  const isLoading = isAuthLoading || loadState === 'loading';
+  const plan: Plan = (status?.plan ?? 'free') as Plan;
   const planInfo = PLAN_CONFIG[plan];
 
   if (isLoading) {
@@ -74,6 +82,28 @@ export function SettingsPage() {
         <h1 className="text-2xl font-bold text-foreground">Settings</h1>
         <p className="mt-1 text-sm text-muted-foreground">Manage your account and plan.</p>
       </div>
+
+      {/* Past-due banner */}
+      {status?.subscription_status === 'past_due' && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          Your last payment failed.{' '}
+          <button
+            className="font-semibold underline"
+            onClick={() => openPortal()}
+            disabled={portalLoading}
+          >
+            Update your payment details
+          </button>{' '}
+          to keep your plan active.
+        </div>
+      )}
+
+      {/* Error banner */}
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
 
       {/* Account */}
       <Card>
@@ -108,40 +138,79 @@ export function SettingsPage() {
         <Separator />
         <CardContent className="pt-5">
           {/* Current plan */}
-          <div className="flex items-center gap-3 mb-6">
-            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${planInfo.badge}`}>
-              {planInfo.label}
-            </span>
-            <span className="text-sm text-muted-foreground">{planInfo.description}</span>
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <span className={`rounded-full px-3 py-1 text-xs font-semibold ${planInfo.badge}`}>
+                {planInfo.label}
+              </span>
+              <span className="text-sm text-muted-foreground">{planInfo.description}</span>
+            </div>
+
+            {/* Manage subscription — shown for paying customers */}
+            {plan !== 'free' && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => openPortal()}
+                disabled={portalLoading}
+              >
+                {portalLoading ? 'Opening…' : 'Manage subscription'}
+              </Button>
+            )}
           </div>
 
-          {/* Upgrade options — shown only if not already on agency */}
+          {/* Renewal info */}
+          {status?.current_period_end && plan !== 'free' && (
+            <p className="mb-5 text-xs text-muted-foreground">
+              {status.subscription_status === 'canceled'
+                ? `Access until ${new Date(status.current_period_end).toLocaleDateString()}`
+                : `Renews ${new Date(status.current_period_end).toLocaleDateString()}`}
+            </p>
+          )}
+
+          {/* Upgrade options */}
           {plan !== 'agency' && (
             <div className="space-y-3">
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Upgrade</p>
 
-              {/* Pro */}
               {plan === 'free' && (
                 <div className="flex items-center justify-between rounded-lg border border-[#1B2A4A]/20 bg-[#EEF1F7] px-4 py-4">
                   <div>
                     <p className="text-sm font-semibold text-foreground">
                       Pro
-                      <span className="ml-2 text-xs font-normal text-muted-foreground">20 audits · 10 planning sessions / month</span>
+                      <span className="ml-2 text-xs font-normal text-muted-foreground">
+                        20 audits · 10 planning sessions / month
+                      </span>
                     </p>
                   </div>
-                  <UpgradeButton priceEnvKey="VITE_STRIPE_PRICE_PRO" label="Upgrade to Pro" />
+                  <Button
+                    size="sm"
+                    className="bg-[#1B2A4A] text-white hover:bg-[#1B2A4A]/90 flex-shrink-0"
+                    onClick={() => startCheckout('pro')}
+                    disabled={checkoutLoading}
+                  >
+                    {checkoutLoading ? 'Redirecting…' : 'Upgrade to Pro'}
+                  </Button>
                 </div>
               )}
 
-              {/* Agency */}
               <div className="flex items-center justify-between rounded-lg border border-purple-200 bg-purple-50 px-4 py-4">
                 <div>
                   <p className="text-sm font-semibold text-foreground">
                     Agency
-                    <span className="ml-2 text-xs font-normal text-muted-foreground">Unlimited audits · Unlimited planning sessions</span>
+                    <span className="ml-2 text-xs font-normal text-muted-foreground">
+                      Unlimited audits · Unlimited planning sessions
+                    </span>
                   </p>
                 </div>
-                <UpgradeButton priceEnvKey="VITE_STRIPE_PRICE_AGENCY" label="Upgrade to Agency" />
+                <Button
+                  size="sm"
+                  className="bg-purple-700 text-white hover:bg-purple-800 flex-shrink-0"
+                  onClick={() => startCheckout('agency')}
+                  disabled={checkoutLoading}
+                >
+                  {checkoutLoading ? 'Redirecting…' : 'Upgrade to Agency'}
+                </Button>
               </div>
             </div>
           )}
@@ -154,31 +223,5 @@ export function SettingsPage() {
         </CardContent>
       </Card>
     </div>
-  );
-}
-
-// ── Upgrade button ─────────────────────────────────────────────────────────────
-
-function UpgradeButton({ priceEnvKey, label }: { priceEnvKey: string; label: string }) {
-  const stripeUrl = (import.meta.env as Record<string, string>)[priceEnvKey];
-
-  if (stripeUrl) {
-    return (
-      <a
-        href={stripeUrl}
-        className="flex-shrink-0 rounded-lg bg-[#1B2A4A] px-4 py-2 text-sm font-medium text-white hover:bg-[#1B2A4A]"
-      >
-        {label}
-      </a>
-    );
-  }
-
-  return (
-    <a
-      href="mailto:hello@atlas.io?subject=Upgrade inquiry"
-      className="flex-shrink-0 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
-    >
-      Contact us
-    </a>
   );
 }
