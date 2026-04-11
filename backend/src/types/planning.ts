@@ -98,6 +98,8 @@ export interface AIAnalysisRequest {
   forms: FormCapture[];
   existing_tracking: ExistingTrackingDetection;
   platforms_selected: string[];
+  /** Rendered taxonomy tree from renderTaxonomyForPrompt — injected by the orchestrator. */
+  taxonomy_context?: string;
 }
 
 export interface SuggestedParam {

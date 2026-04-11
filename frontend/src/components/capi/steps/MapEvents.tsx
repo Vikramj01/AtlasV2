@@ -1,15 +1,22 @@
 /**
  * SetupWizard — Step 2: Map your events to provider standard events
  * File: frontend/src/components/capi/steps/MapEvents.tsx
+ *
+ * Sprint 4: Enhanced with signal library keys and taxonomy event slugs
+ * in the atlas event datalist. When a taxonomy event is selected, the
+ * provider event is auto-suggested from that event's platform mappings.
  */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useCAPIStore } from '@/store/capiStore';
+import { useSignalStore } from '@/store/signalStore';
+import { useTaxonomyStore } from '@/store/taxonomyStore';
 import { META_EVENT_SUGGESTIONS, META_STANDARD_EVENTS } from '@/lib/capi/adapters/meta';
 import { GOOGLE_EVENT_SUGGESTIONS, GOOGLE_STANDARD_EVENTS } from '@/lib/capi/adapters/google';
 import type { EventMapping } from '@/types/capi';
+import type { TaxonomyNode } from '@/types/taxonomy';
 
 interface MapEventsProps {
   onNext: () => void;
@@ -42,8 +49,23 @@ function buildInitialRows(existing: EventMapping[], standardEvents: readonly str
   }));
 }
 
+// Collect all event slugs from the taxonomy tree (depth-first)
+function collectTaxonomySlugs(nodes: TaxonomyNode[]): string[] {
+  const slugs: string[] = [];
+  for (const node of nodes) {
+    if (node.node_type === 'event') {
+      slugs.push(node.slug);
+    } else if (node.children?.length) {
+      slugs.push(...collectTaxonomySlugs(node.children));
+    }
+  }
+  return slugs;
+}
+
 export function MapEvents({ onNext, onBack }: MapEventsProps) {
   const { wizardDraft, setWizardDraft } = useCAPIStore();
+  const { signals } = useSignalStore();
+  const { tree } = useTaxonomyStore();
 
   const isGoogle = wizardDraft.provider === 'google';
   const standardEvents: readonly string[] = isGoogle ? GOOGLE_STANDARD_EVENTS : META_STANDARD_EVENTS;
@@ -59,6 +81,53 @@ export function MapEvents({ onNext, onBack }: MapEventsProps) {
   const [newIsCustom, setNewIsCustom] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
+
+  // ── Build the combined atlas event datalist ────────────────────────────────
+  // Priority: existing eventSuggestions keys > signal library keys > taxonomy slugs
+  const allAtlasSuggestions: string[] = useMemo(() => {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    function add(key: string) {
+      if (!seen.has(key)) { seen.add(key); result.push(key); }
+    }
+    Object.keys(eventSuggestions).forEach(add);
+    signals.filter((s) => !s.is_system).forEach((s) => add(s.key));
+    collectTaxonomySlugs(tree).forEach(add);
+    return result;
+  }, [eventSuggestions, signals, tree]);
+
+  // Build a lookup: taxonomy slug → provider event name for this platform
+  const taxonomyProviderMap: Record<string, string> = useMemo(() => {
+    const map: Record<string, string> = {};
+    const platform = isGoogle ? 'google_ads' : 'meta';
+    function visit(nodes: TaxonomyNode[]) {
+      for (const node of nodes) {
+        if (node.node_type === 'event' && node.platform_mappings) {
+          const mapping = node.platform_mappings[platform];
+          if (mapping?.event_name) {
+            map[node.slug] = mapping.event_name;
+          }
+        }
+        if (node.children?.length) visit(node.children);
+      }
+    }
+    visit(tree);
+    return map;
+  }, [tree, isGoogle]);
+
+  // Auto-suggest provider event when atlas event changes
+  function handleNewAtlasChange(value: string) {
+    setNewAtlas(value);
+    // Check eventSuggestions first (original mapping), then taxonomy
+    const suggestion = eventSuggestions[value] ?? taxonomyProviderMap[value];
+    if (suggestion && (standardEvents as readonly string[]).includes(suggestion)) {
+      setNewIsCustom(false);
+      setNewProvider(suggestion);
+    } else if (suggestion) {
+      setNewIsCustom(true);
+      setNewCustomProvider(suggestion);
+    }
+  }
 
   function updateRow(key: string, patch: Partial<MappingRow>) {
     setRows((prev) =>
@@ -110,7 +179,6 @@ export function MapEvents({ onNext, onBack }: MapEventsProps) {
     onNext();
   }
 
-  const suggestedKeys = Object.keys(eventSuggestions);
   const providerLabel = isGoogle ? 'Google Ads Conversion Type' : 'Meta Standard Event';
   const cardTitle = isGoogle
     ? 'Map your events to Google Ads conversion types'
@@ -214,13 +282,13 @@ export function MapEvents({ onNext, onBack }: MapEventsProps) {
               <input
                 type="text"
                 value={newAtlas}
-                onChange={(e) => setNewAtlas(e.target.value)}
-                placeholder={suggestedKeys[0] ?? 'my_event'}
+                onChange={(e) => handleNewAtlasChange(e.target.value)}
+                placeholder={allAtlasSuggestions[0] ?? 'my_event'}
                 list="atlas-suggestions"
                 className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               />
               <datalist id="atlas-suggestions">
-                {suggestedKeys.map((k) => (
+                {allAtlasSuggestions.map((k) => (
                   <option key={k} value={k} />
                 ))}
               </datalist>
