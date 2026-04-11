@@ -1,7 +1,10 @@
 /**
  * SignalEditor — Modal form for creating or editing a custom signal.
+ * When a signal was created from the taxonomy (taxonomy_event_id is set),
+ * shows a breadcrumb linking it back to the taxonomy path and a detach option.
  */
 import { useState } from 'react';
+import { GitBranch, Unlink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -92,6 +95,10 @@ export function SignalEditor({ orgId, signal, onSaved, onClose }: Props) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Taxonomy linkage state — detach clears the FK on save
+  const hasTaxonomyLink = !!signal?.taxonomy_event_id;
+  const [detachTaxonomy, setDetachTaxonomy] = useState(false);
+
   async function handleSave() {
     if (!key.trim() || !name.trim() || !description.trim()) {
       setError('key, name, and description are required');
@@ -102,9 +109,28 @@ export function SignalEditor({ orgId, signal, onSaved, onClose }: Props) {
     try {
       let saved: Signal;
       if (isEdit && signal) {
-        saved = await signalApi.updateSignal(signal.id, { name, description, category, required_params: requiredParams, optional_params: optionalParams });
+        const updates: Partial<Signal> = {
+          name,
+          description,
+          category,
+          required_params: requiredParams,
+          optional_params: optionalParams,
+        };
+        if (detachTaxonomy) {
+          updates.taxonomy_event_id = null;
+          updates.taxonomy_path = null;
+        }
+        saved = await signalApi.updateSignal(signal.id, updates);
       } else {
-        saved = await signalApi.createSignal({ organisation_id: orgId, key, name, description, category, required_params: requiredParams, optional_params: optionalParams });
+        saved = await signalApi.createSignal({
+          organisation_id: orgId,
+          key,
+          name,
+          description,
+          category,
+          required_params: requiredParams,
+          optional_params: optionalParams,
+        } as Parameters<typeof signalApi.createSignal>[0]);
       }
       onSaved(saved);
     } catch (err) {
@@ -119,6 +145,43 @@ export function SignalEditor({ orgId, signal, onSaved, onClose }: Props) {
       <Card className="w-full max-w-lg max-h-[90vh] overflow-y-auto">
         <CardContent className="p-6 space-y-4">
           <h2 className="text-base font-bold">{isEdit ? 'Edit signal' : 'Create custom signal'}</h2>
+
+          {/* Taxonomy breadcrumb (edit only, when linked) */}
+          {isEdit && hasTaxonomyLink && !detachTaxonomy && (
+            <div className="flex items-center justify-between rounded-lg bg-[#EFF6FF] border border-[#BFDBFE] px-3 py-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <GitBranch className="h-3.5 w-3.5 text-[#3B82F6] shrink-0" />
+                <span className="text-xs text-[#1D4ED8]">Linked to taxonomy</span>
+                {signal.taxonomy_path && (
+                  <code className="text-[10px] text-[#3B82F6] font-mono truncate">
+                    {signal.taxonomy_path}
+                  </code>
+                )}
+              </div>
+              <button
+                type="button"
+                className="flex items-center gap-1 text-[10px] text-[#6B7280] hover:text-red-600 transition-colors shrink-0 ml-2"
+                onClick={() => setDetachTaxonomy(true)}
+                title="Detach from taxonomy — params will no longer sync"
+              >
+                <Unlink className="h-3 w-3" />
+                Detach
+              </button>
+            </div>
+          )}
+
+          {isEdit && hasTaxonomyLink && detachTaxonomy && (
+            <div className="flex items-center justify-between rounded-lg bg-[#FEF2F2] border border-[#FECACA] px-3 py-2">
+              <span className="text-xs text-[#DC2626]">Will be detached from taxonomy on save</span>
+              <button
+                type="button"
+                className="text-[10px] text-[#6B7280] hover:text-[#1B2A4A] transition-colors"
+                onClick={() => setDetachTaxonomy(false)}
+              >
+                Undo
+              </button>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">

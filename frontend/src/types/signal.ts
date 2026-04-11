@@ -33,6 +33,8 @@ export interface Signal {
   optional_params: ParamSpec[];
   platform_mappings: Record<string, PlatformEventMapping>;
   walkeros_mapping: WalkerOSMapping | null;
+  taxonomy_event_id: string | null;
+  taxonomy_path: string | null;
   version: number;
   created_at: string;
   updated_at: string;
