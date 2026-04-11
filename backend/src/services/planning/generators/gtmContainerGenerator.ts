@@ -74,6 +74,8 @@ export interface GTMVariableDef {
   folderId?: string;
   fingerprint: string;
   tagManagerUrl: string;
+  /** Human-readable notes shown in the GTM UI (visible in variable settings). */
+  notes?: string;
 }
 
 export interface GTMFolderDef {
@@ -348,10 +350,27 @@ export function generateGTMContainer(
   // ── Collect unique DLV paths needed across all recommendations ────────────
   const dlvPathsSeen = new Map<string, string>(); // path → variableId
 
+  // Build a lookup of param_key → human label from all recommendation params.
+  // Used to add descriptive notes to DLV variables in the GTM container.
+  const paramLabelLookup = new Map<string, string>();
+  for (const rec of recommendations) {
+    for (const p of (rec.required_params as unknown as Array<{ param_key: string; param_label: string }>) ?? []) {
+      if (p.param_key && p.param_label && !paramLabelLookup.has(p.param_key)) {
+        paramLabelLookup.set(p.param_key, p.param_label);
+      }
+    }
+    for (const p of (rec.optional_params as unknown as Array<{ param_key: string; param_label: string }>) ?? []) {
+      if (p.param_key && p.param_label && !paramLabelLookup.has(p.param_key)) {
+        paramLabelLookup.set(p.param_key, p.param_label);
+      }
+    }
+  }
+
   function ensureDlv(paramKey: string): string {
     const path = ecommerceDlvPath(paramKey);
     if (dlvPathsSeen.has(path)) return dlvPathsSeen.get(path)!;
     const vid = varIds.next();
+    const paramLabel = paramLabelLookup.get(paramKey);
     variables.push({
       ...stub(),
       variableId: vid,
@@ -363,6 +382,7 @@ export function generateGTMContainer(
         tmpl('name', path),
       ],
       folderId: FOLDER.VARIABLES,
+      ...(paramLabel ? { notes: `${paramLabel} — reads from dataLayer path: ${path}` } : {}),
     });
     dlvPathsSeen.set(path, vid);
     return vid;

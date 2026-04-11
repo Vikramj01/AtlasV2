@@ -1,12 +1,25 @@
 import { useState } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { AlertTriangle } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ActionToggles } from './ActionToggles';
 import { useJourneyWizardStore } from '@/store/journeyWizardStore';
+import { useTaxonomyStore } from '@/store/taxonomyStore';
 import type { WizardStage } from '@/types/journey';
+import type { CaseFormat } from '@/types/taxonomy';
+
+// Mirror of the regex logic used in RecommendationCard and the backend namingConvention service.
+function matchesCaseFormat(name: string, format: CaseFormat): boolean {
+  switch (format) {
+    case 'snake_case':  return /^[a-z0-9]+(_[a-z0-9]+)*$/.test(name);
+    case 'camelCase':   return /^[a-z][a-zA-Z0-9]*$/.test(name);
+    case 'kebab-case':  return /^[a-z0-9]+(-[a-z0-9]+)*$/.test(name);
+    case 'PascalCase':  return /^[A-Z][a-zA-Z0-9]*$/.test(name);
+  }
+}
 
 interface StageCardProps {
   stage: WizardStage;
@@ -15,8 +28,24 @@ interface StageCardProps {
 
 export function StageCard({ stage, canRemove }: StageCardProps) {
   const { removeStage, updateStageLabel, updateStageUrl } = useJourneyWizardStore();
+  const convention = useTaxonomyStore((s) => s.convention);
   const [editingLabel, setEditingLabel] = useState(false);
   const [labelDraft, setLabelDraft] = useState(stage.label);
+
+  // Check if the label looks like a hand-typed event identifier (no spaces)
+  // and warn if it violates the org's naming convention.
+  const labelConventionWarning: string | null = (() => {
+    if (!convention) return null;
+    const name = (editingLabel ? labelDraft : stage.label).trim();
+    if (!name || name.includes(' ')) return null; // human-readable labels with spaces are fine
+    if (!matchesCaseFormat(name, convention.event_case)) {
+      return `Event name should be ${convention.event_case}`;
+    }
+    if (convention.event_prefix && !name.startsWith(convention.event_prefix)) {
+      return `Missing prefix "${convention.event_prefix}"`;
+    }
+    return null;
+  })();
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: stage.id,
@@ -75,6 +104,11 @@ export function StageCard({ stage, canRemove }: StageCardProps) {
                 {stage.label}
               </button>
             )}
+            {!editingLabel && labelConventionWarning && (
+              <span title={labelConventionWarning} className="flex-shrink-0">
+                <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+              </span>
+            )}
           </div>
 
           {canRemove && (
@@ -92,6 +126,13 @@ export function StageCard({ stage, canRemove }: StageCardProps) {
             </Button>
           )}
         </div>
+
+        {editingLabel && labelConventionWarning && (
+          <p className="mt-1 flex items-center gap-1 text-[10px] text-amber-600">
+            <AlertTriangle className="h-2.5 w-2.5 flex-shrink-0" />
+            {labelConventionWarning}
+          </p>
+        )}
 
         <div className="mt-3">
           <Input
