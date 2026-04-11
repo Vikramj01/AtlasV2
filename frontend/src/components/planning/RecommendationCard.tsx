@@ -1,12 +1,15 @@
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
+import { AlertTriangle } from 'lucide-react';
 import { InfoTooltip } from '@/components/common/EducationTooltip';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { planningApi } from '@/lib/api/planningApi';
 import { usePlanningStore } from '@/store/planningStore';
+import { useTaxonomyStore } from '@/store/taxonomyStore';
 import type { PlanningRecommendation, UserDecision } from '@/types/planning';
+import type { CaseFormat } from '@/types/taxonomy';
 
 interface RecommendationCardProps {
   rec: PlanningRecommendation;
@@ -16,6 +19,17 @@ interface RecommendationCardProps {
   onSelect: () => void;
   /** Map of signal key → pack name for signals already deployed to the linked client */
   packCoverage?: Map<string, string>;
+}
+
+// Simple client-side check against the org's naming convention format.
+// Mirrors the regex logic in the backend namingConvention service.
+function matchesCaseFormat(name: string, format: CaseFormat): boolean {
+  switch (format) {
+    case 'snake_case':  return /^[a-z0-9]+(_[a-z0-9]+)*$/.test(name);
+    case 'camelCase':   return /^[a-z][a-zA-Z0-9]*$/.test(name);
+    case 'kebab-case':  return /^[a-z0-9]+(-[a-z0-9]+)*$/.test(name);
+    case 'PascalCase':  return /^[A-Z][a-zA-Z0-9]*$/.test(name);
+  }
 }
 
 const CONFIDENCE_LABEL: Record<string, string> = {
@@ -44,12 +58,26 @@ const DECISION_STYLES: Record<UserDecision, string> = {
 
 export function RecommendationCard({ rec, index, sessionId, isSelected, onSelect, packCoverage }: RecommendationCardProps) {
   const updateRecommendation = usePlanningStore((s) => s.updateRecommendation);
+  const convention = useTaxonomyStore((s) => s.convention);
   const [isSaving, setIsSaving] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editedEventName, setEditedEventName] = useState(rec.event_name);
 
   const tier = confidenceTier(rec.confidence_score);
   const coveredByPack = packCoverage?.get(rec.event_name);
+
+  // Naming convention check: warn if event name doesn't match org format or prefix
+  const conventionWarning: string | null = (() => {
+    if (!convention) return null;
+    const name = rec.event_name;
+    if (!matchesCaseFormat(name, convention.event_case)) {
+      return `Event name should be ${convention.event_case}`;
+    }
+    if (convention.event_prefix && !name.startsWith(convention.event_prefix)) {
+      return `Missing prefix "${convention.event_prefix}"`;
+    }
+    return null;
+  })();
 
   async function decide(decision: UserDecision, eventName?: string) {
     setIsSaving(true);
@@ -86,11 +114,25 @@ export function RecommendationCard({ rec, index, sessionId, isSelected, onSelect
         </span>
 
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold">{rec.event_name}</p>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <p className="truncate text-sm font-semibold">{rec.event_name}</p>
+            {conventionWarning && (
+              <span
+                className="flex items-center gap-0.5 rounded bg-amber-50 border border-amber-200 px-1 py-0.5 text-[10px] font-medium text-amber-700 shrink-0"
+                title={conventionWarning}
+              >
+                <AlertTriangle className="h-2.5 w-2.5" />
+                convention
+              </span>
+            )}
+          </div>
           <p className="text-xs text-muted-foreground">
             {rec.action_type.replace(/_/g, ' ')}
             {rec.element_text ? ` · "${rec.element_text}"` : ''}
           </p>
+          {conventionWarning && (
+            <p className="mt-0.5 text-[10px] text-amber-600">{conventionWarning}</p>
+          )}
         </div>
 
         <div className="flex flex-shrink-0 flex-col items-end gap-1">

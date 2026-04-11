@@ -14,6 +14,9 @@
 import { createBrowserbaseSession, getCDPUrl } from '@/services/browserbase/client';
 import { capturePage } from './pageCaptureService';
 import { analysePageWithAI } from './aiAnalysisService';
+import { fetchTaxonomyFlat } from '@/services/database/taxonomyQueries';
+import { buildTree, renderTaxonomyForPrompt } from '@/services/signals/taxonomyTreeBuilder';
+import { supabaseAdmin as supabase } from '@/services/database/supabase';
 import {
   updateSessionStatus,
   updateSessionRescan,
@@ -76,7 +79,26 @@ export async function runPlanningOrchestrator(input: OrchestratorInput): Promise
     return;
   }
 
-  // ── 3. Scan pages in batches ─────────────────────────────────────────────
+  // ── 3. Fetch taxonomy context for this org (one-time, non-blocking) ────────
+  let taxonomyContext: string | undefined;
+  try {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('organization_id')
+      .eq('id', session.user_id)
+      .single();
+    const orgId = (profile as { organization_id: string } | null)?.organization_id;
+    if (orgId) {
+      const flat = await fetchTaxonomyFlat(orgId);
+      taxonomyContext = renderTaxonomyForPrompt(buildTree(flat));
+      logger.info({ sessionId, orgId, nodeCount: flat.length }, 'Taxonomy context loaded for AI prompt');
+    }
+  } catch {
+    // Non-fatal — AI analysis degrades gracefully without taxonomy context
+    logger.warn({ sessionId }, 'Could not load taxonomy context; continuing without it');
+  }
+
+  // ── 4. Scan pages in batches ─────────────────────────────────────────────
   const sortedPages = [...pages].sort((a, b) => a.page_order - b.page_order);
 
   // Process in chunks of CONCURRENCY_LIMIT
@@ -84,7 +106,7 @@ export async function runPlanningOrchestrator(input: OrchestratorInput): Promise
     const batch = sortedPages.slice(i, i + CONCURRENCY_LIMIT);
 
     const results = await Promise.allSettled(
-      batch.map((page) => scanOnePage(browser, session, page)),
+      batch.map((page) => scanOnePage(browser, session, page, taxonomyContext)),
     );
 
     results.forEach((result, idx) => {
@@ -98,10 +120,10 @@ export async function runPlanningOrchestrator(input: OrchestratorInput): Promise
     });
   }
 
-  // ── 4. Close Browserbase session ─────────────────────────────────────────
+  // ── 5. Close Browserbase session ─────────────────────────────────────────
   await browser.close?.().catch(() => {});
 
-  // ── 5. Mark session as review_ready ──────────────────────────────────────
+  // ── 6. Mark session as review_ready ──────────────────────────────────────
   await updateSessionStatus(sessionId, 'review_ready');
   logger.info({ sessionId }, 'Planning session scan complete → review_ready');
 }
@@ -114,6 +136,7 @@ async function scanOnePage(
   browser: PlaywrightBrowser,
   session: PlanningSession,
   page: PlanningPage,
+  taxonomyContext?: string,
 ): Promise<void> {
   const { id: pageId, url, session_id: sessionId } = page;
 
@@ -175,6 +198,7 @@ async function scanOnePage(
       forms: capture.forms,
       existing_tracking: capture.existing_tracking,
       platforms_selected: session.selected_platforms,
+      taxonomy_context: taxonomyContext,
     });
 
     // ── Persist recommendations ──────────────────────────────────────────────

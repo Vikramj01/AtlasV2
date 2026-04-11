@@ -77,6 +77,10 @@ function buildUserPrompt(req: AIAnalysisRequest): string {
       `Existing dataLayer events: ${req.existing_tracking.datalayer_events_found.join(', ') || 'none'}.`
     : 'No tracking detected on this page.';
 
+  const taxonomySection = req.taxonomy_context
+    ? `\n## Organisation Event Taxonomy\nThis org uses a standardised event taxonomy. When naming events, prefer these taxonomy slugs over ad-hoc names.\nIf a page interaction clearly maps to a taxonomy event, use that exact slug as suggested_event_name.\n\n${req.taxonomy_context.slice(0, 3000)}\n`
+    : '';
+
   return `Analyse this web page and recommend which elements to track.
 
 ## Page Details
@@ -95,7 +99,7 @@ ${formSummary || '  (none detected)'}
 
 ## Simplified DOM (abbreviated)
 ${domSummary}
-
+${taxonomySection}
 ## Available Action Primitive Keys
 Use one of these for action_primitive_key (or "custom" if none fit):
 ${actionPrimitiveList}
