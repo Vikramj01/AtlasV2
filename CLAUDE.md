@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Atlas is a marketing signal optimisation and tracking infrastructure platform for agencies, consultancies, and SMB marketers. Hosted at atlas.spi3l.com.
+Atlas is a marketing signal optimisation and tracking infrastructure platform for agencies, consultancies, and SMB marketers. Hosted at atlas.vimi.digital.
 
 ---
 
