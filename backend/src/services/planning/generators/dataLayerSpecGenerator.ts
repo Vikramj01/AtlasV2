@@ -334,6 +334,18 @@ function buildCodeSnippet(rec: PlanningRecommendation): string {
     lines.push('});');
   } else {
     // Generic fallback — use AI-identified params with JS validity and attribution fixes
+    // Add JSDoc block describing the event and its parameters from the recommendation
+    const jsdocLines: string[] = ['/**'];
+    const briefJustification = rec.business_justification.length > 120
+      ? rec.business_justification.slice(0, 117) + '...'
+      : rec.business_justification;
+    jsdocLines.push(` * @event ${eventName} — ${briefJustification}`);
+    for (const p of params) {
+      const pType = inferParamType(p.param_key, p.example_value ?? '');
+      jsdocLines.push(` * @param {${pType}} ${p.param_key} — ${p.param_label ?? p.param_key}`);
+    }
+    jsdocLines.push(' */');
+    lines.push(...jsdocLines);
     lines.push('window.dataLayer.push({');
     lines.push(`  event: '${eventName}',`);
     for (const p of params) {
