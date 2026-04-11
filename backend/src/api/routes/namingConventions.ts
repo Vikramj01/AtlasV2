@@ -13,7 +13,7 @@ import { z } from 'zod';
 import { authMiddleware } from '@/api/middleware/authMiddleware';
 import { sendInternalError } from '@/utils/apiError';
 import { getNamingConvention, upsertNamingConvention } from '@/services/database/namingConventionQueries';
-import { listSignals } from '@/services/database/signalQueries';
+import { listSignals, updateSignal } from '@/services/database/signalQueries';
 import {
   validateEventName,
   validateParamKey,
@@ -126,19 +126,61 @@ router.post('/preview', async (req: Request, res: Response) => {
     const signals = await listSignals(orgId);
     const orgSignals = signals.filter(s => !s.is_system);
 
-    const renames = orgSignals.map(signal => {
-      const suggested = generateEventName(signal.key as string, proposed);
-      return {
-        signal_id: signal.id,
-        current: signal.key,
-        suggested,
-        changed: signal.key !== suggested,
-      };
-    }).filter(r => r.changed);
+    const renames = orgSignals
+      .map(signal => {
+        const suggested = generateEventName(signal.key as string, proposed);
+        return {
+          signal_id: signal.id as string,
+          current: signal.key as string,
+          suggested,
+        };
+      })
+      .filter(r => r.current !== r.suggested);
 
     const examples = buildExamples(proposed);
 
     res.json({ renames, examples, total_signals: orgSignals.length });
+  } catch (err) {
+    sendInternalError(res, err);
+  }
+});
+
+// ─── POST /api/naming-convention/apply ────────────────────────────────────────
+// Apply the proposed convention: rename all affected signals then save convention.
+
+router.post('/apply', async (req: Request, res: Response) => {
+  try {
+    const parsed = PreviewSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Validation failed', details: parsed.error.flatten() });
+    }
+    const { org_id, convention: partial } = parsed.data;
+    const orgId = org_id ?? req.user!.id;
+
+    const current = await getNamingConvention(orgId);
+    const proposed: NamingConvention = { ...current, ...partial, organization_id: orgId };
+
+    const signals = await listSignals(orgId);
+    const orgSignals = signals.filter(s => !s.is_system);
+
+    const renames = orgSignals
+      .map(signal => ({
+        signal_id: signal.id as string,
+        current: signal.key as string,
+        suggested: generateEventName(signal.key as string, proposed),
+      }))
+      .filter(r => r.current !== r.suggested);
+
+    // Apply renames in parallel (non-blocking per signal)
+    await Promise.all(
+      renames.map(r => updateSignal(r.signal_id, orgId, { key: r.suggested })),
+    );
+
+    // Save the new convention
+    const examples = buildExamples(proposed);
+    const savedConvention = await upsertNamingConvention(orgId, { ...partial, ...examples });
+
+    res.json({ renamed_count: renames.length, renames, convention: savedConvention });
   } catch (err) {
     sendInternalError(res, err);
   }

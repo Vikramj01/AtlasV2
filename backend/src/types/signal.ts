@@ -134,6 +134,8 @@ export interface CreateSignalRequest {
 }
 
 export interface UpdateSignalRequest {
+  /** Rename the signal's event key (used for batch convention renames). */
+  key?: string;
   name?: string;
   description?: string;
   category?: SignalCategory;

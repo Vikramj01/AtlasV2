@@ -22,10 +22,12 @@ import {
   updateSessionRescan,
   updatePage,
   createRecommendations,
+  updateRecommendationTaxonomy,
   getPagesBySession,
   getApprovedRecommendations,
   type CreateRecommendationInput,
 } from '@/services/database/planningQueries';
+import type { TaxonomyNode } from '@/types/taxonomy';
 import {
   detectPageChanges,
   buildPageChangeResult,
@@ -81,6 +83,8 @@ export async function runPlanningOrchestrator(input: OrchestratorInput): Promise
 
   // ── 3. Fetch taxonomy context for this org (one-time, non-blocking) ────────
   let taxonomyContext: string | undefined;
+  // Slug → TaxonomyNode map for linking recommendations after AI analysis
+  let taxonomyBySlug: Map<string, TaxonomyNode> | undefined;
   try {
     const { data: profile } = await supabase
       .from('profiles')
@@ -91,6 +95,10 @@ export async function runPlanningOrchestrator(input: OrchestratorInput): Promise
     if (orgId) {
       const flat = await fetchTaxonomyFlat(orgId);
       taxonomyContext = renderTaxonomyForPrompt(buildTree(flat));
+      // Build slug lookup for post-analysis taxonomy linking
+      taxonomyBySlug = new Map(
+        flat.filter((n) => n.node_type === 'event').map((n) => [n.slug, n]),
+      );
       logger.info({ sessionId, orgId, nodeCount: flat.length }, 'Taxonomy context loaded for AI prompt');
     }
   } catch {
@@ -106,7 +114,7 @@ export async function runPlanningOrchestrator(input: OrchestratorInput): Promise
     const batch = sortedPages.slice(i, i + CONCURRENCY_LIMIT);
 
     const results = await Promise.allSettled(
-      batch.map((page) => scanOnePage(browser, session, page, taxonomyContext)),
+      batch.map((page) => scanOnePage(browser, session, page, taxonomyContext, taxonomyBySlug)),
     );
 
     results.forEach((result, idx) => {
@@ -137,6 +145,7 @@ async function scanOnePage(
   session: PlanningSession,
   page: PlanningPage,
   taxonomyContext?: string,
+  taxonomyBySlug?: Map<string, TaxonomyNode>,
 ): Promise<void> {
   const { id: pageId, url, session_id: sessionId } = page;
 
@@ -221,7 +230,19 @@ async function scanOnePage(
       source: 'ai',
     }));
 
-    await createRecommendations(recInputs);
+    const createdRecs = await createRecommendations(recInputs);
+
+    // ── Link recommendations to taxonomy (non-fatal) ─────────────────────────
+    if (taxonomyBySlug && createdRecs.length > 0) {
+      await Promise.allSettled(
+        createdRecs
+          .filter((rec) => taxonomyBySlug!.has(rec.event_name))
+          .map((rec) => {
+            const node = taxonomyBySlug!.get(rec.event_name)!;
+            return updateRecommendationTaxonomy(rec.id, node.id, node.path);
+          }),
+      );
+    }
 
     // ── Mark page done ────────────────────────────────────────────────────────
     await updatePage(pageId, {
