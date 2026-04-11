@@ -37,6 +37,8 @@ export function NamingConventionSettings({ orgId, convention, onSaved, onClose }
 
   const [preview, setPreview] = useState<ConventionPreviewResult | null>(null);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+  const [isApplying, setIsApplying] = useState(false);
+  const [applyResult, setApplyResult] = useState<{ renamed_count: number } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -55,6 +57,7 @@ export function NamingConventionSettings({ orgId, convention, onSaved, onClose }
 
   async function loadPreview() {
     setIsLoadingPreview(true);
+    setApplyResult(null);
     setError(null);
     try {
       const result = await taxonomyApi.previewConvention(orgId, draft);
@@ -63,6 +66,23 @@ export function NamingConventionSettings({ orgId, convention, onSaved, onClose }
       setError(err instanceof Error ? err.message : 'Preview failed');
     } finally {
       setIsLoadingPreview(false);
+    }
+  }
+
+  async function handleApply() {
+    if (!preview || preview.renames.length === 0) return;
+    if (!window.confirm(`This will rename ${preview.renames.length} signal(s) and save your convention. Continue?`)) return;
+    setIsApplying(true);
+    setError(null);
+    try {
+      const result = await taxonomyApi.applyConvention(orgId, draft);
+      setApplyResult({ renamed_count: result.renamed_count });
+      setPreview(null);
+      onSaved(result.convention);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Apply failed');
+    } finally {
+      setIsApplying(false);
     }
   }
 
@@ -249,21 +269,39 @@ export function NamingConventionSettings({ orgId, convention, onSaved, onClose }
               </Button>
             </div>
 
+            {applyResult && (
+              <p className="rounded-lg bg-green-50 border border-green-200 px-3 py-2 text-xs text-green-700">
+                ✓ {applyResult.renamed_count} signal{applyResult.renamed_count !== 1 ? 's' : ''} renamed and convention saved.
+              </p>
+            )}
+
             {preview && (
               <div className="rounded-lg border border-[#E5E7EB] overflow-hidden text-xs">
                 <div className="bg-[#FAFAFA] px-3 py-1.5 border-b border-[#E5E7EB] text-[#6B7280]">
                   {preview.renames.length} of {preview.total_signals} signals would be renamed
                 </div>
                 {preview.renames.length > 0 ? (
-                  <div className="divide-y divide-[#F3F4F6] max-h-40 overflow-y-auto">
-                    {preview.renames.map((r) => (
-                      <div key={r.signal_id} className="flex items-center gap-3 px-3 py-1.5">
-                        <code className="text-[#9CA3AF] line-through">{r.current}</code>
-                        <span className="text-[#D1D5DB]">→</span>
-                        <code className="text-[#059669]">{r.proposed}</code>
-                      </div>
-                    ))}
-                  </div>
+                  <>
+                    <div className="divide-y divide-[#F3F4F6] max-h-40 overflow-y-auto">
+                      {preview.renames.map((r) => (
+                        <div key={r.signal_id} className="flex items-center gap-3 px-3 py-1.5">
+                          <code className="text-[#9CA3AF] line-through">{r.current}</code>
+                          <span className="text-[#D1D5DB]">→</span>
+                          <code className="text-[#059669]">{r.suggested}</code>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="border-t border-[#E5E7EB] px-3 py-2">
+                      <Button
+                        size="sm"
+                        className="h-7 text-xs bg-[#1B2A4A] hover:bg-[#1B2A4A]"
+                        onClick={handleApply}
+                        disabled={isApplying}
+                      >
+                        {isApplying ? 'Applying…' : `Apply ${preview.renames.length} rename${preview.renames.length !== 1 ? 's' : ''}`}
+                      </Button>
+                    </div>
+                  </>
                 ) : (
                   <p className="px-3 py-2 text-[#6B7280]">No signals would be renamed.</p>
                 )}

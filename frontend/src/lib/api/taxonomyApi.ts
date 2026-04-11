@@ -22,10 +22,22 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+export interface ConventionRenameEntry {
+  signal_id: string;
+  current: string;
+  suggested: string;
+}
+
 export interface ConventionPreviewResult {
-  renames: Array<{ signal_id: string; signal_key: string; current: string; proposed: string }>;
+  renames: ConventionRenameEntry[];
   examples: { example_event: string; example_param: string };
   total_signals: number;
+}
+
+export interface ConventionApplyResult {
+  renamed_count: number;
+  renames: ConventionRenameEntry[];
+  convention: import('@/types/taxonomy').NamingConvention;
 }
 
 export interface CreateEventRequest {
@@ -115,9 +127,15 @@ export const taxonomyApi = {
       body: JSON.stringify({ name, type, org_id: orgId }),
     }),
 
-  previewConvention: (orgId: string, proposed: Partial<NamingConvention>) =>
+  previewConvention: (orgId: string, convention: Partial<NamingConvention>) =>
     apiFetch<ConventionPreviewResult>('/api/naming-convention/preview', {
       method: 'POST',
-      body: JSON.stringify({ org_id: orgId, proposed }),
+      body: JSON.stringify({ org_id: orgId, convention }),
+    }),
+
+  applyConvention: (orgId: string, convention: Partial<NamingConvention>) =>
+    apiFetch<ConventionApplyResult>('/api/naming-convention/apply', {
+      method: 'POST',
+      body: JSON.stringify({ org_id: orgId, convention }),
     }),
 };

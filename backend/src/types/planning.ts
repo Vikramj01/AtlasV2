@@ -223,6 +223,10 @@ export interface PlanningRecommendation {
   modified_config?: Record<string, unknown>;
   decided_at?: string;
   source: 'ai' | 'manual';
+  /** Linked taxonomy event ID — set after AI analysis matches the event name to the org taxonomy. */
+  taxonomy_event_id?: string | null;
+  /** Denormalised taxonomy path for display, e.g. "ecommerce/cart/add_to_cart". */
+  taxonomy_path?: string | null;
   created_at: string;
 }
 

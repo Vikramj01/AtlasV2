@@ -24,8 +24,10 @@ interface MapEventsProps {
 }
 
 interface MappingRow extends EventMapping {
-  key: string;       // stable React key
-  isCustom: boolean; // true when "Custom…" is selected in the provider_event dropdown
+  key: string;          // stable React key
+  isCustom: boolean;    // true when "Custom…" is selected in the provider_event dropdown
+  /** Set when the provider event was auto-populated from the org's taxonomy platform_mappings. */
+  taxonomyMapped?: boolean;
 }
 
 const DEFAULT_ROWS: MappingRow[] = [
@@ -79,6 +81,7 @@ export function MapEvents({ onNext, onBack }: MapEventsProps) {
   const [newProvider, setNewProvider] = useState<string>(standardEvents[0]);
   const [newCustomProvider, setNewCustomProvider] = useState('');
   const [newIsCustom, setNewIsCustom] = useState(false);
+  const [newTaxonomyMapped, setNewTaxonomyMapped] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
 
@@ -118,14 +121,20 @@ export function MapEvents({ onNext, onBack }: MapEventsProps) {
   // Auto-suggest provider event when atlas event changes
   function handleNewAtlasChange(value: string) {
     setNewAtlas(value);
-    // Check eventSuggestions first (original mapping), then taxonomy
-    const suggestion = eventSuggestions[value] ?? taxonomyProviderMap[value];
+    setNewTaxonomyMapped(false);
+    // Check eventSuggestions first (original mapping), then taxonomy platform_mappings
+    const fromSuggestions = eventSuggestions[value];
+    const fromTaxonomy = taxonomyProviderMap[value];
+    const suggestion = fromSuggestions ?? fromTaxonomy;
+    const isTaxonomySource = !fromSuggestions && !!fromTaxonomy;
     if (suggestion && (standardEvents as readonly string[]).includes(suggestion)) {
       setNewIsCustom(false);
       setNewProvider(suggestion);
+      setNewTaxonomyMapped(isTaxonomySource);
     } else if (suggestion) {
       setNewIsCustom(true);
       setNewCustomProvider(suggestion);
+      setNewTaxonomyMapped(isTaxonomySource);
     }
   }
 
@@ -153,6 +162,7 @@ export function MapEvents({ onNext, onBack }: MapEventsProps) {
         atlas_event: atlasEvent,
         provider_event: providerEvent,
         isCustom: newIsCustom,
+        taxonomyMapped: newTaxonomyMapped,
       },
     ]);
 
@@ -160,6 +170,7 @@ export function MapEvents({ onNext, onBack }: MapEventsProps) {
     setNewProvider(standardEvents[0]);
     setNewCustomProvider('');
     setNewIsCustom(false);
+    setNewTaxonomyMapped(false);
   }
 
   function handleNext() {
@@ -222,15 +233,15 @@ export function MapEvents({ onNext, onBack }: MapEventsProps) {
                     />
                   </td>
                   <td className="py-2 pr-4">
-                    <div className="flex gap-2 items-center">
+                    <div className="flex gap-2 items-center flex-wrap">
                       <select
                         value={row.isCustom ? 'Custom…' : row.provider_event}
                         onChange={(e) => {
                           const val = e.target.value;
                           if (val === 'Custom…') {
-                            updateRow(row.key, { isCustom: true, provider_event: '' });
+                            updateRow(row.key, { isCustom: true, provider_event: '', taxonomyMapped: false });
                           } else {
-                            updateRow(row.key, { isCustom: false, provider_event: val });
+                            updateRow(row.key, { isCustom: false, provider_event: val, taxonomyMapped: false });
                           }
                         }}
                         className="rounded-md border border-input bg-background px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
@@ -250,6 +261,14 @@ export function MapEvents({ onNext, onBack }: MapEventsProps) {
                           placeholder="CustomEventName"
                           className="rounded-md border border-input bg-background px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                         />
+                      )}
+                      {row.taxonomyMapped && (
+                        <span
+                          className="rounded bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700 whitespace-nowrap"
+                          title="Auto-mapped from your event taxonomy"
+                        >
+                          ✓ Taxonomy
+                        </span>
                       )}
                     </div>
                   </td>

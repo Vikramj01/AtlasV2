@@ -55,6 +55,29 @@ export async function fetchTaxonomyEvents(
 }
 
 /**
+ * Fetch a taxonomy event node by slug, visible to the given org.
+ * Returns the first matching event node (system or org-owned) or null.
+ * Used to link AI-recommended event names back to taxonomy entries.
+ */
+export async function fetchTaxonomyEventBySlug(
+  orgId: string,
+  slug: string,
+): Promise<TaxonomyNode | null> {
+  const { data, error } = await supabase
+    .from('event_taxonomy')
+    .select('*')
+    .or(`organization_id.is.null,organization_id.eq.${orgId}`)
+    .eq('node_type', 'event')
+    .eq('slug', slug)
+    .eq('deprecated', false)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw new Error(`Failed to fetch taxonomy event by slug: ${error.message}`);
+  return (data as TaxonomyNode | null);
+}
+
+/**
  * Fetch a single taxonomy node by ID.
  */
 export async function fetchTaxonomyNode(id: string): Promise<TaxonomyNode | null> {

@@ -145,6 +145,10 @@ export interface PlanningRecommendation {
   modified_config: Record<string, unknown> | null;
   decided_at: string | null;
   source: 'ai' | 'manual';
+  /** Linked taxonomy event ID — matched by event name slug after AI analysis. */
+  taxonomy_event_id: string | null;
+  /** Denormalised taxonomy path, e.g. "ecommerce/cart/add_to_cart". */
+  taxonomy_path: string | null;
   created_at: string;
 }
 

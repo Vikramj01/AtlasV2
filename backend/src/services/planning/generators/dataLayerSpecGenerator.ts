@@ -226,6 +226,7 @@ const ATTRIBUTION_REPLACEMENT: Record<string, string> = {
 
 function buildCodeSnippet(rec: PlanningRecommendation): string {
   const params = (rec.required_params as unknown as Array<{ param_key: string; param_label: string; example_value: string }>) ?? [];
+  const optionalParams = (rec.optional_params as unknown as Array<{ param_key: string; param_label: string; example_value: string }>) ?? [];
   const actionType = rec.action_type;
   const eventName = rec.event_name;
 
@@ -364,6 +365,17 @@ function buildCodeSnippet(rec: PlanningRecommendation): string {
     }
     if (params.length === 0) {
       lines.push(`  // Add event parameters here`);
+    }
+    // Add optional params as commented-out examples
+    if (optionalParams.length > 0) {
+      lines.push(`  // Optional parameters (uncomment to include):`);
+      for (const p of optionalParams) {
+        if (DYNAMIC_ATTRIBUTION_KEYS.has(p.param_key)) continue; // skip attribution keys
+        const literal = p.example_value
+          ? toJsLiteral(p.param_key, p.example_value)
+          : `'{{${p.param_key.toUpperCase()}}}'`;
+        lines.push(`  // ${p.param_key}: ${literal},${p.param_label ? `  // ${p.param_label}` : ''}`);
+      }
     }
     lines.push('});');
   }

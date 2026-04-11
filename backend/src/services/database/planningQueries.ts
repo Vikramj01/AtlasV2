@@ -279,6 +279,23 @@ export async function getRecommendation(recId: string, sessionId: string): Promi
   return data as PlanningRecommendation;
 }
 
+/**
+ * Link a recommendation to a taxonomy event.
+ * Called after AI analysis, non-fatal if it fails.
+ */
+export async function updateRecommendationTaxonomy(
+  recId: string,
+  taxonomyEventId: string,
+  taxonomyPath: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from('planning_recommendations')
+    .update({ taxonomy_event_id: taxonomyEventId, taxonomy_path: taxonomyPath })
+    .eq('id', recId);
+
+  if (error) throw new Error(`Failed to link recommendation to taxonomy: ${error.message}`);
+}
+
 export async function updateRecommendationDecision(
   recId: string,
   decision: UserDecision,
