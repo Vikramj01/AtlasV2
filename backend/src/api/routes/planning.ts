@@ -84,6 +84,7 @@ router.post('/detect', detectRateLimit, async (req: Request, res: Response) => {
     // Detection failures are non-fatal — return a structured error so the frontend
     // can fall back to the manual form gracefully.
     const message = err instanceof Error ? err.message : 'Unknown error';
+    logger.warn({ url: req.body?.url, err: message }, 'Site detection failed');
     res.status(422).json({ error: `Detection failed: ${message}` });
   }
 });
