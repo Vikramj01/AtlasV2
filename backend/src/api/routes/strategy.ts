@@ -82,7 +82,14 @@ Always respond with valid JSON only. No markdown, no preamble, no explanation ou
 
     const rawText = message.content[0].type === 'text' ? message.content[0].text : '';
     const cleaned = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-    const brief = JSON.parse(cleaned) as unknown;
+    const brief = JSON.parse(cleaned) as Record<string, unknown>;
+
+    // Hard-enforce proxy event flag based on timing. Claude is instructed to set
+    // this correctly, but we guarantee it server-side so the frontend never
+    // renders an incorrect false when outcome_timing_days > 1.
+    if (outcomeTimingDays > 1) {
+      brief.proxyEventRequired = true;
+    }
 
     res.json({ data: brief });
   } catch (err) {
