@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { ProgressBar } from '@/components/developer/ProgressBar';
 import { ChangeDetectionResults } from '@/components/planning/ChangeDetectionResults';
 import { SkeletonCard } from '@/components/common/SkeletonCard';
+import { StrategyGateBanner } from '@/components/strategy/StrategyGateBanner';
 
 const STATUS_LABELS: Record<PlanningSession['status'], string> = {
   setup:         'Setup',
@@ -232,6 +233,9 @@ export function PlanningDashboard() {
           onClose={() => setViewingResultsId(null)}
         />
       )}
+
+      {/* Strategy gate nudge */}
+      <StrategyGateBanner />
 
       {/* Plan-limit upgrade banner */}
       {limitReached && (

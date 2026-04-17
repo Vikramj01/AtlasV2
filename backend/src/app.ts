@@ -24,6 +24,7 @@ import { offlineConversionsRouter } from '@/api/routes/offlineConversions';
 import { billingRouter } from '@/api/routes/billing';
 import { taxonomyRouter } from '@/api/routes/taxonomy';
 import { namingConventionsRouter } from '@/api/routes/namingConventions';
+import { strategyRouter } from '@/api/routes/strategy';
 import logger from '@/utils/logger';
 import { env } from '@/config/env';
 
@@ -92,6 +93,7 @@ const heavyLimiter = rateLimit({
 app.use('/api', globalLimiter);
 app.use('/api/journeys/:id/generate', heavyLimiter);
 app.use('/api/planning/sessions/:id/generate', heavyLimiter);
+app.use('/api/strategy/evaluate', heavyLimiter);
 app.use('/api/organisations/:orgId/clients/:clientId/generate', heavyLimiter);
 app.use('/api/organisations/:orgId/clients/:clientId/generate-all', heavyLimiter);
 
@@ -136,6 +138,7 @@ app.use('/api/offline-conversions', offlineConversionsRouter);
 app.use('/api/billing', billingRouter);
 app.use('/api/taxonomy', taxonomyRouter);
 app.use('/api/naming-convention', namingConventionsRouter);
+app.use('/api/strategy', strategyRouter);
 
 // ─── 404 handler ─────────────────────────────────────────────────────────────
 
