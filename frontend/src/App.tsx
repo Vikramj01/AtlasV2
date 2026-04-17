@@ -12,6 +12,7 @@ import { JourneySpecPage } from '@/pages/JourneySpecPage';
 import { GapReportPage } from '@/pages/GapReportPage';
 import { PlanningDashboard } from '@/pages/PlanningDashboard';
 import { PlanningModePage } from '@/pages/PlanningModePage';
+import { StrategyPage } from '@/pages/StrategyPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { DeveloperPortalPage } from '@/pages/DeveloperPortalPage';
 // Composable Signals & Agency Workspaces
@@ -57,6 +58,8 @@ export default function App() {
               <Route path="/journey/:id/audit/:auditId" element={<SectionErrorBoundary label="Gap report"><GapReportPage /></SectionErrorBoundary>} />
               {/* Planning Mode — Pro+ */}
               <Route path="/planning" element={<SectionErrorBoundary label="Planning sessions"><PlanGate minPlan="pro" featureName="AI Planning Mode"><PlanningDashboard /></PlanGate></SectionErrorBoundary>} />
+              {/* Conversion Strategy Gate — all plans */}
+              <Route path="/planning/strategy" element={<SectionErrorBoundary label="Strategy planner"><StrategyPage /></SectionErrorBoundary>} />
               {/* Settings */}
               <Route path="/settings" element={<SectionErrorBoundary label="Settings"><SettingsPage /></SectionErrorBoundary>} />
               <Route path="/settings/billing/success" element={<BillingSuccessPage />} />
