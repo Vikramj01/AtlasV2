@@ -2,6 +2,22 @@
  * Dashboard types — mirrors backend/src/types/dashboard.ts
  */
 
+export interface AtlasScore {
+  overall: number;
+  foundation: number;
+  signal_quality: number;
+  channel_performance: number;
+  updated_at: string;
+}
+
+export interface NextAction {
+  action_id: string;
+  copy: string;
+  cta_route: string;
+  eta_minutes: number;
+  priority: number;
+}
+
 export type DashboardCardType =
   | 'capi_delivery'
   | 'capi_emq'

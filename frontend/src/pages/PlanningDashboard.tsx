@@ -259,9 +259,9 @@ export function PlanningDashboard() {
       {/* Header */}
       <div className="mb-8 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Planning Mode</h1>
+          <h1 className="text-2xl font-bold text-foreground">Site scan</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Scan your website and get a ready-to-import GTM container with AI-recommended tracking.
+            Scan your website and get a ready-to-import Google Tag Manager setup file with recommended tracking.
           </p>
         </div>
         <Button onClick={handleNew}>

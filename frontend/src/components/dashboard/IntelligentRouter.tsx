@@ -66,7 +66,7 @@ export function IntelligentRouter({ className }: { className?: string }) {
         iconBg="bg-amber-100"
         iconColor="text-amber-600"
         label="Check if tracking works"
-        description="Validate your live tracking against 26 rules across GA4, Meta, Google Ads, and sGTM."
+        description="Validate your live tracking across GA4, Meta, Google Ads, and sGTM."
         ctaColor="text-amber-600"
         onClick={() => navigate('/journey/new')}
       />

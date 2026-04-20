@@ -309,7 +309,7 @@ function EMQCard({ score }: { score: number }) {
     >
       {/* Left: label + bar */}
       <div className="flex-1 min-w-0">
-        <p className="text-section-header" style={{ color: NAVY }}>Event Match Quality</p>
+        <p className="text-section-header" style={{ color: NAVY }}>Meta match quality</p>
         <p className="text-xs text-[#6B7280] mt-0.5 mb-3">
           Higher scores mean better ad attribution. Improve by sending email, phone, and click IDs.
         </p>

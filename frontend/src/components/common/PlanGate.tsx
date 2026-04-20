@@ -61,7 +61,7 @@ export function PlanGate({ minPlan, children, featureName }: PlanGateProps) {
       </h3>
       <p className="mb-6 max-w-sm text-sm text-muted-foreground">
         {minPlan === 'pro'
-          ? 'Upgrade to Pro to unlock AI Planning Mode, scheduled audits, and CAPI integrations.'
+          ? 'Upgrade to Pro to unlock Site scan, scheduled audits, and CAPI integrations.'
           : 'Upgrade to Agency to unlock offline conversions and unlimited everything.'}
       </p>
       <Button

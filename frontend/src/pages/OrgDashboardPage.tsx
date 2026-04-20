@@ -105,10 +105,10 @@ export function OrgDashboardPage() {
       {/* Quick links */}
       <div className="flex gap-3 flex-wrap">
         <Link to={`/org/${orgId}/signals`}>
-          <Button variant="outline" size="sm">Signal Library</Button>
+          <Button variant="outline" size="sm">Event catalogue</Button>
         </Link>
         <Link to={`/org/${orgId}/packs`}>
-          <Button variant="outline" size="sm">Signal Packs</Button>
+          <Button variant="outline" size="sm">Tracking kits</Button>
         </Link>
         <Link to={`/org/${orgId}/settings`}>
           <Button variant="outline" size="sm">Team & Settings</Button>
@@ -130,7 +130,7 @@ export function OrgDashboardPage() {
               <Building2 className="mx-auto mb-3 h-8 w-8 text-muted-foreground/40" />
               <p className="text-sm font-medium text-muted-foreground">No clients yet</p>
               <p className="mt-1 text-xs text-muted-foreground/70">
-                Add your first client to start deploying signal packs.
+                Add your first client to start deploying tracking kits.
               </p>
               <Link to={`/org/${orgId}/clients`}>
                 <Button size="sm" className="mt-4">Add first client</Button>

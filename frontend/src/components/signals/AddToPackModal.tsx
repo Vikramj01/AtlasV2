@@ -81,7 +81,7 @@ export function AddToPackModal({ signal, orgId, onClose }: Props) {
 
           {!isLoading && !loadError && packs.length === 0 && (
             <p className="py-6 text-center text-sm text-muted-foreground">
-              No packs yet. Create a pack on the Signal Packs page first.
+              No tracking kits yet. Create a kit on the Tracking kits page first.
             </p>
           )}
 

@@ -22,23 +22,23 @@ export function emqGuidance(score: number | null): GuidanceResult {
   if (score === null) {
     return {
       severity: 'neutral',
-      summary: 'No EMQ data yet.',
-      detail: 'Event Match Quality will appear once your Conversion API starts delivering events to Meta.',
+      summary: 'No match quality data yet.',
+      detail: 'Match quality will appear once your Conversion API starts delivering events to Meta.',
     };
   }
   if (score < 6) {
     return {
       severity: 'critical',
-      summary: `EMQ of ${score.toFixed(1)} is below the critical threshold of 6.0.`,
+      summary: `Match quality of ${score.toFixed(1)} is below the critical threshold of 6.0.`,
       detail:
-        'A low EMQ means Meta cannot match most of your conversions to ad clicks, making your campaigns harder to optimise. Common causes: missing email or phone identifiers, no click ID (fbclid), or customer data not being hashed and sent.',
+        'A low match quality score means Meta cannot match most of your conversions to ad clicks, making your campaigns harder to optimise. Common causes: missing email or phone identifiers, no click ID (fbclid), or customer data not being hashed and sent.',
       action: 'Add email, phone, and fbclid to your CAPI payload to improve your score.',
     };
   }
   if (score < 8) {
     return {
       severity: 'warn',
-      summary: `EMQ of ${score.toFixed(1)} is improvable.`,
+      summary: `Match quality of ${score.toFixed(1)} is improvable.`,
       detail:
         'Scores between 6 and 8 are functional but leave room for improvement. Adding more customer data signals — especially a hashed email or phone number on every conversion event — typically pushes scores above 8.',
       action: 'Review which identifier fields are missing on your highest-volume events.',
@@ -46,9 +46,9 @@ export function emqGuidance(score: number | null): GuidanceResult {
   }
   return {
     severity: 'good',
-    summary: `EMQ of ${score.toFixed(1)} is strong.`,
+    summary: `Match quality of ${score.toFixed(1)} is strong.`,
     detail:
-      'An EMQ above 8 means Meta can accurately attribute most conversions to the correct ad. Your CAPI setup is sending sufficient customer data.',
+      'A match quality score above 8 means Meta can accurately attribute most conversions to the correct ad. Your CAPI setup is sending sufficient customer data.',
   };
 }
 

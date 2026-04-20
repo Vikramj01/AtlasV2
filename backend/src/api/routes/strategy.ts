@@ -1,10 +1,12 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import Anthropic from '@anthropic-ai/sdk';
+import { z } from 'zod';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { sendInternalError } from '@/utils/apiError';
 import { env } from '@/config/env';
 import logger from '@/utils/logger';
+import { supabaseAdmin } from '@/services/database/supabase';
 
 const router = Router();
 router.use(authMiddleware);
@@ -95,6 +97,74 @@ Always respond with valid JSON only. No markdown, no preamble, no explanation ou
   } catch (err) {
     logger.error({ err }, 'Strategy evaluation failed');
     sendInternalError(res, err, 'strategy/evaluate');
+  }
+});
+
+const saveBriefSchema = z.object({
+  business_outcome: z.string().min(1),
+  outcome_timing_days: z.number().int().positive(),
+  current_event: z.string().optional(),
+  verdict: z.enum(['keep', 'add_proxy', 'switch']),
+  proxy_event: z.string().optional(),
+  rationale: z.string().optional(),
+  client_id: z.string().uuid().optional(),
+  project_id: z.string().uuid().optional(),
+});
+
+// POST /api/strategy/save-brief
+// Persists a completed strategy brief to Supabase. Returns the saved brief id.
+router.post('/save-brief', async (req: Request, res: Response): Promise<void> => {
+  const parse = saveBriefSchema.safeParse(req.body);
+  if (!parse.success) {
+    res.status(400).json({ error: 'Invalid request body', details: parse.error.flatten() });
+    return;
+  }
+
+  const userId = req.user.id;
+  const { business_outcome, outcome_timing_days, current_event, verdict, proxy_event, rationale, client_id, project_id } = parse.data;
+
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('strategy_briefs')
+      .insert({
+        organization_id: userId,
+        business_outcome,
+        outcome_timing_days,
+        current_event: current_event ?? null,
+        verdict,
+        proxy_event: proxy_event ?? null,
+        rationale: rationale ?? null,
+        client_id: client_id ?? null,
+        project_id: project_id ?? null,
+      })
+      .select('id')
+      .single();
+
+    if (error) throw error;
+
+    res.status(201).json({ data, error: null, message: 'Strategy brief saved.' });
+  } catch (err) {
+    logger.error({ err, userId }, 'Failed to save strategy brief');
+    sendInternalError(res, err);
+  }
+});
+
+// GET /api/strategy/briefs
+// Returns the user's most recent strategy briefs.
+router.get('/briefs', async (req: Request, res: Response): Promise<void> => {
+  const userId = req.user.id;
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('strategy_briefs')
+      .select('*')
+      .eq('organization_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    if (error) throw error;
+    res.json({ data, error: null, message: null });
+  } catch (err) {
+    sendInternalError(res, err);
   }
 });
 

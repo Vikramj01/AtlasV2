@@ -84,7 +84,7 @@ export function PiiWarningsBanner({ sessionId }: PiiWarningsBannerProps) {
         <div className="flex items-center gap-2.5">
           <Shield className={`h-4 w-4 shrink-0 ${headerIconColor}`} />
           <div>
-            <p className="text-sm font-semibold">PII Detection Warnings</p>
+            <p className="text-sm font-semibold">Privacy risk check warnings</p>
             <p className="text-xs text-muted-foreground mt-0.5">
               {[
                 highCount > 0 && `${highCount} high`,

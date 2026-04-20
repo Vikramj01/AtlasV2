@@ -155,7 +155,7 @@ export function PackDetailPage() {
               <p className="text-sm text-muted-foreground">No signals yet.</p>
               {!pack.is_system && (
                 <Link to={`/org/${orgId}/signals`}>
-                  <Button size="sm" variant="outline" className="mt-3">Browse Signal Library</Button>
+                  <Button size="sm" variant="outline" className="mt-3">Browse event catalogue</Button>
                 </Link>
               )}
             </CardContent>

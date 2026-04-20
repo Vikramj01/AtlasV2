@@ -242,9 +242,9 @@ export default function HealthDashboardPage() {
         </div>
       </section>
 
-      {/* ── Zone 4: First-party data readiness ────────────────────────────── */}
+      {/* ── Zone 4: Setup completeness ────────────────────────────────────── */}
       <section>
-        <h2 className="text-section-header mb-3">First-Party Data Readiness</h2>
+        <h2 className="text-section-header mb-3">Setup completeness</h2>
         <ReadinessScore />
       </section>
 
@@ -255,7 +255,7 @@ export default function HealthDashboardPage() {
           <QuickActionCard
             Icon={BarChart3}
             title="Run Audit"
-            description="Check your latest conversion tracking against 26 rules"
+            description="Check your latest conversion tracking setup"
             onClick={() => navigate('/audit/new')}
           />
           <QuickActionCard

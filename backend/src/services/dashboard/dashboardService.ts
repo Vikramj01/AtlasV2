@@ -244,25 +244,25 @@ function buildCAPICards(
 
     if (avgEmq < 6) {
       severity = 'critical';
-      message = `EMQ score of ${avgEmq.toFixed(1)} is below the critical threshold. Conversion matching is poor.`;
+      message = `Match quality of ${avgEmq.toFixed(1)} is below the critical threshold. Conversion matching is poor.`;
     } else if (avgEmq < 8) {
       severity = 'warning';
-      message = `EMQ score of ${avgEmq.toFixed(1)} can be improved. Add more customer data signals.`;
+      message = `Match quality of ${avgEmq.toFixed(1)} can be improved. Add more customer data signals.`;
     } else {
       severity = 'success';
-      message = `EMQ score of ${avgEmq.toFixed(1)} is strong.`;
+      message = `Match quality of ${avgEmq.toFixed(1)} is strong.`;
     }
 
     cards.push({
       id: 'capi_emq',
       type: 'capi_emq',
       severity,
-      title: 'Event Match Quality (EMQ)',
+      title: 'Meta match quality',
       message,
       metric_value: avgEmq,
       threshold: 8,
       action_url: '/integrations/capi',
-      action_label: 'Improve EMQ',
+      action_label: 'Improve match quality',
       data_at: dataAt,
     });
   }
