@@ -175,7 +175,7 @@ export function OrgSettingsPage() {
               <CardTitle className="text-base text-red-600">Danger Zone</CardTitle>
             </div>
             <CardDescription>
-              Permanently delete this organisation and all its clients, signal packs, and outputs.
+              Permanently delete this organisation and all its clients, tracking kits, and outputs.
               This cannot be undone.
             </CardDescription>
           </CardHeader>

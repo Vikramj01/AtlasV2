@@ -160,13 +160,13 @@ export function ClientDetailPage() {
       )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Deployed Signal Packs */}
+        {/* Deployed Tracking Kits */}
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
                 <Package className="h-4 w-4 text-muted-foreground" />
-                Deployed Signal Packs
+                Deployed tracking kits
               </CardTitle>
               <Button size="sm" variant="ghost" className="text-xs h-7" onClick={() => setShowDeployWizard(true)}>
                 <Plus className="h-3 w-3 mr-1" />
@@ -177,7 +177,7 @@ export function ClientDetailPage() {
           <CardContent>
             {deployments.length === 0 ? (
               <div className="py-6 text-center">
-                <p className="text-xs text-muted-foreground">No signal packs deployed yet.</p>
+                <p className="text-xs text-muted-foreground">No tracking kits deployed yet.</p>
                 <Button size="sm" variant="outline" className="mt-3 text-xs" onClick={() => setShowDeployWizard(true)}>
                   Deploy a pack
                 </Button>

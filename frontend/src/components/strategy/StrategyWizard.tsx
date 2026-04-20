@@ -1,9 +1,15 @@
 import { useState } from 'react';
 import type { Step1Data, Step2Data, StrategyBrief, WizardStep } from '@/types/strategy';
-import { evaluateStrategy } from '@/lib/api/strategyApi';
+import { evaluateStrategy, strategyApi } from '@/lib/api/strategyApi';
 import { Step1Outcome } from './Step1Outcome';
 import { Step2EventEval } from './Step2EventEval';
 import { StrategyBrief as StrategyBriefScreen } from './StrategyBrief';
+
+const VERDICT_MAP: Record<string, 'keep' | 'add_proxy' | 'switch'> = {
+  CONFIRM: 'keep',
+  AUGMENT: 'add_proxy',
+  REPLACE: 'switch',
+};
 
 export function StrategyWizard() {
   const [step, setStep] = useState<WizardStep>(1);
@@ -31,6 +37,17 @@ export function StrategyWizard() {
         eventSource: step2Data.eventSource,
         valueDataPresent: step2Data.valueDataPresent,
       });
+
+      // Persist brief to Supabase (non-blocking — gate check on subsequent actions)
+      strategyApi.saveBrief({
+        business_outcome: step1Data.outcomeDescription,
+        outcome_timing_days: step1Data.outcomeTimingDays,
+        current_event: step2Data.currentEventName,
+        verdict: VERDICT_MAP[result.eventVerdict] ?? 'keep',
+        proxy_event: result.proxyEventName ?? undefined,
+        rationale: result.verdictRationale,
+      }).catch(() => { /* non-blocking */ });
+
       setBrief(result);
       setStep('output');
     } catch (err) {

@@ -9,6 +9,7 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { authMiddleware } from '@/api/middleware/authMiddleware';
 import { orgMiddleware } from '@/api/middleware/orgMiddleware';
+import { strategyGate } from '@/api/middleware/strategyGate';
 import { sendInternalError } from '@/utils/apiError';
 import { validateUrl, validateUrls } from '@/utils/urlValidator';
 import { detectSite } from '@/services/planning/siteDetectionService';
@@ -185,7 +186,7 @@ router.get('/:orgId/clients/:clientId/pages', async (req: Request, res: Response
 
 // ── POST /api/organisations/:orgId/clients/:clientId/deploy ───────────────────
 
-router.post('/:orgId/clients/:clientId/deploy', async (req: Request, res: Response) => {
+router.post('/:orgId/clients/:clientId/deploy', strategyGate, async (req: Request, res: Response) => {
   try {
     const client = await getClient(req.params['clientId'], req.params['orgId']);
     if (!client) return res.status(404).json({ error: 'Client not found' });

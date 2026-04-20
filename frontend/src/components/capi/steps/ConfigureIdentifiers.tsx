@@ -119,7 +119,7 @@ export function ConfigureIdentifiers({ onNext, onBack }: ConfigureIdentifiersPro
         <CardTitle>Configure identifiers</CardTitle>
         <p className="text-sm text-muted-foreground mt-1">
           Step 3 of 5 — Choose which user identifiers to send with each event. More identifiers
-          improve Event Match Quality (EMQ).
+          improve match quality.
         </p>
       </CardHeader>
       <CardContent className="space-y-5">

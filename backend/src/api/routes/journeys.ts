@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { authMiddleware } from '../middleware/authMiddleware';
+import { strategyGate } from '../middleware/strategyGate';
 import { sendInternalError } from '../../utils/apiError';
 import {
   createJourney,
@@ -111,7 +112,7 @@ router.get('/action-primitives/:key', (req: Request, res: Response) => {
 
 // ── Journeys CRUD ─────────────────────────────────────────────────────────────
 
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', strategyGate, async (req: Request, res: Response) => {
   try {
     const userId = req.user!.id;
     const journey = await createJourney(userId, req.body);

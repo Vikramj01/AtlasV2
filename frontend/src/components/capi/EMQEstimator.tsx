@@ -127,7 +127,7 @@ export function EMQEstimator({
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-section-header">Event Match Quality</CardTitle>
+        <CardTitle className="text-section-header">Match quality</CardTitle>
       </CardHeader>
       <CardContent className="pt-0 space-y-6">
         {/* Score gauge */}

@@ -81,9 +81,9 @@ const TOOLTIP_CONTENT: Record<string, TooltipContent> = {
   },
 
   'capi.emq': {
-    title: 'What is Event Match Quality?',
-    body: 'Meta\'s Event Match Quality (EMQ) score (0–10) measures how well your conversion events can be matched to Facebook users. Higher scores mean better campaign optimisation. Including email, phone, and browser identifiers (fbp/fbc) boosts your EMQ.',
-    stat: 'EMQ above 7.0 is considered strong; below 5.0 indicates significant data gaps',
+    title: 'What is match quality?',
+    body: 'Meta\'s match quality score (0–10) measures how well your conversion events can be matched to Facebook users. Higher scores mean better campaign optimisation. Including email, phone, and browser identifiers (fbp/fbc) boosts your score.',
+    stat: 'Match quality above 7.0 is considered strong; below 5.0 indicates significant data gaps',
   },
 
   'capi.click_id': {
@@ -141,7 +141,7 @@ const TOOLTIP_CONTENT: Record<string, TooltipContent> = {
 
   'audit.signal_health': {
     title: 'What is Signal Health?',
-    body: 'Signal Health is the percentage of your 26 conversion tracking rules that are passing. A score of 100% means all your conversion signals are firing correctly, with all required parameters, and persisting correctly across page navigations.',
+    body: 'Signal Health is the percentage of your tracking health checks that are passing. A score of 100% means all your conversion signals are firing correctly, with all required parameters, and persisting correctly across page navigations.',
   },
 
   'audit.attribution_risk': {

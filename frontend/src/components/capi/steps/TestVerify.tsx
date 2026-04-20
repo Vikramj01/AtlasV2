@@ -181,7 +181,7 @@ export function TestVerify({ onNext, onBack }: TestVerifyProps) {
                 <div className="rounded-md border border-green-300 bg-green-50 px-4 py-3 text-sm text-green-800 space-y-2">
                   <p className="font-medium">Test event delivered successfully.</p>
                   {testStatus.emqEstimate !== undefined && (
-                    <p>{isGoogle ? 'Google' : 'Meta'} reports EMQ: {testStatus.emqEstimate}/10</p>
+                    <p>{isGoogle ? 'Google' : 'Meta'} match quality: {testStatus.emqEstimate}/10</p>
                   )}
                   <pre className="mt-1 overflow-x-auto rounded bg-green-100 p-2 text-xs">
                     {JSON.stringify(testStatus.providerResponse, null, 2)}

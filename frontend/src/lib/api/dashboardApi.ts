@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase';
-import type { DashboardResponse } from '@/types/dashboard';
+import type { DashboardResponse, AtlasScore, NextAction } from '@/types/dashboard';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
 
@@ -24,4 +24,8 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const dashboardApi = {
   get: () => apiFetch<DashboardResponse>('/api/dashboard'),
+  getAtlasScore: () =>
+    apiFetch<{ data: AtlasScore }>('/api/dashboard/atlas-score'),
+  getNextAction: () =>
+    apiFetch<{ data: NextAction }>('/api/dashboard/next-action'),
 };

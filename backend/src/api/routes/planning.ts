@@ -13,6 +13,7 @@ import { generateAllOutputs } from '@/services/planning/generators/outputGenerat
 import { authMiddleware } from '../middleware/authMiddleware';
 import { planGuard } from '../middleware/planGuard';
 import { planningLimiter } from '../middleware/planningLimiter';
+import { strategyGate } from '../middleware/strategyGate';
 import { validateUrl, validateUrls } from '@/utils/urlValidator';
 import { sendInternalError } from '@/utils/apiError';
 import logger from '@/utils/logger';
@@ -93,7 +94,7 @@ router.post('/detect', detectRateLimit, async (req: Request, res: Response) => {
 // Create a planning session, persist pages, enqueue the scan job.
 // Returns immediately with session_id + status.
 
-router.post('/sessions', planningLimiter, async (req: Request, res: Response) => {
+router.post('/sessions', planningLimiter, strategyGate, async (req: Request, res: Response) => {
   try {
     const { website_url, business_type, business_description, selected_platforms, pages, page_urls } =
       req.body as CreateSessionInput & {

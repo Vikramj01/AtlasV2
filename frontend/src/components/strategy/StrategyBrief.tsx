@@ -12,19 +12,19 @@ const VERDICT_CONFIG: Record<
   { label: string; icon: React.ElementType; badgeClass: string; borderClass: string }
 > = {
   CONFIRM: {
-    label: 'CONFIRM',
+    label: 'Keep current event',
     icon: Check,
     badgeClass: 'bg-green-100 text-green-800',
     borderClass: 'border-l-4 border-l-green-500',
   },
   AUGMENT: {
-    label: 'AUGMENT',
+    label: 'Add proxy event',
     icon: AlertTriangle,
     badgeClass: 'bg-yellow-100 text-yellow-800',
     borderClass: 'border-l-4 border-l-yellow-500',
   },
   REPLACE: {
-    label: 'REPLACE',
+    label: 'Switch conversion event',
     icon: X,
     badgeClass: 'bg-red-100 text-red-800',
     borderClass: 'border-l-4 border-l-red-500',
@@ -139,7 +139,7 @@ export function StrategyBrief({ brief, onReset }: StrategyBriefProps) {
           )}
         </Button>
         <Button onClick={() => navigate('/planning')} className="flex-1">
-          Start Planning scan
+          Start site scan
           <ArrowRight className="ml-2 size-4" />
         </Button>
       </div>

@@ -136,7 +136,7 @@ export function ChannelInsightsPage() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-page-title">Channel Insights</h1>
+            <h1 className="text-page-title">Channel leak report</h1>
 
             {/* Site selector */}
             {sites.length > 1 && (
@@ -214,7 +214,7 @@ export function ChannelInsightsPage() {
             <div>
               <p className="text-section-header">No channel data yet</p>
               <p className="mt-1 text-body text-[#6B7280] max-w-md mx-auto">
-                Channel Insights shows how each traffic source performs in terms of signal quality,
+                Channel leak report shows how each traffic source performs in terms of signal quality,
                 journey completion, and conversions. Add the Atlas tracking snippet to get started.
               </p>
             </div>

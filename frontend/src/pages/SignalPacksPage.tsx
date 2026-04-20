@@ -36,7 +36,7 @@ export function SignalPacksPage() {
     <div className="space-y-6 p-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold">Signal Packs</h1>
+          <h1 className="text-xl font-bold">Tracking kits</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
             Reusable signal collections. Deploy to multiple clients at once.
           </p>
@@ -89,7 +89,7 @@ export function SignalPacksPage() {
           {packs.length === 0 && (
             <Card>
               <CardContent className="py-12 text-center">
-                <p className="text-sm text-muted-foreground">No signal packs yet.</p>
+                <p className="text-sm text-muted-foreground">No tracking kits yet.</p>
                 <Button size="sm" variant="outline" className="mt-3" onClick={() => setShowEditor(true)}>
                   Create your first pack
                 </Button>
