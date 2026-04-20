@@ -5,7 +5,6 @@ import { dashboardApi } from '@/lib/api/dashboardApi';
 import type { NextAction } from '@/types/dashboard';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { SkeletonBlock } from '@/components/common/SkeletonCard';
 
 const NAVY = '#1B2A4A';
 
@@ -26,9 +25,9 @@ export function NextActionCard() {
     return (
       <Card className="border-[#1B2A4A]/20">
         <CardContent className="py-6 space-y-3">
-          <SkeletonBlock className="h-4 w-24" />
-          <SkeletonBlock className="h-6 w-64" />
-          <SkeletonBlock className="h-9 w-40" />
+          <div className="h-4 w-24 rounded bg-gray-100 animate-pulse" />
+          <div className="h-6 w-64 rounded bg-gray-100 animate-pulse" />
+          <div className="h-9 w-40 rounded bg-gray-100 animate-pulse" />
         </CardContent>
       </Card>
     );
