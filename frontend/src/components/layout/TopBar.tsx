@@ -58,7 +58,7 @@ interface TopBarProps {
   workspaceName?: string;
 }
 
-export function TopBar({ email, plan = 'free', workspaceName = 'Personal' }: TopBarProps) {
+export function TopBar({ email, plan = 'free', workspaceName }: TopBarProps) {
   const navigate = useNavigate();
 
   const handleSignOut = async () => {
@@ -71,8 +71,8 @@ export function TopBar({ email, plan = 'free', workspaceName = 'Personal' }: Top
       className="flex shrink-0 items-center justify-between border-b border-[#E5E7EB] bg-white px-6"
       style={{ height: 64 }}
     >
-      {/* Left — workspace badge */}
-      <WorkspaceBadge name={workspaceName} />
+      {/* Left — workspace badge (only when an org is active) */}
+      {workspaceName && <WorkspaceBadge name={workspaceName} />}
 
       {/* Right — plan + email + sign out */}
       <div className="flex items-center gap-4">

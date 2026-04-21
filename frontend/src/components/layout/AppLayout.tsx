@@ -28,7 +28,7 @@ export function AppLayout() {
     });
   }, []);
 
-  const workspaceName = currentOrg?.name ?? 'Personal';
+  const workspaceName = currentOrg?.name ?? undefined;
 
   return (
     <div className="flex h-screen overflow-hidden bg-white">

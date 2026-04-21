@@ -117,7 +117,7 @@ export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
         <img
           src="/atlas_logo.svg"
           alt="Atlas logo"
-          className="h-8 w-8 rounded-md object-contain shrink-0"
+          className="h-10 w-10 rounded-md object-contain shrink-0"
         />
         <span className="text-xl font-semibold tracking-tight text-[#1B2A4A]">Atlas</span>
       </div>
