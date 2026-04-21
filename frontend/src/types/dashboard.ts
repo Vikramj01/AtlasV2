@@ -58,3 +58,17 @@ export interface DashboardResponse {
   cards: DashboardCard[];
   generated_at: string;
 }
+
+export interface ActivityItem {
+  id: string;
+  type: 'capi_event' | 'planning_session' | 'consent_config' | 'offline_upload';
+  description: string;
+  deep_link: string;
+  created_at: string;
+}
+
+export interface ActivityResponse {
+  data: ActivityItem[];
+  error: null;
+  message: null;
+}

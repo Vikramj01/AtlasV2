@@ -51,7 +51,8 @@ export default function App() {
           {/* Protected — wrapped in AppLayout (sidebar + topbar) */}
           <Route element={<ProtectedRoute />}>
             <Route element={<AppLayout />}>
-              <Route path="/home"      element={<SectionErrorBoundary label="Home"><HomePage /></SectionErrorBoundary>} />
+              <Route path="/"         element={<SectionErrorBoundary label="Home"><HomePage /></SectionErrorBoundary>} />
+              <Route path="/home"     element={<Navigate to="/" replace />} />
               <Route path="/dashboard" element={<SectionErrorBoundary label="Dashboard"><DashboardPage /></SectionErrorBoundary>} />
               <Route path="/report/:auditId" element={<SectionErrorBoundary label="Audit report"><ReportPage /></SectionErrorBoundary>} />
               <Route path="/journey/new" element={<SectionErrorBoundary label="Journey builder"><JourneyBuilderPage /></SectionErrorBoundary>} />
@@ -93,9 +94,8 @@ export default function App() {
           {/* Developer Portal — public, no auth required */}
           <Route path="/dev/:shareToken" element={<SectionErrorBoundary label="Developer portal"><DeveloperPortalPage /></SectionErrorBoundary>} />
 
-          {/* Redirects */}
-          <Route path="/" element={<Navigate to="/health" replace />} />
-          <Route path="*" element={<Navigate to="/health" replace />} />
+          {/* Catch-all */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
     </AppErrorBoundary>

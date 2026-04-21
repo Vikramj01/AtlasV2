@@ -13,6 +13,7 @@ import { sendInternalError } from '@/utils/apiError';
 import { buildDashboard } from '@/services/dashboard/dashboardService';
 import { buildAtlasScore } from '@/services/dashboard/atlasScoreService';
 import { buildNextAction } from '@/services/dashboard/nextActionService';
+import { getRecentActivity } from '@/services/dashboard/activityService';
 
 export const dashboardRouter = Router();
 dashboardRouter.use(authMiddleware);
@@ -48,6 +49,18 @@ dashboardRouter.get('/next-action', async (req: Request, res: Response): Promise
   try {
     const action = await buildNextAction(userId);
     res.json({ data: action, error: null, message: null });
+  } catch (err) {
+    sendInternalError(res, err);
+  }
+});
+
+// ── GET /api/dashboard/activity ───────────────────────────────────────────────
+
+dashboardRouter.get('/activity', async (req: Request, res: Response): Promise<void> => {
+  const userId = req.user.id;
+  try {
+    const activity = await getRecentActivity(userId);
+    res.json({ data: activity, error: null, message: null });
   } catch (err) {
     sendInternalError(res, err);
   }
