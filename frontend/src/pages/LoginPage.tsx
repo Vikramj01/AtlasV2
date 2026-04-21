@@ -37,12 +37,17 @@ export function LoginPage() {
         }
       } catch {
         setLoading(false);
-        setError('Could not reach the server. Make sure VITE_API_URL is set in your environment variables.');
+        setError('Unable to connect. Please try again in a moment.');
       }
       return;
     }
 
     if (mode === 'signup') {
+      if (!API_BASE) {
+        setLoading(false);
+        setError('Sign up is temporarily unavailable. Please try again later or contact support.');
+        return;
+      }
       try {
         const res = await fetch(`${API_BASE}/api/auth/signup`, {
           method: 'POST',
@@ -52,13 +57,13 @@ export function LoginPage() {
         const body = await res.json().catch(() => ({})) as { error?: string; message?: string };
         setLoading(false);
         if (!res.ok) {
-          setError(body.error ?? 'Signup failed. Please try again.');
+          setError(body.error ?? 'Sign up failed. Please try again.');
         } else {
           setSuccess(body.message ?? 'Account created! Check your email to confirm your address before signing in.');
         }
       } catch {
         setLoading(false);
-        setError('Could not reach the server. Make sure VITE_API_URL is set in your environment variables.');
+        setError('Unable to connect. Please try again in a moment.');
       }
       return;
     }
@@ -72,7 +77,7 @@ export function LoginPage() {
       return;
     }
 
-    navigate('/home');
+    navigate('/');
   };
 
   const switchMode = (next: Mode) => {
