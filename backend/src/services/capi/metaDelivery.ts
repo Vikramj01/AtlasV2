@@ -14,6 +14,7 @@
  *   https://developers.facebook.com/docs/marketing-api/conversions-api/using-the-api
  */
 
+import { randomUUID } from 'crypto';
 import type {
   AtlasEvent,
   HashedIdentifier,
@@ -24,6 +25,31 @@ import type {
   DeliveryResult,
 } from '@/types/capi';
 
+// ── User param completeness ───────────────────────────────────────────────────
+
+/** Warn if event has fewer than 6 user params (Meta's recommended minimum). */
+export interface UserParamCompletenessResult {
+  param_count: number;
+  missing_recommended: string[];
+}
+
+export function checkUserParamCompleteness(
+  identifiers: HashedIdentifier[],
+  hasUserAgent: boolean,
+  hasIpAddress: boolean,
+): UserParamCompletenessResult | null {
+  const RECOMMENDED = ['em', 'ph', 'fn', 'ln', 'ct', 'st', 'zp', 'country', 'external_id', 'fbc', 'fbp', 'client_user_agent', 'client_ip_address'] as const;
+  const TYPE_MAP: Record<string, string> = { email: 'em', phone: 'ph', fn: 'fn', ln: 'ln', ct: 'ct', st: 'st', zp: 'zp', country: 'country', external_id: 'external_id', fbc: 'fbc', fbp: 'fbp' };
+  const present = new Set(identifiers.map(id => TYPE_MAP[id.type] ?? id.type));
+  if (hasUserAgent) present.add('client_user_agent');
+  if (hasIpAddress) present.add('client_ip_address');
+  if (present.size >= 6) return null;
+  return {
+    param_count: present.size,
+    missing_recommended: RECOMMENDED.filter(p => !present.has(p)),
+  };
+}
+
 const META_API_VERSION = 'v19.0';
 const META_API_BASE = 'https://graph.facebook.com';
 
@@ -31,11 +57,13 @@ const META_API_BASE = 'https://graph.facebook.com';
 
 /**
  * Format a single AtlasEvent + hashed identifiers into a Meta event data object.
+ * Accepts optional DPO (Data Processing Options) to include for US privacy compliance.
  */
 export function formatMetaEvent(
   event: AtlasEvent,
   mapping: EventMapping,
   identifiers: HashedIdentifier[],
+  dpo?: { options: string[]; country: number; state: number },
 ): MetaEventPayload['data'][number] {
   // Build user_data from hashed identifiers
   const userData: MetaEventPayload['data'][number]['user_data'] = {};
@@ -66,7 +94,7 @@ export function formatMetaEvent(
   const metaEvent: MetaEventPayload['data'][number] = {
     event_name: mapping.provider_event,
     event_time: event.event_time,
-    event_id: event.event_id,
+    event_id: event.event_id || randomUUID(),
     event_source_url: event.event_source_url,
     action_source: event.action_source,
     user_data: userData,
@@ -81,6 +109,12 @@ export function formatMetaEvent(
       order_id:     event.custom_data.order_id,
       num_items:    event.custom_data.num_items,
     };
+  }
+
+  if (dpo?.options?.length) {
+    metaEvent.data_processing_options         = dpo.options;
+    metaEvent.data_processing_options_country = dpo.country;
+    metaEvent.data_processing_options_state   = dpo.state;
   }
 
   return metaEvent;
@@ -98,6 +132,7 @@ export async function sendMetaEvents(
   mappings: EventMapping[],
   creds: MetaCredentials,
   testEventCode?: string | null,
+  dpo?: { options: string[]; country: number; state: number },
 ): Promise<DeliveryResult[]> {
   if (events.length === 0) return [];
 
@@ -106,7 +141,7 @@ export async function sendMetaEvents(
     { atlas_event: eventName, provider_event: eventName };
 
   const formattedData = events.map((e, i) =>
-    formatMetaEvent(e, metaMappingFor(e.event_name), identifiersPerEvent[i] ?? [])
+    formatMetaEvent(e, metaMappingFor(e.event_name), identifiersPerEvent[i] ?? [], dpo)
   );
 
   const payload: Record<string, unknown> = {

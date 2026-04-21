@@ -96,7 +96,7 @@ export async function generateAllOutputs(session: PlanningSession): Promise<Gene
   );
 
   // Attach slug + version to the container for the frontend download filename
-  (gtmContainer as Record<string, unknown>)['_atlas_meta'] = {
+  (gtmContainer as unknown as Record<string, unknown>)['_atlas_meta'] = {
     site_slug: siteSlug,
     version: gtmOutput.version,
   };

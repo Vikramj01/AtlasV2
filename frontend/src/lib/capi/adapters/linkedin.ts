@@ -15,6 +15,7 @@
 
 import type {
   CAPIProviderAdapter,
+  CAPIAdapterName,
   CAPIProvider,
   AtlasEvent,
   EventMapping,
@@ -24,8 +25,10 @@ import type {
   LinkedInCredentials,
   ValidationResult,
   DeliveryResult,
+  SendResult,
   TestResult,
 } from '@/types/capi';
+import type { ConsentDecisions } from '@/types/consent';
 
 // ── LinkedIn-specific payload types ──────────────────────────────────────────
 
@@ -125,13 +128,24 @@ export function formatLinkedInPayload(
 // ── Adapter class ─────────────────────────────────────────────────────────────
 
 export class LinkedInAdapter implements CAPIProviderAdapter {
+  // ── Contract metadata ──────────────────────────────────────────────────────
+  readonly name: CAPIAdapterName = 'linkedin';
   readonly provider: CAPIProvider = 'linkedin';
+
+  readonly requiredUserParams = ['email', 'event_name', 'event_time'];
+  readonly optionalUserParams = ['first_name', 'last_name', 'country'];
+  readonly dedupStrategy = { key: ['event_name', 'event_id'], window_seconds: 86400 };
+  readonly retryPolicy = { max_attempts: 3, backoff: 'exponential' as const, base_ms: 1000 };
+  readonly consentSignals = ['marketing'];
+  readonly testMode = { supported: false, credentialField: null as string | null };
 
   constructor(
     /** @internal reserved for future authenticated calls */
     _apiBase: string,
     _getAuthHeader: () => Promise<string>,
   ) {}
+
+  // ── Lifecycle: new contract ────────────────────────────────────────────────
 
   async validateCredentials(creds: ProviderCredentials): Promise<ValidationResult> {
     const liCreds = creds as LinkedInCredentials;
@@ -140,6 +154,43 @@ export class LinkedInAdapter implements CAPIProviderAdapter {
     }
     return { valid: true };
   }
+
+  buildPayload(event: AtlasEvent, creds: ProviderCredentials, _consent: ConsentDecisions): ProviderPayload {
+    const liCreds = creds as LinkedInCredentials;
+    const mapping: EventMapping = { atlas_event: event.event_name, provider_event: event.event_name };
+    return { provider: 'linkedin', raw: formatLinkedInPayload(event, mapping, [], liCreds.conversion_id) };
+  }
+
+  validatePayload(payload: ProviderPayload): ValidationResult {
+    const ev = payload.raw as LinkedInConversionEvent;
+    if (!ev.conversion) return { valid: false, error: 'conversion URN is required' };
+    if (!ev.user?.userIds?.length) {
+      return { valid: true, details: { warnings: ['No user IDs — match quality will be low'] } };
+    }
+    return { valid: true };
+  }
+
+  async send(_payload: ProviderPayload, _creds: ProviderCredentials): Promise<SendResult> {
+    return {
+      event_id: (_payload.raw as { eventId?: string }).eventId ?? 'unknown',
+      status: 'failed',
+      provider_response: null,
+      error_code: 'CLIENT_SIDE_DELIVERY_NOT_SUPPORTED',
+      error_message: 'Events must be delivered via the backend pipeline (/api/capi/process)',
+    };
+  }
+
+  computeMatchQuality(payload: ProviderPayload): number {
+    const ev = payload.raw as LinkedInConversionEvent;
+    let score = 0;
+    for (const uid of ev.user?.userIds ?? []) {
+      if (uid.idType === 'SHA256_EMAIL') score += 6;
+      else score += 2;
+    }
+    return Math.min(10, score);
+  }
+
+  // ── Lifecycle: legacy ──────────────────────────────────────────────────────
 
   formatEvent(
     event: AtlasEvent,

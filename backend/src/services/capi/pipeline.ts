@@ -13,7 +13,7 @@
  * Supports: Meta CAPI, Google Enhanced Conversions
  */
 
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import type {
   AtlasEvent,
   CAPIProviderConfig,
@@ -25,7 +25,7 @@ import type {
 } from '@/types/capi';
 import { safeDecryptCredentials } from './credentials';
 import { isEventDuplicate, createCAPIEvent, incrementProviderCounters } from '@/services/database/capiQueries';
-import { sendMetaEvents } from './metaDelivery';
+import { sendMetaEvents, checkUserParamCompleteness } from './metaDelivery';
 import { sendGoogleEvents } from './googleDelivery';
 import type { MetaCredentials, GoogleCredentials } from '@/types/capi';
 import logger from '@/utils/logger';
@@ -125,6 +125,11 @@ export async function processEvent(
 ): Promise<PipelineResult> {
   const { id: providerId, provider, organization_id, identifier_config, dedup_config, event_mapping } = providerConfig;
 
+  // 0. Ensure event_id is present — auto-generate UUID if caller omitted it
+  if (!event.event_id) {
+    event = { ...event, event_id: randomUUID() };
+  }
+
   // 1. Consent gate
   if (!isConsentGranted(event, provider)) {
     await createCAPIEvent({
@@ -150,6 +155,32 @@ export async function processEvent(
 
   // 3. Hash PII
   const identifiers = buildHashedIdentifiers(event, identifier_config.enabled_identifiers);
+
+  // 3a. Meta-specific pre-flight checks
+  if (provider === 'meta') {
+    // Fallback: use email as external_id when external_id is absent
+    if (!event.user_data.external_id && event.user_data.email) {
+      event = { ...event, user_data: { ...event.user_data, external_id: event.user_data.email } };
+      // Re-hash identifiers with the new external_id
+      identifiers.push({ type: 'external_id', value: identifiers.find(i => i.type === 'email')?.value ?? '', is_hashed: true });
+      logger.info({ event_id: event.event_id }, 'Meta: using hashed email as external_id fallback');
+    } else if (!event.user_data.external_id) {
+      logger.warn({ event_id: event.event_id }, 'Meta: external_id missing and no email for fallback');
+    }
+
+    // Warn on low user param count
+    const completeness = checkUserParamCompleteness(
+      identifiers,
+      !!event.user_data.client_user_agent,
+      !!event.user_data.client_ip_address,
+    );
+    if (completeness) {
+      logger.warn(
+        { event_id: event.event_id, param_count: completeness.param_count, missing: completeness.missing_recommended },
+        'Meta: low user parameter count — match quality may be reduced',
+      );
+    }
+  }
 
   // 4 + 5. Format + deliver (provider-specific)
   let results: DeliveryResult[];
@@ -209,14 +240,23 @@ async function deliverToProvider(
   const creds = safeDecryptCredentials(config.credentials);
 
   switch (config.provider) {
-    case 'meta':
+    case 'meta': {
+      const metaDpo = config.data_processing_options?.length
+        ? {
+            options: config.data_processing_options,
+            country: config.data_processing_options_country ?? 0,
+            state:   config.data_processing_options_state   ?? 0,
+          }
+        : undefined;
       return sendMetaEvents(
         [event],
         [identifiers],
         config.event_mapping,
         creds as MetaCredentials,
         config.test_event_code,
+        metaDpo,
       );
+    }
 
     case 'google':
       return sendGoogleEvents(
