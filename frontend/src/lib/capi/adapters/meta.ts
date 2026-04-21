@@ -16,6 +16,7 @@
 
 import type {
   CAPIProviderAdapter,
+  CAPIAdapterName,
   CAPIProvider,
   AtlasEvent,
   EventMapping,
@@ -26,9 +27,11 @@ import type {
   MetaEventPayload,
   ValidationResult,
   DeliveryResult,
+  SendResult,
   TestResult,
   EMQReport,
 } from '@/types/capi';
+import type { ConsentDecisions } from '@/types/consent';
 
 const META_STANDARD_EVENTS = [
   'Purchase', 'Lead', 'CompleteRegistration', 'AddToCart', 'InitiateCheckout',
@@ -109,7 +112,19 @@ export function formatMetaPayload(
 // ── Adapter class ─────────────────────────────────────────────────────────────
 
 export class MetaAdapter implements CAPIProviderAdapter {
+  // ── Contract metadata ──────────────────────────────────────────────────────
+  readonly name: CAPIAdapterName = 'meta';
   readonly provider: CAPIProvider = 'meta';
+
+  readonly requiredUserParams = ['event_name', 'event_time', 'event_source_url', 'action_source'];
+  readonly optionalUserParams = [
+    'email', 'phone', 'first_name', 'last_name', 'city', 'state', 'zip', 'country',
+    'external_id', 'fbc', 'fbp', 'client_user_agent', 'client_ip_address',
+  ];
+  readonly dedupStrategy = { key: ['event_name', 'event_id'], window_seconds: 172800 };
+  readonly retryPolicy = { max_attempts: 3, backoff: 'exponential' as const, base_ms: 1000 };
+  readonly consentSignals = ['marketing'];
+  readonly testMode = { supported: true, credentialField: 'test_event_code' as string | null };
 
   private readonly apiBase: string;
   private readonly getAuthHeader: () => Promise<string>;
@@ -119,14 +134,77 @@ export class MetaAdapter implements CAPIProviderAdapter {
     this.getAuthHeader = getAuthHeader;
   }
 
+  // ── Lifecycle: new contract ────────────────────────────────────────────────
+
   async validateCredentials(creds: ProviderCredentials): Promise<ValidationResult> {
     const metaCreds = creds as MetaCredentials;
     if (!metaCreds.pixel_id || !metaCreds.access_token) {
       return { valid: false, error: 'pixel_id and access_token are required' };
     }
-    // Validation happens server-side on POST /api/capi/providers
     return { valid: true };
   }
+
+  buildPayload(event: AtlasEvent, creds: ProviderCredentials, _consent: ConsentDecisions): ProviderPayload {
+    const metaCreds = creds as MetaCredentials;
+    const mapping: EventMapping = { atlas_event: event.event_name, provider_event: event.event_name };
+    const raw = formatMetaPayload(event, mapping, []) as MetaEventPayload['data'][number] & Record<string, unknown>;
+    if (metaCreds.data_processing_options?.length) {
+      raw.data_processing_options = metaCreds.data_processing_options;
+      raw.data_processing_options_country = metaCreds.data_processing_options_country ?? 0;
+      raw.data_processing_options_state = metaCreds.data_processing_options_state ?? 0;
+    }
+    return { provider: 'meta', raw };
+  }
+
+  validatePayload(payload: ProviderPayload): ValidationResult {
+    const data = payload.raw as MetaEventPayload['data'][number];
+    if (!data.event_id) {
+      return { valid: false, error: 'event_id is required on every Meta event' };
+    }
+    const ud = data.user_data;
+    const paramCount = [
+      ud.em?.length, ud.ph?.length, ud.fn?.length, ud.ln?.length,
+      ud.ct?.length, ud.st?.length, ud.zp?.length, ud.country?.length,
+      ud.external_id?.length, ud.fbc, ud.fbp, ud.client_user_agent, ud.client_ip_address,
+    ].filter(Boolean).length;
+
+    const warnings: string[] = [];
+    if (paramCount < 6) {
+      warnings.push(`Only ${paramCount} user params present — Meta recommends 6+ for quality match`);
+    }
+    if (!ud.external_id?.length) {
+      warnings.push('external_id missing — required for user matching best practices');
+    }
+
+    return warnings.length > 0
+      ? { valid: true, details: { warnings } }
+      : { valid: true };
+  }
+
+  async send(_payload: ProviderPayload, _creds: ProviderCredentials): Promise<SendResult> {
+    return {
+      event_id: (_payload.raw as { event_id?: string }).event_id ?? 'unknown',
+      status: 'failed',
+      provider_response: null,
+      error_code: 'CLIENT_SIDE_DELIVERY_NOT_SUPPORTED',
+      error_message: 'Events must be delivered via the backend pipeline (/api/capi/process)',
+    };
+  }
+
+  computeMatchQuality(payload: ProviderPayload): number {
+    const data = payload.raw as MetaEventPayload['data'][number];
+    const identifiers: HashedIdentifier[] = [];
+    if (data.user_data.em?.length)          identifiers.push({ type: 'email',       value: data.user_data.em[0],          is_hashed: true });
+    if (data.user_data.ph?.length)          identifiers.push({ type: 'phone',       value: data.user_data.ph[0],          is_hashed: true });
+    if (data.user_data.fn?.length)          identifiers.push({ type: 'fn',          value: data.user_data.fn[0],          is_hashed: true });
+    if (data.user_data.ln?.length)          identifiers.push({ type: 'ln',          value: data.user_data.ln[0],          is_hashed: true });
+    if (data.user_data.fbc)                 identifiers.push({ type: 'fbc',         value: data.user_data.fbc,            is_hashed: false });
+    if (data.user_data.fbp)                 identifiers.push({ type: 'fbp',         value: data.user_data.fbp,            is_hashed: false });
+    if (data.user_data.external_id?.length) identifiers.push({ type: 'external_id', value: data.user_data.external_id[0], is_hashed: true });
+    return estimateEMQ(identifiers);
+  }
+
+  // ── Lifecycle: legacy ──────────────────────────────────────────────────────
 
   formatEvent(
     event: AtlasEvent,
@@ -143,8 +221,6 @@ export class MetaAdapter implements CAPIProviderAdapter {
     payloads: ProviderPayload[],
     _creds: ProviderCredentials,
   ): Promise<DeliveryResult[]> {
-    // Delivery is handled server-side via POST /api/capi/process
-    // This method is a stub — the real path goes through the pipeline
     return payloads.map(p => ({
       event_id: (p.raw as { event_id?: string }).event_id ?? 'unknown',
       status: 'failed' as const,

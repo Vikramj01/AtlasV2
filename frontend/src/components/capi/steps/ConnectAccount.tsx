@@ -25,6 +25,7 @@ function MetaConnectForm({ onNext }: ConnectAccountProps) {
   const [datasetId, setDatasetId] = useState(draft.dataset_id ?? '');
   const [testEventCode, setTestEventCode] = useState(wizardDraft.test_event_code ?? '');
   const [showToken, setShowToken] = useState(false);
+  const [limitedDataUse, setLimitedDataUse] = useState((draft.data_processing_options ?? []).includes('LDU'));
   const [errors, setErrors] = useState<{ pixel_id?: string; access_token?: string }>({});
 
   function validate(): boolean {
@@ -43,7 +44,12 @@ function MetaConnectForm({ onNext }: ConnectAccountProps) {
         pixel_id: pixelId.trim(),
         access_token: accessToken.trim(),
         dataset_id: datasetId.trim(),
-      },
+        ...(limitedDataUse ? {
+          data_processing_options: ['LDU'],
+          data_processing_options_country: 0,
+          data_processing_options_state: 0,
+        } : {}),
+      } satisfies MetaCredentials,
       test_event_code: testEventCode.trim(),
     });
     onNext();
@@ -111,7 +117,8 @@ function MetaConnectForm({ onNext }: ConnectAccountProps) {
 
       <div className="space-y-1">
         <label htmlFor="test_event_code" className="block text-sm font-medium">
-          Test Event Code
+          Test Event Code{' '}
+          <span className="text-muted-foreground font-normal">(optional)</span>
         </label>
         <input
           id="test_event_code"
@@ -122,12 +129,31 @@ function MetaConnectForm({ onNext }: ConnectAccountProps) {
           className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
         />
         <p className="text-xs text-muted-foreground">
-          Get this from Meta Events Manager &rarr; Test Events tab
+          Found in Meta Events Manager &rarr; Test Events tab. When set, events go to your test view only.
         </p>
       </div>
 
+      <div className="rounded-md border border-border p-4 space-y-3">
+        <p className="text-sm font-medium">Privacy settings</p>
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={limitedDataUse}
+            onChange={(e) => setLimitedDataUse(e.target.checked)}
+            className="mt-0.5 rounded border-input"
+          />
+          <span className="text-sm">
+            <span className="font-medium">Enable Limited Data Use (LDU)</span>
+            <span className="block text-xs text-muted-foreground mt-0.5">
+              Required for CCPA compliance when serving US users. Tells Meta to restrict how it uses event data for targeting.
+              Geolocation is applied automatically.
+            </span>
+          </span>
+        </label>
+      </div>
+
       <div className="rounded-md bg-muted px-4 py-3 text-sm text-muted-foreground">
-        💡 Create a System User in your Meta Business Manager with standard access to your
+        Create a System User in your Meta Business Manager with standard access to your
         pixel. Never use a personal account token.
       </div>
 

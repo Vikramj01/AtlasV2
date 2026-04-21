@@ -8,6 +8,16 @@ import type { ConsentDecisions } from './consent';
 // --- Enums & Literals ---
 
 export type CAPIProvider = 'meta' | 'google' | 'tiktok' | 'linkedin' | 'snapchat';
+
+// Canonical adapter name — includes S4 Google split names
+export type CAPIAdapterName =
+  | 'meta'
+  | 'google'
+  | 'google_ec_web'
+  | 'google_ec_leads'
+  | 'google_offline'
+  | 'tiktok'
+  | 'linkedin';
 export type CAPIProviderStatus = 'draft' | 'testing' | 'active' | 'paused' | 'error';
 
 export type CAPIEventStatus =
@@ -54,6 +64,10 @@ export interface MetaCredentials {
   pixel_id: string;
   access_token: string;
   dataset_id: string;
+  test_event_code?: string;
+  data_processing_options?: string[];
+  data_processing_options_country?: number;
+  data_processing_options_state?: number;
 }
 
 export interface GoogleCredentials {
@@ -117,6 +131,9 @@ export interface CAPIProviderConfig {
   identifier_config: IdentifierConfig;
   dedup_config: DedupConfig;
   test_event_code: string | null;
+  data_processing_options: string[];
+  data_processing_options_country: number;
+  data_processing_options_state: number;
   error_message: string | null;
   last_health_check: string | null;
   events_sent_total: number;
@@ -207,6 +224,9 @@ export interface DeliveryResult {
   error_message?: string;
 }
 
+// Alias for the new adapter contract's send() return type
+export type SendResult = DeliveryResult;
+
 export interface TestResult {
   status: 'success' | 'failed';
   provider_response: unknown;
@@ -225,33 +245,29 @@ export interface EMQReport {
 }
 
 export interface CAPIProviderAdapter {
-  /** The provider this adapter handles */
-  provider: CAPIProvider;
+  // ── Identity ────────────────────────────────────────────────────────────────
+  readonly name: CAPIAdapterName;
 
-  /** Validate that the provided credentials are valid and can connect */
+  // ── Contract metadata ───────────────────────────────────────────────────────
+  readonly requiredUserParams: string[];
+  readonly optionalUserParams: string[];
+  readonly dedupStrategy: { key: string[]; window_seconds: number };
+  readonly retryPolicy: { max_attempts: number; backoff: 'exponential' | 'linear'; base_ms: number };
+  readonly consentSignals: string[];
+  readonly testMode: { supported: boolean; credentialField: string | null };
+
+  // ── Lifecycle methods ───────────────────────────────────────────────────────
   validateCredentials(creds: ProviderCredentials): Promise<ValidationResult>;
+  buildPayload(event: AtlasEvent, creds: ProviderCredentials, consent: ConsentDecisions): ProviderPayload;
+  validatePayload(payload: ProviderPayload): ValidationResult;
+  send(payload: ProviderPayload, creds: ProviderCredentials): Promise<SendResult>;
+  computeMatchQuality(payload: ProviderPayload): number;
 
-  /** Format an Atlas event into the provider's expected payload format */
-  formatEvent(
-    event: AtlasEvent,
-    mapping: EventMapping,
-    identifiers: HashedIdentifier[]
-  ): ProviderPayload;
-
-  /** Send a batch of formatted events to the provider's API */
-  sendEvents(
-    payloads: ProviderPayload[],
-    creds: ProviderCredentials
-  ): Promise<DeliveryResult[]>;
-
-  /** Send a single test event (uses provider's test mode if available) */
-  sendTestEvent(
-    payload: ProviderPayload,
-    creds: ProviderCredentials,
-    testCode?: string
-  ): Promise<TestResult>;
-
-  /** Get Event Match Quality report (optional — Meta-specific) */
+  // ── Legacy methods (kept for backward compat) ───────────────────────────────
+  readonly provider?: CAPIProvider;
+  formatEvent?(event: AtlasEvent, mapping: EventMapping, identifiers: HashedIdentifier[]): ProviderPayload;
+  sendEvents?(payloads: ProviderPayload[], creds: ProviderCredentials): Promise<DeliveryResult[]>;
+  sendTestEvent?(payload: ProviderPayload, creds: ProviderCredentials, testCode?: string): Promise<TestResult>;
   getEventMatchQuality?(creds: ProviderCredentials): Promise<EMQReport>;
 }
 
@@ -366,6 +382,9 @@ export interface MetaEventPayload {
       order_id?: string;
       num_items?: number;
     };
+    data_processing_options?: string[];
+    data_processing_options_country?: number;
+    data_processing_options_state?: number;
   }>;
   test_event_code?: string;
   access_token: string;

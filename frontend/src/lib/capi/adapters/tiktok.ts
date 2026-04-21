@@ -15,6 +15,7 @@
 
 import type {
   CAPIProviderAdapter,
+  CAPIAdapterName,
   CAPIProvider,
   AtlasEvent,
   EventMapping,
@@ -24,8 +25,10 @@ import type {
   TikTokCredentials,
   ValidationResult,
   DeliveryResult,
+  SendResult,
   TestResult,
 } from '@/types/capi';
+import type { ConsentDecisions } from '@/types/consent';
 
 // ── TikTok-specific payload types ────────────────────────────────────────────
 
@@ -128,13 +131,24 @@ export function formatTikTokPayload(
 // ── Adapter class ─────────────────────────────────────────────────────────────
 
 export class TikTokAdapter implements CAPIProviderAdapter {
+  // ── Contract metadata ──────────────────────────────────────────────────────
+  readonly name: CAPIAdapterName = 'tiktok';
   readonly provider: CAPIProvider = 'tiktok';
+
+  readonly requiredUserParams = ['event_name', 'event_time'];
+  readonly optionalUserParams = ['email', 'phone', 'external_id', 'client_user_agent', 'client_ip_address'];
+  readonly dedupStrategy = { key: ['event_name', 'event_id'], window_seconds: 86400 };
+  readonly retryPolicy = { max_attempts: 3, backoff: 'exponential' as const, base_ms: 1000 };
+  readonly consentSignals = ['marketing'];
+  readonly testMode = { supported: false, credentialField: null as string | null };
 
   constructor(
     /** @internal reserved for future authenticated calls */
     _apiBase: string,
     _getAuthHeader: () => Promise<string>,
   ) {}
+
+  // ── Lifecycle: new contract ────────────────────────────────────────────────
 
   async validateCredentials(creds: ProviderCredentials): Promise<ValidationResult> {
     const tiktokCreds = creds as TikTokCredentials;
@@ -143,6 +157,39 @@ export class TikTokAdapter implements CAPIProviderAdapter {
     }
     return { valid: true };
   }
+
+  buildPayload(event: AtlasEvent, _creds: ProviderCredentials, _consent: ConsentDecisions): ProviderPayload {
+    const mapping: EventMapping = { atlas_event: event.event_name, provider_event: event.event_name };
+    return { provider: 'tiktok', raw: formatTikTokPayload(event, mapping, []) };
+  }
+
+  validatePayload(payload: ProviderPayload): ValidationResult {
+    const data = payload.raw as TikTokEventPayload;
+    if (!data.event) return { valid: false, error: 'event name is required' };
+    return { valid: true };
+  }
+
+  async send(_payload: ProviderPayload, _creds: ProviderCredentials): Promise<SendResult> {
+    return {
+      event_id: (_payload.raw as { event_id?: string }).event_id ?? 'unknown',
+      status: 'failed',
+      provider_response: null,
+      error_code: 'CLIENT_SIDE_DELIVERY_NOT_SUPPORTED',
+      error_message: 'Events must be delivered via the backend pipeline (/api/capi/process)',
+    };
+  }
+
+  computeMatchQuality(payload: ProviderPayload): number {
+    const data = payload.raw as TikTokEventPayload;
+    let score = 0;
+    if (data.context?.user?.email)        score += 4;
+    if (data.context?.user?.phone_number) score += 3;
+    if (data.context?.user?.external_id)  score += 2;
+    if (data.context?.ip)                 score += 1;
+    return Math.min(10, score);
+  }
+
+  // ── Lifecycle: legacy ──────────────────────────────────────────────────────
 
   formatEvent(
     event: AtlasEvent,

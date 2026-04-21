@@ -39,6 +39,9 @@ export interface CreateProviderInput {
   identifier_config: IdentifierConfig;
   dedup_config: DedupConfig;
   test_event_code?: string;
+  data_processing_options?: string[];
+  data_processing_options_country?: number;
+  data_processing_options_state?: number;
 }
 
 export async function createProvider(input: CreateProviderInput): Promise<CAPIProviderConfig> {
@@ -54,6 +57,9 @@ export async function createProvider(input: CreateProviderInput): Promise<CAPIPr
       identifier_config: input.identifier_config,
       dedup_config: input.dedup_config,
       test_event_code: input.test_event_code ?? null,
+      data_processing_options: input.data_processing_options ?? [],
+      data_processing_options_country: input.data_processing_options_country ?? 0,
+      data_processing_options_state: input.data_processing_options_state ?? 0,
     })
     .select('*')
     .single();
@@ -124,7 +130,7 @@ export async function updateProviderCredentials(
 
 export async function updateProviderConfig(
   providerId: string,
-  update: Partial<Pick<CAPIProviderConfig, 'event_mapping' | 'identifier_config' | 'dedup_config' | 'test_event_code'>>,
+  update: Partial<Pick<CAPIProviderConfig, 'event_mapping' | 'identifier_config' | 'dedup_config' | 'test_event_code' | 'data_processing_options' | 'data_processing_options_country' | 'data_processing_options_state'>>,
 ): Promise<CAPIProviderConfig> {
   const { data, error } = await supabase
     .from('capi_providers')

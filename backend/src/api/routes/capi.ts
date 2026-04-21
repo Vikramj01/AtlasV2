@@ -73,6 +73,12 @@ capiRouter.post('/providers', planGuard('pro'), async (req: Request, res: Respon
   }
 
   try {
+    const bodyExt = body as CreateProviderRequest & {
+      test_event_code?: string;
+      data_processing_options?: string[];
+      data_processing_options_country?: number;
+      data_processing_options_state?: number;
+    };
     const provider = await createProvider({
       project_id: body.project_id,
       organization_id: req.user.id,
@@ -81,6 +87,10 @@ capiRouter.post('/providers', planGuard('pro'), async (req: Request, res: Respon
       event_mapping: body.event_mapping ?? [],
       identifier_config: body.identifier_config ?? { enabled_identifiers: [], source_mapping: {} },
       dedup_config: body.dedup_config ?? { enabled: true, event_id_field: 'event_id', dedup_window_minutes: 2880 },
+      test_event_code: bodyExt.test_event_code,
+      data_processing_options: bodyExt.data_processing_options,
+      data_processing_options_country: bodyExt.data_processing_options_country,
+      data_processing_options_state: bodyExt.data_processing_options_state,
     });
 
     res.status(201).json({
@@ -128,11 +138,14 @@ capiRouter.get('/providers/:id', async (req: Request, res: Response): Promise<vo
 // ── PATCH /api/capi/providers/:id ─────────────────────────────────────────────
 
 capiRouter.patch('/providers/:id', async (req: Request, res: Response): Promise<void> => {
-  const { event_mapping, identifier_config, dedup_config, test_event_code } = req.body as Partial<{
+  const { event_mapping, identifier_config, dedup_config, test_event_code, data_processing_options, data_processing_options_country, data_processing_options_state } = req.body as Partial<{
     event_mapping: EventMapping[];
     identifier_config: unknown;
     dedup_config: unknown;
     test_event_code: string;
+    data_processing_options: string[];
+    data_processing_options_country: number;
+    data_processing_options_state: number;
   }>;
 
   try {
@@ -144,6 +157,9 @@ capiRouter.patch('/providers/:id', async (req: Request, res: Response): Promise<
       ...(identifier_config !== undefined && { identifier_config: identifier_config as never }),
       ...(dedup_config !== undefined && { dedup_config: dedup_config as never }),
       ...(test_event_code !== undefined && { test_event_code }),
+      ...(data_processing_options !== undefined && { data_processing_options }),
+      ...(data_processing_options_country !== undefined && { data_processing_options_country }),
+      ...(data_processing_options_state !== undefined && { data_processing_options_state }),
     });
 
     const { ...safeUpdated } = updated;

@@ -15,6 +15,7 @@
 
 import type {
   CAPIProviderAdapter,
+  CAPIAdapterName,
   CAPIProvider,
   AtlasEvent,
   EventMapping,
@@ -25,8 +26,10 @@ import type {
   GoogleConversionAdjustment,
   ValidationResult,
   DeliveryResult,
+  SendResult,
   TestResult,
 } from '@/types/capi';
+import type { ConsentDecisions } from '@/types/consent';
 
 // ── Event name suggestions ─────────────────────────────────────────────────────
 // Maps Atlas event names to Google Ads conversion action types.
@@ -126,7 +129,16 @@ export function formatGooglePayload(
 // ── Adapter class ─────────────────────────────────────────────────────────────
 
 export class GoogleAdapter implements CAPIProviderAdapter {
+  // ── Contract metadata ──────────────────────────────────────────────────────
+  readonly name: CAPIAdapterName = 'google';
   readonly provider: CAPIProvider = 'google';
+
+  readonly requiredUserParams = ['event_name', 'event_time', 'event_source_url', 'action_source'];
+  readonly optionalUserParams = ['email', 'phone', 'gclid', 'wbraid', 'gbraid', 'client_user_agent'];
+  readonly dedupStrategy = { key: ['event_name', 'order_id'], window_seconds: 86400 };
+  readonly retryPolicy = { max_attempts: 3, backoff: 'exponential' as const, base_ms: 1000 };
+  readonly consentSignals = ['analytics', 'ad_user_data', 'ad_personalization'];
+  readonly testMode = { supported: true, credentialField: null as string | null };
 
   constructor(
     /** @internal reserved for future authenticated calls */
@@ -134,14 +146,59 @@ export class GoogleAdapter implements CAPIProviderAdapter {
     _getAuthHeader: () => Promise<string>,
   ) {}
 
+  // ── Lifecycle: new contract ────────────────────────────────────────────────
+
   async validateCredentials(creds: ProviderCredentials): Promise<ValidationResult> {
     const googleCreds = creds as GoogleCredentials;
     if (!googleCreds.customer_id || !googleCreds.oauth_access_token || !googleCreds.conversion_action_id) {
       return { valid: false, error: 'customer_id, oauth_access_token, and conversion_action_id are required' };
     }
-    // Full token validation happens server-side on POST /api/capi/providers
     return { valid: true };
   }
+
+  buildPayload(event: AtlasEvent, creds: ProviderCredentials, _consent: ConsentDecisions): ProviderPayload {
+    const googleCreds = creds as GoogleCredentials;
+    const mapping: EventMapping = { atlas_event: event.event_name, provider_event: event.event_name };
+    return {
+      provider: 'google',
+      raw: formatGooglePayload(event, mapping, [], googleCreds),
+    };
+  }
+
+  validatePayload(payload: ProviderPayload): ValidationResult {
+    const adjustment = payload.raw as GoogleConversionAdjustment;
+    if (!adjustment.conversionAction) {
+      return { valid: false, error: 'conversionAction is required' };
+    }
+    if (!adjustment.userIdentifiers?.length) {
+      return { valid: true, details: { warnings: ['No user identifiers — match quality will be low'] } };
+    }
+    return { valid: true };
+  }
+
+  async send(_payload: ProviderPayload, _creds: ProviderCredentials): Promise<SendResult> {
+    return {
+      event_id: (_payload.raw as { orderId?: string }).orderId ?? 'unknown',
+      status: 'failed',
+      provider_response: null,
+      error_code: 'CLIENT_SIDE_DELIVERY_NOT_SUPPORTED',
+      error_message: 'Events must be delivered via the backend pipeline (/api/capi/process)',
+    };
+  }
+
+  computeMatchQuality(payload: ProviderPayload): number {
+    const adjustment = payload.raw as GoogleConversionAdjustment;
+    let score = 0;
+    for (const uid of adjustment.userIdentifiers ?? []) {
+      if ('hashedEmail' in uid)        score += 4;
+      else if ('hashedPhoneNumber' in uid) score += 3;
+      else if ('addressInfo' in uid)   score += 2;
+    }
+    if (adjustment.gclidDateTimePair?.gclid) score += 1;
+    return Math.min(10, score);
+  }
+
+  // ── Lifecycle: legacy ──────────────────────────────────────────────────────
 
   formatEvent(
     event: AtlasEvent,
@@ -159,7 +216,6 @@ export class GoogleAdapter implements CAPIProviderAdapter {
     payloads: ProviderPayload[],
     _creds: ProviderCredentials,
   ): Promise<DeliveryResult[]> {
-    // Delivery is handled server-side via POST /api/capi/process
     return payloads.map((p) => ({
       event_id: (p.raw as { orderId?: string }).orderId ?? 'unknown',
       status: 'failed' as const,
