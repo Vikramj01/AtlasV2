@@ -1,104 +1,140 @@
-/**
- * HomePage — Action Dashboard.
- *
- * Layout: page header → 4-cell metric bar → action cards → entry points
- *
- * Design spec (Screen 1):
- *   "Priority: Action-oriented."
- *   "Metric Bar: 4 equal cells."
- *   "Action Cards: Must support dynamic severity (3px left border)."
- */
+import { useEffect, useState } from 'react';
+import { supabase } from '@/lib/supabase';
+import { SectionErrorBoundary } from '@/components/common/ErrorBoundary';
+import { NextActionCard } from '@/components/dashboard/NextActionCard';
+import { ScoreCard } from '@/components/common/ScoreCard';
+import { RecentActivityFeed } from '@/components/dashboard/RecentActivityFeed';
+import { dashboardApi } from '@/lib/api/dashboardApi';
+import type { AtlasScore } from '@/types/dashboard';
 
-import { useEffect } from 'react';
-import { RefreshCw, MapPin, Zap } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-import { useDashboardStore } from '@/store/dashboardStore';
-import { SummaryBar, SummaryBarSkeleton } from '@/components/dashboard/SummaryBar';
-import { ActionCardList, ActionCardListSkeleton } from '@/components/dashboard/ActionCardList';
-import { IntelligentRouter } from '@/components/dashboard/IntelligentRouter';
-import { EmptyState } from '@/components/common/EmptyState';
-import { Button } from '@/components/ui/button';
+function getTimeOfDayGreeting(): string {
+  const h = new Date().getHours();
+  if (h < 12) return 'Good morning';
+  if (h < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+
+function getSubline(): string {
+  const h = new Date().getHours();
+  if (h < 12) return "Here's what needs your attention today.";
+  if (h < 17) return 'Your tracking signals are being monitored.';
+  return "Let's keep your data quality sharp.";
+}
+
+function scoreStatus(value: number): 'Healthy' | 'Needs attention' | 'Critical' {
+  if (value >= 80) return 'Healthy';
+  if (value >= 60) return 'Needs attention';
+  return 'Critical';
+}
+
+function setupStatus(steps: number): 'Healthy' | 'Needs attention' | 'Critical' {
+  if (steps >= 3) return 'Healthy';
+  if (steps >= 2) return 'Needs attention';
+  return 'Critical';
+}
 
 export function HomePage() {
-  const { data, loadState, lastFetchedAt, startPolling, fetch } = useDashboardStore();
-  const navigate = useNavigate();
+  const [firstName, setFirstName] = useState('');
+  const [score, setScore] = useState<AtlasScore | null>(null);
+  const [scoreLoading, setScoreLoading] = useState(true);
 
   useEffect(() => {
-    const stop = startPolling();
-    return stop;
-  }, [startPolling]);
+    supabase.auth.getUser().then(({ data }) => {
+      const fullName = (data.user?.user_metadata?.full_name as string | undefined) ?? '';
+      setFirstName(fullName.split(' ')[0] ?? '');
+    });
+  }, []);
 
-  const isLoading = loadState === 'idle' || loadState === 'loading';
-  const hasData   = loadState === 'loaded' && data !== null;
-  const isEmpty   = hasData && data!.cards.length === 0 && data!.summary.signal_coverage_pct === null;
-  const isError   = loadState === 'error';
+  useEffect(() => {
+    dashboardApi
+      .getAtlasScore()
+      .then((r) => setScore(r.data))
+      .catch(() => {})
+      .finally(() => setScoreLoading(false));
+  }, []);
+
+  const setupSteps = score ? Math.min(3, Math.round(score.foundation / 33.34)) : null;
 
   return (
-    <div className="px-6 py-8 max-w-5xl space-y-6">
+    <div className="px-6 py-8 max-w-5xl space-y-8">
 
-      {/* ── Page header ─────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-page-title">Dashboard</h1>
-          <p className="mt-1 text-body text-[#6B7280]">
-            {lastFetchedAt
-              ? `Updated ${lastFetchedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-              : 'Loading your tracking health…'}
-          </p>
-        </div>
+      {/* ── Greeting ─────────────────────────────────────────────────────────── */}
+      <div>
+        <h1 className="text-page-title">
+          {getTimeOfDayGreeting()}{firstName ? `, ${firstName}` : ''}.
+        </h1>
+        <p className="mt-1 text-body text-[#6B7280]">{getSubline()}</p>
+      </div>
 
-        {hasData && (
-          <button
-            onClick={fetch}
-            disabled={isLoading}
-            className="flex items-center gap-1.5 text-xs text-[#6B7280] hover:text-[#1A1A1A] transition-colors disabled:opacity-50"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} strokeWidth={1.5} />
-            Refresh
-          </button>
+      {/* ── Next Action ──────────────────────────────────────────────────────── */}
+      <SectionErrorBoundary label="Next action">
+        <NextActionCard />
+      </SectionErrorBoundary>
+
+      {/* ── Score tiles ──────────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        {scoreLoading ? (
+          Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-32 animate-pulse rounded-xl bg-[#F3F4F6]" />
+          ))
+        ) : (
+          <>
+            <ScoreCard
+              title="Atlas Score"
+              value={score ? score.overall : null}
+              description="Overall signal health"
+              status={score ? scoreStatus(score.overall) : undefined}
+              emptyState={{
+                copy: 'No score yet. Complete setup to see your Atlas Score.',
+                ctaLabel: 'Set up tracking',
+                ctaHref: '/planning',
+              }}
+            />
+            <ScoreCard
+              title="Setup"
+              value={setupSteps !== null ? `${setupSteps}/3 steps` : null}
+              description="Tracking setup progress"
+              status={setupSteps !== null ? setupStatus(setupSteps) : undefined}
+              emptyState={{
+                copy: 'Get started by setting up your tracking.',
+                ctaLabel: 'Start setup',
+                ctaHref: '/planning',
+              }}
+            />
+            <ScoreCard
+              title="Match Quality"
+              value={score ? score.signal_quality : null}
+              description="Signal quality score"
+              status={score ? scoreStatus(score.signal_quality) : undefined}
+              emptyState={{
+                copy: 'Run a health check to see match quality.',
+                ctaLabel: 'Check health',
+                ctaHref: '/health',
+              }}
+            />
+            <ScoreCard
+              title="Channel Leaks"
+              value={score ? `${score.channel_performance}%` : null}
+              description="Channel performance"
+              status={score ? scoreStatus(score.channel_performance) : undefined}
+              emptyState={{
+                copy: 'Ingest session data to see channel leaks.',
+                ctaLabel: 'View channels',
+                ctaHref: '/channels',
+              }}
+            />
+          </>
         )}
       </div>
 
-      {/* ── Metric bar (4 cells) ─────────────────────────────────────────── */}
-      {isLoading && <SummaryBarSkeleton />}
-      {hasData && !isEmpty && <SummaryBar summary={data!.summary} />}
+      {/* ── Recent Activity ──────────────────────────────────────────────────── */}
+      <div>
+        <h2 className="text-section-header mb-3">Recent activity</h2>
+        <SectionErrorBoundary label="Recent activity">
+          <RecentActivityFeed />
+        </SectionErrorBoundary>
+      </div>
 
-      {/* ── Action cards ─────────────────────────────────────────────────── */}
-      {isLoading && <ActionCardListSkeleton count={3} />}
-
-      {isError && (
-        <div className="rounded-lg border border-[#E5E7EB] bg-[#F9FAFB] px-6 py-8 flex flex-col items-center gap-3 text-center">
-          <p className="text-sm text-[#6B7280]">
-            Could not load dashboard data. Check your connection and try again.
-          </p>
-          <Button variant="secondary" size="sm" onClick={fetch}>Retry</Button>
-        </div>
-      )}
-
-      {isEmpty && (
-        <EmptyState
-          icon="signals"
-          title="No data yet"
-          description="Run your first tracking setup or audit to start seeing action cards and health metrics here."
-          action={
-            <div className="flex gap-3">
-              <Button onClick={() => navigate('/planning/new')} className="gap-2">
-                <MapPin className="h-4 w-4" strokeWidth={1.5} />
-                Set up tracking
-              </Button>
-              <Button variant="secondary" onClick={() => navigate('/journey/new')} className="gap-2">
-                <Zap className="h-4 w-4" strokeWidth={1.5} />
-                Verify a journey
-              </Button>
-            </div>
-          }
-        />
-      )}
-
-      {hasData && !isEmpty && <ActionCardList cards={data!.cards} />}
-
-      {/* ── Entry points — always visible once loaded ─────────────────────── */}
-      {(hasData || isEmpty) && <IntelligentRouter />}
     </div>
   );
 }

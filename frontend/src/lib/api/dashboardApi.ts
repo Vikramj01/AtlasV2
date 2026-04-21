@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase';
-import type { DashboardResponse, AtlasScore, NextAction } from '@/types/dashboard';
+import type { DashboardResponse, AtlasScore, NextAction, ActivityResponse } from '@/types/dashboard';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
 
@@ -28,4 +28,6 @@ export const dashboardApi = {
     apiFetch<{ data: AtlasScore }>('/api/dashboard/atlas-score'),
   getNextAction: () =>
     apiFetch<{ data: NextAction }>('/api/dashboard/next-action'),
+  getActivity: () =>
+    apiFetch<ActivityResponse>('/api/dashboard/activity'),
 };
