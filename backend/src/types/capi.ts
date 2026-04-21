@@ -18,7 +18,7 @@ export type CAPIAdapterName =
   | 'google_offline'
   | 'tiktok'
   | 'linkedin';
-export type CAPIProviderStatus = 'draft' | 'testing' | 'active' | 'paused' | 'error';
+export type CAPIProviderStatus = 'draft' | 'testing' | 'active' | 'paused' | 'error' | 'reconnect_required';
 
 export type CAPIEventStatus =
   | 'received'
@@ -76,6 +76,7 @@ export interface GoogleCredentials {
   oauth_refresh_token: string;
   conversion_action_id: string;
   login_customer_id?: string; // MCC ID if using manager account
+  access_token_expires_at?: string; // ISO string — when the current access token expires
 }
 
 export interface TikTokCredentials {
@@ -125,6 +126,7 @@ export interface CAPIProviderConfig {
   project_id: string;
   organization_id: string;
   provider: CAPIProvider;
+  adapter_name?: CAPIAdapterName; // Which Google sub-adapter (google_ec_web, google_ec_leads, google_offline)
   status: CAPIProviderStatus;
   credentials: ProviderCredentials; // Encrypted at rest
   event_mapping: EventMapping[];
@@ -134,6 +136,7 @@ export interface CAPIProviderConfig {
   data_processing_options: string[];
   data_processing_options_country: number;
   data_processing_options_state: number;
+  access_token_expires_at: string | null; // Google only — ISO timestamp for token expiry
   error_message: string | null;
   last_health_check: string | null;
   events_sent_total: number;
@@ -401,6 +404,10 @@ export interface GoogleConversionAdjustment {
     conversionDateTime: string; // yyyy-mm-dd HH:mm:ss+|-HH:mm
   };
   userAgent?: string;
+  consent?: {
+    adUserData: 'GRANTED' | 'DENIED' | 'UNSPECIFIED';
+    adPersonalization: 'GRANTED' | 'DENIED' | 'UNSPECIFIED';
+  };
   userIdentifiers: Array<
     | { hashedEmail: string }
     | { hashedPhoneNumber: string }

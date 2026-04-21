@@ -11,6 +11,7 @@ import { create } from 'zustand';
 import type {
   CAPIProviderConfig,
   CAPIProvider,
+  CAPIAdapterName,
   EventMapping,
   IdentifierConfig,
   DedupConfig,
@@ -22,6 +23,7 @@ import type {
 
 export interface WizardDraft {
   provider: CAPIProvider;
+  adapter_name?: CAPIAdapterName; // Google sub-adapter: google_ec_web | google_ec_leads | google_offline
   credentials: Partial<ProviderCredentials>;
   event_mapping: EventMapping[];
   identifier_config: IdentifierConfig;

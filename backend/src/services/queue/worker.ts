@@ -1,4 +1,4 @@
-import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue } from './jobQueue';
+import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue } from './jobQueue';
 import { env } from '@/config/env';
 import { runAuditOrchestrator } from '@/services/audit/orchestrator';
 import { runPlanningOrchestrator, runRescanOrchestrator } from '@/services/planning/sessionOrchestrator';
@@ -346,3 +346,67 @@ offlineConversionQueue.process(1, async (job) => {
 });
 
 logger.info('Offline conversion upload worker registered');
+
+// ── Google OAuth Refresh worker ───────────────────────────────────────────────
+// Runs every 30 minutes. For each active Google provider whose access token
+// expires within 5 minutes (or has never been refreshed), attempts a refresh.
+// On failure, sets provider status → reconnect_required.
+
+googleOAuthRefreshQueue.process(async (_job) => {
+  logger.info('Google OAuth refresh job received');
+
+  const { supabaseAdmin } = await import('@/services/database/supabase');
+  const { safeDecryptCredentials } = await import('@/services/capi/credentials');
+  const { refreshGoogleTokenWithExpiry } = await import('@/services/capi/googleDelivery');
+  const { updateGoogleToken, updateProviderStatus } = await import('@/services/database/capiQueries');
+
+  // Find Google providers that are active/testing and whose token expires soon
+  const fiveMinFromNow = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+  const { data: providers, error } = await supabaseAdmin
+    .from('capi_providers')
+    .select('id, credentials, access_token_expires_at')
+    .eq('provider', 'google')
+    .in('status', ['active', 'testing'])
+    .or(`access_token_expires_at.is.null,access_token_expires_at.lte.${fiveMinFromNow}`);
+
+  if (error) {
+    logger.error({ err: error.message }, 'Google OAuth refresh: failed to query providers');
+    return;
+  }
+
+  if (!providers || providers.length === 0) {
+    logger.info('Google OAuth refresh: no providers need refreshing');
+    return;
+  }
+
+  logger.info({ count: providers.length }, 'Google OAuth refresh: refreshing tokens');
+
+  for (const row of providers) {
+    try {
+      const creds = safeDecryptCredentials(row.credentials);
+      const googleCreds = creds as import('@/types/capi').GoogleCredentials;
+
+      if (!googleCreds.oauth_refresh_token) {
+        logger.warn({ providerId: row.id }, 'Google OAuth refresh: no refresh token — marking reconnect_required');
+        await updateProviderStatus(row.id, 'reconnect_required', 'No OAuth refresh token stored. Please reconnect your Google account.');
+        continue;
+      }
+
+      const { access_token, expires_at } = await refreshGoogleTokenWithExpiry(googleCreds);
+      await updateGoogleToken(row.id, access_token, expires_at, creds);
+      logger.info({ providerId: row.id, expiresAt: expires_at }, 'Google OAuth refresh: token refreshed');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.warn({ providerId: row.id, err: msg }, 'Google OAuth refresh: refresh failed — marking reconnect_required');
+      await updateProviderStatus(row.id, 'reconnect_required', `OAuth token refresh failed: ${msg}`).catch(() => {/* non-fatal */});
+    }
+  }
+});
+
+logger.info('Google OAuth refresh worker registered');
+
+// Schedule the OAuth refresh to run every 30 minutes
+googleOAuthRefreshQueue.add(
+  { trigger: 'scheduled' },
+  { repeat: { cron: '*/30 * * * *' }, jobId: 'google-oauth-refresh-tick' },
+).catch((err) => logger.error({ err }, 'Failed to schedule Google OAuth refresh job'));
