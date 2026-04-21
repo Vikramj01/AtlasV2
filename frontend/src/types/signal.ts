@@ -12,13 +12,6 @@ export interface PlatformEventMapping {
   additional?: Record<string, string>;
 }
 
-export interface WalkerOSMapping {
-  entity: string;
-  action: string;
-  trigger: { type: 'load' | 'click' | 'submit'; selector?: string };
-  data_mapping: Record<string, string>;
-}
-
 export interface Signal {
   id: string;
   organisation_id: string | null;
@@ -32,7 +25,6 @@ export interface Signal {
   required_params: ParamSpec[];
   optional_params: ParamSpec[];
   platform_mappings: Record<string, PlatformEventMapping>;
-  walkeros_mapping: WalkerOSMapping | null;
   taxonomy_event_id: string | null;
   taxonomy_path: string | null;
   version: number;

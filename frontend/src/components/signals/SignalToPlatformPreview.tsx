@@ -1,18 +1,15 @@
 /**
  * SignalToPlatformPreview
  *
- * Shows the full platform mapping for a single Signal — event names,
- * parameter mappings, and WalkerOS config.
+ * Shows the full platform mapping for a single Signal — event names and parameter mappings.
  *
  * Used as an expandable section on SignalCard or as modal content on
  * SignalLibraryPage when a user wants to see exactly how a signal is
  * translated before deploying it.
- *
- * Sprint 2 — Signal Library
  */
 
 import { useState } from 'react';
-import type { Signal, PlatformEventMapping, WalkerOSMapping } from '@/types/signal';
+import type { Signal, PlatformEventMapping } from '@/types/signal';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -88,48 +85,9 @@ function PlatformSection({ name, mapping }: { name: string; mapping: PlatformEve
   );
 }
 
-function WalkerOSSection({ mapping }: { mapping: WalkerOSMapping }) {
-  const dataEntries = Object.entries(mapping.data_mapping);
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        <span className="rounded border px-2 py-0.5 text-xs font-semibold bg-violet-50 text-violet-700 border-violet-200">
-          WalkerOS
-        </span>
-        <code className="text-xs text-muted-foreground">
-          <span className="text-foreground font-medium">{mapping.entity}</span>
-          {' '}
-          <span className="text-muted-foreground">·</span>
-          {' '}
-          <span className="text-foreground font-medium">{mapping.action}</span>
-        </code>
-      </div>
-
-      <div className="pl-2 border-l-2 border-muted space-y-2">
-        {/* Trigger */}
-        <div className="flex items-center gap-2 text-xs">
-          <span className="text-muted-foreground font-medium">Trigger:</span>
-          <code className="font-mono">{mapping.trigger.type}</code>
-          {mapping.trigger.selector && (
-            <code className="font-mono text-muted-foreground">{mapping.trigger.selector}</code>
-          )}
-        </div>
-
-        {/* Data mapping */}
-        {dataEntries.length > 0 && (
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">Data mapping</p>
-            <ParamTable mapping={mapping.data_mapping} />
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // ── Main Component ────────────────────────────────────────────────────────────
 
-type ActiveTab = string | 'walkeros';
+type ActiveTab = string;
 
 interface Props {
   signal: Signal;
@@ -139,8 +97,7 @@ interface Props {
 
 export function SignalToPlatformPreview({ signal, collapsible = false }: Props) {
   const platformKeys = Object.keys(signal.platform_mappings ?? {});
-  const hasWalkerOS = !!signal.walkeros_mapping;
-  const allTabs: ActiveTab[] = [...platformKeys, ...(hasWalkerOS ? ['walkeros'] : [])];
+  const allTabs: ActiveTab[] = platformKeys;
 
   const [active, setActive] = useState<ActiveTab>(allTabs[0] ?? '');
   const [open, setOpen] = useState(!collapsible);
@@ -197,28 +154,12 @@ export function SignalToPlatformPreview({ signal, collapsible = false }: Props) 
             </button>
           );
         })}
-        {hasWalkerOS && (
-          <button
-            type="button"
-            onClick={() => setActive('walkeros')}
-            className={`rounded border px-2.5 py-1 text-xs font-medium transition-colors ${
-              active === 'walkeros'
-                ? 'bg-violet-50 text-violet-700 border-violet-200'
-                : 'border-muted bg-transparent text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            WalkerOS
-          </button>
-        )}
       </div>
 
       {/* Tab content */}
       <div className="rounded-lg border bg-muted/20 p-3">
-        {active !== 'walkeros' && signal.platform_mappings[active] && (
+        {signal.platform_mappings[active] && (
           <PlatformSection name={active} mapping={signal.platform_mappings[active]} />
-        )}
-        {active === 'walkeros' && signal.walkeros_mapping && (
-          <WalkerOSSection mapping={signal.walkeros_mapping} />
         )}
       </div>
     </div>

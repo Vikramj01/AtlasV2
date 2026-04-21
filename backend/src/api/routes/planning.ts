@@ -10,6 +10,8 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { generateAllOutputs } from '@/services/planning/generators/outputGenerator';
+import { validateGTMContainer } from '@/services/planning/generators/gtmSchemaValidator';
+import { mergeGTMContainers } from '@/services/planning/generators/gtmMerge';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { planGuard } from '../middleware/planGuard';
 import { planningLimiter } from '../middleware/planningLimiter';
@@ -397,10 +399,13 @@ router.get('/sessions/:id/outputs/:outputId/download', async (req: Request, res:
     if (!output) return res.status(404).json({ error: 'Output not found' });
 
     if (output.content_text) {
+      const ext = output.mime_type.includes('markdown') ? 'md'
+        : output.mime_type.includes('html') ? 'html'
+        : 'json';
       res.setHeader('Content-Type', output.mime_type);
       res.setHeader(
         'Content-Disposition',
-        `attachment; filename="${output.output_type}.${output.mime_type.includes('html') ? 'html' : 'json'}"`,
+        `attachment; filename="${output.output_type}.${ext}"`,
       );
       return res.send(output.content_text);
     }
@@ -412,6 +417,68 @@ router.get('/sessions/:id/outputs/:outputId/download', async (req: Request, res:
     }
 
     res.status(404).json({ error: 'Output has no content yet' });
+  } catch (err) {
+    sendInternalError(res, err);
+  }
+});
+
+// ── GET /api/planning/sessions/:id/outputs/:outputId/validate ─────────────────
+// Runs the GTM schema validator against a stored container output.
+// Returns { valid, errors, warnings }.
+
+router.get('/sessions/:id/outputs/:outputId/validate', async (req: Request, res: Response) => {
+  try {
+    const session = await getSession(req.params.id, req.user!.id);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    const output = await getOutput(req.params.outputId, session.id);
+    if (!output) return res.status(404).json({ error: 'Output not found' });
+
+    if (output.output_type !== 'gtm_container') {
+      return res.status(400).json({ error: 'Validation only applies to gtm_container outputs' });
+    }
+
+    const result = validateGTMContainer(output.content);
+    res.json(result);
+  } catch (err) {
+    sendInternalError(res, err);
+  }
+});
+
+// ── POST /api/planning/sessions/:id/gtm/merge ────────────────────────────────
+// Merges the Atlas GTM container with the user's existing GTM container.
+// Body: { output_id: string; existing_container: object }
+// Returns: { summary: { will_add, will_overwrite, untouched }, merged_container }
+
+router.post('/sessions/:id/gtm/merge', async (req: Request, res: Response) => {
+  try {
+    const session = await getSession(req.params.id, req.user!.id);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    const { output_id, existing_container } = req.body as {
+      output_id?: string;
+      existing_container?: unknown;
+    };
+
+    if (!output_id || typeof existing_container !== 'object' || !existing_container) {
+      return res.status(400).json({ error: 'output_id and existing_container are required' });
+    }
+
+    const output = await getOutput(output_id, session.id);
+    if (!output) return res.status(404).json({ error: 'Output not found' });
+    if (output.output_type !== 'gtm_container') {
+      return res.status(400).json({ error: 'output_id must reference a gtm_container output' });
+    }
+    if (!output.content) {
+      return res.status(400).json({ error: 'GTM container content not available' });
+    }
+
+    const result = mergeGTMContainers(
+      output.content as Record<string, unknown>,
+      existing_container as Record<string, unknown>,
+    );
+
+    res.json(result);
   } catch (err) {
     sendInternalError(res, err);
   }

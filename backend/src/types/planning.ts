@@ -167,7 +167,7 @@ export type PageStatus = 'pending' | 'scanning' | 'done' | 'failed';
 
 export type UserDecision = 'approved' | 'skipped' | 'modified';
 
-export type OutputType = 'gtm_container' | 'datalayer_spec' | 'implementation_guide' | 'walkeros_flow';
+export type OutputType = 'gtm_container' | 'datalayer_spec' | 'implementation_guide';
 
 export interface PlanningSession {
   id: string;
@@ -241,6 +241,28 @@ export interface PlanningOutput {
   mime_type: string;
   generated_at: string;
   version: number;
+}
+
+// ── TrackingPlan — structured summary of what was generated ──────────────────
+
+export interface TrackingPlanEvent {
+  event_name:      string;
+  page_label:      string;
+  page_url:        string;
+  trigger:         string;
+  platforms:       string[];
+  required_params: string[];
+  optional_params: string[];
+}
+
+export interface TrackingPlan {
+  session_id:       string;
+  site_url:         string;
+  business_type:    string;
+  generated_at:     string;
+  events:           TrackingPlanEvent[];
+  platform_count:   number;
+  conversion_count: number;
 }
 
 // ── Input shapes for API routes (Sprint PM-2) ─────────────────────────────────

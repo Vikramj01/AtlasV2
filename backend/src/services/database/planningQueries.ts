@@ -391,6 +391,41 @@ export async function getOutput(outputId: string, sessionId: string): Promise<Pl
   return data as PlanningOutput;
 }
 
+// ── Tracking plan versions ────────────────────────────────────────────────────
+
+export async function saveTrackingPlanVersion(
+  sessionId: string,
+  gtmOutputId: string,
+  specOutputId: string,
+  guideOutputId: string,
+  version: number,
+): Promise<void> {
+  await supabase
+    .from('tracking_plan_versions')
+    .upsert(
+      {
+        session_id:      sessionId,
+        version,
+        gtm_output_id:   gtmOutputId,
+        spec_output_id:  specOutputId,
+        guide_output_id: guideOutputId,
+      },
+      { onConflict: 'session_id,version' },
+    );
+  // Non-blocking — don't throw on failure (the outputs themselves are the source of truth)
+}
+
+export async function listTrackingPlanVersions(
+  sessionId: string,
+): Promise<Array<{ version: number; created_at: string; gtm_output_id: string | null }>> {
+  const { data } = await supabase
+    .from('tracking_plan_versions')
+    .select('version, created_at, gtm_output_id')
+    .eq('session_id', sessionId)
+    .order('version', { ascending: false });
+  return (data ?? []) as Array<{ version: number; created_at: string; gtm_output_id: string | null }>;
+}
+
 // ── Delete ────────────────────────────────────────────────────────────────────
 
 export async function deleteSession(sessionId: string, userId: string): Promise<void> {

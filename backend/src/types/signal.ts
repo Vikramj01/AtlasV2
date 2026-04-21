@@ -12,16 +12,6 @@ export interface PlatformEventMapping {
   additional?: Record<string, string>;
 }
 
-export interface WalkerOSMapping {
-  entity: string;
-  action: string;
-  trigger: {
-    type: 'load' | 'click' | 'submit';
-    selector?: string;
-  };
-  data_mapping: Record<string, string>;
-}
-
 export type SignalCategory = 'conversion' | 'engagement' | 'navigation' | 'custom';
 
 export interface Signal {
@@ -37,7 +27,6 @@ export interface Signal {
   required_params: ParamSpec[];
   optional_params: ParamSpec[];
   platform_mappings: Record<string, PlatformEventMapping>;
-  walkeros_mapping: WalkerOSMapping | null;
   version: number;
   created_at: string;
   updated_at: string;
@@ -91,7 +80,7 @@ export interface Deployment {
 export interface ClientOutput {
   id: string;
   client_id: string;
-  output_type: 'gtm_container' | 'walkeros_flow' | 'datalayer_spec' | 'implementation_guide';
+  output_type: 'gtm_container' | 'datalayer_spec' | 'implementation_guide';
   output_data: Record<string, unknown> | null;
   file_path: string | null;
   version: number;
@@ -130,7 +119,6 @@ export interface CreateSignalRequest {
   required_params?: ParamSpec[];
   optional_params?: ParamSpec[];
   platform_mappings?: Record<string, PlatformEventMapping>;
-  walkeros_mapping?: WalkerOSMapping;
 }
 
 export interface UpdateSignalRequest {
@@ -142,7 +130,6 @@ export interface UpdateSignalRequest {
   required_params?: ParamSpec[];
   optional_params?: ParamSpec[];
   platform_mappings?: Record<string, PlatformEventMapping>;
-  walkeros_mapping?: WalkerOSMapping;
 }
 
 export interface CreatePackRequest {

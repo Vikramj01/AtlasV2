@@ -11,9 +11,7 @@ interface Step3Props {
 }
 
 const FORMAT_OPTIONS: { value: ImplementationFormat; label: string; description: string }[] = [
-  { value: 'gtm', label: 'Google Tag Manager', description: "Most common — we'll generate dataLayer.push() code" },
-  { value: 'walkeros', label: 'WalkerOS', description: "Config-as-code — we'll generate a flow.json file" },
-  { value: 'both', label: "Both / Not sure", description: "We'll generate both so you can compare" },
+  { value: 'gtm', label: 'Google Tag Manager', description: "Most common — we'll generate dataLayer.push() code and a GTM container JSON" },
 ];
 
 export function Step3PlatformSelector({ onNext, onBack }: Step3Props) {

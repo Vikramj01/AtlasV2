@@ -123,6 +123,20 @@ export const planningApi = {
     return apiFetch(`/api/planning/sessions/${sessionId}/outputs`);
   },
 
+  validateOutput(sessionId: string, outputId: string): Promise<{ valid: boolean; errors: string[]; warnings: string[] }> {
+    return apiFetch(`/api/planning/sessions/${sessionId}/outputs/${outputId}/validate`);
+  },
+
+  mergeGTM(sessionId: string, outputId: string, existingContainer: Record<string, unknown>): Promise<{
+    summary: { will_add: string[]; will_overwrite: string[]; untouched: string[] };
+    merged_container: Record<string, unknown>;
+  }> {
+    return apiFetch(`/api/planning/sessions/${sessionId}/gtm/merge`, {
+      method: 'POST',
+      body: JSON.stringify({ output_id: outputId, existing_container: existingContainer }),
+    });
+  },
+
   downloadOutput(sessionId: string, outputId: string): Promise<Blob> {
     return getAuthHeader().then((auth) =>
       fetch(`${API_BASE}/api/planning/sessions/${sessionId}/outputs/${outputId}/download`, {

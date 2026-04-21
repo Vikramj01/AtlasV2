@@ -90,7 +90,7 @@ function GridCard({ signal, onEdit, onDelete, onAddToPack }: Props) {
   const canEdit = !signal.is_system && !!onEdit;
   const canDelete = !signal.is_system && !!onDelete;
   const totalParams = signal.required_params.length + signal.optional_params.length;
-  const hasMappings = platforms.length > 0 || !!signal.walkeros_mapping;
+  const hasMappings = platforms.length > 0;
 
   return (
     <Card className="relative overflow-hidden">

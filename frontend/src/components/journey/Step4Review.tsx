@@ -173,11 +173,7 @@ export function Step4Review({ onBack }: Step4Props) {
         <div className="px-5 py-4">
           <h3 className="text-caption-upper mb-2">Implementation Format</h3>
           <p className="text-sm text-[#1A1A1A]">
-            {implementationFormat === 'gtm'
-              ? 'Google Tag Manager (dataLayer)'
-              : implementationFormat === 'walkeros'
-              ? 'WalkerOS (flow.json)'
-              : 'Both — GTM dataLayer + WalkerOS flow.json'}
+            Google Tag Manager (dataLayer)
           </p>
         </div>
 
