@@ -6,7 +6,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { usePlanningStore } from '@/store/planningStore';
 import { planningApi } from '@/lib/api/planningApi';
-import { WalkerOSAdvantageCard } from '@/components/signals/WalkerOSAdvantageCard';
 import type { OutputType } from '@/types/planning';
 
 // ── Share with Developer modal/inline reveal ──────────────────────────────────
@@ -97,13 +96,13 @@ function ShareReveal({
 const OUTPUT_LABELS: Record<OutputType, string> = {
   gtm_container:        'GTM Container JSON',
   datalayer_spec:       'DataLayer Specification',
-  implementation_guide: 'Implementation Guide (HTML)',
+  implementation_guide: 'Developer Handoff Doc',
 };
 
 const OUTPUT_EXT: Record<OutputType, string> = {
   gtm_container:        'json',
   datalayer_spec:       'json',
-  implementation_guide: 'html',
+  implementation_guide: 'md',
 };
 
 export function Step7DownloadAndHandoff() {
@@ -225,10 +224,6 @@ export function Step7DownloadAndHandoff() {
           </CardContent>
         </Card>
       )}
-
-      <div className="mb-6">
-        <WalkerOSAdvantageCard context="output" />
-      </div>
 
       {/* Share with Developer */}
       <div className="mb-8">

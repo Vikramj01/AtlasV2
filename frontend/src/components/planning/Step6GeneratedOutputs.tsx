@@ -6,7 +6,6 @@ import { Label } from '@/components/ui/label';
 import { usePlanningStore } from '@/store/planningStore';
 import { planningApi } from '@/lib/api/planningApi';
 import { GTMContainerPreview } from './GTMContainerPreview';
-import { WalkerOSAdvantageCard } from '@/components/signals/WalkerOSAdvantageCard';
 import { SignalComparison } from './SignalComparison';
 import { PiiWarningsBanner } from './PiiWarningsBanner';
 import type { PlanningOutput, OutputType, ExistingTrackingQuick } from '@/types/planning';
@@ -25,10 +24,10 @@ const OUTPUT_META: Record<OutputType, { title: string; description: string; icon
     ext:         'json',
   },
   implementation_guide: {
-    title:       'Implementation Guide',
-    description: 'Human-readable HTML guide with setup instructions, platform IDs, and a testing checklist.',
-    icon:        '📄',
-    ext:         'html',
+    title:       'Developer Handoff Doc',
+    description: 'Markdown document with per-page events, GTM import steps, platform IDs, and a testing checklist.',
+    icon:        '📝',
+    ext:         'md',
   },
 };
 
@@ -126,12 +125,9 @@ function PreviewModal({ output, onClose }: { output: PlanningOutput; onClose: ()
 
         <div className="flex-1 overflow-hidden">
           {output.output_type === 'implementation_guide' && output.content_text ? (
-            <iframe
-              srcDoc={output.content_text}
-              title="Implementation Guide Preview"
-              sandbox="allow-same-origin"
-              className="h-full w-full border-none"
-            />
+            <pre className="h-full overflow-auto p-5 font-mono text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap">
+              {output.content_text}
+            </pre>
           ) : output.content ? (
             <pre className="h-full overflow-auto p-5 font-mono text-xs leading-relaxed text-muted-foreground">
               {JSON.stringify(output.content, null, 2)}
@@ -163,6 +159,15 @@ function GTMOutputCard({
   const [showRawPreview, setShowRawPreview] = useState(false);
   const [platformIds, setPlatformIds] = useState<PlatformIds>({ ga4: '', google_ads: '', meta_pixel: '' });
   const [previewExpanded, setPreviewExpanded] = useState(true);
+  const [validation, setValidation] = useState<{ valid: boolean; errors: string[]; warnings: string[] } | null>(null);
+  const [isValidating, setIsValidating] = useState(false);
+  const [showMerge, setShowMerge] = useState(false);
+  const [mergeResult, setMergeResult] = useState<{
+    summary: { will_add: string[]; will_overwrite: string[]; untouched: string[] };
+    merged_container: Record<string, unknown>;
+  } | null>(null);
+  const [isMerging, setIsMerging] = useState(false);
+  const [mergeError, setMergeError] = useState<string | null>(null);
 
   const sizeLabel = output.file_size_bytes
     ? output.file_size_bytes > 1024
@@ -172,7 +177,26 @@ function GTMOutputCard({
 
   const containerContent = output.content as Record<string, unknown> | null;
 
-  async function handleDownload() {
+  async function handleValidateAndDownload() {
+    // Run schema validation before download
+    if (!validation) {
+      setIsValidating(true);
+      try {
+        const result = await planningApi.validateOutput(sessionId, output.id);
+        setValidation(result);
+        if (!result.valid) {
+          setIsValidating(false);
+          return; // block download if schema errors
+        }
+      } catch {
+        // Validation service unavailable — allow download anyway
+      } finally {
+        setIsValidating(false);
+      }
+    } else if (!validation.valid) {
+      return; // already validated, blocked
+    }
+
     setIsDownloading(true);
     try {
       let jsonStr: string;
@@ -192,7 +216,11 @@ function GTMOutputCard({
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'atlas-gtm-container.json';
+      // Use versioned filename if atlas_meta is embedded
+      const meta = (containerContent as Record<string, unknown> | null)?.['_atlas_meta'] as { site_slug?: string; version?: number } | undefined;
+      const slug = meta?.site_slug ?? 'gtm';
+      const ver  = meta?.version  ?? output.version ?? 1;
+      a.download = `atlas-${slug}-v${ver}.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -204,6 +232,36 @@ function GTMOutputCard({
     }
   }
 
+  async function handleMergeUpload(file: File) {
+    setIsMerging(true);
+    setMergeError(null);
+    setMergeResult(null);
+    try {
+      const text = await file.text();
+      const existingContainer = JSON.parse(text) as Record<string, unknown>;
+      const result = await planningApi.mergeGTM(sessionId, output.id, existingContainer);
+      setMergeResult(result);
+    } catch (err) {
+      setMergeError(err instanceof Error ? err.message : 'Failed to parse or merge GTM container');
+    } finally {
+      setIsMerging(false);
+    }
+  }
+
+  function downloadMerged() {
+    if (!mergeResult) return;
+    const jsonStr = JSON.stringify(mergeResult.merged_container, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'atlas-gtm-merged.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <>
       <Card>
@@ -212,7 +270,12 @@ function GTMOutputCard({
           <div className="flex items-start gap-4 mb-4">
             <div className="mt-0.5 text-3xl">{meta.icon}</div>
             <div className="flex-1 min-w-0">
-              <h3 className="text-sm font-bold">{meta.title}</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold">{meta.title}</h3>
+                <span className="rounded bg-[#EEF1F7] px-1.5 py-0.5 text-[10px] font-semibold text-[#1B2A4A]">
+                  v{output.version}
+                </span>
+              </div>
               <p className="mt-0.5 text-xs text-muted-foreground">{meta.description}</p>
               {sizeLabel && <p className="mt-1 text-xs text-muted-foreground/70">{sizeLabel}</p>}
             </div>
@@ -251,15 +314,106 @@ function GTMOutputCard({
           {/* Platform IDs form */}
           <PlatformIdsForm ids={platformIds} onChange={setPlatformIds} />
 
+          {/* Validation result */}
+          {validation && (
+            <div className={`mt-3 rounded-lg border px-3 py-2.5 text-xs ${validation.valid ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
+              {validation.valid ? (
+                <p className="font-medium text-green-800">✓ Schema valid — ready to download</p>
+              ) : (
+                <>
+                  <p className="font-medium text-red-800 mb-1">Schema errors — fix before importing:</p>
+                  {validation.errors.map((e, i) => <p key={i} className="text-red-700">• {e}</p>)}
+                </>
+              )}
+              {validation.warnings.length > 0 && (
+                <div className={`mt-1.5 ${validation.valid ? 'text-amber-700' : 'text-amber-800'}`}>
+                  {validation.warnings.map((w, i) => <p key={i}>⚠ {w}</p>)}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Merge with existing GTM */}
+          <div className="mt-4 rounded-lg border border-dashed border-[#1B2A4A]/20 p-3">
+            <button
+              type="button"
+              onClick={() => setShowMerge((s) => !s)}
+              className="flex w-full items-center justify-between text-xs font-medium text-[#1B2A4A]"
+            >
+              <span>Compare with your existing GTM container</span>
+              <span>{showMerge ? '▲' : '▼'}</span>
+            </button>
+
+            {showMerge && (
+              <div className="mt-3 space-y-3">
+                <p className="text-xs text-muted-foreground">
+                  Upload your current GTM export to see exactly what will be added or changed.
+                </p>
+                <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-xs hover:border-[#1B2A4A]/40 transition-colors">
+                  <span className="text-muted-foreground">{isMerging ? 'Analysing…' : 'Upload existing GTM JSON'}</span>
+                  <input
+                    type="file"
+                    accept=".json,application/json"
+                    className="hidden"
+                    disabled={isMerging}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleMergeUpload(file);
+                    }}
+                  />
+                </label>
+
+                {mergeError && (
+                  <p className="text-xs text-red-600">⚠ {mergeError}</p>
+                )}
+
+                {mergeResult && (
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                      {[
+                        { label: 'Will add', items: mergeResult.summary.will_add, color: 'bg-green-50 text-green-700 border-green-200' },
+                        { label: 'Will overwrite', items: mergeResult.summary.will_overwrite, color: 'bg-amber-50 text-amber-700 border-amber-200' },
+                        { label: 'Untouched', items: mergeResult.summary.untouched, color: 'bg-gray-50 text-gray-600 border-gray-200' },
+                      ].map(({ label, items, color }) => (
+                        <div key={label} className={`rounded border px-2 py-2 ${color}`}>
+                          <p className="text-lg font-bold">{items.length}</p>
+                          <p className="text-[10px] font-medium">{label}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    {mergeResult.summary.will_overwrite.length > 0 && (
+                      <div className="rounded border border-amber-100 bg-amber-50 px-3 py-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-700 mb-1">Will overwrite</p>
+                        {mergeResult.summary.will_overwrite.map((name) => (
+                          <p key={name} className="text-xs text-amber-800 font-mono">• {name}</p>
+                        ))}
+                      </div>
+                    )}
+
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={downloadMerged}
+                      className="w-full text-xs border-[#1B2A4A]/30 text-[#1B2A4A]"
+                    >
+                      Download merged container
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Download button */}
           <div className="mt-4 flex justify-end">
             <Button
               size="sm"
-              onClick={handleDownload}
-              disabled={isDownloading}
+              onClick={handleValidateAndDownload}
+              disabled={isDownloading || isValidating || validation?.valid === false}
               className="bg-[#1B2A4A] hover:bg-[#1B2A4A] text-xs"
             >
-              {isDownloading ? 'Downloading…' : 'Download .json'}
+              {isValidating ? 'Validating…' : isDownloading ? 'Downloading…' : 'Download .json'}
             </Button>
           </div>
         </CardContent>
@@ -444,10 +598,6 @@ export function Step6GeneratedOutputs() {
             </Button>
           </div>
         )}
-      </div>}
-
-      {activeTab === 'outputs' && <div className="mb-8">
-        <WalkerOSAdvantageCard context="output" />
       </div>}
 
       {activeTab === 'outputs' && <div className="mb-8 rounded-xl border border-amber-100 bg-amber-50 p-5">

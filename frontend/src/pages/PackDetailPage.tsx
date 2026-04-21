@@ -6,7 +6,6 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { signalApi } from '@/lib/api/signalApi';
 import { SignalCard } from '@/components/signals/SignalCard';
-import { WalkerOSAdvantageCard } from '@/components/signals/WalkerOSAdvantageCard';
 import { PackDeploymentView } from '@/components/signals/PackDeploymentView';
 import { SkeletonCard } from '@/components/common/SkeletonCard';
 import type { SignalPackWithSignals } from '@/types/signal';
@@ -139,9 +138,6 @@ export function PackDetailPage() {
           </p>
         </div>
       )}
-
-      {/* WalkerOS advantage */}
-      <WalkerOSAdvantageCard deploymentCount={pack.client_count} context="pack" />
 
       {/* Client deployments */}
       {orgId && <PackDeploymentView packId={pack.id} orgId={orgId} />}

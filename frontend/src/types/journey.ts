@@ -1,9 +1,9 @@
 export type BusinessType = 'ecommerce' | 'saas' | 'lead_gen' | 'content' | 'marketplace' | 'custom';
-export type ImplementationFormat = 'gtm' | 'walkeros' | 'both';
+export type ImplementationFormat = 'gtm';
 export type Platform = 'ga4' | 'google_ads' | 'meta' | 'sgtm' | 'tiktok' | 'linkedin';
 export type JourneyStatus = 'draft' | 'active' | 'archived';
 export type StageStatus = 'healthy' | 'issues_found' | 'signals_missing' | 'not_checked';
-export type SpecFormat = 'gtm_datalayer' | 'walkeros_flow' | 'validation_spec';
+export type SpecFormat = 'gtm_datalayer' | 'validation_spec';
 
 export interface Journey {
   id: string;

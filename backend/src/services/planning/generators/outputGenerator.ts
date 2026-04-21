@@ -10,13 +10,14 @@
 import { generateGTMContainer } from './gtmContainerGenerator';
 import type { GTMPlatformIds } from './gtmContainerGenerator';
 import { generateDataLayerSpec } from './dataLayerSpecGenerator';
-import { generateImplementationGuide } from './implementationGuideGenerator';
+import { generateDeveloperHandoffDoc } from './developerHandoffDoc';
 import {
   getApprovedRecommendations,
   getPagesBySession,
   createOutput,
   getOutputs,
   updateSessionStatus,
+  saveTrackingPlanVersion,
 } from '@/services/database/planningQueries';
 import { getClientPlatforms } from '@/services/database/clientQueries';
 import { uploadOutput } from '@/services/database/supabase';
@@ -66,9 +67,18 @@ export async function generateAllOutputs(session: PlanningSession): Promise<Gene
   logger.info({ sessionId, recCount: approvedRecs.length }, 'Generating GTM container');
   const gtmContainer = generateGTMContainer(approvedRecs, session, platformIds);
   const gtmJson = JSON.stringify(gtmContainer, null, 2);
+
+  // Derive a slug from the site URL for the versioned filename
+  const siteSlug = session.website_url
+    .replace(/^https?:\/\//, '')
+    .replace(/[^a-z0-9]+/gi, '-')
+    .replace(/^-|-$/g, '')
+    .toLowerCase()
+    .slice(0, 40);
+
   const gtmStoragePath = await uploadOutput(
     sessionId,
-    'gtm-container.json',
+    `gtm-container.json`,
     gtmJson,
     'application/json',
   ).catch(err => {
@@ -85,6 +95,12 @@ export async function generateAllOutputs(session: PlanningSession): Promise<Gene
     gtmStoragePath,
   );
 
+  // Attach slug + version to the container for the frontend download filename
+  (gtmContainer as Record<string, unknown>)['_atlas_meta'] = {
+    site_slug: siteSlug,
+    version: gtmOutput.version,
+  };
+
   // ── 2. DataLayer Specification ────────────────────────────────────────────
   logger.info({ sessionId }, 'Generating dataLayer spec');
   const dlSpec = generateDataLayerSpec(approvedRecs, pages, session);
@@ -96,16 +112,16 @@ export async function generateAllOutputs(session: PlanningSession): Promise<Gene
     'application/json',
   );
 
-  // ── 3. Implementation Guide HTML ──────────────────────────────────────────
-  logger.info({ sessionId }, 'Generating implementation guide');
-  const guideHtml = generateImplementationGuide(approvedRecs, pages, session);
+  // ── 3. Developer Handoff Document (Markdown) ─────────────────────────────
+  logger.info({ sessionId }, 'Generating developer handoff doc');
+  const handoffMd = generateDeveloperHandoffDoc(approvedRecs, pages, session);
   const guideStoragePath = await uploadOutput(
     sessionId,
-    'implementation-guide.html',
-    guideHtml,
-    'text/html',
+    'developer-handoff.md',
+    handoffMd,
+    'text/markdown',
   ).catch(err => {
-    logger.warn({ sessionId, err: err.message }, 'Guide HTML upload failed — storing in DB only');
+    logger.warn({ sessionId, err: err.message }, 'Handoff doc upload failed — storing in DB only');
     return undefined;
   });
 
@@ -113,16 +129,25 @@ export async function generateAllOutputs(session: PlanningSession): Promise<Gene
     sessionId,
     'implementation_guide',
     null,
-    guideHtml,
-    'text/html',
+    handoffMd,
+    'text/markdown',
     guideStoragePath,
   );
 
   // ── Update session status ─────────────────────────────────────────────────
   await updateSessionStatus(sessionId, 'outputs_ready');
 
+  // ── Save version snapshot (non-blocking) ─────────────────────────────────
+  saveTrackingPlanVersion(
+    sessionId,
+    gtmOutput.id,
+    dlOutput.id,
+    guideOutput.id,
+    gtmOutput.version,
+  ).catch(() => { /* non-blocking */ });
+
   logger.info(
-    { sessionId, outputIds: [gtmOutput.id, dlOutput.id, guideOutput.id] },
+    { sessionId, version: gtmOutput.version, outputIds: [gtmOutput.id, dlOutput.id, guideOutput.id] },
     'Output generation complete → outputs_ready',
   );
 

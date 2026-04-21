@@ -82,7 +82,7 @@ export interface ClientDeployment {
 export interface ClientOutput {
   id: string;
   client_id: string;
-  output_type: 'gtm_container' | 'walkeros_flow' | 'datalayer_spec' | 'implementation_guide';
+  output_type: 'gtm_container' | 'datalayer_spec' | 'implementation_guide';
   output_data: Record<string, unknown> | null;
   version: number;
   generated_at: string;

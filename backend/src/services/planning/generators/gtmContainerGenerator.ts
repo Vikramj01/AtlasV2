@@ -438,6 +438,63 @@ export function generateGTMContainer(
     tagManagerUrl: 'https://tagmanager.google.com/',
   });
 
+  // ── Consent Mode v2 update tag ───────────────────────────────────────────
+  // Fires whenever the CMP pushes consent_update to the dataLayer.
+  // The tag reads analytics_consent and ads_consent from the event and
+  // calls gtag('consent', 'update') so downstream tags can proceed.
+  const consentUpdateTrigId = trigIds.next();
+  triggers.push({
+    ...stub(),
+    triggerId: consentUpdateTrigId,
+    name: 'CE - consent_update',
+    type: 'CUSTOM_EVENT',
+    customEventFilter: [
+      {
+        type: 'EQUALS',
+        parameter: [
+          tmpl('arg0', '{{Event}}'),
+          tmpl('arg1', 'consent_update'),
+        ],
+      },
+    ],
+    folderId: FOLDER.TRIGGERS,
+  });
+
+  tags.push({
+    ...stub(),
+    tagId: tagIds.next(),
+    name: 'Atlas - Consent Mode v2 Update',
+    type: 'html',
+    parameter: [
+      tmpl('html', `<script>
+  (function() {
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+
+    // Read consent decisions pushed by your CMP via:
+    //   dataLayer.push({ event: 'consent_update', analytics: true, ads: true })
+    var dl = window.dataLayer;
+    var latestEvent = dl[dl.length - 1] || {};
+    var analyticsGranted = latestEvent.analytics === true ? 'granted' : 'denied';
+    var adsGranted       = latestEvent.ads       === true ? 'granted' : 'denied';
+
+    gtag('consent', 'update', {
+      'ad_storage':         adsGranted,
+      'analytics_storage':  analyticsGranted,
+      'ad_user_data':       adsGranted,
+      'ad_personalization': adsGranted
+    });
+  })();
+</script>`),
+      bool('supportDocumentWrite', 'false'),
+    ],
+    firingTriggerId: [consentUpdateTrigId],
+    tagFiringOption: 'oncePerEvent',
+    folderId: FOLDER.CONFIG,
+    fingerprint: '0',
+    tagManagerUrl: 'https://tagmanager.google.com/',
+  });
+
   // ── Click ID capture tags (fire on All Pages) ─────────────────────────────
 
   // Atlas — Store GCLID: reads gclid from URL and persists in _gcl_aw cookie

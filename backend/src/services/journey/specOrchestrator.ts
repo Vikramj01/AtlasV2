@@ -1,6 +1,5 @@
 import type { JourneyDefinition, PlatformConfig, SpecFormat } from '../../types/journey';
 import { generateGTMDataLayer } from './generators/gtmDataLayer';
-import { generateWalkerOSFlow } from './generators/walkerosFlow';
 import { generateValidationSpec } from './generators/validationSpec';
 import { saveGeneratedSpec, getJourneyWithDetails } from '../database/journeyQueries';
 
@@ -37,8 +36,6 @@ export async function generateAndSaveSpecs(
 
     if (format === 'gtm_datalayer') {
       specData = generateGTMDataLayer(definition, platformConfigs);
-    } else if (format === 'walkeros_flow') {
-      specData = generateWalkerOSFlow(definition, platformConfigs);
     } else if (format === 'validation_spec') {
       specData = generateValidationSpec(definition, platformConfigs);
     } else {
@@ -52,9 +49,6 @@ export async function generateAndSaveSpecs(
   return results as Record<SpecFormat, unknown>;
 }
 
-function resolveFormats(implementationFormat: string): SpecFormat[] {
-  const formats: SpecFormat[] = ['validation_spec'];
-  if (implementationFormat === 'gtm' || implementationFormat === 'both') formats.push('gtm_datalayer');
-  if (implementationFormat === 'walkeros' || implementationFormat === 'both') formats.push('walkeros_flow');
-  return formats;
+function resolveFormats(_implementationFormat: string): SpecFormat[] {
+  return ['gtm_datalayer', 'validation_spec'];
 }

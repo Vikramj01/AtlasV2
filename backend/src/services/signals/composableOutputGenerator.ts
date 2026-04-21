@@ -3,8 +3,7 @@
  *
  * Takes a client's deployed signal packs and generates:
  * 1. GTM container JSON   (reuses existing gtmContainerGenerator patterns)
- * 2. WalkerOS flow.json   (modular, client-specific config referencing shared signal packs)
- * 3. dataLayer spec       (per-page developer code snippets)
+ * 2. dataLayer spec       (per-page developer code snippets)
  *
  * This is the agency/composable path. It runs synchronously in the route handler
  * (outputs are fast to compute — no Browserbase, no Claude API).
@@ -14,7 +13,6 @@ import type { ClientWithDetails } from '@/types/organisation';
 import type { ClientOutput, DeploymentWithSignals, SignalWithOverrides } from '@/types/signal';
 import { resolveDeploymentsForClient } from '@/services/database/signalQueries';
 import { listDeployments, saveClientOutput, markDeploymentGenerated } from '@/services/database/clientQueries';
-import { generateWalkerOSFlow } from './walkerosComposableGenerator';
 import logger from '@/utils/logger';
 
 // ── GTM container generation from resolved signals ────────────────────────────
@@ -244,12 +242,7 @@ export async function generateComposableOutputs(
   const gtmOutput = await saveClientOutput(clientId, 'gtm_container', gtmData, sourceDeployments);
   outputs.push(gtmOutput);
 
-  // 2. WalkerOS flow
-  const walkerosData = generateWalkerOSFlow(client, deploymentData);
-  const walkerosOutput = await saveClientOutput(clientId, 'walkeros_flow', walkerosData, sourceDeployments);
-  outputs.push(walkerosOutput);
-
-  // 3. dataLayer spec
+  // 2. dataLayer spec
   const specData = buildDataLayerSpec(client, allSignals);
   const specOutput = await saveClientOutput(clientId, 'datalayer_spec', specData, sourceDeployments);
   outputs.push(specOutput);

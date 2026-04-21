@@ -6,20 +6,17 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { clientApi } from '@/lib/api/organisationApi';
 import { DeploymentWizard } from '@/components/signals/DeploymentWizard';
-import { WalkerOSAdvantageCard } from '@/components/signals/WalkerOSAdvantageCard';
 import { SkeletonCard } from '@/components/common/SkeletonCard';
 import type { ClientWithDetails, ClientDeployment, ClientOutput } from '@/types/organisation';
 
 const OUTPUT_LABELS: Record<string, string> = {
   gtm_container: 'GTM Container JSON',
-  walkeros_flow: 'WalkerOS Flow Config',
   datalayer_spec: 'dataLayer Spec',
   implementation_guide: 'Implementation Guide',
 };
 
 const OUTPUT_ICONS: Record<string, string> = {
   gtm_container: '📦',
-  walkeros_flow: '⚡',
   datalayer_spec: '💻',
   implementation_guide: '📄',
 };
@@ -231,11 +228,6 @@ export function ClientDetailPage() {
           </CardContent>
         </Card>
       </div>
-
-      {/* WalkerOS Advantage */}
-      {outputs.some((o) => o.output_type === 'gtm_container') && (
-        <WalkerOSAdvantageCard deploymentCount={deployments.length} />
-      )}
 
       {/* Generated Outputs */}
       {Object.keys(latestOutputsByType).length > 0 && (

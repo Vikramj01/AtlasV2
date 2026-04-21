@@ -1,9 +1,9 @@
 export type BusinessType = 'ecommerce' | 'saas' | 'lead_gen' | 'content' | 'marketplace' | 'custom';
 export type JourneyStatus = 'draft' | 'active' | 'archived';
-export type ImplementationFormat = 'gtm' | 'walkeros' | 'both';
+export type ImplementationFormat = 'gtm';
 export type Platform = 'ga4' | 'google_ads' | 'meta' | 'sgtm' | 'tiktok' | 'linkedin';
 export type ActionCategory = 'conversion' | 'engagement' | 'navigation';
-export type SpecFormat = 'gtm_datalayer' | 'walkeros_flow' | 'validation_spec';
+export type SpecFormat = 'gtm_datalayer' | 'validation_spec';
 export type StageStatus = 'healthy' | 'issues_found' | 'signals_missing' | 'not_checked';
 export type GapType = 'MISSING' | 'WRONG' | 'EXTRA';
 export type GapSeverity = 'critical' | 'high' | 'medium' | 'info';
@@ -252,21 +252,6 @@ export interface GTMStageOutput {
 export interface GTMDataLayerOutput {
   stages: GTMStageOutput[];
   global_setup: string;
-}
-
-export interface WalkerOSTagOutput {
-  stage_label: string;
-  stage_order: number;
-  sample_url: string | null;
-  tagging_method: 'data_attributes' | 'elb_calls';
-  code_snippet: string;
-  comments: string[];
-}
-
-export interface WalkerOSOutput {
-  flow_json: unknown;
-  elb_tags: WalkerOSTagOutput[];
-  readme: string;
 }
 
 // Journey definition used by generators

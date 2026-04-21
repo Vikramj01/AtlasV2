@@ -7,7 +7,6 @@ import { cn } from '@/lib/utils';
 
 interface SpecData {
   gtm?: unknown;
-  walkeros?: unknown;
   validation?: unknown;
 }
 
@@ -66,7 +65,7 @@ export function JourneySpecPage() {
 
   const [details, setDetails] = useState<JourneyWithDetails | null>(null);
   const [specs, setSpecs] = useState<SpecData>({});
-  const [activeTab, setActiveTab] = useState<'gtm' | 'walkeros' | 'validation'>('gtm');
+  const [activeTab, setActiveTab] = useState<'gtm' | 'validation'>('gtm');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -77,20 +76,15 @@ export function JourneySpecPage() {
     Promise.all([
       getJourney(id),
       getSpec(id, 'gtm_datalayer').catch(() => null),
-      getSpec(id, 'walkeros_flow').catch(() => null),
       getSpec(id, 'validation_spec').catch(() => null),
     ])
-      .then(([journeyDetails, gtmSpec, walkerosSpec, validationSpec]) => {
+      .then(([journeyDetails, gtmSpec, validationSpec]) => {
         setDetails(journeyDetails);
         setSpecs({
           gtm: gtmSpec?.spec_data,
-          walkeros: walkerosSpec?.spec_data,
           validation: validationSpec?.spec_data,
         });
-
-        const fmt = journeyDetails.journey.implementation_format;
-        if (fmt === 'walkeros') setActiveTab('walkeros');
-        else setActiveTab('gtm');
+        setActiveTab('gtm');
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
@@ -121,21 +115,14 @@ export function JourneySpecPage() {
 
   const { journey, stages } = details;
 
-  const tabs: { id: 'gtm' | 'walkeros' | 'validation'; label: string }[] = [
+  const tabs: { id: 'gtm' | 'validation'; label: string }[] = [
     { id: 'gtm', label: 'GTM dataLayer' },
-    { id: 'walkeros', label: 'WalkerOS flow.json' },
     { id: 'validation', label: 'Validation Spec' },
   ];
 
   const gtmSpec = specs.gtm as {
     global_setup?: string;
     stages?: Array<{ stage_order: number; stage_label: string; sample_url?: string; code_snippet: string }>;
-  } | null | undefined;
-
-  const walkerosSpec = specs.walkeros as {
-    readme?: string;
-    flow_json?: unknown;
-    elb_tags?: Array<{ stage_order: number; stage_label: string; code_snippet: string }>;
   } | null | undefined;
 
   return (
@@ -236,43 +223,6 @@ export function JourneySpecPage() {
             </>
           ) : (
             <p className="text-xs text-muted-foreground italic">No per-page events generated. Run the spec generator first.</p>
-          )}
-        </div>
-      )}
-
-      {/* WalkerOS tab */}
-      {activeTab === 'walkeros' && (
-        <div className="space-y-4">
-          <TabExplainer>
-            <strong>What this is:</strong> A <code className="bg-blue-100 px-1 rounded text-xs">flow.json</code> configuration file for <a href="https://walkeros.com" target="_blank" rel="noopener noreferrer" className="underline">WalkerOS</a> — an open-source, privacy-first data layer alternative. Instead of writing <code className="bg-blue-100 px-1 rounded text-xs">dataLayer.push()</code> manually on every page, you define all tracking behaviour once in this JSON file, and WalkerOS handles firing the right events automatically.
-            <br /><br />
-            <strong>How to use it:</strong> Pass this file to your developer. They add it to your WalkerOS instance configuration. This replaces the GTM dataLayer snippets — don't use both at the same time.
-          </TabExplainer>
-
-          {walkerosSpec?.flow_json ? (
-            <CodeBlock
-              label="flow.json — WalkerOS Configuration"
-              filename="flow.json"
-              code={JSON.stringify(walkerosSpec.flow_json, null, 2)}
-            />
-          ) : (
-            <p className="text-xs text-muted-foreground italic">WalkerOS flow.json not generated.</p>
-          )}
-
-          {(walkerosSpec?.elb_tags ?? []).length > 0 && (
-            <>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mt-4">
-                Per-page elb attribute tags
-              </p>
-              {(walkerosSpec?.elb_tags ?? []).map((tag, i) => (
-                <CodeBlock
-                  key={i}
-                  label={`${tag.stage_label} — HTML attributes`}
-                  filename={`stage-${tag.stage_order}-elb-tags.html`}
-                  code={tag.code_snippet}
-                />
-              ))}
-            </>
           )}
         </div>
       )}

@@ -58,7 +58,6 @@ export async function createSignal(data: CreateSignalRequest & {
       required_params: data.required_params ?? [],
       optional_params: data.optional_params ?? [],
       platform_mappings: data.platform_mappings ?? {},
-      walkeros_mapping: data.walkeros_mapping ?? null,
       taxonomy_event_id: data.taxonomy_event_id ?? null,
       taxonomy_path: data.taxonomy_path ?? null,
     })
