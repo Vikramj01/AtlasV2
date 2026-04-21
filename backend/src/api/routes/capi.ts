@@ -78,6 +78,7 @@ capiRouter.post('/providers', planGuard('pro'), async (req: Request, res: Respon
       data_processing_options?: string[];
       data_processing_options_country?: number;
       data_processing_options_state?: number;
+      adapter_name?: string;
     };
     const provider = await createProvider({
       project_id: body.project_id,
@@ -91,6 +92,7 @@ capiRouter.post('/providers', planGuard('pro'), async (req: Request, res: Respon
       data_processing_options: bodyExt.data_processing_options,
       data_processing_options_country: bodyExt.data_processing_options_country,
       data_processing_options_state: bodyExt.data_processing_options_state,
+      adapter_name: bodyExt.adapter_name,
     });
 
     res.status(201).json({
@@ -247,6 +249,27 @@ capiRouter.post('/providers/:id/activate', async (req: Request, res: Response): 
     res.json({ id: req.params.id, status: 'active', activated_at: new Date().toISOString() });
   } catch (err) {
     sendInternalError(res, err, 'Failed to activate CAPI provider');
+  }
+});
+
+// ── POST /api/capi/providers/:id/reconnect ────────────────────────────────────
+// Resets a provider in 'reconnect_required' state back to 'draft' so the user
+// can update their credentials and go through the setup wizard again.
+
+capiRouter.post('/providers/:id/reconnect', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const provider = await getProvider(req.params.id, req.user.id);
+    if (!provider) { res.status(404).json({ error: 'PROVIDER_NOT_FOUND' }); return; }
+
+    if (provider.status !== 'reconnect_required') {
+      res.status(400).json({ error: 'VALIDATION_FAILED', message: `Provider status is '${provider.status}' — reconnect is only needed when status is 'reconnect_required'` });
+      return;
+    }
+
+    await updateProviderStatus(req.params.id, 'draft', null);
+    res.json({ id: req.params.id, status: 'draft', message: 'Provider reset to draft. Update your credentials to reconnect.' });
+  } catch (err) {
+    sendInternalError(res, err, 'Failed to reconnect CAPI provider');
   }
 });
 

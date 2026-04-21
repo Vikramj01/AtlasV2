@@ -220,3 +220,33 @@ offlineConversionQueue.on('stalled', (job) => {
   logger.warn({ jobId: job.id, uploadId: job.data.upload_id }, 'Offline conversion upload job stalled');
 });
 
+// ── Google OAuth Refresh Queue ─────────────────────────────────────────────────
+// Runs every 30 minutes. Proactively refreshes Google OAuth access tokens before
+// they expire, and sets status → reconnect_required on refresh failure.
+// PII (credentials) are loaded from DB inside the worker — NOT in the payload.
+
+export interface GoogleOAuthRefreshJobData {
+  trigger: 'scheduled';
+}
+
+export const googleOAuthRefreshQueue = new Bull<GoogleOAuthRefreshJobData>('google-oauth-refresh', {
+  redis: buildRedisOpts(env.REDIS_URL),
+  defaultJobOptions: {
+    attempts: 1,
+    removeOnComplete: 10,
+    removeOnFail: 10,
+  },
+});
+
+googleOAuthRefreshQueue.on('error', (err) => {
+  logger.error({ err }, 'Google OAuth refresh queue error');
+});
+
+googleOAuthRefreshQueue.on('completed', (job) => {
+  logger.info({ jobId: job.id }, 'Google OAuth refresh job completed');
+});
+
+googleOAuthRefreshQueue.on('failed', (job, err) => {
+  logger.error({ jobId: job?.id, err: err.message }, 'Google OAuth refresh job failed');
+});
+

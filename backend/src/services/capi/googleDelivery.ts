@@ -27,6 +27,7 @@ import type {
   DeliveryResult,
   ValidationResult,
 } from '@/types/capi';
+import type { ConsentDecisions } from '@/types/consent';
 import logger from '@/utils/logger';
 
 const GOOGLE_ADS_API_VERSION = 'v17';
@@ -97,11 +98,28 @@ export async function refreshGoogleToken(creds: GoogleCredentials): Promise<stri
   return body.access_token;
 }
 
+// ── Consent mapping ───────────────────────────────────────────────────────────
+
+function mapConsentToGoogle(
+  consentState: ConsentDecisions,
+): GoogleConversionAdjustment['consent'] {
+  const map = (v: string | undefined): 'GRANTED' | 'DENIED' | 'UNSPECIFIED' => {
+    if (v === 'granted')  return 'GRANTED';
+    if (v === 'denied')   return 'DENIED';
+    return 'UNSPECIFIED';
+  };
+  return {
+    adUserData:        map(consentState.marketing),
+    adPersonalization: map(consentState.personalisation),
+  };
+}
+
 // ── Payload formatting ────────────────────────────────────────────────────────
 
 /**
  * Format a single AtlasEvent + hashed identifiers into a
  * GoogleConversionAdjustment (Enhanced Conversions payload).
+ * Includes consent block sourced from the event's consent_state.
  */
 export function formatGoogleAdjustment(
   event: AtlasEvent,
@@ -184,6 +202,11 @@ export function formatGoogleAdjustment(
   // Attach user agent
   if (event.user_data.client_user_agent) {
     adjustment.userAgent = event.user_data.client_user_agent;
+  }
+
+  // Attach consent signals (required by Google Ads API for consent mode v2)
+  if (event.consent_state) {
+    adjustment.consent = mapConsentToGoogle(event.consent_state);
   }
 
   void mapping; // The outer pipeline logs the mapped provider_event name; not needed here
@@ -387,4 +410,48 @@ export async function validateGoogleCredentials(
   } catch (err) {
     return { valid: false, error: err instanceof Error ? err.message : 'Network error' };
   }
+}
+
+// ── Token refresh with expiry ─────────────────────────────────────────────────
+
+/**
+ * Refresh the Google OAuth token and return the new access token along with
+ * an ISO expiry timestamp (access tokens typically expire in 3600 seconds).
+ */
+export async function refreshGoogleTokenWithExpiry(
+  creds: GoogleCredentials,
+): Promise<{ access_token: string; expires_at: string }> {
+  const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID ?? '';
+  const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET ?? '';
+
+  if (!clientId || !clientSecret) {
+    throw new Error(
+      'GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET are required for token refresh',
+    );
+  }
+
+  const params = new URLSearchParams({
+    client_id: clientId,
+    client_secret: clientSecret,
+    refresh_token: creds.oauth_refresh_token,
+    grant_type: 'refresh_token',
+  });
+
+  const res = await fetch(GOOGLE_OAUTH_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params.toString(),
+  });
+
+  const body = await res.json() as { access_token?: string; expires_in?: number; error?: string; error_description?: string };
+  if (!res.ok || !body.access_token) {
+    throw new Error(
+      body.error_description ?? body.error ?? `Token refresh failed: HTTP ${res.status}`,
+    );
+  }
+
+  const expiresInSec = body.expires_in ?? 3600;
+  const expiresAt = new Date(Date.now() + expiresInSec * 1000).toISOString();
+
+  return { access_token: body.access_token, expires_at: expiresAt };
 }

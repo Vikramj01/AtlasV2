@@ -438,6 +438,62 @@ export function generateGTMContainer(
     tagManagerUrl: 'https://tagmanager.google.com/',
   });
 
+  // ── Click ID cookie capture tag ──────────────────────────────────────────
+  // Reads gclid, gbraid, wbraid from URL params on every page load.
+  // Stores each in a first-party cookie with a 90-day TTL so the click ID
+  // survives across pages and sessions (important for lead gen flows).
+  // Also pushes captured IDs to the dataLayer for use by GA4 and EC tags.
+  const clickIdTagId = tagIds.next();
+  tags.push({
+    ...stub(),
+    tagId: clickIdTagId,
+    name: 'Atlas - Click ID Cookie Capture',
+    type: 'html',
+    parameter: [
+      tmpl('html', `<script>
+(function() {
+  var CLICK_IDS = ['gclid', 'gbraid', 'wbraid'];
+  var TTL_DAYS  = 90;
+
+  var expires = new Date();
+  expires.setDate(expires.getDate() + TTL_DAYS);
+  var expStr  = '; expires=' + expires.toUTCString() + '; path=/; SameSite=Lax';
+
+  var params = new URLSearchParams(window.location.search);
+
+  CLICK_IDS.forEach(function(key) {
+    var val = params.get(key);
+    if (val) {
+      document.cookie = '_atlas_' + key + '=' + encodeURIComponent(val) + expStr;
+    }
+  });
+
+  function getCookie(name) {
+    var match = document.cookie.match('(^|;)\\\\s*' + name + '=([^;]+)');
+    return match ? decodeURIComponent(match[2]) : null;
+  }
+
+  var captured = {};
+  CLICK_IDS.forEach(function(key) {
+    var val = getCookie('_atlas_' + key);
+    if (val) { captured[key] = val; }
+  });
+
+  if (Object.keys(captured).length > 0) {
+    window.dataLayer = window.dataLayer || [];
+    window.dataLayer.push(captured);
+  }
+})();
+</script>`),
+      bool('supportDocumentWrite', 'false'),
+    ],
+    firingTriggerId: [allPagesTrigId],
+    tagFiringOption: 'oncePerEvent',
+    folderId: FOLDER.CONFIG,
+    fingerprint: '0',
+    tagManagerUrl: 'https://tagmanager.google.com/',
+  });
+
   // ── Consent Mode v2 update tag ───────────────────────────────────────────
   // Fires whenever the CMP pushes consent_update to the dataLayer.
   // The tag reads analytics_consent and ads_consent from the event and

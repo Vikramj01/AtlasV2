@@ -7,7 +7,49 @@ import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useCAPIStore } from '@/store/capiStore';
-import type { MetaCredentials, GoogleCredentials } from '@/types/capi';
+import type { CAPIAdapterName, MetaCredentials, GoogleCredentials } from '@/types/capi';
+
+// ── Google adapter decision tree ──────────────────────────────────────────────
+
+interface GoogleAdapterOption {
+  name: CAPIAdapterName;
+  label: string;
+  description: string;
+  whenToUse: string[];
+}
+
+const GOOGLE_ADAPTER_OPTIONS: GoogleAdapterOption[] = [
+  {
+    name: 'google_ec_web',
+    label: 'Enhanced Conversions — Web',
+    description: 'Real-time conversions from website events. Best for purchases, sign-ups, and form completions that happen on your site.',
+    whenToUse: [
+      'Conversion fires on the thank-you or confirmation page',
+      'You have first-party data (email/phone) available at conversion time',
+      'You want event-driven, sub-second delivery',
+    ],
+  },
+  {
+    name: 'google_ec_leads',
+    label: 'Enhanced Conversions — Leads',
+    description: 'Match CRM leads to ad clicks after form submission. Best for lead gen where the conversion happens offline (sales call, demo, in-person).',
+    whenToUse: [
+      'Conversion is a qualified lead, not an on-site purchase',
+      'You match leads from your CRM to ad clicks using email + GCLID',
+      'Conversion happens hours or days after the form fill',
+    ],
+  },
+  {
+    name: 'google_offline',
+    label: 'Offline Conversions',
+    description: 'Upload CSV files of offline conversions tied to ad clicks. Best for in-store sales, phone orders, or any conversion that happens outside your website.',
+    whenToUse: [
+      'Conversions occur offline (store, phone, in-person)',
+      'You batch-upload conversion data from your CRM or POS',
+      'You have GCLID captured at the time of the ad click',
+    ],
+  },
+];
 
 interface ConnectAccountProps {
   onNext: () => void;
@@ -171,6 +213,8 @@ function GoogleConnectForm({ onNext }: ConnectAccountProps) {
 
   const draft = wizardDraft.credentials as Partial<GoogleCredentials>;
 
+  const [adapterName, setAdapterName] = useState<CAPIAdapterName>(wizardDraft.adapter_name ?? 'google_ec_web');
+  const [adapterChosen, setAdapterChosen] = useState(!!wizardDraft.adapter_name);
   const [customerId, setCustomerId] = useState(draft.customer_id ?? '');
   const [oauthAccessToken, setOauthAccessToken] = useState(draft.oauth_access_token ?? '');
   const [oauthRefreshToken, setOauthRefreshToken] = useState(draft.oauth_refresh_token ?? '');
@@ -183,10 +227,64 @@ function GoogleConnectForm({ onNext }: ConnectAccountProps) {
     oauth_access_token?: string;
     oauth_refresh_token?: string;
     conversion_action_id?: string;
-  }>({});
+  }>();
+
+  // ── Step A: adapter type selector ────────────────────────────────────────
+
+  if (!adapterChosen) {
+    return (
+      <div className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          Which type of Google conversion are you setting up? Choose the option that matches how your conversions happen.
+        </p>
+        <div className="space-y-3">
+          {GOOGLE_ADAPTER_OPTIONS.map((opt) => (
+            <label
+              key={opt.name}
+              className={`flex items-start gap-3 rounded-md border p-4 cursor-pointer transition-colors ${
+                adapterName === opt.name ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'
+              }`}
+            >
+              <input
+                type="radio"
+                name="adapter_name"
+                value={opt.name}
+                checked={adapterName === opt.name}
+                onChange={() => setAdapterName(opt.name)}
+                className="mt-1"
+              />
+              <div className="space-y-1">
+                <p className="text-sm font-medium">{opt.label}</p>
+                <p className="text-xs text-muted-foreground">{opt.description}</p>
+                <ul className="mt-2 space-y-0.5">
+                  {opt.whenToUse.map((w) => (
+                    <li key={w} className="text-xs text-muted-foreground flex items-start gap-1">
+                      <span className="mt-0.5 shrink-0">✓</span>
+                      <span>{w}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </label>
+          ))}
+        </div>
+        <div className="flex justify-end">
+          <Button
+            type="button"
+            onClick={() => {
+              setWizardDraft({ adapter_name: adapterName });
+              setAdapterChosen(true);
+            }}
+          >
+            Continue
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   function validate(): boolean {
-    const next: typeof errors = {};
+    const next: { customer_id?: string; oauth_access_token?: string; oauth_refresh_token?: string; conversion_action_id?: string } = {};
     if (!customerId.trim()) next.customer_id = 'Customer ID is required.';
     if (!oauthAccessToken.trim()) next.oauth_access_token = 'OAuth Access Token is required.';
     if (!oauthRefreshToken.trim()) next.oauth_refresh_token = 'OAuth Refresh Token is required.';
@@ -200,6 +298,7 @@ function GoogleConnectForm({ onNext }: ConnectAccountProps) {
     if (!validate()) return;
     const stripped = customerId.trim().replace(/-/g, '');
     setWizardDraft({
+      adapter_name: adapterName,
       credentials: {
         customer_id: stripped,
         oauth_access_token: oauthAccessToken.trim(),
@@ -228,7 +327,7 @@ function GoogleConnectForm({ onNext }: ConnectAccountProps) {
         <p className="text-xs text-muted-foreground">
           Format: 123-456-7890. Dashes are stripped automatically before sending.
         </p>
-        {errors.customer_id && (
+        {errors?.customer_id && (
           <p className="text-xs text-destructive">{errors.customer_id}</p>
         )}
       </div>
@@ -254,7 +353,7 @@ function GoogleConnectForm({ onNext }: ConnectAccountProps) {
             {showAccessToken ? 'Hide' : 'Show'}
           </button>
         </div>
-        {errors.oauth_access_token && (
+        {errors?.oauth_access_token && (
           <p className="text-xs text-destructive">{errors.oauth_access_token}</p>
         )}
       </div>
@@ -283,7 +382,7 @@ function GoogleConnectForm({ onNext }: ConnectAccountProps) {
         <p className="text-xs text-muted-foreground">
           Stored securely and used to automatically renew your access token without re-authentication.
         </p>
-        {errors.oauth_refresh_token && (
+        {errors?.oauth_refresh_token && (
           <p className="text-xs text-destructive">{errors.oauth_refresh_token}</p>
         )}
       </div>
@@ -303,7 +402,7 @@ function GoogleConnectForm({ onNext }: ConnectAccountProps) {
         <p className="text-xs text-muted-foreground">
           Numeric ID from Google Ads &rarr; Tools &rarr; Conversions.
         </p>
-        {errors.conversion_action_id && (
+        {errors?.conversion_action_id && (
           <p className="text-xs text-destructive">{errors.conversion_action_id}</p>
         )}
       </div>
@@ -344,9 +443,12 @@ export function ConnectAccount({ onNext }: ConnectAccountProps) {
   const { wizardDraft } = useCAPIStore();
   const isGoogle = wizardDraft.provider === 'google';
 
+  const adapterLabel = GOOGLE_ADAPTER_OPTIONS.find((o) => o.name === wizardDraft.adapter_name)?.label;
   const title = isGoogle ? 'Connect your Google Ads account' : 'Connect your Meta account';
   const subtitle = isGoogle
-    ? 'Step 1 of 5 — Provide your Google Ads OAuth credentials to get started.'
+    ? adapterLabel
+      ? `Step 1 of 5 — ${adapterLabel}. Provide your Google Ads OAuth credentials.`
+      : 'Step 1 of 5 — Choose your conversion type and provide your Google Ads credentials.'
     : 'Step 1 of 5 — Provide your Meta Pixel credentials to get started.';
 
   return (

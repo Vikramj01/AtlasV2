@@ -42,6 +42,7 @@ export interface CreateProviderInput {
   data_processing_options?: string[];
   data_processing_options_country?: number;
   data_processing_options_state?: number;
+  adapter_name?: string;
 }
 
 export async function createProvider(input: CreateProviderInput): Promise<CAPIProviderConfig> {
@@ -60,6 +61,7 @@ export async function createProvider(input: CreateProviderInput): Promise<CAPIPr
       data_processing_options: input.data_processing_options ?? [],
       data_processing_options_country: input.data_processing_options_country ?? 0,
       data_processing_options_state: input.data_processing_options_state ?? 0,
+      adapter_name: input.adapter_name ?? null,
     })
     .select('*')
     .single();
@@ -126,6 +128,30 @@ export async function updateProviderCredentials(
     .eq('id', providerId);
 
   if (error) throw new Error(`Failed to update provider credentials: ${error.message}`);
+}
+
+/**
+ * Persist a refreshed Google OAuth access token.
+ * Updates the encrypted credentials blob and the access_token_expires_at column.
+ * Called by the google-oauth-refresh Bull job after each successful token refresh.
+ */
+export async function updateGoogleToken(
+  providerId: string,
+  newAccessToken: string,
+  expiresAt: string,
+  existingCredentials: ProviderCredentials,
+): Promise<void> {
+  const updated = { ...(existingCredentials as unknown as Record<string, unknown>), oauth_access_token: newAccessToken };
+  const { error } = await supabase
+    .from('capi_providers')
+    .update({
+      credentials: encryptCredentials(updated as ProviderCredentials),
+      access_token_expires_at: expiresAt,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', providerId);
+
+  if (error) throw new Error(`Failed to update Google token: ${error.message}`);
 }
 
 export async function updateProviderConfig(

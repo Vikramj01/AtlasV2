@@ -17,7 +17,22 @@
  * Frontend role: type contracts + payload preview in the setup wizard.
  */
 
-import type { GoogleCredentials } from '@/types/capi';
+import type {
+  CAPIProviderAdapter,
+  CAPIAdapterName,
+  CAPIProvider,
+  AtlasEvent,
+  EventMapping,
+  HashedIdentifier,
+  ProviderPayload,
+  ProviderCredentials,
+  GoogleCredentials,
+  ValidationResult,
+  DeliveryResult,
+  SendResult,
+  TestResult,
+} from '@/types/capi';
+import type { ConsentDecisions } from '@/types/consent';
 import type {
   OfflineConversionRow,
   OfflineConversionConfig,
@@ -235,3 +250,103 @@ export function formatGoogleDateTime(isoString: string): string {
 // ── Re-export types needed by consumers ───────────────────────────────────────
 
 export type { GoogleConversionAction };
+
+// ── CAPIProviderAdapter implementation ────────────────────────────────────────
+//
+// The offline adapter does not participate in the real-time pipeline.
+// send() always returns CLIENT_SIDE_DELIVERY_NOT_SUPPORTED — uploads are
+// triggered via POST /api/offline-conversions/upload, not /api/capi/process.
+
+export class GoogleOfflineAdapter implements CAPIProviderAdapter {
+  readonly name: CAPIAdapterName = 'google_offline';
+  readonly provider: CAPIProvider = 'google';
+
+  // Offline uploads match on gclid + email/phone. gclid is the primary signal.
+  readonly requiredUserParams = ['gclid', 'conversion_time'];
+  readonly optionalUserParams = ['email', 'phone', 'order_id', 'conversion_value', 'currency'];
+  readonly dedupStrategy = { key: ['gclid', 'conversion_time'], window_seconds: 0 }; // handled by upload dedup
+  readonly retryPolicy = { max_attempts: 3, backoff: 'exponential' as const, base_ms: 30_000 };
+  readonly consentSignals = ['ad_user_data'];
+  readonly testMode = { supported: false, credentialField: null as string | null };
+
+  constructor(
+    _apiBase: string,
+    _getAuthHeader: () => Promise<string>,
+  ) {}
+
+  async validateCredentials(creds: ProviderCredentials): Promise<ValidationResult> {
+    const g = creds as GoogleCredentials;
+    if (!g.customer_id || !g.oauth_access_token) {
+      return { valid: false, error: 'customer_id and oauth_access_token are required' };
+    }
+    if (!g.oauth_refresh_token) {
+      return { valid: false, error: 'oauth_refresh_token is required for automatic token renewal' };
+    }
+    return { valid: true };
+  }
+
+  buildPayload(event: AtlasEvent, _creds: ProviderCredentials, _consent: ConsentDecisions): ProviderPayload {
+    return {
+      provider: 'google',
+      raw: {
+        event_name: event.event_name,
+        event_time: event.event_time,
+        gclid: event.user_data.gclid,
+        order_id: event.custom_data?.order_id,
+        value: event.custom_data?.value,
+        currency: event.custom_data?.currency,
+      },
+    };
+  }
+
+  validatePayload(payload: ProviderPayload): ValidationResult {
+    const raw = payload.raw as { gclid?: string };
+    if (!raw.gclid) {
+      return { valid: true, details: { warnings: ['gclid missing — offline match rate will be very low without it'] } };
+    }
+    return { valid: true };
+  }
+
+  async send(_payload: ProviderPayload, _creds: ProviderCredentials): Promise<SendResult> {
+    return {
+      event_id: 'offline',
+      status: 'failed',
+      provider_response: null,
+      error_code: 'CLIENT_SIDE_DELIVERY_NOT_SUPPORTED',
+      error_message: 'Offline conversions are uploaded via POST /api/offline-conversions/upload, not the real-time pipeline',
+    };
+  }
+
+  computeMatchQuality(payload: ProviderPayload): number {
+    const raw = payload.raw as { gclid?: string; email?: string; phone?: string };
+    let score = 0;
+    if (raw.gclid)  score += 6; // gclid is the primary offline signal
+    if (raw.email)  score += 3;
+    if (raw.phone)  score += 1;
+    return Math.min(10, score);
+  }
+
+  // ── Legacy methods (kept for backward compat) ──────────────────────────────
+
+  formatEvent(event: AtlasEvent, _mapping: EventMapping, _identifiers: HashedIdentifier[]): ProviderPayload {
+    return this.buildPayload(event, {} as ProviderCredentials, {} as ConsentDecisions);
+  }
+
+  async sendEvents(payloads: ProviderPayload[], _creds: ProviderCredentials): Promise<DeliveryResult[]> {
+    return payloads.map(() => ({
+      event_id: 'offline',
+      status: 'failed' as const,
+      provider_response: null,
+      error_code: 'CLIENT_SIDE_DELIVERY_NOT_SUPPORTED',
+      error_message: 'Offline conversions are uploaded via POST /api/offline-conversions/upload',
+    }));
+  }
+
+  async sendTestEvent(_payload: ProviderPayload, _creds: ProviderCredentials): Promise<TestResult> {
+    return {
+      status: 'failed',
+      provider_response: null,
+      error: 'Test mode is not supported for offline conversions',
+    };
+  }
+}
