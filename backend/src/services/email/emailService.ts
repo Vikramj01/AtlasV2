@@ -124,7 +124,7 @@ export async function sendDeveloperInvite(opts: {
         </td></tr>
         <!-- Footer -->
         <tr><td style="padding:16px 32px;border-top:1px solid #f3f4f6;">
-          <p style="margin:0;font-size:11px;color:#d1d5db;text-align:center;">Sent via Atlas — getatlas.io</p>
+          <p style="margin:0;font-size:11px;color:#d1d5db;text-align:center;">Sent via Atlas — atlas.vimi.digital</p>
         </td></tr>
       </table>
     </td></tr>
@@ -187,7 +187,7 @@ export async function sendSignupConfirmationEmail(opts: {
         </td></tr>
         <!-- Footer -->
         <tr><td style="padding:16px 32px;border-top:1px solid #f3f4f6;">
-          <p style="margin:0;font-size:11px;color:#d1d5db;text-align:center;">Sent via Atlas — getatlas.io</p>
+          <p style="margin:0;font-size:11px;color:#d1d5db;text-align:center;">Sent via Atlas — atlas.vimi.digital</p>
         </td></tr>
       </table>
     </td></tr>
@@ -252,7 +252,7 @@ export async function sendPasswordResetEmail(opts: {
         </td></tr>
         <!-- Footer -->
         <tr><td style="padding:16px 32px;border-top:1px solid #f3f4f6;">
-          <p style="margin:0;font-size:11px;color:#d1d5db;text-align:center;">Sent via Atlas — getatlas.io</p>
+          <p style="margin:0;font-size:11px;color:#d1d5db;text-align:center;">Sent via Atlas — atlas.vimi.digital</p>
         </td></tr>
       </table>
     </td></tr>
@@ -329,7 +329,7 @@ export async function sendMarketerCompletionNotification(opts: {
         </td></tr>
         <!-- Footer -->
         <tr><td style="padding:16px 32px;border-top:1px solid #f3f4f6;">
-          <p style="margin:0;font-size:11px;color:#d1d5db;text-align:center;">Sent via Atlas — getatlas.io</p>
+          <p style="margin:0;font-size:11px;color:#d1d5db;text-align:center;">Sent via Atlas — atlas.vimi.digital</p>
         </td></tr>
       </table>
     </td></tr>
