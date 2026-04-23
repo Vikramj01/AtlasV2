@@ -115,23 +115,18 @@ export function LoginPage() {
 
           {/* Brand header — absolutely positioned so it doesn't push Atlas off-center */}
           <div className="absolute top-0 left-0 right-0 z-20 flex items-center gap-3 p-12 xl:p-16">
-            <div>
-              <img src="/vimi_logo.svg" alt="Vimi Digital" style={{ height: 36 }} />
-              <div className="glass-panel mt-1.5 inline-flex items-center px-3 py-0.5 rounded-full text-xs text-white/70">
-                Intelligence Platform v4.0
-              </div>
-            </div>
+            <img src="/vimi_logo.svg" alt="Vimi Digital" style={{ height: 36 }} />
           </div>
 
           {/* Main copy — centred in the full panel height */}
           <div className="relative z-10 flex flex-col items-start justify-center h-full px-12 xl:px-16">
             <div className="mb-6">
               <img
-                src="/atlas_logo.svg"
+                src="/atlas_latest_logo.svg"
                 alt="Atlas"
                 style={{
                   height: 'clamp(4rem, 7vw, 7rem)',
-                  filter: 'brightness(0) invert(1)',
+                  filter: 'invert(1) hue-rotate(180deg)',
                 }}
               />
             </div>
