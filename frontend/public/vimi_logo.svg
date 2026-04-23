@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 56">
+  <!-- ViMi bold wordmark in white -->
+  <text x="0" y="48" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="50" font-weight="700" fill="white">ViMi</text>
+  <!-- Teal dots over the two i characters (approximate positions for Helvetica/Arial bold 50px) -->
+  <circle cx="40" cy="8" r="5.5" fill="#00c5de"/>
+  <circle cx="98" cy="8" r="5.5" fill="#00c5de"/>
+  <!-- Digital in lighter weight/opacity -->
+  <text x="114" y="46" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="42" font-weight="300" fill="rgba(255,255,255,0.6)">Digital</text>
+</svg>
