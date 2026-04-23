@@ -122,9 +122,9 @@ export function LoginPage() {
           <div className="relative z-10 flex flex-col items-start justify-center h-full px-12 xl:px-16">
             <div className="mb-6">
               <img
-                src="/atlas_logo_transparent.svg"
+                src="/atlas_white_logo_transparent.svg"
                 alt="Atlas"
-                style={{ height: 'clamp(6rem, 10vw, 11rem)' }}
+                style={{ height: 'clamp(30rem, 50vw, 55rem)', width: 'auto' }}
               />
             </div>
             <h2 className="text-xl font-semibold text-white/70 mb-5">
