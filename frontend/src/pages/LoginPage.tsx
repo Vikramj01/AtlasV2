@@ -115,14 +115,8 @@ export function LoginPage() {
 
           {/* Brand header — absolutely positioned so it doesn't push Atlas off-center */}
           <div className="absolute top-0 left-0 right-0 z-20 flex items-center gap-3 p-12 xl:p-16">
-            <span
-              className="material-symbols-outlined text-white"
-              style={{ fontSize: 32, fontVariationSettings: "'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 32" }}
-            >
-              sensors
-            </span>
             <div>
-              <div className="text-white font-semibold text-lg leading-tight">Vimi Digital</div>
+              <img src="/vimi_logo.svg" alt="Vimi Digital" style={{ height: 36 }} />
               <div className="glass-panel mt-1.5 inline-flex items-center px-3 py-0.5 rounded-full text-xs text-white/70">
                 Intelligence Platform v4.0
               </div>
@@ -131,12 +125,16 @@ export function LoginPage() {
 
           {/* Main copy — centred in the full panel height */}
           <div className="relative z-10 flex flex-col items-start justify-center h-full px-12 xl:px-16">
-            <h1
-              className="font-extrabold text-white leading-none mb-4"
-              style={{ fontSize: 'clamp(3.5rem, 6vw, 5.5rem)' }}
-            >
-              Atlas
-            </h1>
+            <div className="mb-6">
+              <img
+                src="/atlas_logo.svg"
+                alt="Atlas"
+                style={{
+                  height: 'clamp(4rem, 7vw, 7rem)',
+                  filter: 'brightness(0) invert(1)',
+                }}
+              />
+            </div>
             <h2 className="text-xl font-semibold text-white/70 mb-5">
               Signal Intelligence Platform
             </h2>
@@ -168,13 +166,7 @@ export function LoginPage() {
         <div className="w-full lg:w-5/12 bg-white flex flex-col justify-center px-8 sm:px-12 lg:px-14 xl:px-20 py-12">
           {/* Mobile logo */}
           <div className="lg:hidden flex items-center gap-2 mb-10">
-            <span
-              className="material-symbols-outlined"
-              style={{ color: '#1b2a4a', fontSize: 28, fontVariationSettings: "'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 28" }}
-            >
-              sensors
-            </span>
-            <span className="font-extrabold text-xl" style={{ color: '#1b2a4a' }}>Atlas</span>
+            <img src="/atlas_logo.svg" alt="Atlas" style={{ height: 32 }} />
           </div>
 
           <div className="w-full max-w-sm mx-auto">
