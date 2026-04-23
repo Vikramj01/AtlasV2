@@ -124,7 +124,7 @@ export function LoginPage() {
               <img
                 src="/atlas_white_logo_transparent.svg"
                 alt="Atlas"
-                style={{ width: 'clamp(22rem, 80%, 38rem)', height: 'auto' }}
+                style={{ width: 'clamp(26rem, 90%, 46rem)', height: 'auto' }}
               />
             </div>
             <h2 className="text-xl font-semibold text-white/70 mb-5">
