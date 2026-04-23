@@ -94,6 +94,7 @@ app.use('/api', globalLimiter);
 app.use('/api/journeys/:id/generate', heavyLimiter);
 app.use('/api/planning/sessions/:id/generate', heavyLimiter);
 app.use('/api/strategy/evaluate', heavyLimiter);
+app.use('/api/strategy/objectives/:id/evaluate', heavyLimiter);
 app.use('/api/organisations/:orgId/clients/:clientId/generate', heavyLimiter);
 app.use('/api/organisations/:orgId/clients/:clientId/generate-all', heavyLimiter);
 
