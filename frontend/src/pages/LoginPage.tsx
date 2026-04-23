@@ -120,11 +120,14 @@ export function LoginPage() {
 
           {/* Main copy — centred in the full panel height */}
           <div className="relative z-10 flex flex-col items-start justify-center h-full px-12 xl:px-16">
-            <div className="mb-6">
+            <div
+              className="mb-4"
+              style={{ overflow: 'hidden', height: 'clamp(15rem, 25vw, 28rem)' }}
+            >
               <img
                 src="/atlas_white_logo_transparent.svg"
                 alt="Atlas"
-                style={{ height: 'clamp(30rem, 50vw, 55rem)', width: 'auto' }}
+                style={{ height: 'clamp(30rem, 50vw, 55rem)', width: 'auto', display: 'block' }}
               />
             </div>
             <h2 className="text-xl font-semibold text-white/70 mb-5">
