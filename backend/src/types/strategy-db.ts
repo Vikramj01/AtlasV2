@@ -53,6 +53,7 @@ export interface DbStrategyObjectiveCampaign {
 }
 
 export interface CreateBriefInput {
+  mode?: 'single' | 'multi';
   brief_name?: string;
   client_id?: string;
   project_id?: string;

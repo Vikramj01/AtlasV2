@@ -23,7 +23,8 @@ interface StrategyStore {
   // Actions — briefs
   fetchBriefs: () => Promise<void>;
   fetchBrief: (id: string) => Promise<void>;
-  createBrief: (input: { brief_name?: string; client_id?: string; project_id?: string }) => Promise<StrategyBriefRecord>;
+  createBrief: (input: { mode?: 'single' | 'multi'; brief_name?: string; client_id?: string; project_id?: string }) => Promise<StrategyBriefRecord>;
+  lockBrief: (id: string) => Promise<StrategyBriefRecord>;
   deleteBrief: (id: string) => Promise<void>;
   setActiveBrief: (brief: StrategyBriefWithObjectives | null) => void;
 
@@ -88,6 +89,17 @@ export const useStrategyStore = create<StrategyStore>((set) => ({
   createBrief: async (input) => {
     const { data } = await strategyApi.createBrief(input);
     set((s: StrategyStore) => ({ briefs: [data, ...s.briefs] }));
+    return data;
+  },
+
+  lockBrief: async (id: string) => {
+    const { data } = await strategyApi.lockBrief(id);
+    set((s: StrategyStore) => ({
+      briefs: s.briefs.map((b) => b.id === id ? data : b),
+      activeBrief: s.activeBrief?.id === id
+        ? { ...s.activeBrief, locked_at: data.locked_at }
+        : s.activeBrief,
+    }));
     return data;
   },
 

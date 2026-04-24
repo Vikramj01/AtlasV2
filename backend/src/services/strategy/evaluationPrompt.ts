@@ -23,6 +23,7 @@ export type EvalResponse = z.infer<typeof EvalResponseSchema>;
 
 export interface EvalInput {
   objectiveName: string;
+  description?: string;
   currentEvent: string;
   outcomeTimingDays: number;
   platforms: string[];
@@ -36,7 +37,7 @@ export function buildUserPrompt(input: EvalInput): string {
   const platformList = input.platforms.length > 0 ? input.platforms.join(', ') : 'unspecified';
 
   return `Objective: ${input.objectiveName}
-Current optimisation event: ${input.currentEvent}
+${input.description ? `Business outcome: ${input.description}\n` : ''}Current optimisation event: ${input.currentEvent}
 Typical days from ad click to outcome: ${input.outcomeTimingDays}
 Ad platforms: ${platformList}
 

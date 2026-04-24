@@ -23,7 +23,7 @@ export async function createBrief(
     .from('strategy_briefs')
     .insert({
       organization_id: orgId,
-      mode: 'multi',
+      mode: input.mode ?? 'single',
       brief_name: input.brief_name ?? null,
       client_id: input.client_id ?? null,
       project_id: input.project_id ?? null,
@@ -76,6 +76,49 @@ export async function deleteBrief(briefId: string, orgId: string): Promise<void>
     .eq('id', briefId)
     .eq('organization_id', orgId);
   if (error) throw error;
+}
+
+export async function patchBrief(
+  briefId: string,
+  orgId: string,
+  fields: { brief_name?: string; mode?: 'single' | 'multi' },
+): Promise<DbStrategyBrief> {
+  const { data, error } = await supabase
+    .from('strategy_briefs')
+    .update(fields)
+    .eq('id', briefId)
+    .eq('organization_id', orgId)
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data as DbStrategyBrief;
+}
+
+export async function lockBrief(briefId: string, orgId: string): Promise<DbStrategyBrief> {
+  const { data: objectives, error: oErr } = await supabase
+    .from('strategy_objectives')
+    .select('id, locked')
+    .eq('brief_id', briefId)
+    .eq('organization_id', orgId);
+  if (oErr) throw oErr;
+
+  const unlocked = (objectives ?? []).filter((o) => !o.locked).length;
+  if (unlocked > 0) {
+    throw Object.assign(
+      new Error(`${unlocked} objective(s) must be locked before locking the brief.`),
+      { code: 'OBJECTIVES_NOT_LOCKED' },
+    );
+  }
+
+  const { data, error } = await supabase
+    .from('strategy_briefs')
+    .update({ locked_at: new Date().toISOString() })
+    .eq('id', briefId)
+    .eq('organization_id', orgId)
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data as DbStrategyBrief;
 }
 
 // ── Objectives ────────────────────────────────────────────────────────────────
