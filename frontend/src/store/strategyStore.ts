@@ -60,7 +60,7 @@ const initialState = {
   objectiveLoading: {},
 };
 
-export const useStrategyStore = create<StrategyStore>((set, get) => ({
+export const useStrategyStore = create<StrategyStore>((set) => ({
   ...initialState,
 
   // ── Briefs ──────────────────────────────────────────────────────────────────
@@ -87,13 +87,13 @@ export const useStrategyStore = create<StrategyStore>((set, get) => ({
 
   createBrief: async (input) => {
     const { data } = await strategyApi.createBrief(input);
-    set((s) => ({ briefs: [data, ...s.briefs] }));
+    set((s: StrategyStore) => ({ briefs: [data, ...s.briefs] }));
     return data;
   },
 
   deleteBrief: async (id: string) => {
     await strategyApi.deleteBrief(id);
-    set((s) => ({
+    set((s: StrategyStore) => ({
       briefs: s.briefs.filter((b) => b.id !== id),
       activeBrief: s.activeBrief?.id === id ? null : s.activeBrief,
     }));
@@ -105,70 +105,70 @@ export const useStrategyStore = create<StrategyStore>((set, get) => ({
 
   createObjective: async (input) => {
     const { data: objective, message } = await strategyApi.createObjective(input);
-    set((s) => {
+    set((s: StrategyStore) => {
       if (!s.activeBrief || s.activeBrief.id !== input.brief_id) return {};
       return { activeBrief: { ...s.activeBrief, objectives: [...s.activeBrief.objectives, objective] } };
     });
     return { objective, softCapMessage: message };
   },
 
-  updateObjective: async (id, input) => {
-    set((s) => ({ objectiveLoading: { ...s.objectiveLoading, [id]: true } }));
+  updateObjective: async (id: string, input) => {
+    set((s: StrategyStore) => ({ objectiveLoading: { ...s.objectiveLoading, [id]: true } }));
     try {
       const { data } = await strategyApi.updateObjective(id, input);
-      set((s) => ({
+      set((s: StrategyStore) => ({
         objectiveLoading: { ...s.objectiveLoading, [id]: false },
         activeBrief: s.activeBrief
-          ? { ...s.activeBrief, objectives: s.activeBrief.objectives.map((o) => o.id === id ? data : o) }
+          ? { ...s.activeBrief, objectives: s.activeBrief.objectives.map((o: StrategyObjective) => o.id === id ? data : o) }
           : null,
       }));
       return data;
     } catch (err) {
-      set((s) => ({ objectiveLoading: { ...s.objectiveLoading, [id]: false } }));
+      set((s: StrategyStore) => ({ objectiveLoading: { ...s.objectiveLoading, [id]: false } }));
       throw err;
     }
   },
 
-  deleteObjective: async (id) => {
+  deleteObjective: async (id: string) => {
     await strategyApi.deleteObjective(id);
-    set((s) => ({
+    set((s: StrategyStore) => ({
       activeBrief: s.activeBrief
-        ? { ...s.activeBrief, objectives: s.activeBrief.objectives.filter((o) => o.id !== id) }
+        ? { ...s.activeBrief, objectives: s.activeBrief.objectives.filter((o: StrategyObjective) => o.id !== id) }
         : null,
     }));
   },
 
-  evaluateObjective: async (id) => {
-    set((s) => ({ objectiveLoading: { ...s.objectiveLoading, [id]: true } }));
+  evaluateObjective: async (id: string) => {
+    set((s: StrategyStore) => ({ objectiveLoading: { ...s.objectiveLoading, [id]: true } }));
     try {
       const { data } = await strategyApi.evaluateObjective(id);
       const updatedObjective = data.objective;
-      set((s) => ({
+      set((s: StrategyStore) => ({
         objectiveLoading: { ...s.objectiveLoading, [id]: false },
         activeBrief: s.activeBrief
-          ? { ...s.activeBrief, objectives: s.activeBrief.objectives.map((o) => o.id === id ? updatedObjective : o) }
+          ? { ...s.activeBrief, objectives: s.activeBrief.objectives.map((o: StrategyObjective) => o.id === id ? updatedObjective : o) }
           : null,
       }));
       return updatedObjective;
     } catch (err) {
-      set((s) => ({ objectiveLoading: { ...s.objectiveLoading, [id]: false } }));
+      set((s: StrategyStore) => ({ objectiveLoading: { ...s.objectiveLoading, [id]: false } }));
       throw err;
     }
   },
 
-  lockObjective: async (id) => {
-    set((s) => ({ objectiveLoading: { ...s.objectiveLoading, [id]: true } }));
+  lockObjective: async (id: string) => {
+    set((s: StrategyStore) => ({ objectiveLoading: { ...s.objectiveLoading, [id]: true } }));
     try {
       const { data } = await strategyApi.lockObjective(id);
-      set((s) => ({
+      set((s: StrategyStore) => ({
         objectiveLoading: { ...s.objectiveLoading, [id]: false },
         activeBrief: s.activeBrief
-          ? { ...s.activeBrief, objectives: s.activeBrief.objectives.map((o) => o.id === id ? data : o) }
+          ? { ...s.activeBrief, objectives: s.activeBrief.objectives.map((o: StrategyObjective) => o.id === id ? data : o) }
           : null,
       }));
       return data;
     } catch (err) {
-      set((s) => ({ objectiveLoading: { ...s.objectiveLoading, [id]: false } }));
+      set((s: StrategyStore) => ({ objectiveLoading: { ...s.objectiveLoading, [id]: false } }));
       throw err;
     }
   },
