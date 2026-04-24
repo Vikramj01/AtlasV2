@@ -1,9 +1,9 @@
 -- Multi-Objective Strategy Foundation
 -- Extends strategy_briefs, adds strategy_objectives + strategy_objective_campaigns,
 -- and migrates Sprint 1 single-event briefs into the new model.
+-- All statements are idempotent (IF NOT EXISTS / DROP IF EXISTS).
 
 -- ── 1. Relax legacy NOT NULL constraints on strategy_briefs ──────────────────
--- New multi-objective briefs don't carry top-level event fields.
 
 ALTER TABLE strategy_briefs
   ALTER COLUMN verdict DROP NOT NULL,
@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS strategy_objectives (
 
 ALTER TABLE strategy_objectives ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS strategy_objectives_org ON strategy_objectives;
 CREATE POLICY strategy_objectives_org ON strategy_objectives
   USING (organization_id = auth.uid());
 
@@ -63,16 +64,20 @@ CREATE TABLE IF NOT EXISTS strategy_objective_campaigns (
 
 ALTER TABLE strategy_objective_campaigns ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS strategy_objective_campaigns_org ON strategy_objective_campaigns;
 CREATE POLICY strategy_objective_campaigns_org ON strategy_objective_campaigns
   USING (organization_id = auth.uid());
 
 -- ── 5. Migrate Sprint 1 single-event briefs ───────────────────────────────────
 -- Mark them locked, then copy each into strategy_objectives.
+-- INSERT is guarded by brief_id FK — safe to re-run (existing rows won't duplicate
+-- because locked_at is already set and the WHERE filters on IS NOT NULL fields).
 
 UPDATE strategy_briefs
   SET locked_at = created_at
   WHERE business_outcome IS NOT NULL
-    AND outcome_timing_days IS NOT NULL;
+    AND outcome_timing_days IS NOT NULL
+    AND locked_at IS NULL;
 
 INSERT INTO strategy_objectives (
   brief_id,
@@ -111,4 +116,5 @@ SELECT
   created_at            AS updated_at
 FROM strategy_briefs
 WHERE business_outcome IS NOT NULL
-  AND outcome_timing_days IS NOT NULL;
+  AND outcome_timing_days IS NOT NULL
+  AND id NOT IN (SELECT brief_id FROM strategy_objectives);

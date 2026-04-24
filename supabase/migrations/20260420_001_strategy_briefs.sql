@@ -2,7 +2,7 @@
 -- organization_id = auth.uid() (matches the pattern used by consent/capi tables).
 -- client_id and project_id are plain UUIDs (no FK — tables may not exist yet).
 
-CREATE TABLE strategy_briefs (
+CREATE TABLE IF NOT EXISTS strategy_briefs (
   id                   UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id      UUID        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   client_id            UUID,
@@ -18,5 +18,6 @@ CREATE TABLE strategy_briefs (
 
 ALTER TABLE strategy_briefs ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS strategy_briefs_org ON strategy_briefs;
 CREATE POLICY strategy_briefs_org ON strategy_briefs
   USING (organization_id = auth.uid());
