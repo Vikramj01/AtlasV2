@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS consent_records (
 
 CREATE INDEX IF NOT EXISTS idx_consent_records_project_visitor ON consent_records(project_id, visitor_id);
 CREATE INDEX IF NOT EXISTS idx_consent_records_project_created ON consent_records(project_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_consent_records_expires        ON consent_records(expires_at) WHERE expires_at < now();
+CREATE INDEX IF NOT EXISTS idx_consent_records_expires        ON consent_records(expires_at);
 CREATE INDEX IF NOT EXISTS idx_consent_records_source         ON consent_records(project_id, source);
 
 
