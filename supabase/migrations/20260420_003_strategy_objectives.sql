@@ -23,43 +23,39 @@ ALTER TABLE strategy_briefs
 -- ── 3. strategy_objectives ────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS strategy_objectives (
-  id                       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  brief_id                 UUID NOT NULL REFERENCES strategy_briefs(id) ON DELETE CASCADE,
-  organization_id          UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-  name                     TEXT NOT NULL,
-  description              TEXT,
-  platforms                TEXT[] NOT NULL DEFAULT '{}',
-  current_event            TEXT,
-  outcome_timing_days      INTEGER,
-  verdict                  TEXT CHECK (verdict IN ('CONFIRM', 'AUGMENT', 'REPLACE')),
-  outcome_category         TEXT,
+  id                        UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  brief_id                  UUID        NOT NULL REFERENCES strategy_briefs(id) ON DELETE CASCADE,
+  organization_id           UUID        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  name                      TEXT        NOT NULL,
+  description               TEXT,
+  platforms                 TEXT[]      NOT NULL DEFAULT '{}',
+  current_event             TEXT,
+  outcome_timing_days       INTEGER,
+  verdict                   TEXT        CHECK (verdict IN ('CONFIRM', 'AUGMENT', 'REPLACE')),
+  outcome_category          TEXT,
   recommended_primary_event TEXT,
-  recommended_proxy_event  TEXT,
-  proxy_event_required     BOOLEAN NOT NULL DEFAULT FALSE,
-  rationale                TEXT,
-  summary_markdown         TEXT,
-  locked                   BOOLEAN NOT NULL DEFAULT FALSE,
-  locked_at                TIMESTAMPTZ,
-  created_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at               TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  recommended_proxy_event   TEXT,
+  proxy_event_required      BOOLEAN     NOT NULL DEFAULT FALSE,
+  rationale                 TEXT,
+  summary_markdown          TEXT,
+  locked                    BOOLEAN     NOT NULL DEFAULT FALSE,
+  locked_at                 TIMESTAMPTZ,
+  created_at                TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at                TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 ALTER TABLE strategy_objectives ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY strategy_objectives_org ON strategy_objectives
-  USING (
-    organization_id IN (
-      SELECT organization_id FROM profiles WHERE id = auth.uid()
-    )
-  );
+  USING (organization_id = auth.uid());
 
 -- ── 4. strategy_objective_campaigns ──────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS strategy_objective_campaigns (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  objective_id    UUID NOT NULL REFERENCES strategy_objectives(id) ON DELETE CASCADE,
-  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-  platform        TEXT NOT NULL,
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  objective_id    UUID        NOT NULL REFERENCES strategy_objectives(id) ON DELETE CASCADE,
+  organization_id UUID        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  platform        TEXT        NOT NULL,
   campaign_name   TEXT,
   budget          NUMERIC,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -68,11 +64,7 @@ CREATE TABLE IF NOT EXISTS strategy_objective_campaigns (
 ALTER TABLE strategy_objective_campaigns ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY strategy_objective_campaigns_org ON strategy_objective_campaigns
-  USING (
-    organization_id IN (
-      SELECT organization_id FROM profiles WHERE id = auth.uid()
-    )
-  );
+  USING (organization_id = auth.uid());
 
 -- ── 5. Migrate Sprint 1 single-event briefs ───────────────────────────────────
 -- Mark them locked, then copy each into strategy_objectives.
