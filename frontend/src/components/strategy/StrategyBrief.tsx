@@ -5,7 +5,7 @@ import { Check, AlertTriangle, X, Copy, CheckCheck, ArrowRight, RotateCcw } from
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import type { StrategyBrief as StrategyBriefType, EventVerdict } from '@/types/strategy';
+import type { LegacyStrategyBrief as StrategyBriefType, EventVerdict } from '@/types/strategy';
 
 const VERDICT_CONFIG: Record<
   EventVerdict,

@@ -171,17 +171,19 @@ CREATE TRIGGER trg_naming_convention_updated
 -- Existing signals without taxonomy links continue to work unchanged.
 -- ============================================================
 
-ALTER TABLE signals
-  ADD COLUMN IF NOT EXISTS taxonomy_event_id UUID REFERENCES event_taxonomy(id) ON DELETE SET NULL;
-
-ALTER TABLE signals
-  ADD COLUMN IF NOT EXISTS taxonomy_path TEXT; -- Denormalised for display: 'ecommerce/cart/add_to_cart'
-
-CREATE INDEX IF NOT EXISTS idx_signals_taxonomy
-  ON signals(taxonomy_event_id) WHERE taxonomy_event_id IS NOT NULL;
-
-CREATE INDEX IF NOT EXISTS idx_signals_taxonomy_path
-  ON signals(taxonomy_path) WHERE taxonomy_path IS NOT NULL;
+-- Guarded: signals is not created by a migration; skip if it doesn't exist yet.
+DO $$
+BEGIN
+  IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'signals') THEN
+    EXECUTE $q$
+      ALTER TABLE signals
+        ADD COLUMN IF NOT EXISTS taxonomy_event_id UUID REFERENCES event_taxonomy(id) ON DELETE SET NULL
+    $q$;
+    EXECUTE 'ALTER TABLE signals ADD COLUMN IF NOT EXISTS taxonomy_path TEXT';
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_signals_taxonomy ON signals(taxonomy_event_id) WHERE taxonomy_event_id IS NOT NULL';
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_signals_taxonomy_path ON signals(taxonomy_path) WHERE taxonomy_path IS NOT NULL';
+  END IF;
+END $$;
 
 
 -- ============================================================

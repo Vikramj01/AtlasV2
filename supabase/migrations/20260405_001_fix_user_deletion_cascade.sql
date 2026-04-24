@@ -14,15 +14,21 @@
 
 
 -- ── 1. Fix profiles FK ────────────────────────────────────────────────────────
+-- Guarded: profiles is not created by a migration; skip if it doesn't exist yet.
 
-ALTER TABLE public.profiles
-  DROP CONSTRAINT IF EXISTS profiles_id_fkey;
-
-ALTER TABLE public.profiles
-  ADD CONSTRAINT profiles_id_fkey
-    FOREIGN KEY (id)
-    REFERENCES auth.users(id)
-    ON DELETE CASCADE;
+DO $$
+BEGIN
+  IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'profiles') THEN
+    EXECUTE 'ALTER TABLE public.profiles DROP CONSTRAINT IF EXISTS profiles_id_fkey';
+    EXECUTE $q$
+      ALTER TABLE public.profiles
+        ADD CONSTRAINT profiles_id_fkey
+          FOREIGN KEY (id)
+          REFERENCES auth.users(id)
+          ON DELETE CASCADE
+    $q$;
+  END IF;
+END $$;
 
 
 -- ── 2. Cleanup function ───────────────────────────────────────────────────────
