@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Step1Data, Step2Data, StrategyBrief, WizardStep } from '@/types/strategy';
+import type { Step1Data, Step2Data, LegacyStrategyBrief, WizardStep } from '@/types/strategy';
 import { evaluateStrategy, strategyApi } from '@/lib/api/strategyApi';
 import { Step1Outcome } from './Step1Outcome';
 import { Step2EventEval } from './Step2EventEval';
@@ -14,7 +14,7 @@ const VERDICT_MAP: Record<string, 'keep' | 'add_proxy' | 'switch'> = {
 export function StrategyWizard() {
   const [step, setStep] = useState<WizardStep>(1);
   const [step1Data, setStep1Data] = useState<Step1Data | null>(null);
-  const [brief, setBrief] = useState<StrategyBrief | null>(null);
+  const [brief, setBrief] = useState<LegacyStrategyBrief | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

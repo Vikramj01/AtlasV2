@@ -1,5 +1,16 @@
 import { supabase } from '@/lib/supabase';
-import type { StrategyBrief } from '@/types/strategy';
+import type {
+  LegacyStrategyBrief,
+  StrategyBriefRecord,
+  StrategyBriefWithObjectives,
+  StrategyObjective,
+  StrategyObjectiveCampaign,
+  CreateBriefInput,
+  CreateObjectiveInput,
+  UpdateObjectiveInput,
+  AddCampaignInput,
+  ObjectiveEvalResult,
+} from '@/types/strategy';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
 
@@ -24,6 +35,8 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+// ── Legacy types (Sprint 1 wizard) ────────────────────────────────────────────
+
 export interface StrategyEvalInput {
   businessType: string;
   outcomeDescription: string;
@@ -31,16 +44,6 @@ export interface StrategyEvalInput {
   currentEventName: string;
   eventSource: string;
   valueDataPresent: boolean;
-}
-
-export interface SavedStrategyBrief {
-  id: string;
-  verdict: 'keep' | 'add_proxy' | 'switch';
-  business_outcome: string;
-  current_event: string | null;
-  proxy_event: string | null;
-  rationale: string | null;
-  created_at: string;
 }
 
 export interface SaveBriefInput {
@@ -54,15 +57,18 @@ export interface SaveBriefInput {
   project_id?: string;
 }
 
-export async function evaluateStrategy(input: StrategyEvalInput): Promise<StrategyBrief> {
-  const body = await apiFetch<{ data: StrategyBrief }>('/api/strategy/evaluate', {
+export async function evaluateStrategy(input: StrategyEvalInput): Promise<LegacyStrategyBrief> {
+  const body = await apiFetch<{ data: LegacyStrategyBrief }>('/api/strategy/evaluate', {
     method: 'POST',
     body: JSON.stringify(input),
   });
   return body.data;
 }
 
+// ── Multi-objective API client ────────────────────────────────────────────────
+
 export const strategyApi = {
+  // Legacy (Sprint 1 compat)
   evaluate: evaluateStrategy,
 
   saveBrief: (input: SaveBriefInput) =>
@@ -71,6 +77,54 @@ export const strategyApi = {
       body: JSON.stringify(input),
     }),
 
+  // Briefs
+  createBrief: (input: CreateBriefInput) =>
+    apiFetch<{ data: StrategyBriefRecord }>('/api/strategy/briefs', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
   listBriefs: () =>
-    apiFetch<{ data: SavedStrategyBrief[] }>('/api/strategy/briefs'),
+    apiFetch<{ data: StrategyBriefRecord[] }>('/api/strategy/briefs'),
+
+  getBrief: (id: string) =>
+    apiFetch<{ data: StrategyBriefWithObjectives }>(`/api/strategy/briefs/${id}`),
+
+  deleteBrief: (id: string) =>
+    apiFetch<{ data: null }>(`/api/strategy/briefs/${id}`, { method: 'DELETE' }),
+
+  // Objectives
+  createObjective: (input: CreateObjectiveInput) =>
+    apiFetch<{ data: StrategyObjective; message: string | null }>('/api/strategy/objectives', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  getObjective: (id: string) =>
+    apiFetch<{ data: StrategyObjective }>(`/api/strategy/objectives/${id}`),
+
+  updateObjective: (id: string, input: UpdateObjectiveInput) =>
+    apiFetch<{ data: StrategyObjective }>(`/api/strategy/objectives/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    }),
+
+  deleteObjective: (id: string) =>
+    apiFetch<{ data: null }>(`/api/strategy/objectives/${id}`, { method: 'DELETE' }),
+
+  evaluateObjective: (id: string) =>
+    apiFetch<{ data: ObjectiveEvalResult }>(`/api/strategy/objectives/${id}/evaluate`, {
+      method: 'POST',
+    }),
+
+  lockObjective: (id: string) =>
+    apiFetch<{ data: StrategyObjective }>(`/api/strategy/objectives/${id}/lock`, {
+      method: 'POST',
+    }),
+
+  addCampaign: (objectiveId: string, input: AddCampaignInput) =>
+    apiFetch<{ data: StrategyObjectiveCampaign }>(`/api/strategy/objectives/${objectiveId}/campaigns`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
 };
