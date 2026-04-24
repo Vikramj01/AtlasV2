@@ -111,9 +111,15 @@ export interface StrategyBriefWithObjectives extends StrategyBriefRecord {
 // ── API input types ───────────────────────────────────────────────────────────
 
 export interface CreateBriefInput {
+  mode?: BriefMode;
   brief_name?: string;
   client_id?: string;
   project_id?: string;
+}
+
+export interface PatchBriefInput {
+  mode?: BriefMode;
+  brief_name?: string;
 }
 
 export interface CreateObjectiveInput {

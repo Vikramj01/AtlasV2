@@ -6,6 +6,7 @@ import type {
   StrategyObjective,
   StrategyObjectiveCampaign,
   CreateBriefInput,
+  PatchBriefInput,
   CreateObjectiveInput,
   UpdateObjectiveInput,
   AddCampaignInput,
@@ -89,6 +90,15 @@ export const strategyApi = {
 
   getBrief: (id: string) =>
     apiFetch<{ data: StrategyBriefWithObjectives }>(`/api/strategy/briefs/${id}`),
+
+  patchBrief: (id: string, input: PatchBriefInput) =>
+    apiFetch<{ data: StrategyBriefRecord }>(`/api/strategy/briefs/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+
+  lockBrief: (id: string) =>
+    apiFetch<{ data: StrategyBriefRecord }>(`/api/strategy/briefs/${id}/lock`, { method: 'POST' }),
 
   deleteBrief: (id: string) =>
     apiFetch<{ data: null }>(`/api/strategy/briefs/${id}`, { method: 'DELETE' }),

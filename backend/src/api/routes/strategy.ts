@@ -15,6 +15,8 @@ import {
 } from '@/services/strategy/evaluationPrompt';
 import {
   createBrief,
+  patchBrief,
+  lockBrief,
   getBriefWithObjectives,
   listBriefs,
   deleteBrief,
@@ -43,6 +45,7 @@ function handleKnownError(res: Response, err: unknown): boolean {
     if (code === 'DUPLICATE_NAME') { res.status(409).json({ error: err.message }); return true; }
     if (code === 'LOCKED') { res.status(403).json({ error: err.message }); return true; }
     if (code === 'NOT_FOUND') { res.status(404).json({ error: err.message }); return true; }
+    if (code === 'OBJECTIVES_NOT_LOCKED') { res.status(400).json({ error: err.message }); return true; }
   }
   return false;
 }
@@ -168,9 +171,15 @@ router.post('/save-brief', async (req: Request, res: Response): Promise<void> =>
 // ── Brief endpoints ───────────────────────────────────────────────────────────
 
 const createBriefSchema = z.object({
+  mode: z.enum(['single', 'multi']).optional(),
   brief_name: z.string().max(120).optional(),
   client_id: z.string().uuid().optional(),
   project_id: z.string().uuid().optional(),
+});
+
+const patchBriefSchema = z.object({
+  brief_name: z.string().max(120).optional(),
+  mode: z.enum(['single', 'multi']).optional(),
 });
 
 // POST /api/strategy/briefs
@@ -209,12 +218,38 @@ router.get('/briefs/:id', async (req: Request, res: Response): Promise<void> => 
   }
 });
 
+// PATCH /api/strategy/briefs/:id
+router.patch('/briefs/:id', async (req: Request, res: Response): Promise<void> => {
+  const parse = patchBriefSchema.safeParse(req.body);
+  if (!parse.success) {
+    res.status(400).json({ error: 'Invalid request body', details: parse.error.flatten() });
+    return;
+  }
+  try {
+    const data = await patchBrief(req.params.id, req.user.id, parse.data);
+    res.json({ data, error: null, message: null });
+  } catch (err) {
+    sendInternalError(res, err);
+  }
+});
+
 // DELETE /api/strategy/briefs/:id
 router.delete('/briefs/:id', async (req: Request, res: Response): Promise<void> => {
   try {
     await deleteBrief(req.params.id, req.user.id);
     res.json({ data: null, error: null, message: 'Brief deleted.' });
   } catch (err) {
+    sendInternalError(res, err);
+  }
+});
+
+// POST /api/strategy/briefs/:id/lock
+router.post('/briefs/:id/lock', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const data = await lockBrief(req.params.id, req.user.id);
+    res.json({ data, error: null, message: 'Brief locked.' });
+  } catch (err) {
+    if (handleKnownError(res, err)) return;
     sendInternalError(res, err);
   }
 });
@@ -309,6 +344,7 @@ router.post('/objectives/:id/evaluate', async (req: Request, res: Response): Pro
     const client = getClient();
     const userPrompt = buildUserPrompt({
       objectiveName: objective.name,
+      description: objective.description ?? undefined,
       currentEvent: objective.current_event,
       outcomeTimingDays: objective.outcome_timing_days,
       platforms: objective.platforms,

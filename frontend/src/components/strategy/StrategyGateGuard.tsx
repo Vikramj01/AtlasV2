@@ -19,7 +19,10 @@ export function StrategyGateGuard({ children }: StrategyGateGuardProps) {
   useEffect(() => {
     strategyApi
       .listBriefs()
-      .then((res) => setStatus((res.data?.length ?? 0) > 0 ? 'open' : 'locked'))
+      .then((res) => {
+        const hasLocked = (res.data ?? []).some((b) => b.locked_at !== null);
+        setStatus(hasLocked ? 'open' : 'locked');
+      })
       .catch(() => setStatus('open')); // fail open — backend enforces the real gate
   }, []);
 
