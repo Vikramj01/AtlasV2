@@ -6,8 +6,8 @@ import { strategyApi } from '@/lib/api/strategyApi';
 
 interface SavedBrief {
   id: string;
-  verdict: string;
-  business_outcome: string;
+  verdict: string | null;
+  business_outcome: string | null;
   created_at: string;
 }
 
@@ -30,7 +30,9 @@ export function StrategyGateBanner() {
         ? 'Keep current event'
         : brief.verdict === 'add_proxy'
           ? 'Add proxy event'
-          : 'Switch conversion event';
+          : brief.verdict === 'switch'
+            ? 'Switch conversion event'
+            : 'Strategy defined';
 
     return (
       <div className="mb-6 flex items-start gap-3 rounded-lg border border-green-200 bg-green-50 px-4 py-4">
@@ -38,7 +40,7 @@ export function StrategyGateBanner() {
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-green-900">Conversion event locked</p>
           <p className="mt-0.5 text-xs text-green-700 truncate">
-            {verdictLabel} · {brief.business_outcome}
+            {verdictLabel}{brief.business_outcome ? ` · ${brief.business_outcome}` : ''}
           </p>
         </div>
         <Button
