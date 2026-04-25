@@ -1,11 +1,66 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
+import { strategyApi } from '@/lib/api/strategyApi';
 import { SectionErrorBoundary } from '@/components/common/ErrorBoundary';
 import { NextActionCard } from '@/components/dashboard/NextActionCard';
 import { ScoreCard } from '@/components/common/ScoreCard';
 import { RecentActivityFeed } from '@/components/dashboard/RecentActivityFeed';
 import { dashboardApi } from '@/lib/api/dashboardApi';
+import { Download, FileText } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import type { AtlasScore } from '@/types/dashboard';
+import type { StrategyBriefRecord } from '@/types/strategy';
+
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+
+function StrategyBriefReadyCard({ brief }: { brief: StrategyBriefRecord }) {
+  const navigate = useNavigate();
+  const [pdfLoading, setPdfLoading] = useState(false);
+
+  async function handleDownload() {
+    setPdfLoading(true);
+    try {
+      const res = await strategyApi.exportBriefPdf(brief.id);
+      const a = document.createElement('a');
+      a.href = res.data.url;
+      a.download = res.data.filename;
+      a.click();
+    } catch {
+      // fail silently — user can download from the brief page
+    } finally {
+      setPdfLoading(false);
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-green-200 bg-green-50 px-5 py-4 flex items-center justify-between gap-4 flex-wrap">
+      <div className="flex items-center gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-green-100">
+          <FileText className="size-4 text-green-700" />
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-green-900">
+            Strategy Brief ready
+            {brief.brief_name ? ` — ${brief.brief_name}` : ''}
+          </p>
+          <p className="text-xs text-green-700">
+            Locked {new Date(brief.locked_at!).toLocaleDateString()} · v{brief.version_no}
+          </p>
+        </div>
+      </div>
+      <div className="flex gap-2">
+        <Button size="sm" variant="outline" className="border-green-300 text-green-800 hover:bg-green-100 text-xs" onClick={handleDownload} disabled={pdfLoading}>
+          <Download className="size-3 mr-1.5" />
+          {pdfLoading ? 'Generating…' : 'Download PDF'}
+        </Button>
+        <Button size="sm" variant="ghost" className="text-green-800 text-xs" onClick={() => navigate(`/strategy/briefs/${brief.id}`)}>
+          View brief
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 function getTimeOfDayGreeting(): string {
   const h = new Date().getHours();
@@ -37,6 +92,7 @@ export function HomePage() {
   const [firstName, setFirstName] = useState('');
   const [score, setScore] = useState<AtlasScore | null>(null);
   const [scoreLoading, setScoreLoading] = useState(true);
+  const [recentBrief, setRecentBrief] = useState<StrategyBriefRecord | null>(null);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -53,6 +109,18 @@ export function HomePage() {
       .finally(() => setScoreLoading(false));
   }, []);
 
+  useEffect(() => {
+    const now = Date.now();
+    strategyApi.listBriefs()
+      .then((res) => {
+        const recent = (res.data ?? [])
+          .filter((b) => b.locked_at && now - new Date(b.locked_at).getTime() < SEVEN_DAYS_MS)
+          .sort((a, b) => new Date(b.locked_at!).getTime() - new Date(a.locked_at!).getTime())[0] ?? null;
+        setRecentBrief(recent);
+      })
+      .catch(() => {});
+  }, []);
+
   const setupSteps = score ? Math.min(3, Math.round(score.foundation / 33.34)) : null;
 
   return (
@@ -65,6 +133,9 @@ export function HomePage() {
         </h1>
         <p className="mt-1 text-body text-[#6B7280]">{getSubline()}</p>
       </div>
+
+      {/* ── Recently locked brief ────────────────────────────────────────────── */}
+      {recentBrief && <StrategyBriefReadyCard brief={recentBrief} />}
 
       {/* ── Next Action ──────────────────────────────────────────────────────── */}
       <SectionErrorBoundary label="Next action">

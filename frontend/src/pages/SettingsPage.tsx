@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useBillingStore } from '@/store/billingStore';
+import { strategyApi } from '@/lib/api/strategyApi';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
+import { Lock, Plus, ExternalLink } from 'lucide-react';
+import type { StrategyBriefRecord } from '@/types/strategy';
 
 const PLAN_CONFIG = {
   free: {
@@ -77,6 +80,12 @@ export function SettingsPage() {
     );
   }
 
+  const [briefs, setBriefs] = useState<StrategyBriefRecord[]>([]);
+
+  useEffect(() => {
+    strategyApi.listBriefs().then((res) => setBriefs(res.data ?? [])).catch(() => {});
+  }, []);
+
   return (
     <div className="mx-auto max-w-2xl px-6 py-8 space-y-6">
       <div>
@@ -128,6 +137,63 @@ export function SettingsPage() {
           >
             {isSigningOut ? 'Signing out…' : 'Sign out'}
           </Button>
+        </CardContent>
+      </Card>
+
+      {/* Strategy Briefs */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm font-semibold">Strategy Briefs</CardTitle>
+            <Button size="sm" variant="ghost" className="text-xs h-7" onClick={() => navigate('/planning/strategy')}>
+              <Plus className="h-3 w-3 mr-1" />
+              New brief
+            </Button>
+          </div>
+        </CardHeader>
+        <Separator />
+        <CardContent className="pt-4">
+          {briefs.length === 0 ? (
+            <div className="py-4 text-center">
+              <p className="text-xs text-muted-foreground">No strategy briefs yet.</p>
+              <Button size="sm" variant="outline" className="mt-3 text-xs" onClick={() => navigate('/planning/strategy')}>
+                Create your first brief
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {briefs.map((brief) => (
+                <div key={brief.id} className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5">
+                  <div>
+                    <p className="text-xs font-medium">
+                      {brief.brief_name ?? 'Untitled brief'}
+                      <span className="ml-1.5 text-muted-foreground font-normal">v{brief.version_no}</span>
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {brief.locked_at
+                        ? `Locked ${new Date(brief.locked_at).toLocaleDateString()}`
+                        : 'Draft — not yet locked'}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {brief.locked_at && <Lock className="size-3 text-green-600" />}
+                    {brief.locked_at ? (
+                      <Link
+                        to={`/strategy/briefs/${brief.id}`}
+                        className="flex items-center gap-1 text-xs text-primary hover:underline"
+                      >
+                        View <ExternalLink className="size-3" />
+                      </Link>
+                    ) : (
+                      <Button size="sm" variant="ghost" className="text-xs h-7" onClick={() => navigate('/planning/strategy')}>
+                        Continue
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 
