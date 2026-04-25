@@ -115,7 +115,7 @@ export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
       {/* ── Logo ──────────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-2.5 px-5 py-5 border-b border-[#E5E7EB]">
         <img
-          src="/atlas_logo.svg"
+          src="/atlas_latest_logo.svg"
           alt="Atlas logo"
           className="h-10 w-10 rounded-md object-contain shrink-0"
         />
