@@ -158,7 +158,7 @@ export function LoginPage() {
         <div className="w-full lg:w-5/12 bg-white flex flex-col justify-center px-8 sm:px-12 lg:px-14 xl:px-20 py-12">
           {/* Mobile logo */}
           <div className="lg:hidden flex items-center gap-2 mb-10">
-            <img src="/atlas_logo.svg" alt="Atlas" style={{ height: 32 }} />
+            <img src="/atlas_latest_logo.svg" alt="Atlas" style={{ height: 32 }} />
           </div>
 
           <div className="w-full max-w-sm mx-auto">
