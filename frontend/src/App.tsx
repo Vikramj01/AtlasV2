@@ -13,6 +13,7 @@ import { GapReportPage } from '@/pages/GapReportPage';
 import { PlanningDashboard } from '@/pages/PlanningDashboard';
 import { PlanningModePage } from '@/pages/PlanningModePage';
 import { StrategyPage } from '@/pages/StrategyPage';
+import { StrategyBriefPage } from '@/pages/StrategyBriefPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { DeveloperPortalPage } from '@/pages/DeveloperPortalPage';
 // Composable Signals & Agency Workspaces
@@ -62,6 +63,7 @@ export default function App() {
               <Route path="/planning" element={<SectionErrorBoundary label="Planning sessions"><PlanGate minPlan="pro" featureName="Site scan"><StrategyGateGuard><PlanningDashboard /></StrategyGateGuard></PlanGate></SectionErrorBoundary>} />
               {/* Conversion Strategy Gate — all plans */}
               <Route path="/planning/strategy" element={<SectionErrorBoundary label="Strategy planner"><StrategyPage /></SectionErrorBoundary>} />
+              <Route path="/strategy/briefs/:id" element={<SectionErrorBoundary label="Strategy brief"><StrategyBriefPage /></SectionErrorBoundary>} />
               {/* Settings */}
               <Route path="/settings" element={<SectionErrorBoundary label="Settings"><SettingsPage /></SectionErrorBoundary>} />
               <Route path="/settings/billing/success" element={<BillingSuccessPage />} />

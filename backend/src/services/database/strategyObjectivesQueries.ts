@@ -298,6 +298,105 @@ export async function addCampaign(
   return data as DbStrategyObjectiveCampaign;
 }
 
+// ── PDF & versioning ──────────────────────────────────────────────────────────
+
+/** Load a brief with all objectives AND all campaigns in 3 queries (no N+1). */
+export async function getBriefForPdf(
+  briefId: string,
+  orgId: string,
+): Promise<(DbStrategyBrief & { objectives: (DbStrategyObjective & { campaigns: DbStrategyObjectiveCampaign[] })[] }) | null> {
+  const brief = await getBriefWithObjectives(briefId, orgId);
+  if (!brief) return null;
+
+  const objectiveIds = brief.objectives.map((o) => o.id);
+  const campaigns =
+    objectiveIds.length > 0
+      ? await (async () => {
+          const { data, error } = await supabase
+            .from('strategy_objective_campaigns')
+            .select('*')
+            .in('objective_id', objectiveIds);
+          if (error) throw error;
+          return (data ?? []) as DbStrategyObjectiveCampaign[];
+        })()
+      : [];
+
+  const byObjective = new Map<string, DbStrategyObjectiveCampaign[]>();
+  for (const c of campaigns) {
+    const arr = byObjective.get(c.objective_id) ?? [];
+    arr.push(c);
+    byObjective.set(c.objective_id, arr);
+  }
+
+  return {
+    ...brief,
+    objectives: brief.objectives.map((o) => ({ ...o, campaigns: byObjective.get(o.id) ?? [] })),
+  };
+}
+
+/**
+ * Clone a locked brief as version N+1.
+ * Sets `superseded_by` on the old brief to the new brief's id.
+ * Objectives are cloned with locked reset to false.
+ */
+export async function createBriefVersion(
+  briefId: string,
+  orgId: string,
+): Promise<DbStrategyBrief> {
+  const existing = await getBriefWithObjectives(briefId, orgId);
+  if (!existing) throw Object.assign(new Error('Brief not found.'), { code: 'NOT_FOUND' });
+  if (!existing.locked_at) {
+    throw Object.assign(new Error('Only locked briefs can be versioned.'), { code: 'NOT_LOCKED' });
+  }
+
+  const { data: newBrief, error: bErr } = await supabase
+    .from('strategy_briefs')
+    .insert({
+      organization_id: orgId,
+      mode: existing.mode,
+      brief_name: existing.brief_name,
+      client_id: existing.client_id,
+      project_id: existing.project_id,
+      version_no: existing.version_no + 1,
+    })
+    .select('*')
+    .single();
+  if (bErr) throw bErr;
+
+  // Mark old brief as superseded
+  await supabase
+    .from('strategy_briefs')
+    .update({ superseded_by: (newBrief as DbStrategyBrief).id })
+    .eq('id', briefId)
+    .eq('organization_id', orgId);
+
+  // Clone objectives with evaluation data preserved but locked reset
+  if (existing.objectives.length > 0) {
+    const cloned = existing.objectives.map((o) => ({
+      brief_id: (newBrief as DbStrategyBrief).id,
+      organization_id: orgId,
+      name: o.name,
+      description: o.description,
+      platforms: o.platforms,
+      current_event: o.current_event,
+      outcome_timing_days: o.outcome_timing_days,
+      verdict: o.verdict,
+      outcome_category: o.outcome_category,
+      recommended_primary_event: o.recommended_primary_event,
+      recommended_proxy_event: o.recommended_proxy_event,
+      proxy_event_required: o.proxy_event_required,
+      rationale: o.rationale,
+      summary_markdown: o.summary_markdown,
+      locked: false,
+      locked_at: null,
+    }));
+    const { error: oErr } = await supabase.from('strategy_objectives').insert(cloned);
+    if (oErr) throw oErr;
+  }
+
+  return newBrief as DbStrategyBrief;
+}
+
 export async function listCampaigns(
   objectiveId: string,
   orgId: string,

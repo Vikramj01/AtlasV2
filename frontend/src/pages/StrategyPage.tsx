@@ -129,27 +129,59 @@ interface LandingProps {
 function Landing({ onSelectMode, loading, error }: LandingProps) {
   return (
     <div className="space-y-10">
+      {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Conversion strategy</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Lock your conversion strategy</h1>
         <p className="mt-3 text-muted-foreground max-w-lg">
-          Define your business outcome and we'll tell you exactly which event to optimise your ads
-          toward — and whether you need a proxy event.
+          Your ad platforms optimise toward whatever conversion event you send them. If that event
+          isn't tied to real business success, Meta and Google will find you more of the wrong
+          customers — faster. A few minutes here protects every ad dollar you spend after this.
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <ModeCard
-          title="Single objective"
-          description="One conversion goal. Define it, get your verdict, lock it, and move on."
-          disabled={loading}
-          onClick={() => onSelectMode('single')}
-        />
-        <ModeCard
-          title="Multiple objectives"
-          description="Running separate campaigns with different goals? Define and evaluate each one independently."
-          disabled={loading}
-          onClick={() => onSelectMode('multi')}
-        />
+      {/* Value preview strip */}
+      <div className="grid gap-3 sm:grid-cols-3">
+        {[
+          {
+            label: 'Verdict per objective',
+            description: 'Keep current event, add a proxy, or switch entirely',
+          },
+          {
+            label: 'Locked strategy document',
+            description: 'A PDF you can share with your team or hand to a client',
+          },
+          {
+            label: 'Foundation for everything next',
+            description: 'Site scan, tracking plan, and CAPI events all follow this strategy',
+          },
+        ].map((tile) => (
+          <div key={tile.label} className="rounded-lg border border-border bg-muted/30 p-4">
+            <p className="text-sm font-semibold">{tile.label}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{tile.description}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Mode cards */}
+      <div>
+        <p className="mb-3 text-sm font-medium text-muted-foreground">
+          Does this business have one objective or multiple?
+        </p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <ModeCard
+            title="One objective"
+            description="Most small businesses. One product, one funnel, one conversion to optimise."
+            disabled={loading}
+            onClick={() => onSelectMode('single')}
+          />
+          <ModeCard
+            title="Multiple objectives"
+            description="Multiple distinct outcomes — e.g. D2C sales plus wholesale leads, or acquisition plus retention."
+            disabled={loading}
+            onClick={() => onSelectMode('multi')}
+          />
+        </div>
+        <p className="mt-2 text-xs text-muted-foreground">You can change this later.</p>
       </div>
 
       {loading && (

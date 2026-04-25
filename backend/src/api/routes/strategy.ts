@@ -6,18 +6,21 @@ import { authMiddleware } from '../middleware/authMiddleware';
 import { sendInternalError } from '@/utils/apiError';
 import { env } from '@/config/env';
 import logger from '@/utils/logger';
-import { supabaseAdmin } from '@/services/database/supabase';
+import { supabaseAdmin, uploadStrategyBriefPdf, getStrategyBriefSignedUrl } from '@/services/database/supabase';
 import {
   buildUserPrompt,
   enforceProxyRule,
   parseEvalResponse,
   SYSTEM_PROMPT,
 } from '@/services/strategy/evaluationPrompt';
+import { generateBriefPdf } from '@/services/strategy/briefPdfGenerator';
 import {
   createBrief,
   patchBrief,
   lockBrief,
   getBriefWithObjectives,
+  getBriefForPdf,
+  createBriefVersion,
   listBriefs,
   deleteBrief,
   createObjective,
@@ -405,6 +408,80 @@ router.post('/objectives/:id/campaigns', async (req: Request, res: Response): Pr
     const data = await addCampaign(req.params.id, req.user.id, parse.data);
     res.status(201).json({ data, error: null, message: null });
   } catch (err) {
+    sendInternalError(res, err);
+  }
+});
+
+// POST /api/strategy/briefs/:id/export/pdf
+router.post('/briefs/:id/export/pdf', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const brief = await getBriefForPdf(req.params.id, req.user.id);
+    if (!brief) { res.status(404).json({ error: 'Brief not found' }); return; }
+    if (!brief.locked_at) { res.status(400).json({ error: 'Brief must be locked before exporting.' }); return; }
+
+    // Optionally look up client name
+    let clientName: string | null = null;
+    if (brief.client_id) {
+      const { data: client } = await supabaseAdmin
+        .from('clients')
+        .select('name')
+        .eq('id', brief.client_id)
+        .maybeSingle();
+      clientName = (client as { name: string } | null)?.name ?? null;
+    }
+
+    const slug = (brief.brief_name ?? clientName ?? req.user.id.slice(0, 8))
+      .replace(/[^a-zA-Z0-9]+/g, '-')
+      .toLowerCase();
+    const dateStr = new Date(brief.locked_at).toISOString().slice(0, 10);
+    const filename = `Atlas-Strategy-Brief-${slug}-v${brief.version_no}-${dateStr}.pdf`;
+
+    const pdfBuffer = await generateBriefPdf(
+      {
+        brief_name: brief.brief_name,
+        version_no: brief.version_no,
+        mode: brief.mode,
+        locked_at: brief.locked_at,
+        client_name: clientName,
+        org_name: null,
+        objectives: brief.objectives.map((o) => ({
+          name: o.name,
+          description: o.description,
+          platforms: o.platforms,
+          current_event: o.current_event,
+          outcome_timing_days: o.outcome_timing_days,
+          verdict: o.verdict,
+          recommended_primary_event: o.recommended_primary_event,
+          recommended_proxy_event: o.recommended_proxy_event,
+          proxy_event_required: o.proxy_event_required,
+          rationale: o.rationale,
+          campaigns: o.campaigns.map((c) => ({
+            platform: c.platform,
+            campaign_name: c.campaign_name,
+            budget: c.budget,
+          })),
+        })),
+      },
+      filename,
+    );
+
+    const storagePath = await uploadStrategyBriefPdf(req.user.id, req.params.id, brief.version_no, pdfBuffer);
+    const url = await getStrategyBriefSignedUrl(storagePath);
+
+    res.json({ data: { url, filename }, error: null, message: null });
+  } catch (err) {
+    logger.error({ err, briefId: req.params.id }, 'Brief PDF export failed');
+    sendInternalError(res, err, 'strategy/briefs/export/pdf');
+  }
+});
+
+// POST /api/strategy/briefs/:id/version
+router.post('/briefs/:id/version', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const data = await createBriefVersion(req.params.id, req.user.id);
+    res.status(201).json({ data, error: null, message: `Version ${data.version_no} created.` });
+  } catch (err) {
+    if (handleKnownError(res, err)) return;
     sendInternalError(res, err);
   }
 });
