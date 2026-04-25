@@ -149,3 +149,8 @@ export interface ObjectiveEvalResult {
   objective: StrategyObjective;
   platformRationale: Record<string, string> | null;
 }
+
+export interface BriefExportResult {
+  url: string;
+  filename: string;
+}

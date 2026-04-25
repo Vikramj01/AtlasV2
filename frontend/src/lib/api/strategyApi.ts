@@ -11,6 +11,7 @@ import type {
   UpdateObjectiveInput,
   AddCampaignInput,
   ObjectiveEvalResult,
+  BriefExportResult,
 } from '@/types/strategy';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
@@ -136,5 +137,15 @@ export const strategyApi = {
     apiFetch<{ data: StrategyObjectiveCampaign }>(`/api/strategy/objectives/${objectiveId}/campaigns`, {
       method: 'POST',
       body: JSON.stringify(input),
+    }),
+
+  exportBriefPdf: (id: string) =>
+    apiFetch<{ data: BriefExportResult }>(`/api/strategy/briefs/${id}/export/pdf`, {
+      method: 'POST',
+    }),
+
+  createBriefVersion: (id: string) =>
+    apiFetch<{ data: StrategyBriefRecord }>(`/api/strategy/briefs/${id}/version`, {
+      method: 'POST',
     }),
 };

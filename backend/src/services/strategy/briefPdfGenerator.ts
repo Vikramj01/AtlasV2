@@ -1,0 +1,500 @@
+import PDFDocument from 'pdfkit';
+
+// ── Types ──────────────────────────────────────────────────────────────────────
+
+export interface CampaignForPdf {
+  platform: string;
+  campaign_name: string | null;
+  budget: number | null;
+}
+
+export interface ObjectiveForPdf {
+  name: string;
+  description: string | null;
+  platforms: string[];
+  current_event: string | null;
+  outcome_timing_days: number | null;
+  verdict: 'CONFIRM' | 'AUGMENT' | 'REPLACE' | null;
+  recommended_primary_event: string | null;
+  recommended_proxy_event: string | null;
+  proxy_event_required: boolean;
+  rationale: string | null;
+  campaigns: CampaignForPdf[];
+}
+
+export interface BriefForPdf {
+  brief_name: string | null;
+  version_no: number;
+  mode: string;
+  locked_at: string | null;
+  client_name: string | null;
+  org_name: string | null;
+  objectives: ObjectiveForPdf[];
+}
+
+// ── Constants ──────────────────────────────────────────────────────────────────
+
+const C = {
+  navy:     '#1B2A4A',
+  accent:   '#2563EB',
+  confirm:  '#16A34A',
+  augment:  '#D97706',
+  replace:  '#DC2626',
+  darkText: '#111827',
+  midText:  '#374151',
+  lightText:'#6B7280',
+  mutedText:'#9CA3AF',
+  bgLight:  '#F3F4F6',
+  white:    '#FFFFFF',
+};
+
+const VERDICT_CONFIG: Record<'CONFIRM' | 'AUGMENT' | 'REPLACE', { label: string; color: string }> = {
+  CONFIRM: { label: 'Keep current event',     color: C.confirm },
+  AUGMENT: { label: 'Add proxy event',        color: C.augment },
+  REPLACE: { label: 'Switch conversion event', color: C.replace },
+};
+
+const TIMING_LABELS: Record<number, string> = {
+  0:   'Same day',
+  2:   '1–3 days',
+  5:   '4–7 days',
+  14:  '1–4 weeks',
+  45:  '1–3 months',
+  120: 'Longer than 3 months',
+};
+
+const PLATFORM_LABELS: Record<string, string> = {
+  meta:    'Meta',
+  google:  'Google Ads',
+  linkedin:'LinkedIn',
+  tiktok:  'TikTok',
+  other:   'Other',
+};
+
+// ── Implementation notes (rule-based — no Claude call) ────────────────────────
+
+function buildImplementationNotes(obj: ObjectiveForPdf): string[] {
+  const notes: string[] = [];
+  const primary = obj.recommended_primary_event || obj.current_event;
+  const platformNames =
+    obj.platforms.length > 0
+      ? obj.platforms.map((p) => PLATFORM_LABELS[p] ?? p).join(', ')
+      : 'your ad platforms';
+
+  if (primary) {
+    notes.push(`Set "${primary}" as the primary conversion event in ${platformNames}.`);
+  }
+  if (obj.proxy_event_required && obj.recommended_proxy_event) {
+    notes.push(
+      `Configure "${obj.recommended_proxy_event}" as a proxy event. It should fire sooner than the primary outcome, giving ad platforms a faster optimisation signal within the attribution window.`,
+    );
+  }
+  if (obj.verdict === 'AUGMENT' && obj.current_event && primary !== obj.current_event) {
+    notes.push(`Keep "${obj.current_event}" as a secondary conversion event — do not remove it.`);
+  }
+  if (obj.platforms.includes('meta')) {
+    notes.push(
+      'Meta: Only one primary event per ad set is supported. Set it in Events Manager on the relevant dataset.',
+    );
+  }
+  if (obj.platforms.includes('google')) {
+    notes.push(
+      'Google Ads: You may assign one primary and one secondary conversion action per campaign. Configure these in the Conversions settings.',
+    );
+  }
+  if (obj.platforms.includes('linkedin')) {
+    notes.push(
+      'LinkedIn: Configure conversion tracking in Campaign Manager under Analyze → Conversion tracking.',
+    );
+  }
+  if (obj.platforms.includes('tiktok')) {
+    notes.push(
+      'TikTok: Set up the conversion event in TikTok Events Manager and confirm attribution window alignment.',
+    );
+  }
+  return notes;
+}
+
+// ── Main generator ─────────────────────────────────────────────────────────────
+
+export function generateBriefPdf(brief: BriefForPdf, filename: string): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({
+      size: 'A4',
+      margin: 50,
+      info: {
+        Title: filename.replace('.pdf', ''),
+        Author: 'Atlas',
+        Creator: 'Atlas Strategy Gate',
+        CreationDate: brief.locked_at ? new Date(brief.locked_at) : new Date(),
+      },
+    });
+
+    const buffers: Buffer[] = [];
+    doc.on('data', (chunk: Buffer) => buffers.push(chunk));
+    doc.on('end', () => resolve(Buffer.concat(buffers)));
+    doc.on('error', reject);
+
+    const PAGE_W = doc.page.width;
+    const PAGE_H = doc.page.height;
+    const L = 50;
+    const R = PAGE_W - 50;
+    const CONTENT_W = R - L;
+    const BOTTOM_MARGIN = 70;
+
+    // ── Layout helpers ──────────────────────────────────────────────────────
+
+    function topBar() {
+      doc.fillColor(C.navy).rect(0, 0, PAGE_W, 6).fill();
+    }
+
+    function pageFooter(pageLabel: string) {
+      const y = PAGE_H - 36;
+      doc.fillColor(C.mutedText).rect(L, y - 4, CONTENT_W, 0.5).fill();
+      doc.fillColor(C.mutedText).fontSize(7.5).font('Helvetica')
+        .text('Generated by Atlas', L, y + 4)
+        .text(pageLabel, L, y + 4, { align: 'right', width: CONTENT_W });
+    }
+
+    function pageHeader(section: string) {
+      topBar();
+      doc.fillColor(C.lightText).fontSize(8).font('Helvetica')
+        .text('ATLAS CONVERSION STRATEGY BRIEF', L, 18)
+        .text(section, L, 18, { align: 'right', width: CONTENT_W });
+      doc.y = 44;
+    }
+
+    function sectionHeading(title: string) {
+      doc.moveDown(0.6);
+      doc.fillColor(C.navy).fontSize(11).font('Helvetica-Bold').text(title, L);
+      doc.moveDown(0.1);
+      doc.fillColor(C.mutedText).rect(L, doc.y, CONTENT_W, 0.5).fill();
+      doc.moveDown(0.5);
+    }
+
+    function needsNewPage(h: number): boolean {
+      return doc.y + h > PAGE_H - BOTTOM_MARGIN;
+    }
+
+    function inlineKV(key: string, value: string) {
+      doc.fillColor(C.lightText).fontSize(9).font('Helvetica').text(`${key}: `, L, doc.y, { continued: true });
+      doc.fillColor(C.darkText).font('Helvetica').text(value);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // PAGE 1 — Cover
+    // ══════════════════════════════════════════════════════════════════════
+
+    doc.fillColor(C.navy).rect(0, 0, PAGE_W, PAGE_H).fill();
+
+    // Top accent strip
+    doc.fillColor(C.accent).rect(0, 0, PAGE_W, 8).fill();
+
+    // Atlas wordmark
+    doc.fillColor(C.white).fontSize(13).font('Helvetica-Bold')
+      .text('ATLAS', L, 60)
+      .fillColor('#9CA3AF').fontSize(9).font('Helvetica')
+      .text('Marketing Signal Platform', L, 78);
+
+    // Main title
+    doc.fillColor(C.white).fontSize(32).font('Helvetica-Bold')
+      .text('Conversion', L, 160)
+      .text('Strategy Brief', L);
+
+    // Horizontal rule
+    doc.fillColor(C.accent).rect(L, doc.y + 10, 60, 3).fill();
+    doc.y = doc.y + 28;
+
+    // Meta block
+    const lockedDate = brief.locked_at
+      ? new Date(brief.locked_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+      : 'Not yet locked';
+
+    if (brief.client_name || brief.org_name) {
+      doc.fillColor('#D1D5DB').fontSize(10).font('Helvetica')
+        .text((brief.client_name ?? brief.org_name) as string, L);
+    }
+    if (brief.brief_name) {
+      doc.fillColor('#9CA3AF').fontSize(9).font('Helvetica').text(brief.brief_name, L);
+    }
+    doc.moveDown(0.4);
+    doc.fillColor('#9CA3AF').fontSize(9).font('Helvetica')
+      .text(`Locked ${lockedDate}  ·  Version ${brief.version_no}`, L);
+
+    // Objective count strip at bottom of cover
+    const objCount = brief.objectives.length;
+    doc.fillColor('#374151').rect(L, PAGE_H - 120, CONTENT_W, 64).fill();
+    doc.fillColor(C.white).fontSize(28).font('Helvetica-Bold')
+      .text(String(objCount), L + 20, PAGE_H - 106);
+    doc.fillColor('#D1D5DB').fontSize(10).font('Helvetica')
+      .text(objCount === 1 ? 'Conversion objective' : 'Conversion objectives', L + 58, PAGE_H - 100);
+
+    // ══════════════════════════════════════════════════════════════════════
+    // PAGE 2 — Summary
+    // ══════════════════════════════════════════════════════════════════════
+
+    doc.addPage();
+    pageHeader('Summary');
+
+    sectionHeading('Objectives at a Glance');
+
+    brief.objectives.forEach((obj, i) => {
+      const vc = obj.verdict ? VERDICT_CONFIG[obj.verdict] : null;
+      const estH = 52;
+      if (needsNewPage(estH)) {
+        doc.addPage();
+        pageHeader('Summary');
+        sectionHeading('Objectives (continued)');
+      }
+
+      const cardY = doc.y;
+      doc.fillColor(C.bgLight).rect(L, cardY, CONTENT_W, 44).fill();
+
+      // Coloured left accent
+      const accentColor = vc?.color ?? C.mutedText;
+      doc.fillColor(accentColor).rect(L, cardY, 4, 44).fill();
+
+      // Objective number + name
+      doc.fillColor(C.mutedText).fontSize(8).font('Helvetica')
+        .text(`${i + 1}`, L + 14, cardY + 7);
+      doc.fillColor(C.darkText).fontSize(10).font('Helvetica-Bold')
+        .text(obj.name, L + 28, cardY + 6, { width: CONTENT_W - 150 });
+
+      // Verdict pill on right
+      if (vc) {
+        doc.fillColor(vc.color).fontSize(8).font('Helvetica-Bold')
+          .text(vc.label.toUpperCase(), L + CONTENT_W - 130, cardY + 14, { width: 126, align: 'right' });
+      }
+
+      if (obj.recommended_primary_event) {
+        doc.fillColor(C.lightText).fontSize(8).font('Helvetica')
+          .text(`Event: ${obj.recommended_primary_event}`, L + 28, cardY + 26, { width: CONTENT_W - 100 });
+      }
+
+      doc.y = cardY + 52;
+    });
+
+    // ══════════════════════════════════════════════════════════════════════
+    // PAGES 3+: Per objective
+    // ══════════════════════════════════════════════════════════════════════
+
+    brief.objectives.forEach((obj, i) => {
+      doc.addPage();
+      pageHeader(`Objective ${i + 1} of ${brief.objectives.length}`);
+
+      // Objective heading
+      doc.fillColor(C.navy).fontSize(16).font('Helvetica-Bold')
+        .text(obj.name, L);
+      doc.moveDown(0.3);
+
+      // Inputs table
+      sectionHeading('Inputs');
+
+      const rows: [string, string][] = [];
+      if (obj.description) rows.push(['Business outcome', obj.description]);
+      if (obj.outcome_timing_days != null) {
+        rows.push(['Outcome timing', TIMING_LABELS[obj.outcome_timing_days] ?? `${obj.outcome_timing_days} days`]);
+      }
+      if (obj.current_event && obj.current_event !== 'None') {
+        rows.push(['Current event', obj.current_event]);
+      } else {
+        rows.push(['Current event', 'Not yet set']);
+      }
+      if (obj.platforms.length > 0) {
+        rows.push(['Platforms', obj.platforms.map((p) => PLATFORM_LABELS[p] ?? p).join(', ')]);
+      }
+
+      rows.forEach(([key, val]) => {
+        if (needsNewPage(24)) {
+          doc.addPage();
+          pageHeader(`Objective ${i + 1} of ${brief.objectives.length}`);
+        }
+        const rowY = doc.y;
+        doc.fillColor(C.bgLight).rect(L, rowY, CONTENT_W, 22).fill();
+        doc.fillColor(C.lightText).fontSize(8.5).font('Helvetica')
+          .text(key, L + 10, rowY + 6, { width: 120 });
+        doc.fillColor(C.darkText).fontSize(8.5).font('Helvetica')
+          .text(val, L + 135, rowY + 6, { width: CONTENT_W - 145 });
+        doc.y = rowY + 26;
+      });
+
+      // Verdict block
+      if (obj.verdict) {
+        const vc = VERDICT_CONFIG[obj.verdict];
+        doc.moveDown(0.4);
+        if (needsNewPage(80)) {
+          doc.addPage();
+          pageHeader(`Objective ${i + 1} of ${brief.objectives.length}`);
+        }
+
+        sectionHeading('Verdict');
+
+        const vY = doc.y;
+        // Light tinted background
+        const bgHex = obj.verdict === 'CONFIRM' ? '#F0FDF4' : obj.verdict === 'AUGMENT' ? '#FFFBEB' : '#FEF2F2';
+        doc.fillColor(bgHex).rect(L, vY, CONTENT_W, needsNewPage(100) ? 90 : Math.min(90, PAGE_H - BOTTOM_MARGIN - vY)).fill();
+        doc.fillColor(vc.color).rect(L, vY, 4, 90).fill();
+
+        doc.fillColor(vc.color).fontSize(11).font('Helvetica-Bold')
+          .text(vc.label.toUpperCase(), L + 14, vY + 10);
+
+        if (obj.recommended_primary_event) {
+          doc.fillColor(C.lightText).fontSize(8.5).font('Helvetica')
+            .text('Primary event:', L + 14, vY + 30, { continued: true })
+            .fillColor(C.darkText).font('Helvetica-Bold')
+            .text(` ${obj.recommended_primary_event}`);
+        }
+        if (obj.proxy_event_required && obj.recommended_proxy_event) {
+          doc.fillColor(C.lightText).fontSize(8.5).font('Helvetica')
+            .text('Proxy event:', L + 14, doc.y, { continued: true })
+            .fillColor(C.darkText).font('Helvetica-Bold')
+            .text(` ${obj.recommended_proxy_event}`);
+        }
+
+        doc.y = Math.max(doc.y, vY + 96);
+      }
+
+      // Rationale
+      if (obj.rationale) {
+        if (needsNewPage(60)) {
+          doc.addPage();
+          pageHeader(`Objective ${i + 1} of ${brief.objectives.length}`);
+        }
+        sectionHeading('Analysis');
+        doc.fillColor(C.midText).fontSize(9.5).font('Helvetica')
+          .text(obj.rationale, L, doc.y, { width: CONTENT_W, lineGap: 2 });
+        doc.moveDown(0.5);
+      }
+
+      // Campaigns
+      if (obj.campaigns.length > 0) {
+        if (needsNewPage(40)) {
+          doc.addPage();
+          pageHeader(`Objective ${i + 1} of ${brief.objectives.length}`);
+        }
+        sectionHeading('Campaign Assignments');
+        obj.campaigns.forEach((c) => {
+          const label = c.campaign_name
+            ? `${PLATFORM_LABELS[c.platform] ?? c.platform}: ${c.campaign_name}`
+            : PLATFORM_LABELS[c.platform] ?? c.platform;
+          doc.fillColor(C.midText).fontSize(9).font('Helvetica')
+            .text(`•  ${label}`, L + 10, doc.y);
+        });
+      }
+
+      pageFooter(`Objective ${i + 1} / ${brief.objectives.length}`);
+    });
+
+    // ══════════════════════════════════════════════════════════════════════
+    // Implementation Notes
+    // ══════════════════════════════════════════════════════════════════════
+
+    doc.addPage();
+    pageHeader('Implementation Notes');
+
+    doc.fillColor(C.darkText).fontSize(16).font('Helvetica-Bold').text('Implementation Notes', L);
+    doc.fillColor(C.lightText).fontSize(9).font('Helvetica')
+      .text('Platform-specific configuration guidance for each objective.', L);
+    doc.moveDown(0.8);
+
+    brief.objectives.forEach((obj) => {
+      const notes = buildImplementationNotes(obj);
+      if (notes.length === 0) return;
+
+      if (needsNewPage(30 + notes.length * 22)) {
+        doc.addPage();
+        pageHeader('Implementation Notes');
+      }
+
+      doc.fillColor(C.navy).fontSize(10).font('Helvetica-Bold').text(obj.name, L);
+      doc.moveDown(0.2);
+
+      notes.forEach((note) => {
+        if (needsNewPage(24)) {
+          doc.addPage();
+          pageHeader('Implementation Notes');
+        }
+        doc.fillColor(C.midText).fontSize(9).font('Helvetica')
+          .text(`•  ${note}`, L + 10, doc.y, { width: CONTENT_W - 20, lineGap: 2 });
+        doc.moveDown(0.3);
+      });
+      doc.moveDown(0.5);
+    });
+
+    pageFooter('Implementation Notes');
+
+    // ══════════════════════════════════════════════════════════════════════
+    // What happens next
+    // ══════════════════════════════════════════════════════════════════════
+
+    if (needsNewPage(160)) doc.addPage();
+    sectionHeading('What Happens Next in Atlas');
+
+    doc.fillColor(C.midText).fontSize(9.5).font('Helvetica')
+      .text(
+        'Atlas uses this strategy as the foundation for site scans, tracking plan generation, and Conversion API setup. When you\'re ready, run a site scan from the Atlas dashboard to see how your current tracking matches what\'s locked here.',
+        L, doc.y, { width: CONTENT_W, lineGap: 2 },
+      );
+    doc.moveDown(0.6);
+
+    const nextSteps = [
+      'Run a site scan — check how your current tracking matches this strategy',
+      'Configure Conversion API — send locked events server-side to Meta and Google',
+      'Set up Consent Mode v2 — ensure your tracking works under privacy regulations',
+    ];
+    nextSteps.forEach((step) => {
+      doc.fillColor(C.accent).fontSize(9).font('Helvetica')
+        .text(`→  ${step}`, L + 10, doc.y, { width: CONTENT_W - 20 });
+      doc.moveDown(0.3);
+    });
+
+    // ══════════════════════════════════════════════════════════════════════
+    // Appendix
+    // ══════════════════════════════════════════════════════════════════════
+
+    doc.addPage();
+    pageHeader('Appendix');
+
+    doc.fillColor(C.darkText).fontSize(16).font('Helvetica-Bold').text('Appendix', L);
+    doc.moveDown(0.6);
+
+    sectionHeading('Brief Details');
+    if (brief.brief_name) inlineKV('Brief name', brief.brief_name);
+    inlineKV('Version', `v${brief.version_no}`);
+    inlineKV('Mode', brief.mode === 'single' ? 'Single objective' : 'Multiple objectives');
+    if (brief.locked_at) {
+      inlineKV('Locked', new Date(brief.locked_at).toUTCString());
+    }
+
+    doc.moveDown(0.6);
+    sectionHeading('Raw Inputs per Objective');
+
+    brief.objectives.forEach((obj, i) => {
+      if (needsNewPage(80)) {
+        doc.addPage();
+        pageHeader('Appendix');
+        sectionHeading('Raw Inputs (continued)');
+      }
+      doc.fillColor(C.navy).fontSize(10).font('Helvetica-Bold')
+        .text(`${i + 1}. ${obj.name}`, L);
+      if (obj.description) {
+        doc.fillColor(C.midText).fontSize(9).font('Helvetica')
+          .text(obj.description, L + 10, doc.y, { width: CONTENT_W - 20, lineGap: 2 });
+      }
+      doc.moveDown(0.5);
+    });
+
+    // Footer
+    doc.moveDown(1);
+    doc.fillColor(C.mutedText).rect(L, doc.y, CONTENT_W, 0.5).fill();
+    doc.moveDown(0.4);
+    const generatedAt = new Date().toUTCString();
+    doc.fillColor(C.mutedText).fontSize(8).font('Helvetica')
+      .text(`Generated by Atlas  ·  ${generatedAt}  ·  Version ${brief.version_no}`, L, doc.y, {
+        align: 'center',
+        width: CONTENT_W,
+      });
+
+    doc.end();
+  });
+}

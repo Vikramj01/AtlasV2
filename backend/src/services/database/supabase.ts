@@ -53,6 +53,39 @@ export async function uploadOutput(
   if (error) throw new Error(`Output upload failed: ${error.message}`);
   return path;
 }
+// ── Strategy Brief PDF storage ─────────────────────────────────────────────────
+
+/**
+ * Upload a strategy brief PDF to the private `strategy-briefs` bucket.
+ * Path: {orgId}/{briefId}/v{versionNo}.pdf
+ */
+export async function uploadStrategyBriefPdf(
+  orgId: string,
+  briefId: string,
+  versionNo: number,
+  buffer: Buffer,
+): Promise<string> {
+  const path = `${orgId}/${briefId}/v${versionNo}.pdf`;
+  const { error } = await supabaseAdmin.storage
+    .from('strategy-briefs')
+    .upload(path, buffer, { contentType: 'application/pdf', upsert: true });
+  if (error) throw new Error(`PDF upload failed: ${error.message}`);
+  return path;
+}
+
+/**
+ * Create a 1-hour signed URL for a strategy brief PDF.
+ */
+export async function getStrategyBriefSignedUrl(storagePath: string): Promise<string> {
+  const { data, error } = await supabaseAdmin.storage
+    .from('strategy-briefs')
+    .createSignedUrl(storagePath, 3600);
+  if (error || !data?.signedUrl) {
+    throw new Error(`Failed to create signed URL: ${error?.message ?? 'no URL returned'}`);
+  }
+  return data.signedUrl;
+}
+
 export async function getScreenshotSignedUrl(storagePath: string): Promise<string> {
   console.log('[screenshot] createSignedUrl path:', storagePath);
 

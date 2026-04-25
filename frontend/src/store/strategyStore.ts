@@ -26,6 +26,7 @@ interface StrategyStore {
   createBrief: (input: { mode?: 'single' | 'multi'; brief_name?: string; client_id?: string; project_id?: string }) => Promise<StrategyBriefRecord>;
   lockBrief: (id: string) => Promise<StrategyBriefRecord>;
   deleteBrief: (id: string) => Promise<void>;
+  createBriefVersion: (id: string) => Promise<StrategyBriefRecord>;
   setActiveBrief: (brief: StrategyBriefWithObjectives | null) => void;
 
   // Actions — objectives
@@ -109,6 +110,17 @@ export const useStrategyStore = create<StrategyStore>((set) => ({
       briefs: s.briefs.filter((b) => b.id !== id),
       activeBrief: s.activeBrief?.id === id ? null : s.activeBrief,
     }));
+  },
+
+  createBriefVersion: async (id: string) => {
+    const { data } = await strategyApi.createBriefVersion(id);
+    set((s: StrategyStore) => ({
+      briefs: s.briefs.map((b) => b.id === id ? { ...b, superseded_by: data.id } : b),
+      activeBrief: s.activeBrief?.id === id
+        ? { ...s.activeBrief, superseded_by: data.id }
+        : s.activeBrief,
+    }));
+    return data;
   },
 
   setActiveBrief: (brief) => set({ activeBrief: brief }),
