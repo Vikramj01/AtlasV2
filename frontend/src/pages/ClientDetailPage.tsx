@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
-import { ExternalLink, Package, Download, Plus, Trash2, AlertTriangle } from 'lucide-react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { ExternalLink, Package, Download, Plus, Trash2, AlertTriangle, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { clientApi } from '@/lib/api/organisationApi';
+import { strategyApi } from '@/lib/api/strategyApi';
 import { DeploymentWizard } from '@/components/signals/DeploymentWizard';
 import { SkeletonCard } from '@/components/common/SkeletonCard';
 import type { ClientWithDetails, ClientDeployment, ClientOutput } from '@/types/organisation';
+import type { StrategyBriefRecord } from '@/types/strategy';
 
 const OUTPUT_LABELS: Record<string, string> = {
   gtm_container: 'GTM Container JSON',
@@ -30,9 +32,11 @@ const HEALTH_COLOR = (score: number | null | undefined) => {
 
 export function ClientDetailPage() {
   const { orgId, clientId } = useParams<{ orgId: string; clientId: string }>();
+  const navigate = useNavigate();
   const [client, setClient] = useState<ClientWithDetails | null>(null);
   const [deployments, setDeployments] = useState<ClientDeployment[]>([]);
   const [outputs, setOutputs] = useState<ClientOutput[]>([]);
+  const [clientBriefs, setClientBriefs] = useState<StrategyBriefRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isRunningAudit, setIsRunningAudit] = useState(false);
@@ -50,6 +54,11 @@ export function ClientDetailPage() {
   useEffect(() => {
     setIsLoading(true);
     load().catch((err) => setError(err.message)).finally(() => setIsLoading(false));
+    if (clientId) {
+      strategyApi.listBriefs()
+        .then((res) => setClientBriefs((res.data ?? []).filter((b) => b.client_id === clientId)))
+        .catch(() => {});
+    }
   }, [orgId, clientId]);
 
   async function handleGenerate() {
@@ -228,6 +237,72 @@ export function ClientDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Strategy Briefs */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <FileText className="h-4 w-4 text-muted-foreground" />
+              Strategy Briefs
+            </CardTitle>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-xs h-7"
+              onClick={() => navigate('/planning/strategy')}
+            >
+              <Plus className="h-3 w-3 mr-1" />
+              New brief
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {clientBriefs.length === 0 ? (
+            <div className="py-4 text-center">
+              <p className="text-xs text-muted-foreground">No strategy briefs for this client yet.</p>
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-3 text-xs"
+                onClick={() => navigate('/planning/strategy')}
+              >
+                Create brief
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {clientBriefs.map((brief) => (
+                <div key={brief.id} className="flex items-center justify-between rounded-lg border px-3 py-2.5">
+                  <div>
+                    <p className="text-xs font-medium">
+                      {brief.brief_name ?? 'Untitled brief'}
+                      <span className="ml-1.5 font-normal text-muted-foreground">v{brief.version_no}</span>
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {brief.locked_at
+                        ? `Locked ${new Date(brief.locked_at).toLocaleDateString()}`
+                        : 'Draft'}
+                    </p>
+                  </div>
+                  {brief.locked_at ? (
+                    <Link
+                      to={`/strategy/briefs/${brief.id}`}
+                      className="flex items-center gap-1 text-xs text-primary hover:underline"
+                    >
+                      View <ExternalLink className="h-3 w-3" />
+                    </Link>
+                  ) : (
+                    <Button size="sm" variant="ghost" className="text-xs h-7" onClick={() => navigate('/planning/strategy')}>
+                      Continue
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Generated Outputs */}
       {Object.keys(latestOutputsByType).length > 0 && (
