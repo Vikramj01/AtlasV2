@@ -113,11 +113,12 @@ export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
       style={{ width: 240, minWidth: 240 }}
     >
       {/* ── Logo ──────────────────────────────────────────────────────────── */}
-      <div className="flex items-center px-5 py-4 border-b border-[#E5E7EB]">
+      <div className="border-b border-[#E5E7EB]">
         <img
           src="/atlas_latest_logo.svg"
           alt="Atlas"
-          className="h-10 w-auto object-contain"
+          className="block w-full"
+          style={{ height: 64, objectFit: 'cover', objectPosition: 'center' }}
         />
       </div>
 
