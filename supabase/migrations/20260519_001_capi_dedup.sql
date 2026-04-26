@@ -11,7 +11,7 @@ ALTER TABLE capi_events
   ADD COLUMN IF NOT EXISTS dedup_matched_at TIMESTAMPTZ;
 
 CREATE INDEX IF NOT EXISTS idx_capi_events_dedup_status
-  ON capi_events (organization_id, provider_id, dedup_status, created_at);
+  ON capi_events (organization_id, provider_config_id, dedup_status, created_at);
 
 -- ── capi_browser_events: Atlas Signal Tag beacon store ────────────────────────
 -- Receives browser-side event_id beacons from GTM before server-side CAPI fires.
@@ -19,7 +19,7 @@ CREATE INDEX IF NOT EXISTS idx_capi_events_dedup_status
 
 CREATE TABLE IF NOT EXISTS capi_browser_events (
   id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  organization_id  UUID        NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  organization_id  UUID        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   provider_id      UUID        REFERENCES capi_providers(id) ON DELETE SET NULL,
   event_id         TEXT        NOT NULL,
   event_name       TEXT        NOT NULL,
