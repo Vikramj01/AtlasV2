@@ -225,6 +225,10 @@ export interface DeliveryResult {
   provider_response: unknown;
   error_code?: string;
   error_message?: string;
+  // Dedup outcome (Sprint 2.0) — present when dedup lookup was performed
+  dedup_status?: 'hit' | 'miss';
+  dedup_key?: string;
+  dedup_matched_at?: string; // ISO datetime — present only on 'hit'
 }
 
 // Alias for the new adapter contract's send() return type

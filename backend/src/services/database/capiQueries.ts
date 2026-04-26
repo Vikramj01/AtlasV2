@@ -229,6 +229,11 @@ export interface CreateCAPIEventInput {
   provider_response?: unknown;
   error_code?: string | null;
   error_message?: string | null;
+  // Dedup fields (Sprint 2.0)
+  event_id?: string | null;
+  dedup_status?: 'hit' | 'miss' | 'not_applicable' | null;
+  dedup_key?: string | null;
+  dedup_matched_at?: string | null;
 }
 
 export async function createCAPIEvent(input: CreateCAPIEventInput): Promise<CAPIEvent> {
