@@ -128,6 +128,7 @@ export interface CAPIProviderConfig {
   provider: CAPIProvider;
   adapter_name?: CAPIAdapterName; // Which Google sub-adapter (google_ec_web, google_ec_leads, google_offline)
   status: CAPIProviderStatus;
+  provider_token?: string; // UUID used to authenticate Atlas Signal Tag beacons (X-Atlas-Provider-Token)
   credentials: ProviderCredentials; // Encrypted at rest
   event_mapping: EventMapping[];
   identifier_config: IdentifierConfig;
@@ -164,6 +165,10 @@ export interface CAPIEvent {
   error_message: string | null;
   processed_at: string;
   delivered_at: string | null;
+  // Dedup fields (Sprint 2.0)
+  event_id?: string;
+  dedup_status?: 'hit' | 'miss' | 'not_applicable';
+  dedup_matched_at?: string; // ISO datetime
 }
 
 // --- Atlas Event (from WalkerOS pipeline) ---
@@ -319,6 +324,10 @@ export interface ProviderDashboardResponse {
   avg_emq: number | null; // Meta only
   delivery_rate: number;
   avg_latency_ms: number;
+  // Dedup metrics (Sprint 2.0) — last 7 days
+  dedup_rate: number;       // 0–100
+  dedup_hit_count: number;
+  dedup_miss_count: number;
   by_event: Array<{
     event_name: string;
     count: number;
