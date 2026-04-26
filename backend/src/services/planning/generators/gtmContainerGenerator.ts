@@ -213,6 +213,8 @@ export interface GTMPlatformIds {
   linkedin?: string;
   linkedin_conversion_id?: string;
   google_ads_conversion_label?: string;
+  /** Atlas CAPI provider_token — used to authenticate the Atlas Signal Tag beacon */
+  provider_token?: string;
 }
 
 export function generateGTMContainer(
@@ -287,6 +289,42 @@ export function generateGTMContainer(
     ],
     folderId: FOLDER.VARIABLES,
   });
+
+  // ── Atlas dedup variables (added when Meta is selected) ──────────────────
+  // These power the browser-first dedup flow: Event ID is generated per tag
+  // fire (not per page load) and passed to Meta Pixel + the Atlas Signal Tag.
+
+  if (hasMeta) {
+    variables.push({
+      ...stub(),
+      variableId: varIds.next(),
+      name: 'Atlas - Event ID',
+      type: 'jsm',
+      parameter: [
+        tmpl('javascript', `function() {
+  if (window.crypto && window.crypto.randomUUID) {
+    return window.crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    var r = Math.random() * 16 | 0;
+    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+  });
+}`),
+      ],
+      folderId: FOLDER.VARIABLES,
+      notes: 'Generates a unique UUID v4 per tag fire. Used as the eventID in Meta fbq() conversion calls and in the Atlas Signal Tag beacon for server-side CAPI deduplication.',
+    });
+
+    variables.push({
+      ...stub(),
+      variableId: varIds.next(),
+      name: 'Atlas - Provider Token',
+      type: 'c',
+      parameter: [tmpl('value', platformIds?.provider_token ?? 'REPLACE_WITH_ATLAS_PROVIDER_TOKEN')],
+      folderId: FOLDER.VARIABLES,
+      notes: 'Atlas CAPI provider token. Sent as X-Atlas-Provider-Token header in the Signal Tag beacon. Find this value in Atlas → CAPI → Provider settings.',
+    });
+  }
 
   // ── Click ID URL Query variables ──────────────────────────────────────────
 
@@ -1062,13 +1100,18 @@ src="https://px.ads.linkedin.com/collect/?pid=${platformIds?.linkedin ?? '{{LINK
       } else if (actionKey === 'generate_lead') {
         fbqParams = `{value: {{DLV - value}}, currency: {{DLV - currency}}}`;
       }
+      // Conversion events include the 4th fbq() argument so Meta can deduplicate
+      // against the server-side CAPI event carrying the same event_id.
+      const fbqCall = isConversion
+        ? `fbq('track', '${metaEvent}', ${fbqParams}, {eventID: '{{Atlas - Event ID}}'})`
+        : `fbq('track', '${metaEvent}', ${fbqParams})`;
       tags.push({
         ...stub(),
         tagId: tagIds.next(),
         name: `Meta - ${label}`,
         type: 'html',
         parameter: [
-          tmpl('html', `<script>fbq('track', '${metaEvent}', ${fbqParams});</script>`),
+          tmpl('html', `<script>${fbqCall};</script>`),
           bool('supportDocumentWrite', 'false'),
         ],
         firingTriggerId: [trigId],
@@ -1124,6 +1167,70 @@ src="https://px.ads.linkedin.com/collect/?pid=${platformIds?.linkedin ?? '{{LINK
         tagManagerUrl: 'https://tagmanager.google.com/',
       });
     }
+  }
+
+  // ── Atlas Signal Tag ──────────────────────────────────────────────────────
+  // Beacons the Atlas Event ID to the backend before the server-side CAPI job
+  // fires, so metaDelivery can look up the same event_id from Redis and include
+  // it in the CAPI payload for deduplication.
+  // Uses fetch + keepalive (not sendBeacon) to support the required header.
+  if (hasMeta && eventTriggerMap.size > 0) {
+    const allEventTrigIds = [...eventTriggerMap.values()];
+    tags.push({
+      ...stub(),
+      tagId: tagIds.next(),
+      name: 'Atlas - Signal Tag',
+      type: 'html',
+      parameter: [
+        tmpl('html', `<script>
+(function() {
+  // Consent gate — only beacon if ad consent is granted
+  function adsConsentGranted() {
+    var dl = window.dataLayer || [];
+    for (var i = dl.length - 1; i >= 0; i--) {
+      if (dl[i] && dl[i].event === 'consent_update') {
+        return dl[i].ads === true;
+      }
+    }
+    return false;
+  }
+  if (!adsConsentGranted()) return;
+
+  var payload = {
+    event_id:   '{{Atlas - Event ID}}',
+    event_name: '{{Event}}',
+    fbc:        '{{1P Cookie - _fbc}}' || null,
+    gclid:      '{{URL Query - gclid}}' || null,
+    session_id: null,
+    timestamp:  Date.now(),
+    event_data: {
+      value:    '{{DLV - ecommerce.value}}',
+      currency: '{{DLV - ecommerce.currency}}',
+    },
+  };
+
+  try {
+    fetch('https://api.atlas.vimi.digital/api/capi/browser-event', {
+      method:    'POST',
+      headers:   {
+        'Content-Type':           'application/json',
+        'X-Atlas-Provider-Token': '{{Atlas - Provider Token}}',
+      },
+      body:      JSON.stringify(payload),
+      keepalive: true,
+    }).catch(function() {});
+  } catch (e) {}
+})();
+</script>`),
+        bool('supportDocumentWrite', 'false'),
+      ],
+      firingTriggerId: allEventTrigIds,
+      tagFiringOption: 'oncePerEvent',
+      folderId: FOLDER.CONFIG,
+      consentSettings: { consentStatus: 'notSet' },
+      fingerprint: '0',
+      tagManagerUrl: 'https://tagmanager.google.com/',
+    });
   }
 
   // ── Folders ───────────────────────────────────────────────────────────────
