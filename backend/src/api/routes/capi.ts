@@ -16,6 +16,7 @@
 
 import { Router } from 'express';
 import type { Request, Response } from 'express';
+import { z } from 'zod';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { planGuard } from '../middleware/planGuard';
 import { sendInternalError } from '@/utils/apiError';
@@ -32,6 +33,9 @@ import { safeDecryptCredentials } from '@/services/capi/credentials';
 import { validateMetaCredentials, sendMetaTestEvent, formatMetaEvent } from '@/services/capi/metaDelivery';
 import { validateGoogleCredentials, sendGoogleTestEvent } from '@/services/capi/googleDelivery';
 import { processEvent } from '@/services/capi/pipeline';
+import { setDedupEntry } from '@/services/capi/dedupStore';
+import { supabaseAdmin } from '@/services/database/supabase';
+import logger from '@/utils/logger';
 import type {
   CreateProviderRequest,
   TestProviderRequest,
@@ -44,7 +48,82 @@ import type {
 
 export const capiRouter = Router();
 
-// All CAPI routes require auth
+// ── POST /api/capi/browser-event ──────────────────────────────────────────────
+// Receives Atlas Signal Tag beacons from GTM. Authenticated via
+// X-Atlas-Provider-Token header — no Supabase session required.
+// Must be registered BEFORE capiRouter.use(authMiddleware).
+
+const BrowserEventSchema = z.object({
+  event_id:   z.string().uuid(),
+  event_name: z.string().min(1).max(100),
+  fbclid:     z.string().nullable().optional(),
+  gclid:      z.string().nullable().optional(),
+  session_id: z.string().nullable().optional(),
+  timestamp:  z.number().int().positive(),
+  event_data: z.record(z.unknown()).optional(),
+});
+
+capiRouter.post('/browser-event', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const token = req.headers['x-atlas-provider-token'];
+    if (!token || typeof token !== 'string') {
+      res.status(401).json({ error: 'UNAUTHORIZED', message: 'Missing provider token' });
+      return;
+    }
+
+    const { data: provider, error: providerErr } = await supabaseAdmin
+      .from('capi_providers')
+      .select('id, organization_id')
+      .eq('provider_token', token)
+      .single();
+
+    if (providerErr || !provider) {
+      res.status(401).json({ error: 'UNAUTHORIZED', message: 'Invalid provider token' });
+      return;
+    }
+
+    const parsed = BrowserEventSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'VALIDATION_FAILED', message: parsed.error.issues[0]?.message ?? 'Invalid request body' });
+      return;
+    }
+
+    const { event_id, event_name, fbclid, gclid, session_id, timestamp, event_data } = parsed.data;
+    const entry = { event_id, timestamp };
+
+    // Write to Redis for whichever click IDs are present
+    const writes: Promise<void>[] = [];
+    if (fbclid) writes.push(setDedupEntry('meta',   provider.id, fbclid, event_name, entry));
+    if (gclid)  writes.push(setDedupEntry('google', provider.id, gclid,  event_name, entry));
+    await Promise.all(writes);
+
+    // Audit trail — fire-and-forget; a write failure must never surface to the beacon caller
+    const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+    supabaseAdmin.from('capi_browser_events').insert({
+      organization_id: provider.organization_id,
+      provider_id:     provider.id,
+      event_id,
+      event_name,
+      fbclid:          fbclid  ?? null,
+      gclid:           gclid   ?? null,
+      session_id:      session_id ?? null,
+      event_data:      event_data && Object.keys(event_data).length > 0 ? event_data : null,
+      expires_at:      expiresAt,
+    }).then(({ error }) => {
+      if (error) logger.warn({ err: error, event_name }, 'capi_browser_events insert failed');
+    }).catch((err: unknown) => {
+      logger.warn({ err, event_name }, 'capi_browser_events insert threw');
+    });
+
+    res.status(204).send();
+  } catch (err) {
+    // Swallow — beacon failures must be silent to the end user
+    logger.warn({ err }, 'Unexpected error in /browser-event handler');
+    res.status(204).send();
+  }
+});
+
+// All remaining CAPI routes require auth
 capiRouter.use(authMiddleware);
 
 // ── POST /api/capi/providers ───────────────────────────────────────────────────
