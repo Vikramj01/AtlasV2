@@ -56,7 +56,7 @@ export const capiRouter = Router();
 const BrowserEventSchema = z.object({
   event_id:   z.string().uuid(),
   event_name: z.string().min(1).max(100),
-  fbclid:     z.string().nullable().optional(),
+  fbc:        z.string().nullable().optional(), // Meta _fbc cookie (consistent with server pipeline)
   gclid:      z.string().nullable().optional(),
   session_id: z.string().nullable().optional(),
   timestamp:  z.number().int().positive(),
@@ -88,13 +88,13 @@ capiRouter.post('/browser-event', async (req: Request, res: Response): Promise<v
       return;
     }
 
-    const { event_id, event_name, fbclid, gclid, session_id, timestamp, event_data } = parsed.data;
+    const { event_id, event_name, fbc, gclid, session_id, timestamp, event_data } = parsed.data;
     const entry = { event_id, timestamp };
 
     // Write to Redis for whichever click IDs are present
     const writes: Promise<void>[] = [];
-    if (fbclid) writes.push(setDedupEntry('meta',   provider.id, fbclid, event_name, entry));
-    if (gclid)  writes.push(setDedupEntry('google', provider.id, gclid,  event_name, entry));
+    if (fbc)   writes.push(setDedupEntry('meta',   provider.id, fbc,   event_name, entry));
+    if (gclid) writes.push(setDedupEntry('google', provider.id, gclid, event_name, entry));
     await Promise.all(writes);
 
     // Audit trail — fire-and-forget; a write failure must never surface to the beacon caller
@@ -104,8 +104,8 @@ capiRouter.post('/browser-event', async (req: Request, res: Response): Promise<v
       provider_id:     provider.id,
       event_id,
       event_name,
-      fbclid:          fbclid  ?? null,
-      gclid:           gclid   ?? null,
+      fbclid:          fbc   ?? null,
+      gclid:           gclid ?? null,
       session_id:      session_id ?? null,
       event_data:      event_data && Object.keys(event_data).length > 0 ? event_data : null,
       expires_at:      expiresAt,

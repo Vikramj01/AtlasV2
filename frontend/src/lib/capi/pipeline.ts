@@ -3,9 +3,11 @@
  *
  * Lightweight browser-side pipeline that:
  *   1. Checks consent for the target provider
- *   2. Runs client-side dedup (60s window)
- *   3. Hashes PII (SHA-256 via Web Crypto API)
- *   4. POSTs to backend /api/capi/process (server handles delivery)
+ *   2. Hashes PII (SHA-256 via Web Crypto API)
+ *   3. POSTs to backend /api/capi/process (server handles delivery)
+ *
+ * Deduplication is handled server-side via Redis (Sprint 2.0).
+ * The GTM Atlas Signal Tag beacons the event_id before the CAPI job fires.
  *
  * Usage:
  *   await pipeline.track('purchase', eventData, { provider_id: 'xxx' });
@@ -14,7 +16,6 @@
 import type { AtlasEvent, CAPIProvider, HashedIdentifier } from '@/types/capi';
 import type { ConsentDecisions } from '@/types/consent';
 import { hashUserData } from '@/lib/capi/hash-pii';
-import { clientDedup } from '@/lib/capi/dedup';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
 
@@ -25,8 +26,6 @@ export interface TrackOptions {
   provider_id: string;
   /** Auth token — required for /api/capi/process */
   auth_token: string;
-  /** Skip client-side dedup check (default: false) */
-  skip_dedup?: boolean;
 }
 
 export interface TrackResult {
@@ -67,12 +66,7 @@ export async function trackEvent(
     return { event_id: event.event_id, status: 'consent_blocked' };
   }
 
-  // 2. Client-side dedup
-  if (!options.skip_dedup && clientDedup.check(event.event_id)) {
-    return { event_id: event.event_id, status: 'dedup_skipped' };
-  }
-
-  // 3. Hash PII — all identifiers enabled by default; server applies the
+  // 2. Hash PII — all identifiers enabled by default; server applies the
   //    provider's identifier_config filter
   const identifiers: HashedIdentifier[] = await hashUserData(event.user_data, [
     'email', 'phone', 'fn', 'ln', 'ct', 'st', 'zp', 'country',
