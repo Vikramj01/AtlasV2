@@ -24,6 +24,7 @@ import type {
   TestResult,
   DeliveryResult,
 } from '@/types/capi';
+import { getMetaDedupEntry } from './dedupStore';
 
 // ── User param completeness ───────────────────────────────────────────────────
 
@@ -133,6 +134,7 @@ export async function sendMetaEvents(
   creds: MetaCredentials,
   testEventCode?: string | null,
   dpo?: { options: string[]; country: number; state: number },
+  providerId?: string,
 ): Promise<DeliveryResult[]> {
   if (events.length === 0) return [];
 
@@ -140,9 +142,21 @@ export async function sendMetaEvents(
     mappings.find(m => m.atlas_event === eventName) ??
     { atlas_event: eventName, provider_event: eventName };
 
-  const formattedData = events.map((e, i) =>
-    formatMetaEvent(e, metaMappingFor(e.event_name), identifiersPerEvent[i] ?? [], dpo)
+  // Resolve a dedup event_id for each event before building the CAPI payload.
+  // fbc (Meta click cookie) is the consistent browser-side identifier available
+  // in both the GTM beacon and the server pipeline.
+  const dedupResults = await Promise.all(
+    events.map(async (e) => {
+      if (!providerId) return { entry: null, eventId: e.event_id || randomUUID() };
+      const entry = await getMetaDedupEntry(providerId, e.user_data.fbc ?? null, e.event_name);
+      return { entry, eventId: entry?.event_id ?? randomUUID() };
+    }),
   );
+
+  const formattedData = events.map((e, i) => {
+    const { eventId } = dedupResults[i];
+    return formatMetaEvent({ ...e, event_id: eventId }, metaMappingFor(e.event_name), identifiersPerEvent[i] ?? [], dpo);
+  });
 
   const payload: Record<string, unknown> = {
     data: formattedData,
@@ -163,21 +177,30 @@ export async function sendMetaEvents(
   if (!res.ok) {
     const errMsg = body.error?.message ?? `HTTP ${res.status}`;
     const errCode = String(body.error?.code ?? 'DELIVERY_FAILED');
-    return events.map(e => ({
-      event_id: e.event_id,
+    return events.map((e, i) => ({
+      event_id: dedupResults[i].eventId,
       status: 'failed' as const,
       provider_response: body,
       error_code: errCode,
       error_message: errMsg,
+      dedup_status: providerId ? (dedupResults[i].entry ? 'hit' : 'miss') as 'hit' | 'miss' : undefined,
     }));
   }
 
   // Meta returns events_received on success
-  return events.map(e => ({
-    event_id: e.event_id,
-    status: 'delivered' as const,
-    provider_response: body,
-  }));
+  return events.map((e, i) => {
+    const { entry, eventId } = dedupResults[i];
+    return {
+      event_id: eventId,
+      status: 'delivered' as const,
+      provider_response: body,
+      dedup_status: providerId ? (entry ? 'hit' : 'miss') as 'hit' | 'miss' : undefined,
+      dedup_key: providerId && entry && e.user_data.fbc
+        ? `${providerId}:${e.user_data.fbc}:${e.event_name}`
+        : undefined,
+      dedup_matched_at: entry ? new Date().toISOString() : undefined,
+    };
+  });
 }
 
 // ── Test event ────────────────────────────────────────────────────────────────

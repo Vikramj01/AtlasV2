@@ -216,6 +216,10 @@ export async function processEvent(
     provider_response: result.provider_response,
     error_code: result.error_code ?? null,
     error_message: result.error_message ?? null,
+    event_id: result.event_id ?? null,
+    dedup_status: result.dedup_status ?? null,
+    dedup_key: result.dedup_key ?? null,
+    dedup_matched_at: result.dedup_matched_at ?? null,
   });
 
   // 7. Counters
@@ -255,6 +259,7 @@ async function deliverToProvider(
         creds as MetaCredentials,
         config.test_event_code,
         metaDpo,
+        config.id,
       );
     }
 
@@ -264,6 +269,7 @@ async function deliverToProvider(
         [identifiers],
         config.event_mapping,
         creds as GoogleCredentials,
+        config.id,
       );
 
     default:

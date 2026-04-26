@@ -16,6 +16,7 @@
  *   GOOGLE_ADS_DEVELOPER_TOKEN   — Google Ads developer token (required for every request)
  */
 
+import { randomUUID } from 'crypto';
 import type {
   AtlasEvent,
   HashedIdentifier,
@@ -29,6 +30,7 @@ import type {
 } from '@/types/capi';
 import type { ConsentDecisions } from '@/types/consent';
 import logger from '@/utils/logger';
+import { getGoogleDedupEntry } from './dedupStore';
 
 const GOOGLE_ADS_API_VERSION = 'v17';
 const GOOGLE_ADS_API_BASE = 'https://googleads.googleapis.com';
@@ -278,16 +280,45 @@ export async function sendGoogleEvents(
   identifiersPerEvent: HashedIdentifier[][],
   mappings: EventMapping[],
   creds: GoogleCredentials,
+  providerId?: string,
 ): Promise<DeliveryResult[]> {
   if (events.length === 0) return [];
 
   const resource = buildConversionActionResource(creds.customer_id, creds.conversion_action_id);
 
+  // Resolve order_id for each event:
+  //   1. Prefer transaction_id from custom_data (e-commerce — always a hit)
+  //   2. Fall back to a stored event_id from the browser beacon (lead-gen dedup)
+  //   3. Fall back to a new UUID (event still fires; logged as miss)
+  const dedupResults = await Promise.all(
+    events.map(async (e) => {
+      const transactionId = e.custom_data?.order_id ?? null;
+      const gclid = e.user_data.gclid ?? null;
+
+      if (transactionId) {
+        return { orderId: transactionId, dedup_status: 'hit' as const, dedup_key: undefined };
+      }
+
+      const entry = providerId
+        ? await getGoogleDedupEntry(providerId, gclid, e.event_name)
+        : null;
+      const orderId = entry?.event_id ?? randomUUID();
+      const dedupStatus: 'hit' | 'miss' = entry ? 'hit' : 'miss';
+      const dedupKey = providerId && entry && gclid
+        ? `${providerId}:${gclid}:${e.event_name}`
+        : undefined;
+
+      return { orderId, dedup_status: dedupStatus, dedup_key: dedupKey };
+    }),
+  );
+
   const adjustments = events.map((e, i) => {
     const mapping =
       mappings.find((m) => m.atlas_event === e.event_name) ??
       ({ atlas_event: e.event_name, provider_event: e.event_name } as EventMapping);
-    return formatGoogleAdjustment(e, mapping, identifiersPerEvent[i] ?? [], resource);
+    const adjustment = formatGoogleAdjustment(e, mapping, identifiersPerEvent[i] ?? [], resource);
+    adjustment.orderId = dedupResults[i].orderId;
+    return adjustment;
   });
 
   let accessToken = creds.oauth_access_token;
@@ -307,30 +338,35 @@ export async function sendGoogleEvents(
 
   if (!ok) {
     const errMsg = body.error?.message ?? 'Google Ads API error';
-    return events.map((e) => ({
+    return events.map((e, i) => ({
       event_id: e.event_id,
       status: 'failed' as const,
       provider_response: body,
       error_code: `${body.error?.code ?? 'DELIVERY_FAILED'}`,
       error_message: errMsg,
+      dedup_status: providerId ? dedupResults[i].dedup_status : undefined,
     }));
   }
 
   // Check partial failures (returned even on HTTP 200 with partialFailure: true)
   if (body.partialFailureError) {
-    return events.map((e) => ({
+    return events.map((e, i) => ({
       event_id: e.event_id,
       status: 'failed' as const,
       provider_response: body,
       error_code: 'PARTIAL_FAILURE',
       error_message: body.partialFailureError!.message,
+      dedup_status: providerId ? dedupResults[i].dedup_status : undefined,
     }));
   }
 
-  return events.map((e) => ({
+  return events.map((e, i) => ({
     event_id: e.event_id,
     status: 'delivered' as const,
     provider_response: body,
+    dedup_status: providerId ? dedupResults[i].dedup_status : undefined,
+    dedup_key: providerId ? dedupResults[i].dedup_key : undefined,
+    dedup_matched_at: dedupResults[i].dedup_status === 'hit' ? new Date().toISOString() : undefined,
   }));
 }
 
