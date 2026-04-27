@@ -323,6 +323,10 @@ export interface ProviderDashboardResponse {
   avg_emq: number | null; // Meta only
   delivery_rate: number;
   avg_latency_ms: number;
+  // Dedup metrics (Sprint 2.0) — last N days, excludes not_applicable rows
+  dedup_rate:       number; // 0–100
+  dedup_hit_count:  number;
+  dedup_miss_count: number;
   by_event: Array<{
     event_name: string;
     count: number;

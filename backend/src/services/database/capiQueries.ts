@@ -312,7 +312,7 @@ export async function getProviderDashboard(
 
   const { data, error } = await supabase
     .from('capi_events')
-    .select('provider_event_name, status, event_value, processed_at')
+    .select('provider_event_name, status, event_value, processed_at, dedup_status')
     .eq('provider_config_id', providerConfigId)
     .eq('organization_id', organizationId)
     .gte('processed_at', since.toISOString());
@@ -324,6 +324,12 @@ export async function getProviderDashboard(
   const delivered = events.filter(e => e.status === 'delivered').length;
   const failed = events.filter(e => e.status === 'delivery_failed').length;
   const blocked = events.filter(e => e.status === 'consent_blocked').length;
+
+  // Dedup stats — exclude 'not_applicable' rows (consent_blocked, etc.)
+  const dedupHit  = events.filter(e => e.dedup_status === 'hit').length;
+  const dedupMiss = events.filter(e => e.dedup_status === 'miss').length;
+  const dedupTotal = dedupHit + dedupMiss;
+  const dedupRate = dedupTotal > 0 ? Math.round((dedupHit / dedupTotal) * 100) : 0;
 
   // By event name
   const byEvent = new Map<string, { count: number; success: number }>();
@@ -354,6 +360,9 @@ export async function getProviderDashboard(
     avg_emq: null,
     delivery_rate: total > 0 ? Math.round((delivered / total) * 100) : 0,
     avg_latency_ms: 0, // populated in Sprint 4 with actual timing data
+    dedup_rate: dedupRate,
+    dedup_hit_count: dedupHit,
+    dedup_miss_count: dedupMiss,
     by_event: Array.from(byEvent.entries()).map(([event_name, { count, success }]) => ({
       event_name,
       count,
