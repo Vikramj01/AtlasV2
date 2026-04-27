@@ -55,6 +55,7 @@ function StatCell({
   label,
   value,
   sub,
+  tooltip,
   valueColor,
   bg,
   borderColor,
@@ -62,6 +63,7 @@ function StatCell({
   label: string;
   value: string;
   sub?: string;
+  tooltip?: string;
   valueColor?: string;
   bg?: string;
   borderColor?: string;
@@ -70,6 +72,7 @@ function StatCell({
     <div
       className="rounded-lg border px-4 py-3"
       style={{ backgroundColor: bg ?? '#fff', borderColor: borderColor ?? '#E5E7EB' }}
+      title={tooltip}
     >
       <p className="text-caption-upper mb-1">{label}</p>
       <p
@@ -441,8 +444,8 @@ export function CAPIMonitoringDashboard({ provider, onBack }: CAPIMonitoringDash
       {/* ── Loading ──────────────────────────────────────────────────────── */}
       {dashboardLoading && !dashboard && (
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-            {Array.from({ length: 5 }).map((_, i) => <SkeletonCard key={i} variant="metric" />)}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} variant="metric" />)}
           </div>
           <SkeletonCard variant="chart" />
         </div>
@@ -451,7 +454,7 @@ export function CAPIMonitoringDashboard({ provider, onBack }: CAPIMonitoringDash
       {dashboard && (
         <>
           {/* ── Stat cells ─────────────────────────────────────────────── */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             <StatCell label="Total Events" value={fmt(dashboard.total_events)} />
             <StatCell
               label="Delivered"
@@ -487,6 +490,25 @@ export function CAPIMonitoringDashboard({ provider, onBack }: CAPIMonitoringDash
                   : undefined
               }
             />
+            {(() => {
+              const rate = dashboard.dedup_rate ?? 0;
+              const dedupColor = rate >= 60 ? GREEN : rate >= 30 ? AMBER : RED;
+              const dedupBg    = rate >= 60 ? '#F0FDF4' : rate >= 30 ? '#FFFBEB' : '#FEF2F2';
+              const hits  = dashboard.dedup_hit_count ?? 0;
+              const misses = dashboard.dedup_miss_count ?? 0;
+              const hasData = hits + misses > 0;
+              return (
+                <StatCell
+                  label="Dedup Rate"
+                  value={hasData ? `${Math.round(rate)}%` : '—'}
+                  sub={hasData ? `${fmt(hits)} hits · ${fmt(misses)} misses` : 'No data yet'}
+                  tooltip="% of server-side events matched to a browser Pixel event. 60–90% is healthy. Below 60% may indicate the Atlas Signal Tag is not firing correctly."
+                  valueColor={hasData ? dedupColor : '#9CA3AF'}
+                  bg={hasData ? dedupBg : '#fff'}
+                  borderColor={hasData ? `${dedupColor}30` : '#E5E7EB'}
+                />
+              );
+            })()}
           </div>
 
           {/* ── EMQ score — Meta only ──────────────────────────────────── */}
