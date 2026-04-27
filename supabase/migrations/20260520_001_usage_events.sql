@@ -34,7 +34,6 @@ CREATE TABLE usage_events (
 
 CREATE INDEX idx_usage_events_org_id     ON usage_events (org_id);
 CREATE INDEX idx_usage_events_created_at ON usage_events (created_at DESC);
-CREATE INDEX idx_usage_events_org_month  ON usage_events (org_id, date_trunc('month', created_at));
 CREATE INDEX idx_usage_events_scan_run   ON usage_events (scan_run_id) WHERE scan_run_id IS NOT NULL;
 
 ALTER TABLE usage_events ENABLE ROW LEVEL SECURITY;
