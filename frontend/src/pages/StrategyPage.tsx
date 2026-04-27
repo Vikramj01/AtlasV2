@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, CheckCircle2 } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Step1Define } from '@/components/strategy/Step1Define';
 import { Step2Verdict } from '@/components/strategy/Step2Verdict';
@@ -139,27 +139,33 @@ function Landing({ onSelectMode, loading, error }: LandingProps) {
         </p>
       </div>
 
-      {/* Value preview strip */}
-      <div className="grid gap-3 sm:grid-cols-3">
-        {[
-          {
-            label: 'Verdict per objective',
-            description: 'Keep current event, add a proxy, or switch entirely',
-          },
-          {
-            label: 'Locked strategy document',
-            description: 'A PDF you can share with your team or hand to a client',
-          },
-          {
-            label: 'Foundation for everything next',
-            description: 'Site scan, tracking plan, and CAPI events all follow this strategy',
-          },
-        ].map((tile) => (
-          <div key={tile.label} className="rounded-lg border border-border bg-muted/30 p-4">
-            <p className="text-sm font-semibold">{tile.label}</p>
-            <p className="mt-1 text-xs text-muted-foreground">{tile.description}</p>
-          </div>
-        ))}
+      {/* What you get — informational, not interactive */}
+      <div className="rounded-xl border border-border bg-muted/20 px-5 py-4">
+        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">What you get</p>
+        <div className="space-y-3">
+          {[
+            {
+              label: 'A verdict for each conversion goal',
+              description: 'CONFIRM the event you already use, AUGMENT it with a proxy, or REPLACE it with something better aligned to real business outcomes.',
+            },
+            {
+              label: 'A shareable strategy brief',
+              description: 'A signed-off PDF summarising every objective and its recommended event — ready to hand to your team or a client.',
+            },
+            {
+              label: 'The foundation every other Atlas feature builds on',
+              description: 'Site scans, tracking plans, and CAPI configuration all use this strategy as their source of truth.',
+            },
+          ].map((item) => (
+            <div key={item.label} className="flex gap-3">
+              <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-primary/60" />
+              <div>
+                <p className="text-sm font-medium leading-snug">{item.label}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">{item.description}</p>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Mode cards */}
