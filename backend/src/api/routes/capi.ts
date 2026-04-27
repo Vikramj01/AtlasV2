@@ -99,7 +99,7 @@ capiRouter.post('/browser-event', async (req: Request, res: Response): Promise<v
 
     // Audit trail — fire-and-forget; a write failure must never surface to the beacon caller
     const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
-    supabaseAdmin.from('capi_browser_events').insert({
+    void Promise.resolve(supabaseAdmin.from('capi_browser_events').insert({
       organization_id: provider.organization_id,
       provider_id:     provider.id,
       event_id,
@@ -109,7 +109,7 @@ capiRouter.post('/browser-event', async (req: Request, res: Response): Promise<v
       session_id:      session_id ?? null,
       event_data:      event_data && Object.keys(event_data).length > 0 ? event_data : null,
       expires_at:      expiresAt,
-    }).then(({ error }) => {
+    })).then(({ error }) => {
       if (error) logger.warn({ err: error, event_name }, 'capi_browser_events insert failed');
     }).catch((err: unknown) => {
       logger.warn({ err, event_name }, 'capi_browser_events insert threw');
