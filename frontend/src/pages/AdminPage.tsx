@@ -1,4 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
+import type * as React from 'react';
+
 import { Users, Activity, Bell, BarChart3, ChevronDown } from 'lucide-react';
 import { adminApi, type AdminStats, type AdminUser, type ActivityItem, type AdminAlert } from '@/lib/api/adminApi';
 

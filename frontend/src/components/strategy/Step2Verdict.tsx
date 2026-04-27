@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import type * as React from 'react';
+
 import Markdown from 'react-markdown';
 import { Check, AlertTriangle, X, ChevronLeft, Lock, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';

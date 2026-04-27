@@ -1,3 +1,4 @@
+import type * as React from 'react';
 'use client';
 
 import { useNavigate } from 'react-router-dom';

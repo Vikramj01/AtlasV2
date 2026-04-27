@@ -7,6 +7,8 @@
  */
 
 import { useEffect, useState } from 'react';
+import type * as React from 'react';
+
 import { AlertTriangle, AlertCircle, Info, ChevronDown, ChevronUp, Shield } from 'lucide-react';
 import { planningApi } from '@/lib/api/planningApi';
 import type { PiiWarning, PiiSeverity } from '@/types/planning';

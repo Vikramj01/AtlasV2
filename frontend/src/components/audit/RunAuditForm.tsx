@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import type * as React from 'react';
+
 import { useNavigate } from 'react-router-dom';
 import type { FunnelType, Region } from '@/types/audit';
 import { useAudit } from '@/hooks/useAudit';

@@ -12,6 +12,8 @@
  */
 
 import { useState } from 'react';
+import type * as React from 'react';
+
 import { CheckCircle2, AlertTriangle, XCircle, X } from 'lucide-react';
 import type { ReportJSON, JourneyStage, RuleStatus } from '@/types/audit';
 

@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import type * as React from 'react';
+
 import { useNavigate } from 'react-router-dom';
 import Markdown from 'react-markdown';
 import { Check, AlertTriangle, X, Copy, CheckCheck, ArrowRight, RotateCcw } from 'lucide-react';
