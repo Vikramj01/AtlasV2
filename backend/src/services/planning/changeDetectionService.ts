@@ -11,9 +11,9 @@
  * The result is stored as JSONB in planning_sessions.rescan_results.
  */
 import Anthropic from '@anthropic-ai/sdk';
-import { env } from '@/config/env';
 import type { PlanningPage, PlanningRecommendation } from '@/types/planning';
 import type { PageCapture } from '@/types/planning';
+import { callClaude } from '@/services/usage/claudeClient';
 import logger from '@/utils/logger';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -71,11 +71,7 @@ export interface ChangeDetectionResult {
 
 // ── AI change detection ───────────────────────────────────────────────────────
 
-let _client: Anthropic | null = null;
-function getClient(): Anthropic {
-  if (!_client) _client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
-  return _client;
-}
+
 
 const CHANGE_DETECTION_SYSTEM = `You are an expert conversion tracking consultant reviewing a web page that has changed since the last analysis.
 
@@ -121,8 +117,9 @@ interface ChangeAnalysisOutput {
  */
 export async function detectPageChanges(
   input: ChangeAnalysisInput,
+  orgId?: string,
+  jobId?: string,
 ): Promise<ChangeAnalysisOutput> {
-  const client = getClient();
 
   const prevRecsText = input.previous_recommendations
     .map(
@@ -190,21 +187,17 @@ Rules:
   }
   userContent.push({ type: 'text', text: userPrompt });
 
-  const response = await client.messages.create({
-    model: 'claude-haiku-4-5-20251001',
+  const response = await callClaude({
+    org_id:     orgId ?? '',
+    event_type: 'ai_report_ondemand',
+    model:      'claude-haiku-4-5-20251001',
     max_tokens: 2048,
-    system: CHANGE_DETECTION_SYSTEM,
-    messages: [{ role: 'user', content: userContent }],
+    system:     CHANGE_DETECTION_SYSTEM,
+    messages:   [{ role: 'user', content: userContent }],
+    job_id:     jobId,
   });
 
-  logger.info(
-    {
-      url: input.page_url,
-      input_tokens: response.usage.input_tokens,
-      output_tokens: response.usage.output_tokens,
-    },
-    'Change detection AI complete',
-  );
+  logger.info({ url: input.page_url }, 'Change detection AI complete');
 
   const rawText = response.content
     .filter((b) => b.type === 'text')
