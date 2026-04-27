@@ -14,6 +14,8 @@
  */
 
 import { useEffect, useState, useCallback, useRef } from 'react';
+import type * as React from 'react';
+
 import { RefreshCw, BarChart3, Zap, ShieldCheck, ChevronDown } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { healthApi } from '@/lib/api/healthApi';

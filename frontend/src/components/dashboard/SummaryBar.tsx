@@ -7,6 +7,8 @@
  *   Label: 12px uppercase. Value: 24px semibold.
  */
 
+
+import type * as React from 'react';
 import { cn } from '@/lib/utils';
 import { MetricSkeleton } from '@/components/common/SkeletonCard';
 import type { DashboardSummary, OverallHealth } from '@/types/dashboard';

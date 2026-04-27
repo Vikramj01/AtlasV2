@@ -11,6 +11,8 @@
  */
 
 import { useRef, useState } from 'react';
+import type * as React from 'react';
+
 import { Button } from '@/components/ui/button';
 import { offlineConversionsApi } from '@/lib/api/offlineConversionsApi';
 import { useOfflineConversionsStore } from '@/store/offlineConversionsStore';

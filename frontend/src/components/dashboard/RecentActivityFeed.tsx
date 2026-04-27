@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import type * as React from 'react';
+
 import { Link } from 'react-router-dom';
 import { Activity, FileText, ShieldCheck, Upload, ExternalLink } from 'lucide-react';
 import { dashboardApi } from '@/lib/api/dashboardApi';

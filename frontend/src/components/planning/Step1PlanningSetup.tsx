@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import type * as React from 'react';
+
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';

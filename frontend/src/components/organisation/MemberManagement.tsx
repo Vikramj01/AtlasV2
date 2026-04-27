@@ -3,6 +3,8 @@
  * Intended for use inside OrgSettingsPage.
  */
 import { useEffect, useState } from 'react';
+import type * as React from 'react';
+
 import { UserPlus, Trash2, Crown, Shield, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';

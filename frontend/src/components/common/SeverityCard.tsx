@@ -19,6 +19,8 @@
  *   </SeverityCard>
  */
 
+
+import type * as React from 'react';
 import { cn } from '@/lib/utils';
 
 export type SeverityLevel = 'critical' | 'warning' | 'success' | 'info' | 'neutral';

@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import type * as React from 'react';
+
 import { useParams, useNavigate } from 'react-router-dom';
 import { Settings, Users, Trash2, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';

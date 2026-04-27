@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import type * as React from 'react';
+
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import Markdown from 'react-markdown';
 import {

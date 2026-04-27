@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import type * as React from 'react';
+
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { getJourney, getSpec } from '@/lib/api/journeyApi';
 import type { JourneyWithDetails } from '@/types/journey';

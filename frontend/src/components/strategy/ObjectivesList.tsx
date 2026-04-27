@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import type * as React from 'react';
+
 import { Plus, Lock, Check, AlertTriangle, X, ChevronRight, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
