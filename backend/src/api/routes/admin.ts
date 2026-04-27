@@ -10,6 +10,13 @@ import {
   dismissAdminAlert,
   deleteUser,
 } from '@/services/database/adminQueries';
+import {
+  getUsagePortfolio,
+  getOrgDailyBreakdown,
+  getOrgDomainBreakdown,
+  getOrgAIBreakdown,
+  getOrgRawEvents,
+} from '@/services/database/usageQueries';
 import logger from '@/utils/logger';
 
 const router = Router();
@@ -102,6 +109,53 @@ router.patch('/alerts/:id/dismiss', async (req: Request, res: Response) => {
   } catch (err) {
     logger.error({ err, alertId: req.params.id }, 'Admin: failed to dismiss alert');
     res.status(500).json({ error: 'Failed to dismiss alert' });
+  }
+});
+
+// ── Usage routes ──────────────────────────────────────────────────────────────
+
+// GET /api/admin/usage?month=YYYY-MM — portfolio overview (all orgs, given month)
+router.get('/usage', async (req: Request, res: Response) => {
+  try {
+    const month = typeof req.query['month'] === 'string' ? req.query['month'] + '-01' : undefined;
+    const portfolio = await getUsagePortfolio(month);
+    res.json({ data: portfolio });
+  } catch (err) {
+    logger.error({ err }, 'Admin: failed to get usage portfolio');
+    res.status(500).json({ error: 'Failed to fetch usage portfolio' });
+  }
+});
+
+// GET /api/admin/usage/:orgId?month=YYYY-MM — per-org drill-down
+router.get('/usage/:orgId', async (req: Request, res: Response) => {
+  try {
+    const { orgId } = req.params;
+    const month = typeof req.query['month'] === 'string' ? req.query['month'] + '-01' : undefined;
+    const [daily, domains, ai_breakdown] = await Promise.all([
+      getOrgDailyBreakdown(orgId),
+      getOrgDomainBreakdown(orgId, month),
+      getOrgAIBreakdown(orgId, month),
+    ]);
+    res.json({ data: { daily, domains, ai_breakdown } });
+  } catch (err) {
+    logger.error({ err, orgId: req.params['orgId'] }, 'Admin: failed to get org usage');
+    res.status(500).json({ error: 'Failed to fetch org usage' });
+  }
+});
+
+// GET /api/admin/usage/:orgId/events?page=1&type=page_scan&from=&to=
+router.get('/usage/:orgId/events', async (req: Request, res: Response) => {
+  try {
+    const { orgId } = req.params;
+    const page = parseInt(req.query['page'] as string ?? '1', 10);
+    const type = req.query['type'] as string | undefined;
+    const from = req.query['from'] as string | undefined;
+    const to   = req.query['to']   as string | undefined;
+    const result = await getOrgRawEvents(orgId, { page: isNaN(page) ? 1 : page, type, from, to });
+    res.json({ data: result });
+  } catch (err) {
+    logger.error({ err, orgId: req.params['orgId'] }, 'Admin: failed to get org events');
+    res.status(500).json({ error: 'Failed to fetch org events' });
   }
 });
 

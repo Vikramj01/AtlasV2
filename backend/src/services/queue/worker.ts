@@ -423,6 +423,15 @@ usageSummaryQueue.process(async (_job) => {
     throw new Error(error.message);
   }
   logger.info('Usage monthly summary refreshed');
+
+  // Run margin alert check after summary is fresh
+  try {
+    const { checkAndLogMarginAlerts } = await import('@/services/database/usageQueries');
+    await checkAndLogMarginAlerts();
+  } catch (alertErr) {
+    // Non-fatal — don't fail the job over alert processing
+    logger.error({ err: alertErr instanceof Error ? alertErr.message : String(alertErr) }, 'Margin alert check failed');
+  }
 });
 
 logger.info('Usage summary worker registered');

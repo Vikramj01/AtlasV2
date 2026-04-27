@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import type { UsagePortfolioRow, OrgUsageSummary, UsageEvent } from '@/types/usage';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
 
@@ -83,4 +84,29 @@ export const adminApi = {
 
   deleteUser: (userId: string) =>
     apiFetch<{ deleted: boolean }>(`/api/admin/users/${userId}`, { method: 'DELETE' }),
+
+  getUsagePortfolio: (month?: string) => {
+    const qs = month ? `?month=${month}` : '';
+    return apiFetch<{ data: UsagePortfolioRow[] }>(`/api/admin/usage${qs}`);
+  },
+
+  getOrgUsage: (orgId: string, month?: string) => {
+    const qs = month ? `?month=${month}` : '';
+    return apiFetch<{ data: OrgUsageSummary }>(`/api/admin/usage/${orgId}${qs}`);
+  },
+
+  getOrgEvents: (
+    orgId: string,
+    params: { page?: number; type?: string; from?: string; to?: string } = {},
+  ) => {
+    const qs = new URLSearchParams();
+    if (params.page)  qs.set('page',  String(params.page));
+    if (params.type)  qs.set('type',  params.type);
+    if (params.from)  qs.set('from',  params.from);
+    if (params.to)    qs.set('to',    params.to);
+    const query = qs.toString() ? `?${qs.toString()}` : '';
+    return apiFetch<{ data: { events: UsageEvent[]; total: number } }>(
+      `/api/admin/usage/${orgId}/events${query}`,
+    );
+  },
 };
