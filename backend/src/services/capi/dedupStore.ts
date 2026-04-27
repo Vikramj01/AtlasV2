@@ -1,4 +1,4 @@
-import Redis from 'ioredis';
+import Redis, { type RedisOptions } from 'ioredis';
 import { env } from '@/config/env';
 
 const META_TTL_S   = 48 * 60 * 60;       // 48 hours — Meta dedup window
@@ -6,17 +6,17 @@ const GOOGLE_TTL_S = 90 * 24 * 60 * 60;  // 90 days  — Google dedup window
 
 function buildRedisClient(): Redis {
   const parsed = new URL(env.REDIS_URL);
-  const opts: Record<string, unknown> = {
-    host:      parsed.hostname,
-    port:      Number(parsed.port) || 6379,
-    password:  parsed.password || undefined,
-    username:  parsed.username && parsed.username !== 'default' ? parsed.username : undefined,
+  const opts: RedisOptions = {
+    host:        parsed.hostname,
+    port:        Number(parsed.port) || 6379,
+    password:    parsed.password || undefined,
+    username:    parsed.username && parsed.username !== 'default' ? parsed.username : undefined,
     lazyConnect: true,
   };
   if (parsed.protocol === 'rediss:') {
-    opts['tls'] = { rejectUnauthorized: false };
+    opts.tls = { rejectUnauthorized: false };
   }
-  return new Redis(opts as ConstructorParameters<typeof Redis>[0]);
+  return new Redis(opts);
 }
 
 // Dedicated Redis client for dedup lookups — separate from Bull's internal connections.
