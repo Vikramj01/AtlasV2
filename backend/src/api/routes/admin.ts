@@ -16,6 +16,7 @@ import {
   getOrgDomainBreakdown,
   getOrgAIBreakdown,
   getOrgRawEvents,
+  getReconciliationSnapshots,
 } from '@/services/database/usageQueries';
 import logger from '@/utils/logger';
 
@@ -123,6 +124,19 @@ router.get('/usage', async (req: Request, res: Response) => {
   } catch (err) {
     logger.error({ err }, 'Admin: failed to get usage portfolio');
     res.status(500).json({ error: 'Failed to fetch usage portfolio' });
+  }
+});
+
+// GET /api/admin/usage/reconciliation?limit=14 — Browserbase nightly snapshots
+// Must be registered BEFORE /:orgId so Express doesn't treat 'reconciliation' as a param.
+router.get('/usage/reconciliation', async (req: Request, res: Response) => {
+  try {
+    const limit = parseInt(req.query['limit'] as string ?? '14', 10);
+    const snapshots = await getReconciliationSnapshots(isNaN(limit) ? 14 : limit);
+    res.json({ data: snapshots });
+  } catch (err) {
+    logger.error({ err }, 'Admin: failed to get reconciliation snapshots');
+    res.status(500).json({ error: 'Failed to fetch reconciliation snapshots' });
   }
 });
 

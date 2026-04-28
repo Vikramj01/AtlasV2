@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase';
-import type { UsagePortfolioRow, OrgUsageSummary, UsageEvent } from '@/types/usage';
+import type { UsagePortfolioRow, OrgUsageSummary, UsageEvent, ReconciliationSnapshot } from '@/types/usage';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
 
@@ -94,6 +94,9 @@ export const adminApi = {
     const qs = month ? `?month=${month}` : '';
     return apiFetch<{ data: OrgUsageSummary }>(`/api/admin/usage/${orgId}${qs}`);
   },
+
+  getReconciliation: (limit = 14) =>
+    apiFetch<{ data: ReconciliationSnapshot[] }>(`/api/admin/usage/reconciliation?limit=${limit}`),
 
   getOrgEvents: (
     orgId: string,
