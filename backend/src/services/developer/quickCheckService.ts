@@ -12,6 +12,7 @@
  *  - Developer Portal: POST /api/dev/:shareToken/pages/:pageId/quickcheck
  */
 import { createBrowserbaseSession, getCDPUrl } from '@/services/browserbase/client';
+import { logUsage } from '@/services/usage/usageLogger';
 import logger from '@/utils/logger';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -58,8 +59,11 @@ interface PlaywrightPage {
  * and return a QuickCheckResult.
  *
  * The session is created and destroyed within this call (not reused).
+ *
+ * @param orgId - If provided, the Browserbase session is tagged and a usage
+ *   event is logged so quick-check browser cost is attributed correctly.
  */
-export async function runQuickCheck(url: string): Promise<QuickCheckResult> {
+export async function runQuickCheck(url: string, orgId?: string): Promise<QuickCheckResult> {
   const startTime = Date.now();
   const checkedAt = new Date().toISOString();
 
@@ -68,7 +72,9 @@ export async function runQuickCheck(url: string): Promise<QuickCheckResult> {
     chromium: { connectOverCDP(url: string): Promise<PlaywrightBrowser> };
   };
 
-  const session = await createBrowserbaseSession();
+  const session = await createBrowserbaseSession(
+    orgId ? { org_id: orgId, type: 'quick_check' } : undefined,
+  );
   const cdpUrl = getCDPUrl(session.id);
 
   logger.info({ sessionId: session.id, url }, 'Quick check started');
@@ -208,6 +214,21 @@ export async function runQuickCheck(url: string): Promise<QuickCheckResult> {
   } finally {
     await context.close().catch(() => {});
     await (browser as unknown as { close?: () => Promise<void> }).close?.().catch(() => {});
+
+    // Log Browserbase cost for this quick-check (fire-and-forget).
+    if (orgId) {
+      const browserMinutes = (Date.now() - startTime) / 60_000;
+      let domain: string | undefined;
+      try { domain = new URL(url).hostname; } catch { /* ignore */ }
+      void logUsage({
+        org_id:          orgId,
+        event_type:      'page_scan',
+        browser_minutes: browserMinutes,
+        pages_scanned:   1,
+        domain,
+        metadata:        { source: 'quick_check' },
+      });
+    }
   }
 }
 

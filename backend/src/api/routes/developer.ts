@@ -317,7 +317,18 @@ devRouter.post(
       const page = pages.find((p) => p.id === req.params.pageId);
       if (!page) return res.status(404).json({ error: 'Page not found in this share' });
 
-      const result = await runQuickCheck(page.url);
+      // Resolve org_id so the Browserbase session cost is attributed correctly.
+      let quickCheckOrgId: string | undefined;
+      try {
+        const { data: profile } = await supabaseAdmin
+          .from('profiles')
+          .select('organization_id')
+          .eq('id', validated.user_id)
+          .single();
+        quickCheckOrgId = (profile as { organization_id: string } | null)?.organization_id ?? undefined;
+      } catch { /* non-fatal */ }
+
+      const result = await runQuickCheck(page.url, quickCheckOrgId);
       res.json(result);
     } catch (err) {
       // Quick check failures are non-fatal — return structured error
