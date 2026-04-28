@@ -3,7 +3,7 @@
 
 CREATE TABLE usage_events (
   id               uuid          DEFAULT gen_random_uuid() PRIMARY KEY,
-  org_id           uuid          NOT NULL REFERENCES organisations(id) ON DELETE CASCADE,
+  org_id           uuid          NOT NULL,
   event_type       text          NOT NULL CHECK (event_type IN (
                      'page_scan',
                      'ai_report_scheduled',
