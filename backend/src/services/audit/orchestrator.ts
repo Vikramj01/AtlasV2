@@ -6,6 +6,8 @@ import type { FunnelType, Region } from '@/types/audit';
 import type { ValidationSpec } from '@/types/journey';
 import { updateAuditStatus, saveValidationResults, saveReport, getAudit } from '@/services/database/queries';
 import { createBrowserbaseSession, getCDPUrl } from '@/services/browserbase/client';
+import { logUsage } from '@/services/usage/usageLogger';
+import { supabaseAdmin as supabase } from '@/services/database/supabase';
 import { simulateJourney } from './journeySimulator';
 import { simulateJourneyFromSpec } from './stageSimulator';
 import { classifyAllStageGaps } from './gapClassifier';
@@ -31,7 +33,29 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
     const test_email = auditRow?.test_email;
     const test_phone = auditRow?.test_phone;
 
-    const session = await createBrowserbaseSession();
+    // Resolve org_id for usage logging (non-fatal if it fails).
+    let orgId: string | undefined;
+    if (auditRow?.user_id) {
+      try {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('organization_id')
+          .eq('id', auditRow.user_id)
+          .single();
+        orgId = (profile as { organization_id: string } | null)?.organization_id ?? undefined;
+      } catch {
+        // Non-fatal — usage logging degrades gracefully without org_id
+      }
+    }
+
+    const scanRunId = crypto.randomUUID();
+    const sessionStart = Date.now();
+
+    const session = await createBrowserbaseSession(
+      orgId
+        ? { org_id: orgId, audit_id, scan_run_id: scanRunId }
+        : undefined,
+    );
     await updateAuditStatus(audit_id, 'running', { progress: 10, browserbase_session_id: session.id });
 
     const { chromium } = require('playwright-core') as {
@@ -159,6 +183,21 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
       }
     } finally {
       try { await (browser as { close?: () => Promise<void> }).close?.(); } catch { /* ignore */ }
+    }
+
+    // Log Browserbase usage for this audit session (fire-and-forget).
+    if (orgId) {
+      const browserMinutes = (Date.now() - sessionStart) / 60_000;
+      let domain: string | undefined;
+      try { domain = new URL(data.website_url).hostname; } catch { /* ignore */ }
+      void logUsage({
+        org_id:          orgId,
+        event_type:      'page_scan',
+        browser_minutes: browserMinutes,
+        domain,
+        scan_run_id:     scanRunId,
+        metadata:        { source: 'audit', audit_id },
+      });
     }
 
     await updateAuditStatus(audit_id, 'completed', {

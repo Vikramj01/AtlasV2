@@ -14,13 +14,19 @@ export interface BrowserbaseSessionInfo {
 /**
  * Create a new Browserbase session and return its ID.
  * Lazy-require the SDK so the server starts without it installed (unit tests bypass this path).
+ *
+ * @param userMetadata - Optional key/value pairs tagged on the session in Browserbase.
+ *   Used for attribution if internal usage logging ever fails — the operator can then
+ *   cross-reference Browserbase's session list against Atlas records.
  */
-export async function createBrowserbaseSession(): Promise<BrowserbaseSessionInfo> {
+export async function createBrowserbaseSession(
+  userMetadata?: Record<string, string>,
+): Promise<BrowserbaseSessionInfo> {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const Browserbase = require('@browserbasehq/sdk').default as {
     new (opts: { apiKey: string }): {
       sessions: {
-        create(opts: { projectId: string; proxies?: boolean; browserSettings?: object }): Promise<{ id: string; debuggerUrl?: string }>;
+        create(opts: { projectId: string; proxies?: boolean; browserSettings?: object; userMetadata?: Record<string, string> }): Promise<{ id: string; debuggerUrl?: string }>;
       };
     };
   };
@@ -29,6 +35,7 @@ export async function createBrowserbaseSession(): Promise<BrowserbaseSessionInfo
   const session = await bb.sessions.create({
     projectId: env.BROWSERBASE_PROJECT_ID,
     proxies: env.BROWSERBASE_USE_PROXIES,
+    ...(userMetadata ? { userMetadata } : {}),
     browserSettings: {
       viewport: { width: 1280, height: 800 },
       fingerprint: {

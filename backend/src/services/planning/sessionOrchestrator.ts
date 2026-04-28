@@ -64,25 +64,8 @@ export async function runPlanningOrchestrator(input: OrchestratorInput): Promise
   // ── 1. Mark as scanning ──────────────────────────────────────────────────
   await updateSessionStatus(sessionId, 'scanning');
 
-  // ── 2. Create Browserbase session ───────────────────────────────────────
-  let browser: PlaywrightBrowser;
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { chromium } = require('playwright-core') as {
-      chromium: { connectOverCDP(url: string): Promise<PlaywrightBrowser> };
-    };
-    const bbSession = await createBrowserbaseSession();
-    const cdpUrl = getCDPUrl(bbSession.id);
-    browser = await chromium.connectOverCDP(cdpUrl);
-    logger.info({ sessionId, bbSessionId: bbSession.id }, 'Browserbase session connected');
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    logger.error({ sessionId, err: msg }, 'Failed to connect to Browserbase');
-    await updateSessionStatus(sessionId, 'failed', `Browserbase connection failed: ${msg}`);
-    return;
-  }
-
-  // ── 3. Fetch taxonomy context + org_id for this user (one-time, non-blocking) ─
+  // ── 2. Resolve org_id + taxonomy context for this user ──────────────────
+  // org_id is loaded first so it can be tagged on the Browserbase session.
   let taxonomyContext: string | undefined;
   // Slug → TaxonomyNode map for linking recommendations after AI analysis
   let taxonomyBySlug: Map<string, TaxonomyNode> | undefined;
@@ -110,6 +93,28 @@ export async function runPlanningOrchestrator(input: OrchestratorInput): Promise
 
   // One scan_run_id groups all page_scan usage events for this crawl job
   const scanRunId = crypto.randomUUID();
+
+  // ── 3. Create Browserbase session ───────────────────────────────────────
+  let browser: PlaywrightBrowser;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { chromium } = require('playwright-core') as {
+      chromium: { connectOverCDP(url: string): Promise<PlaywrightBrowser> };
+    };
+    const bbSession = await createBrowserbaseSession(
+      orgId
+        ? { org_id: orgId, scan_run_id: scanRunId, session_id: sessionId }
+        : undefined,
+    );
+    const cdpUrl = getCDPUrl(bbSession.id);
+    browser = await chromium.connectOverCDP(cdpUrl);
+    logger.info({ sessionId, bbSessionId: bbSession.id }, 'Browserbase session connected');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error({ sessionId, err: msg }, 'Failed to connect to Browserbase');
+    await updateSessionStatus(sessionId, 'failed', `Browserbase connection failed: ${msg}`);
+    return;
+  }
 
   // ── 4. Scan pages in batches ─────────────────────────────────────────────
   const sortedPages = [...pages].sort((a, b) => a.page_order - b.page_order);
@@ -319,6 +324,19 @@ export async function runRescanOrchestrator(input: RescanInput): Promise<void> {
     summary: {},
   });
 
+  // ── Resolve org_id for usage logging + Browserbase tagging ────────────────
+  let rescanOrgId: string | undefined;
+  try {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('organization_id')
+      .eq('id', session.user_id)
+      .single();
+    rescanOrgId = (profile as { organization_id: string } | null)?.organization_id ?? undefined;
+  } catch {
+    // Non-fatal — usage logging degrades gracefully
+  }
+
   // ── Connect to Browserbase ──────────────────────────────────────────────────
   let browser: PlaywrightBrowser;
   try {
@@ -327,7 +345,11 @@ export async function runRescanOrchestrator(input: RescanInput): Promise<void> {
       chromium: { connectOverCDP(url: string): Promise<PlaywrightBrowser> };
     };
     const { createBrowserbaseSession, getCDPUrl } = await import('@/services/browserbase/client');
-    const bbSession = await createBrowserbaseSession();
+    const bbSession = await createBrowserbaseSession(
+      rescanOrgId
+        ? { org_id: rescanOrgId, session_id: sessionId, type: 'rescan' }
+        : undefined,
+    );
     const cdpUrl = getCDPUrl(bbSession.id);
     browser = await chromium.connectOverCDP(cdpUrl);
   } catch (err) {
@@ -342,19 +364,6 @@ export async function runRescanOrchestrator(input: RescanInput): Promise<void> {
       summary: {},
     });
     return;
-  }
-
-  // ── Resolve org_id for usage logging ───────────────────────────────────────
-  let rescanOrgId: string | undefined;
-  try {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('organization_id')
-      .eq('id', session.user_id)
-      .single();
-    rescanOrgId = (profile as { organization_id: string } | null)?.organization_id ?? undefined;
-  } catch {
-    // Non-fatal — usage logging degrades gracefully
   }
 
   // ── Load data ───────────────────────────────────────────────────────────────
