@@ -3,19 +3,8 @@ import { ATLAS_PRICING, getPageCap, getMaxClients, getDomainCap } from '@/config
 import type { AtlasTier } from '@/config/pricing';
 import { upsertCapViolation } from '@/services/database/subscriptionQueries';
 import { listActiveSubscriptions } from '@/services/database/subscriptionQueries';
+import { sendOperatorAlert } from '@/services/usage/alertDelivery';
 import logger from '@/utils/logger';
-
-// ── Alert delivery ─────────────────────────────────────────────────────────────
-// Currently console-based to match the pattern in checkAndLogMarginAlerts().
-// TODO: wire to Slack/email once alert delivery mechanism is decided (PRD open question #1)
-
-function sendOperatorAlert(message: string, severity: 'medium' | 'high'): void {
-  if (severity === 'high') {
-    console.error(`[FAIR-USE ALERT] ${message}`);
-  } else {
-    console.warn(`[FAIR-USE ALERT] ${message}`);
-  }
-}
 
 function formatAlert(params: {
   orgName: string;
@@ -129,7 +118,7 @@ export async function runFairUseCapCheck(): Promise<void> {
       });
 
       if (severity === 'high') {
-        sendOperatorAlert(
+        void sendOperatorAlert(
           formatAlert({
             orgName, tier, mrrUsd: sub.mrr_usd,
             capType: 'Page scans', domain,
@@ -167,7 +156,7 @@ export async function runFairUseCapCheck(): Promise<void> {
         });
 
         if (domainSeverity === 'high') {
-          sendOperatorAlert(
+          void sendOperatorAlert(
             formatAlert({
               orgName, tier, mrrUsd: sub.mrr_usd,
               capType: 'Domain count', domain: null,
@@ -211,7 +200,7 @@ export async function runFairUseCapCheck(): Promise<void> {
           resolution:  null,
         });
 
-        sendOperatorAlert(
+        void sendOperatorAlert(
           formatAlert({
             orgName, tier, mrrUsd: sub.mrr_usd,
             capType: 'Client count', domain: null,

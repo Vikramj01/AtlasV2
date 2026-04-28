@@ -1,4 +1,5 @@
 import { supabaseAdmin } from './supabase';
+import { sendOperatorAlert } from '@/services/usage/alertDelivery';
 
 // ── Pricing constants — fallback for orgs with no org_subscriptions row ───────
 export const PLAN_MRR: Record<string, number> = {
@@ -304,15 +305,18 @@ export async function checkAndLogMarginAlerts(): Promise<void> {
     (row) => row.mrr_usd > 0 && row.total_variable_cost_usd / row.mrr_usd > MARGIN_ALERT_THRESHOLD,
   );
 
-  for (const row of alerts) {
+  const deliveries = alerts.map((row) => {
     const pct = ((row.total_variable_cost_usd / row.mrr_usd) * 100).toFixed(1);
     const projected = (row.total_variable_cost_usd / new Date().getDate()) * 30;
-    console.warn(
-      `[MARGIN ALERT] ${row.org_name} | Tier: ${row.plan} ($${row.mrr_usd}/mo) | Variable cost MTD: $${row.total_variable_cost_usd.toFixed(2)} (${pct}% of MRR) | Projected month-end: $${projected.toFixed(2)}`,
-    );
-  }
+    const msg = [
+      `⚠️  MARGIN ALERT — ${row.org_name}`,
+      `Tier: ${row.subscription_tier ?? row.plan} ($${row.mrr_usd}/mo)`,
+      `Variable cost MTD: $${row.total_variable_cost_usd.toFixed(2)} (${pct}% of MRR)`,
+      `Projected month-end cost: $${projected.toFixed(2)}`,
+      `Action: Review scan frequency or apply a page cap for this account.`,
+    ].join('\n');
+    return sendOperatorAlert(msg, 'high');
+  });
 
-  if (alerts.length > 0) {
-    console.warn(`[MARGIN ALERT] ${alerts.length} org(s) exceeded ${(MARGIN_ALERT_THRESHOLD * 100).toFixed(0)}% cost/MRR threshold`);
-  }
+  await Promise.allSettled(deliveries);
 }
