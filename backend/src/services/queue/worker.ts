@@ -424,6 +424,14 @@ usageSummaryQueue.process(async (_job) => {
   }
   logger.info('Usage monthly summary refreshed');
 
+  // Run fair-use cap check after summary is fresh
+  try {
+    const { runFairUseCapCheck } = await import('@/jobs/fairUseCap');
+    await runFairUseCapCheck();
+  } catch (capErr) {
+    logger.error({ err: capErr instanceof Error ? capErr.message : String(capErr) }, 'Fair-use cap check failed');
+  }
+
   // Run margin alert check after summary is fresh
   try {
     const { checkAndLogMarginAlerts } = await import('@/services/database/usageQueries');
