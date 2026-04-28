@@ -6,6 +6,7 @@ import { adminApi, type AdminStats, type AdminUser, type ActivityItem, type Admi
 import type { UsagePortfolioRow } from '@/types/usage';
 import { UsagePortfolioTable } from '@/components/admin/UsagePortfolioTable';
 import { OrgUsageDrillDown } from '@/components/admin/OrgUsageDrillDown';
+import { BbReconciliationPanel } from '@/components/admin/BbReconciliationPanel';
 
 type Tab = 'overview' | 'users' | 'activity' | 'alerts' | 'usage';
 
@@ -352,6 +353,7 @@ function UsageTab() {
 
   return (
     <div className="space-y-4">
+      <BbReconciliationPanel />
       <UsagePortfolioTable
         rows={rows}
         month={month}

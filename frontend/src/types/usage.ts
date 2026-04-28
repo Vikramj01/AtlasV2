@@ -52,3 +52,15 @@ export interface OrgUsageSummary {
   domains: OrgDomainCost[];
   ai_breakdown: OrgAIBreakdown[];
 }
+
+export interface ReconciliationSnapshot {
+  snapshot_date: string;
+  total_browser_minutes: number;
+  total_proxy_data_gb: number;
+  included_minutes: number;
+  overage_minutes: number;
+  overage_cost_usd: number;
+  atlas_logged_minutes: number | null;
+  delta_minutes: number;
+  created_at: string;
+}

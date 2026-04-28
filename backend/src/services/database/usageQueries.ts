@@ -297,7 +297,33 @@ export async function getOrgRawEvents(
   };
 }
 
-// ── Margin alert check ────────────────────────────────────────────────────────
+// ── Browserbase reconciliation snapshots ─────────────────────────────────────
+
+export interface ReconciliationSnapshot {
+  snapshot_date: string;
+  total_browser_minutes: number;
+  total_proxy_data_gb: number;
+  included_minutes: number;
+  overage_minutes: number;
+  overage_cost_usd: number;
+  atlas_logged_minutes: number | null;
+  delta_minutes: number;
+  created_at: string;
+}
+
+export async function getReconciliationSnapshots(limit = 14): Promise<ReconciliationSnapshot[]> {
+  const { data, error } = await supabaseAdmin
+    .from('browserbase_usage_snapshots')
+    .select('snapshot_date, total_browser_minutes, total_proxy_data_gb, included_minutes, overage_minutes, overage_cost_usd, atlas_logged_minutes, delta_minutes, created_at')
+    .order('snapshot_date', { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    throw new Error(`Failed to fetch reconciliation snapshots: ${error.message}`);
+  }
+
+  return (data ?? []) as ReconciliationSnapshot[];
+}
 
 export async function checkAndLogMarginAlerts(): Promise<void> {
   const portfolio = await getUsagePortfolio();
