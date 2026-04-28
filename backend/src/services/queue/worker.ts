@@ -424,6 +424,15 @@ usageSummaryQueue.process(async (_job) => {
   }
   logger.info('Usage monthly summary refreshed');
 
+  // Run Browserbase reconciliation after the summary is fresh so atlas_logged_minutes
+  // reflects all events inserted today before the snapshot is taken.
+  try {
+    const { runBrowserbaseReconciliation } = await import('@/jobs/browserbaseReconciliation');
+    await runBrowserbaseReconciliation();
+  } catch (reconErr) {
+    logger.error({ err: reconErr instanceof Error ? reconErr.message : String(reconErr) }, 'Browserbase reconciliation failed');
+  }
+
   // Run fair-use cap check after summary is fresh
   try {
     const { runFairUseCapCheck } = await import('@/jobs/fairUseCap');
