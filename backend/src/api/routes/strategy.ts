@@ -1,11 +1,10 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
-import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { sendInternalError } from '@/utils/apiError';
-import { env } from '@/config/env';
 import logger from '@/utils/logger';
+import { callClaude } from '@/services/usage/claudeClient';
 import { supabaseAdmin, uploadStrategyBriefPdf, getStrategyBriefSignedUrl } from '@/services/database/supabase';
 import {
   buildUserPrompt,
@@ -35,10 +34,13 @@ import {
 const router = Router();
 router.use(authMiddleware);
 
-let _client: Anthropic | null = null;
-function getClient(): Anthropic {
-  if (!_client) _client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
-  return _client;
+async function resolveOrgId(userId: string): Promise<string> {
+  const { data } = await supabaseAdmin
+    .from('profiles')
+    .select('organization_id')
+    .eq('id', userId)
+    .single();
+  return (data as { organization_id: string } | null)?.organization_id ?? '';
 }
 
 function handleKnownError(res: Response, err: unknown): boolean {
@@ -83,7 +85,7 @@ router.post('/evaluate', async (req: Request, res: Response): Promise<void> => {
   }
 
   try {
-    const client = getClient();
+    const orgId = await resolveOrgId(req.user.id);
     const userPrompt = `Business type: ${businessType}
 Business outcome: ${outcomeDescription}
 Typical days from ad click to outcome: ${outcomeTimingDays}
@@ -106,10 +108,12 @@ Respond with this exact JSON structure:
   "summaryMarkdown": "A full strategy brief in markdown (3-5 short paragraphs) covering: the outcome, the verdict, the recommended event, and the proxy event if applicable. Written for a marketing practitioner."
 }`;
 
-    const message = await client.messages.create({
-      model: 'claude-sonnet-4-6',
+    const message = await callClaude({
+      org_id:     orgId,
+      event_type: 'ai_query_ondemand',
+      model:      'claude-sonnet-4-6',
       max_tokens: 1000,
-      system: `You are a conversion strategy analyst for digital advertising campaigns. Your job is to evaluate whether a client's current conversion event is well-matched to their stated business outcome, and to recommend improvements where needed.
+      system:     `You are a conversion strategy analyst for digital advertising campaigns. Your job is to evaluate whether a client's current conversion event is well-matched to their stated business outcome, and to recommend improvements where needed.
 
 Always respond with valid JSON only. No markdown, no preamble, no explanation outside the JSON object.`,
       messages: [{ role: 'user', content: userPrompt }],
@@ -344,7 +348,7 @@ router.post('/objectives/:id/evaluate', async (req: Request, res: Response): Pro
   }
 
   try {
-    const client = getClient();
+    const orgId = await resolveOrgId(req.user.id);
     const userPrompt = buildUserPrompt({
       objectiveName: objective.name,
       description: objective.description ?? undefined,
@@ -353,11 +357,13 @@ router.post('/objectives/:id/evaluate', async (req: Request, res: Response): Pro
       platforms: objective.platforms,
     });
 
-    const message = await client.messages.create({
-      model: 'claude-sonnet-4-6',
+    const message = await callClaude({
+      org_id:     orgId,
+      event_type: 'ai_query_ondemand',
+      model:      'claude-sonnet-4-6',
       max_tokens: 1200,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: userPrompt }],
+      system:     SYSTEM_PROMPT,
+      messages:   [{ role: 'user', content: userPrompt }],
     });
 
     const rawText = message.content[0].type === 'text' ? message.content[0].text : '';

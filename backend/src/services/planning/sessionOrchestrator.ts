@@ -14,6 +14,7 @@
 import { createBrowserbaseSession, getCDPUrl } from '@/services/browserbase/client';
 import { capturePage } from './pageCaptureService';
 import { analysePageWithAI } from './aiAnalysisService';
+import { logUsage } from '@/services/usage/usageLogger';
 import { fetchTaxonomyFlat } from '@/services/database/taxonomyQueries';
 import { buildTree, renderTaxonomyForPrompt } from '@/services/signals/taxonomyTreeBuilder';
 import { supabaseAdmin as supabase } from '@/services/database/supabase';
@@ -81,17 +82,18 @@ export async function runPlanningOrchestrator(input: OrchestratorInput): Promise
     return;
   }
 
-  // ── 3. Fetch taxonomy context for this org (one-time, non-blocking) ────────
+  // ── 3. Fetch taxonomy context + org_id for this user (one-time, non-blocking) ─
   let taxonomyContext: string | undefined;
   // Slug → TaxonomyNode map for linking recommendations after AI analysis
   let taxonomyBySlug: Map<string, TaxonomyNode> | undefined;
+  let orgId: string | undefined;
   try {
     const { data: profile } = await supabase
       .from('profiles')
       .select('organization_id')
       .eq('id', session.user_id)
       .single();
-    const orgId = (profile as { organization_id: string } | null)?.organization_id;
+    orgId = (profile as { organization_id: string } | null)?.organization_id ?? undefined;
     if (orgId) {
       const flat = await fetchTaxonomyFlat(orgId);
       taxonomyContext = renderTaxonomyForPrompt(buildTree(flat));
@@ -106,6 +108,9 @@ export async function runPlanningOrchestrator(input: OrchestratorInput): Promise
     logger.warn({ sessionId }, 'Could not load taxonomy context; continuing without it');
   }
 
+  // One scan_run_id groups all page_scan usage events for this crawl job
+  const scanRunId = crypto.randomUUID();
+
   // ── 4. Scan pages in batches ─────────────────────────────────────────────
   const sortedPages = [...pages].sort((a, b) => a.page_order - b.page_order);
 
@@ -114,7 +119,7 @@ export async function runPlanningOrchestrator(input: OrchestratorInput): Promise
     const batch = sortedPages.slice(i, i + CONCURRENCY_LIMIT);
 
     const results = await Promise.allSettled(
-      batch.map((page) => scanOnePage(browser, session, page, taxonomyContext, taxonomyBySlug)),
+      batch.map((page) => scanOnePage(browser, session, page, taxonomyContext, taxonomyBySlug, orgId, scanRunId)),
     );
 
     results.forEach((result, idx) => {
@@ -146,8 +151,11 @@ async function scanOnePage(
   page: PlanningPage,
   taxonomyContext?: string,
   taxonomyBySlug?: Map<string, TaxonomyNode>,
+  orgId?: string,
+  scanRunId?: string,
 ): Promise<void> {
   const { id: pageId, url, session_id: sessionId } = page;
+  const scanStart = Date.now();
 
   logger.info({ sessionId, pageId, url }, 'Scanning page');
 
@@ -167,6 +175,19 @@ async function scanOnePage(
         },
       },
     );
+
+    // Log Browserbase cost for this page scan (fire-and-forget)
+    if (orgId) {
+      const browserMinutes = (Date.now() - scanStart) / 60_000;
+      void logUsage({
+        org_id:          orgId,
+        event_type:      'page_scan',
+        browser_minutes: browserMinutes,
+        pages_scanned:   1,
+        domain:          (() => { try { return new URL(url).hostname; } catch { return url; } })(),
+        scan_run_id:     scanRunId,
+      });
+    }
 
     // Map existing_tracking to the DB JSONB shape
     const existingTrackingForDB = buildExistingTrackingArray(capture.existing_tracking);
@@ -208,7 +229,7 @@ async function scanOnePage(
       existing_tracking: capture.existing_tracking,
       platforms_selected: session.selected_platforms,
       taxonomy_context: taxonomyContext,
-    });
+    }, orgId, sessionId);
 
     // ── Persist recommendations ──────────────────────────────────────────────
     const recInputs: CreateRecommendationInput[] = aiResponse.recommended_elements.map((rec) => ({
@@ -323,6 +344,19 @@ export async function runRescanOrchestrator(input: RescanInput): Promise<void> {
     return;
   }
 
+  // ── Resolve org_id for usage logging ───────────────────────────────────────
+  let rescanOrgId: string | undefined;
+  try {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('organization_id')
+      .eq('id', session.user_id)
+      .single();
+    rescanOrgId = (profile as { organization_id: string } | null)?.organization_id ?? undefined;
+  } catch {
+    // Non-fatal — usage logging degrades gracefully
+  }
+
   // ── Load data ───────────────────────────────────────────────────────────────
   const [pages, approvedRecs] = await Promise.all([
     getPagesBySession(sessionId),
@@ -372,7 +406,7 @@ export async function runRescanOrchestrator(input: RescanInput): Promise<void> {
           element_text: r.element_text ?? null,
           action_type: r.action_type,
         })),
-      });
+      }, rescanOrgId, sessionId);
 
       pageResults.push(buildPageChangeResult(page, pageRecs, aiOutput));
       logger.info({ sessionId, pageId: page.id, url: page.url }, 'Re-scan page complete');

@@ -250,3 +250,31 @@ googleOAuthRefreshQueue.on('failed', (job, err) => {
   logger.error({ jobId: job?.id, err: err.message }, 'Google OAuth refresh job failed');
 });
 
+// ── Usage Summary Queue ────────────────────────────────────────────────────────
+// Refreshes usage_monthly_summary materialized view nightly at 02:00 UTC.
+
+export interface UsageSummaryJobData {
+  trigger: 'scheduled';
+}
+
+export const usageSummaryQueue = new Bull<UsageSummaryJobData>('usage-summary', {
+  redis: buildRedisOpts(env.REDIS_URL),
+  defaultJobOptions: {
+    attempts: 1,
+    removeOnComplete: 10,
+    removeOnFail: 10,
+  },
+});
+
+usageSummaryQueue.on('error', (err) => {
+  logger.error({ err }, 'Usage summary queue error');
+});
+
+usageSummaryQueue.on('completed', (job) => {
+  logger.info({ jobId: job.id }, 'Usage summary refresh completed');
+});
+
+usageSummaryQueue.on('failed', (job, err) => {
+  logger.error({ jobId: job?.id, err: err.message }, 'Usage summary refresh failed');
+});
+

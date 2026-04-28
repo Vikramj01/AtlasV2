@@ -1,10 +1,13 @@
 import { useEffect, useState, useCallback } from 'react';
 import type * as React from 'react';
 
-import { Users, Activity, Bell, BarChart3, ChevronDown } from 'lucide-react';
+import { Users, Activity, Bell, BarChart3, ChevronDown, DollarSign } from 'lucide-react';
 import { adminApi, type AdminStats, type AdminUser, type ActivityItem, type AdminAlert } from '@/lib/api/adminApi';
+import type { UsagePortfolioRow } from '@/types/usage';
+import { UsagePortfolioTable } from '@/components/admin/UsagePortfolioTable';
+import { OrgUsageDrillDown } from '@/components/admin/OrgUsageDrillDown';
 
-type Tab = 'overview' | 'users' | 'activity' | 'alerts';
+type Tab = 'overview' | 'users' | 'activity' | 'alerts' | 'usage';
 
 const PLAN_COLORS: Record<string, string> = {
   free: 'bg-gray-100 text-gray-700',
@@ -314,6 +317,60 @@ function AlertsTab({ alerts, onDismiss }: { alerts: AdminAlert[]; onDismiss: (id
   );
 }
 
+// ── Usage tab ─────────────────────────────────────────────────────────────────
+
+function UsageTab() {
+  const now = new Date();
+  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+  const [month, setMonth] = useState(currentMonth);
+  const [rows, setRows] = useState<UsagePortfolioRow[]>([]);
+  const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async (m: string) => {
+    setLoading(true);
+    setSelectedOrgId(null);
+    try {
+      const res = await adminApi.getUsagePortfolio(m);
+      setRows(res.data);
+    } catch {
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void load(month); }, [load, month]);
+
+  function handleMonthChange(m: string) {
+    setMonth(m);
+    void load(m);
+  }
+
+  const selectedRow = rows.find((r) => r.org_id === selectedOrgId) ?? null;
+
+  return (
+    <div className="space-y-4">
+      <UsagePortfolioTable
+        rows={rows}
+        month={month}
+        onMonthChange={handleMonthChange}
+        onSelectOrg={(id) => setSelectedOrgId((prev) => (prev === id ? null : id))}
+        selectedOrgId={selectedOrgId}
+        loading={loading}
+      />
+      {selectedRow && (
+        <OrgUsageDrillDown
+          row={selectedRow}
+          month={month}
+          onClose={() => setSelectedOrgId(null)}
+        />
+      )}
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 const TABS: { id: Tab; label: string; Icon: React.ElementType }[] = [
@@ -321,6 +378,7 @@ const TABS: { id: Tab; label: string; Icon: React.ElementType }[] = [
   { id: 'users', label: 'Users', Icon: Users },
   { id: 'activity', label: 'Activity', Icon: Activity },
   { id: 'alerts', label: 'Alerts', Icon: Bell },
+  { id: 'usage', label: 'Usage', Icon: DollarSign },
 ];
 
 export function AdminPage() {
@@ -431,6 +489,7 @@ export function AdminPage() {
           }
         />
       )}
+      {activeTab === 'usage' && <UsageTab />}
     </div>
   );
 }

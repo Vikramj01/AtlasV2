@@ -1,4 +1,4 @@
-import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue } from './jobQueue';
+import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue } from './jobQueue';
 import { env } from '@/config/env';
 import { runAuditOrchestrator } from '@/services/audit/orchestrator';
 import { runPlanningOrchestrator, runRescanOrchestrator } from '@/services/planning/sessionOrchestrator';
@@ -410,3 +410,33 @@ googleOAuthRefreshQueue.add(
   { trigger: 'scheduled' },
   { repeat: { cron: '*/30 * * * *' }, jobId: 'google-oauth-refresh-tick' },
 ).catch((err) => logger.error({ err }, 'Failed to schedule Google OAuth refresh job'));
+
+// ── Usage Summary worker ──────────────────────────────────────────────────────
+// Refreshes the usage_monthly_summary materialized view nightly at 02:00 UTC.
+
+usageSummaryQueue.process(async (_job) => {
+  logger.info('Usage summary refresh job received');
+  const { supabaseAdmin } = await import('@/services/database/supabase');
+  const { error } = await supabaseAdmin.rpc('refresh_usage_monthly_summary');
+  if (error) {
+    logger.error({ err: error.message }, 'Usage summary refresh failed');
+    throw new Error(error.message);
+  }
+  logger.info('Usage monthly summary refreshed');
+
+  // Run margin alert check after summary is fresh
+  try {
+    const { checkAndLogMarginAlerts } = await import('@/services/database/usageQueries');
+    await checkAndLogMarginAlerts();
+  } catch (alertErr) {
+    // Non-fatal — don't fail the job over alert processing
+    logger.error({ err: alertErr instanceof Error ? alertErr.message : String(alertErr) }, 'Margin alert check failed');
+  }
+});
+
+logger.info('Usage summary worker registered');
+
+usageSummaryQueue.add(
+  { trigger: 'scheduled' },
+  { repeat: { cron: '0 2 * * *' }, jobId: 'usage-summary-nightly' },
+).catch((err) => logger.error({ err }, 'Failed to schedule usage summary refresh'));

@@ -8,8 +8,8 @@
  * Retry logic: up to 3 attempts with 2s backoff on API/parse failures.
  */
 import Anthropic from '@anthropic-ai/sdk';
-import { env } from '@/config/env';
 import { ACTION_PRIMITIVES } from '@/services/journey/actionPrimitives';
+import { callClaude } from '@/services/usage/claudeClient';
 import type {
   AIAnalysisRequest,
   AIAnalysisResponse,
@@ -19,17 +19,6 @@ import type {
   SuggestedParam,
 } from '@/types/planning';
 import logger from '@/utils/logger';
-
-// ── Client singleton ─────────────────────────────────────────────────────────
-
-let _client: Anthropic | null = null;
-
-function getClient(): Anthropic {
-  if (!_client) {
-    _client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
-  }
-  return _client;
-}
 
 // ── Prompts ──────────────────────────────────────────────────────────────────
 
@@ -168,8 +157,9 @@ const RETRY_DELAY_MS = 2000;
 
 export async function analysePageWithAI(
   req: AIAnalysisRequest,
+  orgId?: string,
+  jobId?: string,
 ): Promise<AIAnalysisResponse> {
-  const client = getClient();
   let lastError: Error | null = null;
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
@@ -191,23 +181,17 @@ export async function analysePageWithAI(
         { role: 'user', content: userContent },
       ];
 
-      const response = await client.messages.create({
-        model: 'claude-haiku-4-5-20251001',
+      const response = await callClaude({
+        org_id:     orgId ?? '',
+        event_type: 'ai_report_ondemand',
+        model:      'claude-haiku-4-5-20251001',
         max_tokens: 4096,
-        system: SYSTEM_PROMPT,
+        system:     SYSTEM_PROMPT,
         messages,
+        job_id:     jobId,
       });
 
-      // Log token usage for cost monitoring
-      logger.info(
-        {
-          url: req.page_url,
-          input_tokens: response.usage.input_tokens,
-          output_tokens: response.usage.output_tokens,
-          attempt,
-        },
-        'AI analysis complete',
-      );
+      logger.info({ url: req.page_url, attempt }, 'AI analysis complete');
 
       const rawText = response.content
         .filter((b) => b.type === 'text')
