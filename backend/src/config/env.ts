@@ -94,4 +94,11 @@ export const env = {
     .split(',')
     .map((e) => e.trim().toLowerCase())
     .filter(Boolean),
+
+  // Operator alert delivery — used by the nightly jobs (margin, fair-use, reconciliation).
+  // At least one should be set in production; alerts fall back to console.warn if both are absent.
+  // OPERATOR_ALERT_EMAIL:        email address that receives alert emails via Resend.
+  // OPERATOR_SLACK_WEBHOOK_URL:  Slack incoming webhook URL (Settings → Integrations → Webhooks).
+  OPERATOR_ALERT_EMAIL:        optional('OPERATOR_ALERT_EMAIL', ''),
+  OPERATOR_SLACK_WEBHOOK_URL:  optional('OPERATOR_SLACK_WEBHOOK_URL', ''),
 } as const;

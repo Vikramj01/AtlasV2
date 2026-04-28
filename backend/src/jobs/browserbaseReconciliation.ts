@@ -16,6 +16,7 @@
  */
 import { supabaseAdmin } from '@/services/database/supabase';
 import { env } from '@/config/env';
+import { sendOperatorAlert } from '@/services/usage/alertDelivery';
 import logger from '@/utils/logger';
 
 // Browserbase plan details — update if the plan changes.
@@ -130,9 +131,7 @@ export async function runBrowserbaseReconciliation(): Promise<void> {
         `Action: Check Browserbase dashboard for sessions missing org_id in userMetadata.`,
       ].join('\n');
 
-      // Use console.warn so the alert is visible in Render logs.
-      // TODO: route through sendOperatorAlert() once Sprint 2.3 wires alert delivery.
-      console.warn(msg);
+      void sendOperatorAlert(msg, 'high');
       logger.warn(
         { bbMinutes, atlasMinutes, delta, deltaPct },
         'Browserbase reconciliation gap exceeds threshold',
