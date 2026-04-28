@@ -1,7 +1,6 @@
 import { supabaseAdmin } from './supabase';
 
-// ── Pricing constants (must match usageLogger.ts) ─────────────────────────────
-// TODO: replace with org_subscriptions join in Sprint 2.4 (see ATLAS_V2_SPRINT_SUBSCRIPTIONS_PLAN.md §2.4.1)
+// ── Pricing constants — fallback for orgs with no org_subscriptions row ───────
 export const PLAN_MRR: Record<string, number> = {
   free:   0,
   pro:    399,
@@ -16,6 +15,7 @@ export interface UsagePortfolioRow {
   org_id: string;
   org_name: string;
   plan: string;
+  subscription_tier: string | null;
   mrr_usd: number;
   scan_cost_usd: number;
   ai_cost_usd: number;
@@ -24,6 +24,7 @@ export interface UsagePortfolioRow {
   margin_status: 'green' | 'amber' | 'red' | 'na';
   total_page_scans: number;
   total_ai_calls: number;
+  open_violations_count: number;
   month: string;
 }
 
@@ -83,7 +84,13 @@ export async function getUsagePortfolio(monthIso?: string): Promise<UsagePortfol
   const monthEnd = new Date(monthStart);
   monthEnd.setMonth(monthEnd.getMonth() + 1);
 
-  const [{ data: summaryRows }, { data: orgRows }, { data: profileRows }] = await Promise.all([
+  const [
+    { data: summaryRows },
+    { data: orgRows },
+    { data: profileRows },
+    { data: subRows },
+    { data: violationRows },
+  ] = await Promise.all([
     supabaseAdmin
       .from('usage_monthly_summary')
       .select('*')
@@ -91,6 +98,8 @@ export async function getUsagePortfolio(monthIso?: string): Promise<UsagePortfol
       .lt('month', monthEnd.toISOString()),
     supabaseAdmin.from('organisations').select('id, name'),
     supabaseAdmin.from('profiles').select('organization_id, plan'),
+    supabaseAdmin.from('org_active_subscriptions').select('org_id, mrr_usd, tier'),
+    supabaseAdmin.from('cap_violations').select('org_id').eq('resolved', false),
   ]);
 
   const orgNameMap = new Map<string, string>(
@@ -111,11 +120,32 @@ export async function getUsagePortfolio(monthIso?: string): Promise<UsagePortfol
     }
   }
 
+  // MRR and commercial tier from org_subscriptions; fall back to PLAN_MRR for unsubscribed orgs
+  const mrrByOrg = new Map<string, number>(
+    (subRows ?? []).map((s) => {
+      const r = s as { org_id: string; mrr_usd: number; tier: string };
+      return [r.org_id, Number(r.mrr_usd)];
+    }),
+  );
+  const tierByOrg = new Map<string, string>(
+    (subRows ?? []).map((s) => {
+      const r = s as { org_id: string; mrr_usd: number; tier: string };
+      return [r.org_id, r.tier];
+    }),
+  );
+
+  // Open cap violations count per org
+  const violationsByOrg = new Map<string, number>();
+  for (const v of violationRows ?? []) {
+    const r = v as { org_id: string };
+    violationsByOrg.set(r.org_id, (violationsByOrg.get(r.org_id) ?? 0) + 1);
+  }
+
   return (summaryRows ?? []).map((raw) => {
     const r = raw as Record<string, unknown>;
     const orgId = r['org_id'] as string;
     const plan = orgPlanMap.get(orgId) ?? 'free';
-    const mrr = PLAN_MRR[plan] ?? 0;
+    const mrr = mrrByOrg.get(orgId) ?? PLAN_MRR[plan] ?? 0;
     const totalCost = Number(r['total_variable_cost_usd'] ?? 0);
     const grossMarginPct = mrr > 0 ? Math.round(((mrr - totalCost) / mrr) * 100) : null;
 
@@ -123,6 +153,7 @@ export async function getUsagePortfolio(monthIso?: string): Promise<UsagePortfol
       org_id:                  orgId,
       org_name:                orgNameMap.get(orgId) ?? orgId.slice(0, 8),
       plan,
+      subscription_tier:       tierByOrg.get(orgId) ?? null,
       mrr_usd:                 mrr,
       scan_cost_usd:           Number(r['scan_cost_usd'] ?? 0),
       ai_cost_usd:             Number(r['ai_cost_usd'] ?? 0),
@@ -131,6 +162,7 @@ export async function getUsagePortfolio(monthIso?: string): Promise<UsagePortfol
       margin_status:           marginStatus(totalCost, mrr),
       total_page_scans:        Number(r['total_page_scans'] ?? 0),
       total_ai_calls:          Number(r['total_ai_calls'] ?? 0),
+      open_violations_count:   violationsByOrg.get(orgId) ?? 0,
       month,
     };
   });
