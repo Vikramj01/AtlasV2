@@ -34,6 +34,10 @@ function fmt(n: number) {
   return n.toFixed(4).replace(/\.?0+$/, '') || '0';
 }
 
+function formatTier(t: string): string {
+  return t.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
 export function UsagePortfolioTable({
   rows,
   month,
@@ -93,6 +97,7 @@ export function UsagePortfolioTable({
             <tr className="border-b bg-[#F9FAFB] text-left text-xs uppercase tracking-wide">
               <th className="px-4 py-3 font-semibold text-muted-foreground">Organisation</th>
               <th className="px-4 py-3 font-semibold text-muted-foreground">Plan</th>
+              <th className="px-4 py-3 font-semibold text-muted-foreground">Tier</th>
               <th className="px-4 py-3 font-semibold text-muted-foreground text-right">MRR</th>
               <th className="px-4 py-3 text-right">
                 <SortButton col="cost" label="Total cost" />
@@ -108,6 +113,7 @@ export function UsagePortfolioTable({
               <th className="px-4 py-3 text-right">
                 <SortButton col="ai" label="AI calls" />
               </th>
+              <th className="px-4 py-3 text-center font-semibold text-muted-foreground">Violations</th>
               <th className="px-4 py-3 text-center font-semibold text-muted-foreground">Status</th>
             </tr>
           </thead>
@@ -115,7 +121,7 @@ export function UsagePortfolioTable({
             {loading && (
               Array.from({ length: 3 }).map((_, i) => (
                 <tr key={i}>
-                  {Array.from({ length: 10 }).map((__, j) => (
+                  {Array.from({ length: 12 }).map((__, j) => (
                     <td key={j} className="px-4 py-3">
                       <div className="h-3 rounded bg-gray-100 animate-pulse" style={{ width: j === 0 ? '120px' : '60px' }} />
                     </td>
@@ -134,6 +140,12 @@ export function UsagePortfolioTable({
                   <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${PLAN_COLORS[row.plan] ?? 'bg-gray-100 text-gray-600'}`}>
                     {row.plan}
                   </span>
+                </td>
+                <td className="px-4 py-3">
+                  {row.subscription_tier
+                    ? <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">{formatTier(row.subscription_tier)}</span>
+                    : <span className="text-xs text-muted-foreground">—</span>
+                  }
                 </td>
                 <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
                   {row.mrr_usd > 0 ? `$${row.mrr_usd.toLocaleString()}` : '—'}
@@ -156,6 +168,12 @@ export function UsagePortfolioTable({
                 <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
                   {row.total_ai_calls.toLocaleString()}
                 </td>
+                <td className="px-4 py-3 text-center">
+                  {(row.open_violations_count ?? 0) > 0
+                    ? <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${(row.open_violations_count ?? 0) >= 3 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>{row.open_violations_count}</span>
+                    : <span className="text-xs text-muted-foreground">—</span>
+                  }
+                </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center justify-center gap-1.5">
                     <span className={`h-2 w-2 rounded-full ${STATUS_DOT[row.margin_status]}`} />
@@ -166,7 +184,7 @@ export function UsagePortfolioTable({
             ))}
             {!loading && rows.length === 0 && (
               <tr>
-                <td colSpan={10} className="px-4 py-10 text-center text-muted-foreground">
+                <td colSpan={12} className="px-4 py-10 text-center text-muted-foreground">
                   No usage data for this period.
                 </td>
               </tr>

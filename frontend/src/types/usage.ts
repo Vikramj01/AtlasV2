@@ -2,6 +2,7 @@ export interface UsagePortfolioRow {
   org_id: string;
   org_name: string;
   plan: 'free' | 'pro' | 'agency';
+  subscription_tier?: string | null;
   mrr_usd: number;
   scan_cost_usd: number;
   ai_cost_usd: number;
@@ -10,6 +11,7 @@ export interface UsagePortfolioRow {
   margin_status: 'green' | 'amber' | 'red' | 'na';
   total_page_scans: number;
   total_ai_calls: number;
+  open_violations_count?: number;
   month: string;
 }
 
