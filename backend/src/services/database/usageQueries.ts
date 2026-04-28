@@ -1,6 +1,7 @@
 import { supabaseAdmin } from './supabase';
 
 // ── Pricing constants (must match usageLogger.ts) ─────────────────────────────
+// TODO: replace with org_subscriptions join in Sprint 2.4 (see ATLAS_V2_SPRINT_SUBSCRIPTIONS_PLAN.md §2.4.1)
 export const PLAN_MRR: Record<string, number> = {
   free:   0,
   pro:    399,
