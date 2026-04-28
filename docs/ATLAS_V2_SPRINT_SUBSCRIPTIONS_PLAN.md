@@ -77,9 +77,9 @@ Run `tsc --noEmit` from `backend/` to confirm the new file compiles clean with n
 
 #### 2.2.1 — Create migration: `org_subscriptions` + `cap_violations`
 
-File: `supabase/migrations/20260520_002_org_subscriptions.sql`
+File: `supabase/migrations/20260521_001_org_subscriptions.sql`
 
-> Use date `20260520` to sequence after the most recent migration (`20260520_001_usage_events.sql`).
+> Use date `20260521` — Supabase uses only the leading date digits as the migration version key, so two migrations on the same date would collide on `20260520`.
 
 The migration must include, in order:
 
@@ -383,7 +383,7 @@ WHERE table_schema = 'public' AND table_name = 'usage_monthly_summary';
 |---|---|---|
 | `backend/src/config/pricing.ts` | 2.1 | **New** — full ATLAS_PRICING constant |
 | `backend/src/types/subscription.ts` | 2.2 | **New** — OrgSubscription, CapViolation types |
-| `supabase/migrations/20260520_002_org_subscriptions.sql` | 2.2 | **New** — org_subscriptions, cap_violations, view |
+| `supabase/migrations/20260521_001_org_subscriptions.sql` | 2.2 | **New** — org_subscriptions, cap_violations, view |
 | `backend/src/jobs/fairUseCap.ts` | 2.3 | **New** — runFairUseCapCheck() |
 | `backend/src/services/database/subscriptionQueries.ts` | 2.3 | **New** — DB helpers for subscriptions |
 | `backend/src/services/queue/worker.ts` | 2.3 | **Edit** — add fairUseCap to nightly cron |
