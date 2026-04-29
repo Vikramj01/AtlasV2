@@ -39,6 +39,7 @@ import { BillingSuccessPage } from '@/pages/BillingSuccessPage';
 import { BillingCancelPage } from '@/pages/BillingCancelPage';
 import { PlanGate } from '@/components/common/PlanGate';
 import { StrategyGateGuard } from '@/components/strategy/StrategyGateGuard';
+import { CrawlStatusPage } from '@/pages/CrawlStatusPage';
 
 export default function App() {
   return (
@@ -91,6 +92,7 @@ export default function App() {
             <Route path="/audit/:auditId/progress" element={<SectionErrorBoundary label="Audit progress"><AuditProgressPage /></SectionErrorBoundary>} />
             <Route path="/planning/new"        element={<SectionErrorBoundary label="Set up tracking"><PlanGate minPlan="pro" featureName="Site scan"><StrategyGateGuard><PlanningModePage /></StrategyGateGuard></PlanGate></SectionErrorBoundary>} />
             <Route path="/planning/:sessionId" element={<SectionErrorBoundary label="Set up tracking"><PlanGate minPlan="pro" featureName="Site scan"><StrategyGateGuard><PlanningModePage /></StrategyGateGuard></PlanGate></SectionErrorBoundary>} />
+            <Route path="/crawl/:runId" element={<SectionErrorBoundary label="Signal scan"><CrawlStatusPage /></SectionErrorBoundary>} />
           </Route>
 
           {/* Developer Portal — public, no auth required */}
