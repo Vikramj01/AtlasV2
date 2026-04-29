@@ -33,7 +33,8 @@ export interface CrawlJobData {
 // ─── Page scope ───────────────────────────────────────────────────────────────
 
 export interface PageToScan {
-  id: string;       // org_page_scope.id — used to update crawl_pages and org_page_scope
+  scope_id: string;      // org_page_scope.id — used to update org_page_scope.last_crawled_at
+  crawl_page_id: string; // crawl_pages.id — populated by route/trigger after INSERT, '' during discovery
   url: string;
   url_type: UrlType;
   domain: string;
@@ -76,7 +77,8 @@ export interface DetectedSignal {
 // ─── Scan results (returned from signalDetector) ──────────────────────────────
 
 export interface PageScanResult {
-  page_id: string;
+  scope_id: string;      // org_page_scope.id — passed through from PageToScan
+  crawl_page_id: string; // crawl_pages.id — passed through from PageToScan
   url: string;
   http_status: number | null;
   scan_duration_ms: number;
@@ -95,7 +97,8 @@ export interface ScanBatchResult {
 export interface WriteSignalsArgs {
   org_id: string;
   crawl_run_id: string;
-  page_id: string;
+  crawl_page_id: string; // crawl_pages.id — for signal insert and crawl_pages status update
+  scope_id: string;      // org_page_scope.id — for last_crawled_at update
   signals: DetectedSignal[];
   http_status: number | null;
   scan_duration_ms: number;

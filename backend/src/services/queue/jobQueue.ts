@@ -278,3 +278,37 @@ usageSummaryQueue.on('failed', (job, err) => {
   logger.error({ jobId: job?.id, err: err.message }, 'Usage summary refresh failed');
 });
 
+// ── Crawl Queue ───────────────────────────────────────────────────────────────
+// Runs Browserbase/Playwright page batches for the Crawl Signal Extractor.
+// Onboarding crawls are triggered by the /api/crawl/trigger endpoint.
+// Scheduled crawls are triggered nightly by the usageSummaryQueue worker.
+
+import type { CrawlJobData } from '@/types/crawl';
+export type { CrawlJobData };
+
+export const crawlQueue = new Bull<CrawlJobData>('crawl', {
+  redis: buildRedisOpts(env.REDIS_URL),
+  defaultJobOptions: {
+    attempts:         3,
+    backoff:          { type: 'exponential', delay: 5000 },
+    removeOnComplete: 100,
+    removeOnFail:     50,
+  },
+});
+
+crawlQueue.on('error', (err) => {
+  logger.error({ err }, 'Crawl queue error');
+});
+
+crawlQueue.on('completed', (job) => {
+  logger.info({ jobId: job.id, org_id: job.data.org_id, crawl_run_id: job.data.crawl_run_id }, 'Crawl job completed');
+});
+
+crawlQueue.on('failed', (job, err) => {
+  logger.error({ jobId: job?.id, org_id: job?.data?.org_id, crawl_run_id: job?.data?.crawl_run_id, err: err.message }, 'Crawl job failed');
+});
+
+crawlQueue.on('stalled', (job) => {
+  logger.warn({ jobId: job.id, org_id: job.data.org_id, crawl_run_id: job.data.crawl_run_id }, 'Crawl job stalled');
+});
+
