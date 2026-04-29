@@ -1,4 +1,4 @@
-import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue } from './jobQueue';
+import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue, crawlQueue } from './jobQueue';
 // Side-effect import: registers the crawl queue processor
 import '@/services/crawl/crawlJob';
 import { env } from '@/config/env';
@@ -451,6 +451,13 @@ usageSummaryQueue.process(async (_job) => {
     // Non-fatal — don't fail the job over alert processing
     logger.error({ err: alertErr instanceof Error ? alertErr.message : String(alertErr) }, 'Margin alert check failed');
   }
+
+  // Trigger scheduled crawls for orgs whose cadence is due today
+  try {
+    await triggerScheduledCrawls();
+  } catch (crawlErr) {
+    logger.error({ err: crawlErr instanceof Error ? crawlErr.message : String(crawlErr) }, 'Scheduled crawl trigger failed');
+  }
 });
 
 logger.info('Usage summary worker registered');
@@ -459,3 +466,112 @@ usageSummaryQueue.add(
   { trigger: 'scheduled' },
   { repeat: { cron: '0 2 * * *' }, jobId: 'usage-summary-nightly' },
 ).catch((err) => logger.error({ err }, 'Failed to schedule usage summary refresh'));
+
+// ── Scheduled crawl trigger ───────────────────────────────────────────────────
+// Called nightly from usageSummaryQueue after fair-use and margin checks.
+// For each org whose crawl cadence is due, creates a crawl_run + crawl_pages
+// and enqueues a job into crawlQueue.
+
+async function triggerScheduledCrawls(): Promise<void> {
+  const { listActiveSubscriptions } = await import('@/services/database/subscriptionQueries');
+  const { discoverPages } = await import('@/services/crawl/pageDiscovery');
+  const { ATLAS_PRICING } = await import('@/config/pricing');
+  type AtlasTierKey = keyof typeof ATLAS_PRICING;
+
+  const orgs = await listActiveSubscriptions();
+  if (!orgs.length) return;
+
+  logger.info({ count: orgs.length }, 'Scheduled crawl trigger: checking orgs');
+
+  for (const org of orgs) {
+    try {
+      const tierConfig = ATLAS_PRICING[org.tier as AtlasTierKey];
+      if (!tierConfig) continue;
+
+      const due = await isCrawlDue(org.org_id, tierConfig.scans_per_month);
+      if (!due) continue;
+
+      const pages = await discoverPages(org.org_id, org.tier);
+      if (!pages.length) continue;
+
+      const { data: crawlRun, error: runError } = await supabaseAdmin
+        .from('crawl_runs')
+        .insert({
+          org_id:       org.org_id,
+          mode:         'scheduled',
+          status:       'queued',
+          triggered_by: 'system',
+          total_pages:  pages.length,
+        })
+        .select('id')
+        .single();
+
+      if (runError || !crawlRun) {
+        logger.error({ org_id: org.org_id, err: runError?.message }, 'Failed to create scheduled crawl run');
+        continue;
+      }
+
+      const { data: pageRows, error: pageError } = await supabaseAdmin
+        .from('crawl_pages')
+        .insert(
+          pages.map(p => ({
+            crawl_run_id: crawlRun.id,
+            org_id:       org.org_id,
+            url:          p.url,
+            url_type:     p.url_type,
+            domain:       p.domain,
+            status:       'pending',
+          })),
+        )
+        .select('id, url');
+
+      if (pageError || !pageRows) {
+        logger.error({ org_id: org.org_id, err: pageError?.message }, 'Failed to create scheduled crawl pages');
+        continue;
+      }
+
+      const urlToPageId = new Map(pageRows.map(r => [r.url as string, r.id as string]));
+      const pagesWithIds = pages.map(p => ({
+        ...p,
+        crawl_page_id: urlToPageId.get(p.url) ?? '',
+      }));
+
+      await crawlQueue.add({
+        org_id:       org.org_id,
+        crawl_run_id: crawlRun.id,
+        mode:         'scheduled',
+        pages:        pagesWithIds,
+        tier:         org.tier,
+      });
+
+      logger.info({ org_id: org.org_id, crawl_run_id: crawlRun.id, pages: pages.length }, 'Scheduled crawl queued');
+    } catch (orgErr) {
+      logger.error(
+        { org_id: org.org_id, err: orgErr instanceof Error ? orgErr.message : String(orgErr) },
+        'Failed to trigger scheduled crawl for org',
+      );
+    }
+  }
+}
+
+async function isCrawlDue(org_id: string, scans_per_month: number): Promise<boolean> {
+  const daysBetweenScans = Math.floor(30 / scans_per_month);
+
+  const { data: lastRun } = await supabaseAdmin
+    .from('crawl_runs')
+    .select('created_at')
+    .eq('org_id', org_id)
+    .eq('triggered_by', 'system')
+    .eq('status', 'completed')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!lastRun) return true; // Never run — run now
+
+  const daysSinceLastRun = Math.floor(
+    (Date.now() - new Date(lastRun.created_at).getTime()) / (1000 * 60 * 60 * 24),
+  );
+
+  return daysSinceLastRun >= daysBetweenScans;
+}

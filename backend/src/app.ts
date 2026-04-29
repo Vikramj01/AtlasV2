@@ -25,6 +25,7 @@ import { billingRouter } from '@/api/routes/billing';
 import { taxonomyRouter } from '@/api/routes/taxonomy';
 import { namingConventionsRouter } from '@/api/routes/namingConventions';
 import { strategyRouter } from '@/api/routes/strategy';
+import { crawlRouter } from '@/api/routes/crawl';
 import logger from '@/utils/logger';
 import { env } from '@/config/env';
 
@@ -139,6 +140,7 @@ app.use('/api/billing', billingRouter);
 app.use('/api/taxonomy', taxonomyRouter);
 app.use('/api/naming-convention', namingConventionsRouter);
 app.use('/api/strategy', strategyRouter);
+app.use('/api/crawl', crawlRouter);
 
 // ─── 404 handler ─────────────────────────────────────────────────────────────
 
