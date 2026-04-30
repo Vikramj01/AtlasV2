@@ -10,7 +10,9 @@ Atlas is a marketing signal optimisation and tracking infrastructure platform fo
 
 - **Journey Builder** — Multi-step wizard generating WalkerOS event specs and GTM container JSON (client + server-side).
 - **AI Planning Mode** — Browserbase/Playwright site scan → Claude analysis → tagging recommendations, PII detection, GTM container + implementation guide export.
-- **Conversion Strategy Gate** — Multi-objective strategy wizard at `/planning/strategy`. Users define one or more conversion objectives (business outcome, timing, current event, platforms), Claude evaluates each and produces a CONFIRM/AUGMENT/REPLACE verdict with proxy event guidance. Objectives and briefs are persisted to Supabase; brief must be locked before proceeding to site scan. Dismissible nudge banner on Planning Mode entry. All plan tiers. PDF brief export and web view in progress (Sprint 1.6c).
+- **Conversion Strategy Gate** — Multi-objective strategy wizard at `/planning/strategy`. Users define one or more conversion objectives (business outcome, timing, current event, platforms), Claude evaluates each and produces a CONFIRM/AUGMENT/REPLACE verdict with proxy event guidance. Objectives and briefs are persisted to Supabase; brief must be locked before proceeding to site scan. Dismissible nudge banner on Planning Mode entry. All plan tiers. PDF brief export (pdfkit, stored in Supabase Storage) and web view at `/strategy/briefs/:id`.
+- **Crawl Signal Extractor (CSE)** — Subscription-gated automated site scan that discovers and health-scores tracking signals (GTM, GA4, Meta Pixel, CAPI, Google Ads, TikTok, LinkedIn, Snapchat, custom events) across all seeded pages. Supports onboarding and scheduled modes. Pages sourced from ad platform URLs (Google Ads, Meta Ads) or manual seed. Results viewable at `/crawl/:runId` with real-time polling progress and per-page signal breakdown.
+- **Usage Logging & Operator Monitoring** — Per-org usage event logging (`scan_cost`, `ai_cost`, `browser_minutes`). Browserbase nightly reconciliation snapshots. Operator alert delivery via email/Slack for threshold violations. Attribution of Browserbase sessions to audit and quick-check runs.
 - **Validation Engine** — 26 rules across signal initiation, parameter completeness, and persistence layers. Scores event quality.
 - **Audit Engine** — Headless browser journey simulation, gap classification per funnel stage, scored PDF reports. One-off and scheduled.
 - **Health Dashboard** — Live health score, alert feed, historical trend.
@@ -67,6 +69,7 @@ AtlasV2/
 │   │   ├── layout/         # AppLayout, ProtectedRoute, Sidebar, TopBar
 │   │   ├── organisation/   # ClientCard, ClientSetupWizard, MemberManagement, OrgSwitcher
 │   │   ├── planning/       # AnnotatedScreenshot, GTMContainerPreview, RecommendationCard, Step1–7
+│   │   ├── crawl/          # CrawlProgress, CrawlResults
 │   │   ├── signals/        # SignalCard, PackCard, DeploymentWizard
 │   │   ├── strategy/       # StrategyGateBanner, StrategyGateGuard, Step1Define, Step2Verdict,
 │   │   │                   # ObjectivesList, BriefLocked
@@ -75,7 +78,7 @@ AtlasV2/
 │   │                       # table, tabs, progress, label, textarea, switch, alert, separator
 │   ├── lib/
 │   │   ├── api/            # adminApi, auditApi, billingApi, capiApi, channelApi, checklistApi,
-│   │   │                   # consentApi, dashboardApi, developerApi, exportApi, healthApi,
+│   │   │                   # consentApi, crawlApi, dashboardApi, developerApi, exportApi, healthApi,
 │   │   │                   # journeyApi, offlineConversionsApi, organisationApi, clientApi,
 │   │   │                   # planningApi, readinessApi, scheduleApi, signalApi, strategyApi
 │   │   ├── capi/           # adapters/ (meta, google, google-offline, tiktok stub, linkedin stub)
@@ -85,20 +88,22 @@ AtlasV2/
 │   ├── pages/              # HomePage, LoginPage, DashboardPage, AuditProgressPage, ReportPage,
 │   │                       # JourneyBuilderPage, PlanningDashboard, PlanningModePage,
 │   │                       # StrategyPage (view controller — landing + wizard flow),
-│   │                       # StrategyBriefPage (⬜ 1.6c — /strategy/briefs/:id web view),
+│   │                       # StrategyBriefPage (/strategy/briefs/:id — web view of locked brief),
+│   │                       # CrawlStatusPage (/crawl/:runId — real-time polling + results),
 │   │                       # ConsentPage, CAPIPage, HealthDashboardPage, ChannelInsightsPage,
 │   │                       # ClientListPage, SettingsPage, BillingSuccessPage, BillingCancelPage
-│   ├── store/              # auditStore, billingStore, capiStore, consentStore, dashboardStore,
-│   │                       # journeyWizardStore, offlineConversionsStore, organisationStore,
-│   │                       # planningStore, signalStore, strategyStore
-│   └── types/              # audit, capi, channel, consent, dashboard, health, journey,
-│                           # offline-conversions, organisation, planning, schedule, signal, strategy
+│   ├── store/              # auditStore, billingStore, capiStore, consentStore, crawlStore,
+│   │                       # dashboardStore, journeyWizardStore, offlineConversionsStore,
+│   │                       # organisationStore, planningStore, signalStore, strategyStore
+│   └── types/              # audit, capi, channel, consent, crawl, dashboard, health, journey,
+│                           # offline-conversions, organisation, planning, schedule, signal,
+│                           # strategy, usage
 │
 ├── backend/src/
 │   ├── api/
 │   │   ├── middleware/     # authMiddleware, planGuard, rateLimiter, planningLimiter, errorHandler
 │   │   └── routes/        # admin, audit, auth, billing, capi, channels, checklist, clients,
-│   │                       # consent, dashboard, developer, exports, health, journeys,
+│   │                       # consent, crawl, dashboard, developer, exports, health, journeys,
 │   │                       # offlineConversions, organisations, planning, readiness,
 │   │                       # schedules, signals, strategy
 │   └── services/
@@ -113,8 +118,11 @@ AtlasV2/
 │       │                   # aiAnalysisService, changeDetectionService, piiDetectionService,
 │       │                   # generators/ (gtmContainer, dataLayerSpec, output, guide)
 │       ├── queue/          # jobQueue.ts (Bull), worker.ts
+│       ├── crawl/          # crawlJob.ts (Bull orchestration), pageDiscovery.ts,
+│       │                   # signalDetector.ts, signalWriter.ts, crawlHelpers.ts, crawl.ts (types)
 │       ├── strategy/       # evaluationPrompt.ts (buildUserPrompt, SYSTEM_PROMPT, parseEvalResponse)
-│       │                   # briefPdfGenerator.ts (⬜ 1.6c)
+│       │                   # briefPdfGenerator.ts (pdfkit-based PDF generation)
+│       ├── usage/          # usageLogger.ts, alertDelivery.ts (email/Slack), claudeClient.ts
 │       └── [others]/       # health/, journey/, scoring/, validation/, reporting/,
 │                           # signals/, consent/, dashboard/, developer/, export/, email/
 │
@@ -132,7 +140,12 @@ AtlasV2/
     ├── 20260427_001_remove_walkeros.sql
     ├── 20260428_001_tracking_plan_versions.sql
     ├── 20260511_001_capi_provider_credentials_v2.sql
-    └── 20260518_001_google_oauth_fields.sql
+    ├── 20260518_001_google_oauth_fields.sql
+    ├── 20260519_001_capi_dedup.sql
+    ├── 20260520_001_usage_events.sql
+    ├── 20260521_001_org_subscriptions.sql
+    ├── 20260522_001_browserbase_usage_snapshots.sql
+    └── 20260530_001_crawl_signal_extractor.sql
 ```
 
 ---
@@ -180,6 +193,29 @@ strategy_objectives    (id, brief_id, organization_id, name, description, platfo
                          recommended_primary_event, recommended_proxy_event, proxy_event_required,
                          rationale, summary_markdown, locked, locked_at, created_at, updated_at)
 strategy_objective_campaigns (id, objective_id, organization_id, platform, campaign_name, budget, created_at)
+
+-- Usage & Billing Infrastructure (20260520 + 20260521 + 20260522)
+usage_events           (id, organization_id, event_type ['scan_cost'|'ai_cost'|'browser_minutes'],
+                         value, metadata JSONB, created_at)
+org_subscriptions      (id, organization_id, plan, status, browserbase_minutes_limit,
+                         scan_limit, created_at, updated_at)
+browserbase_usage_snapshots (id, organization_id, snapshot_date, minutes_used, minutes_billed,
+                              reconciled_at, created_at)
+
+-- Crawl Signal Extractor (20260530)
+crawl_runs             (id, organization_id, mode ['onboarding'|'scheduled'], status
+                         ['queued'|'running'|'completed'|'failed'|'partial'],
+                         pages_total, pages_scanned, started_at, completed_at, created_at)
+crawl_pages            (id, run_id, organization_id, url, status, signals_found,
+                         signals_healthy, signals_warning, signals_error, created_at)
+detected_signals       (id, page_id, run_id, organization_id,
+                         signal_type ['gtm_container'|'ga4_base'|'ga4_event'|'meta_pixel'|
+                         'meta_capi'|'google_ads_conversion'|'google_ads_remarketing'|
+                         'tiktok_pixel'|'linkedin_insight'|'snapchat_pixel'|'custom_event'|...],
+                         health_status ['healthy'|'warning'|'error'], issues JSONB,
+                         parameters JSONB, created_at)
+org_page_scope         (id, organization_id, url, domain, priority, source
+                         ['google_ads'|'meta_ads'|'manual'], active, created_at)
 ```
 
 ---
@@ -207,7 +243,8 @@ strategy_objective_campaigns (id, objective_id, organization_id, platform, campa
 | `/api/readiness` | readiness.ts | GET /score, /breakdown, /checklist |
 | `/api/schedules` | schedules.ts | Full CRUD |
 | `/api/signals` | signals.ts | Full CRUD + deploy |
-| `/api/strategy` | strategy.ts | POST /evaluate (legacy); POST/GET /briefs, GET/PATCH/DELETE /briefs/:id, POST /briefs/:id/lock; POST /objectives, GET/PUT/DELETE /objectives/:id, POST /objectives/:id/evaluate (heavyLimiter), POST /objectives/:id/lock, POST /objectives/:id/campaigns; POST /briefs/:id/export/pdf (⬜ 1.6c) |
+| `/api/crawl` | crawl.ts | POST /trigger, /seed-pages; GET /runs, /run/:id, /page-scope |
+| `/api/strategy` | strategy.ts | POST /evaluate (legacy); POST/GET /briefs, GET/PATCH/DELETE /briefs/:id, POST /briefs/:id/lock, /briefs/:id/export/pdf; POST /objectives, GET/PUT/DELETE /objectives/:id, POST /objectives/:id/evaluate (heavyLimiter), /objectives/:id/lock, /objectives/:id/campaigns |
 
 ---
 
@@ -246,7 +283,7 @@ strategy_objective_campaigns (id, objective_id, organization_id, platform, campa
 
 ## Active Development Branch
 
-`claude/add-strategy-objectives-NmWRf`
+`claude/update-claude-md-EbzbD`
 
 ---
 
@@ -276,26 +313,67 @@ Full PRD: `docs/ATLAS_V2_SPRINT_1_6_STRATEGY_GATE_PRD.md`
 - ✅ `frontend/src/components/strategy/StrategyGateGuard.tsx` — updated to require `locked_at !== null` (not just any brief existing).
 - ✅ Legacy components (`StrategyWizard`, `Step1Outcome`, `Step2EventEval`, `StrategyBrief`) retained for backward compat, not actively used by the new flow.
 
-**Known 1.6b gaps (addressed in 1.6c):**
-- `BriefLocked` PDF download card and next-steps strip (Site scan / CAPI / Consent) are placeholders until the 1.6c PDF endpoint exists.
-- Landing page value-preview strip (3 tiles) deferred to polish pass with 1.6c.
+### Part 1.6c — Strategy Brief output ✅ Complete
 
-### Part 1.6c — Strategy Brief output ⬜ Planned
+- ✅ `backend/src/services/strategy/briefPdfGenerator.ts` — pdfkit-based PDF generator (~500 lines). Sections: cover (client/org name, date locked, version), summary (objectives + verdict one-liners), per-objective block (inputs table, verdict, event cards, rationale, warnings, campaigns), implementation notes (platform-specific config guidance for Meta/Google/LinkedIn/TikTok), appendix. Verdict colour-coded (CONFIRM=green, AUGMENT=orange, REPLACE=red).
+- ✅ `POST /api/strategy/briefs/:id/export/pdf` — generates PDF via `generateBriefPdf()`, uploads to Supabase Storage at `strategy-briefs/{org_id}/{brief_id}/v{n}.pdf` via `uploadStrategyBriefPdf()`, returns 1-hour signed URL. Requires locked brief (403 if not). Rate-limited 10/hr.
+- ✅ `frontend/src/pages/StrategyBriefPage.tsx` — web view at `/strategy/briefs/:id`. Displays all objectives with verdicts, event recommendations, rationale, and summary markdown. Download PDF button with loading state.
+- ✅ Route `/strategy/briefs/:id` registered in `App.tsx` wrapped in `SectionErrorBoundary`.
+- ✅ Supabase Storage bucket `strategy-briefs/` with org-scoped signed URLs.
+- ✅ File naming: `Atlas-Strategy-Brief-{clientOrOrgSlug}-v{N}-{YYYY-MM-DD}.pdf`
 
-**Backend:**
-- ⬜ `backend/src/services/strategy/briefPdfGenerator.ts` — Puppeteer HTML-to-PDF. Sections: cover (client/org name, date locked, version), summary (objectives + verdict one-liners), per-objective block (inputs table, verdict, event cards, rationale, warnings, campaigns), implementation notes (rule-based templating, no Claude call), next steps, appendix.
-- ⬜ `POST /api/strategy/briefs/:id/export/pdf` — generates PDF, stores in Supabase Storage at `strategy-briefs/{org_id}/{brief_id}/v{n}.pdf`, returns 1-hour signed URL. Brief must be locked. Rate-limited 10/hr.
-- ⬜ Versioning: editing a locked brief creates v2 (cloned brief + objectives, `superseded_by` set on v1). Confirmation modal required.
-- ⬜ Supabase Storage bucket `strategy-briefs/` with RLS scoped by `organization_id`.
+---
 
-**Frontend:**
-- ⬜ `frontend/src/pages/StrategyBriefPage.tsx` — web view at `/strategy/briefs/:id`. Same content as PDF: collapsible sections, version picker, Download PDF + Edit actions.
-- ⬜ Update `BriefLocked.tsx` — wire "Download PDF" to `POST /briefs/:id/export/pdf`; add dismissible (localStorage) next-steps strip with CTAs to `/planning`, `/capi`, `/consent`.
-- ⬜ Update `StrategyPage.tsx` landing — add value-preview strip (3 tiles: Verdict / Locked document / Foundation for scans).
-- ⬜ Register `/strategy/briefs/:id` route in `App.tsx`.
-- ⬜ Briefs list accessible from Settings and client detail page.
+## Crawl Signal Extractor (CSE) — Sprints 1–4 ✅ Complete
 
-**File naming:** `Atlas-Strategy-Brief-{clientOrOrgSlug}-v{N}-{YYYY-MM-DD}.pdf`
+### CSE Sprint 1 — Schema & Types ✅
+
+- ✅ `supabase/migrations/20260530_001_crawl_signal_extractor.sql` — `crawl_runs`, `crawl_pages`, `detected_signals`, `org_page_scope` tables with comprehensive indexing on `organization_id`, `status`, `created_at`, `domain`. RLS: service-role-only (not customer-readable via frontend queries).
+- ✅ `frontend/src/types/crawl.ts` — `CrawlMode`, `CrawlStatus`, `CrawlPageStatus`, `UrlType`, `SignalType` (13 types: gtm_container, ga4_base, ga4_event, meta_pixel, meta_capi, google_ads_conversion, google_ads_remarketing, tiktok_pixel, linkedin_insight, snapchat_pixel, custom_event, …), `SignalHealthStatus`; interfaces: `OrgPageScope`, `DetectedSignalResult`, `CrawlPageResult`, `CrawlRunSummary`, `CrawlRunDetail`.
+
+### CSE Sprint 2 — Core Backend Services ✅
+
+- ✅ `backend/src/services/crawl/pageDiscovery.ts` — subscription-tier-aware page scope discovery; parses ad platform URLs (Google Ads, Meta Ads); seeds `org_page_scope`.
+- ✅ `backend/src/services/crawl/signalDetector.ts` — per-page signal detection via Browserbase/Playwright (GTM, GA4, pixels, CAPI, remarketing, etc.).
+- ✅ `backend/src/services/crawl/signalWriter.ts` — persists `detected_signals` to DB with health scoring.
+- ✅ `backend/src/services/crawl/crawlHelpers.ts` — URL normalisation, domain extraction utilities.
+- ✅ `backend/src/services/crawl/crawl.ts` — shared types for crawl services.
+
+### CSE Sprint 3 — API Routes & Scheduled Trigger ✅
+
+- ✅ `backend/src/api/routes/crawl.ts` — 5 endpoints:
+  - `POST /api/crawl/trigger` — initiates crawl (`onboarding` or `scheduled` mode); subscription-gated
+  - `POST /api/crawl/seed-pages` — loads URLs into `org_page_scope` from source (`google_ads`, `meta_ads`, `manual`)
+  - `GET /api/crawl/runs` — lists last 10 crawl runs for org
+  - `GET /api/crawl/run/:id` — single run detail with all pages + detected signals
+  - `GET /api/crawl/page-scope` — active seeded pages for org
+- ✅ `backend/src/services/crawl/crawlJob.ts` — Bull job orchestration; Browserbase session management; page scan initiation.
+
+### CSE Sprint 4 — Frontend Polling UI & Signal Results ✅
+
+- ✅ `frontend/src/lib/api/crawlApi.ts` — `triggerCrawl`, `seedPages`, `getRun`, `getRuns`, `getPageScope`.
+- ✅ `frontend/src/store/crawlStore.ts` — Zustand store with polling: `setCurrentRun`, `startPolling`, `stopPolling`; auto-switches to results tab on completion.
+- ✅ `frontend/src/pages/CrawlStatusPage.tsx` — full-screen crawl monitor at `/crawl/:runId`. Progress + Results tabs; real-time polling with spinner; auto-switches on `completed`/`partial` status; error state handling.
+- ✅ `frontend/src/components/crawl/CrawlProgress.tsx` — progress visualisation with page count.
+- ✅ `frontend/src/components/crawl/CrawlResults.tsx` — per-page signal health summary.
+- ✅ Route `/crawl/:runId` registered in `App.tsx`.
+
+---
+
+## Usage Logging & Operator Monitoring — Sprints 2.1–2.4 ✅ Complete
+
+- ✅ `supabase/migrations/20260519_001_capi_dedup.sql` — CAPI deduplication improvements.
+- ✅ `supabase/migrations/20260520_001_usage_events.sql` — `usage_events` table: per-org event logging (`scan_cost`, `ai_cost`, `browser_minutes`).
+- ✅ `supabase/migrations/20260521_001_org_subscriptions.sql` — `org_subscriptions` table: plan, status, per-org resource limits.
+- ✅ `supabase/migrations/20260522_001_browserbase_usage_snapshots.sql` — `browserbase_usage_snapshots` table: nightly reconciliation records.
+- ✅ `backend/src/services/usage/usageLogger.ts` — logs usage events to DB.
+- ✅ `backend/src/services/usage/alertDelivery.ts` — operator alerts via email and Slack for threshold violations.
+- ✅ `backend/src/services/usage/claudeClient.ts` — Anthropic API wrapper with usage tracking.
+- ✅ Sprint 2.1: Browserbase session attribution for audit and quick-check runs.
+- ✅ Sprint 2.2: Browserbase nightly reconciliation.
+- ✅ Sprint 2.3: Operator alert delivery (email + Slack).
+- ✅ Sprint 2.4: Browserbase reconciliation panel in admin UI.
+- ✅ `frontend/src/types/usage.ts` — `UsageEvent`, `UsagePortfolioRow`, `OrgDailyCost`, `OrgDomainCost`, `OrgAIBreakdown`, `ReconciliationSnapshot`.
 
 ---
 
