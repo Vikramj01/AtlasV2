@@ -372,6 +372,12 @@ googleOAuthRefreshQueue.process(async (_job) => {
     .or(`access_token_expires_at.is.null,access_token_expires_at.lte.${fiveMinFromNow}`);
 
   if (error) {
+    // Migration 20260518_001_google_oauth_fields.sql adds access_token_expires_at.
+    // If it hasn't been applied yet, skip silently rather than spam error logs.
+    if (error.message.includes('access_token_expires_at does not exist')) {
+      logger.warn('Google OAuth refresh: access_token_expires_at column missing — apply migration 20260518_001_google_oauth_fields.sql');
+      return;
+    }
     logger.error({ err: error.message }, 'Google OAuth refresh: failed to query providers');
     return;
   }
