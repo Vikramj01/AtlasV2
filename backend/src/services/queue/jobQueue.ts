@@ -293,6 +293,7 @@ export const crawlQueue = new Bull<CrawlJobData>('crawl', {
     backoff:          { type: 'exponential', delay: 5000 },
     removeOnComplete: 100,
     removeOnFail:     50,
+    timeout:          25 * 60 * 1000, // 25-minute hard cap (12 pages × ~2 min each + headroom)
   },
 });
 
