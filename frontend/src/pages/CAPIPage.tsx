@@ -10,6 +10,7 @@
 
 import { useState } from 'react';
 import { InfoTooltip } from '@/components/common/EducationTooltip';
+import { SECTION_LABELS } from '@/lib/ui-copy';
 import { ProviderList } from '@/components/capi/ProviderList';
 import { SetupWizard } from '@/components/capi/SetupWizard';
 import { CAPIMonitoringDashboard } from '@/components/capi/CAPIMonitoringDashboard';
@@ -87,7 +88,10 @@ export function CAPIPage() {
         <>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-page-title">Conversion APIs</h1>
+              <h1 className="text-page-title">
+                {SECTION_LABELS.capi.primary}
+                <span className="text-muted-foreground text-sm font-normal ml-2">{SECTION_LABELS.capi.technical}</span>
+              </h1>
               <InfoTooltip contentKey="capi.why_server_side" />
             </div>
             <p className="text-body text-[#6B7280] mt-1">

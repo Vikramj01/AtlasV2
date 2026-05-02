@@ -10,10 +10,11 @@ import { cn } from '@/lib/utils';
 import { OrgSwitcher } from '@/components/organisation/OrgSwitcher';
 import { useOrganisationStore } from '@/store/organisationStore';
 import { organisationApi } from '@/lib/api/organisationApi';
+import { SECTION_LABELS } from '@/lib/ui-copy';
 
 // ── Nav data ──────────────────────────────────────────────────────────────────
 
-type NavItemDef = { label: string; to: string; Icon: LucideIcon; end?: boolean };
+type NavItemDef = { label: string; technicalLabel?: string; to: string; Icon: LucideIcon; end?: boolean };
 
 const PERSONAL_NAV_GROUPS: { label: string; items: NavItemDef[] }[] = [
   {
@@ -25,35 +26,35 @@ const PERSONAL_NAV_GROUPS: { label: string; items: NavItemDef[] }[] = [
   {
     label: 'SET UP',
     items: [
-      { label: 'Set Up Tracking',   to: '/planning',          Icon: MapPin },
-      { label: 'Verify Journeys',   to: '/journey/new',       Icon: CheckCircle },
-      { label: 'Consent & Privacy', to: '/consent',           Icon: ShieldCheck },
-      { label: 'Conversion API',    to: '/integrations/capi', Icon: Activity },
+      { label: SECTION_LABELS.planningMode.primary,   technicalLabel: SECTION_LABELS.planningMode.technical,   to: '/planning',          Icon: MapPin },
+      { label: SECTION_LABELS.journeyBuilder.primary, technicalLabel: SECTION_LABELS.journeyBuilder.technical, to: '/journey/new',       Icon: CheckCircle },
+      { label: SECTION_LABELS.consentHub.primary,     technicalLabel: SECTION_LABELS.consentHub.technical,     to: '/consent',           Icon: ShieldCheck },
+      { label: SECTION_LABELS.capi.primary,           technicalLabel: SECTION_LABELS.capi.technical,           to: '/integrations/capi', Icon: Activity },
     ],
   },
   {
     label: 'MONITOR',
     items: [
-      { label: 'Signal Health',       to: '/health',    Icon: HeartPulse },
-      { label: 'Audit History',       to: '/dashboard', Icon: Clock },
-      { label: 'Channel leak report', to: '/channels',  Icon: GitBranch },
+      { label: SECTION_LABELS.signalHealth.primary,     technicalLabel: SECTION_LABELS.signalHealth.technical,     to: '/health',    Icon: HeartPulse },
+      { label: SECTION_LABELS.auditEngine.primary,      technicalLabel: SECTION_LABELS.auditEngine.technical,      to: '/dashboard', Icon: Clock },
+      { label: SECTION_LABELS.channelInsights.primary,  technicalLabel: SECTION_LABELS.channelInsights.technical,  to: '/channels',  Icon: GitBranch },
     ],
   },
 ];
 
 function orgNav(orgId: string): NavItemDef[] {
   return [
-    { label: 'Overview',           to: `/org/${orgId}`,          Icon: Home },
-    { label: 'Clients',            to: `/org/${orgId}/clients`,  Icon: Building2 },
-    { label: 'Tracking Map',       to: `/org/${orgId}/signals`,  Icon: MapPin },
-    { label: 'Templates',          to: `/org/${orgId}/packs`,    Icon: LayoutGrid },
-    { label: 'Set Up Tracking',    to: '/planning',              Icon: MapPin },
-    { label: 'Audit History',      to: '/dashboard',             Icon: Clock },
-    { label: 'Channel leak report',to: '/channels',              Icon: GitBranch },
-    { label: 'Conversion API',     to: '/integrations/capi',     Icon: Activity },
-    { label: 'Consent & Privacy',  to: '/consent',               Icon: ShieldCheck },
-    { label: 'Signal Health',      to: '/health',                Icon: HeartPulse },
-    { label: 'Team & Settings',    to: `/org/${orgId}/settings`, Icon: Settings },
+    { label: 'Overview',                                                                                          to: `/org/${orgId}`,          Icon: Home },
+    { label: 'Clients',                                                                                           to: `/org/${orgId}/clients`,  Icon: Building2 },
+    { label: 'Tracking Map',                                                                                      to: `/org/${orgId}/signals`,  Icon: MapPin },
+    { label: 'Templates',                                                                                         to: `/org/${orgId}/packs`,    Icon: LayoutGrid },
+    { label: SECTION_LABELS.planningMode.primary,   technicalLabel: SECTION_LABELS.planningMode.technical,   to: '/planning',              Icon: MapPin },
+    { label: SECTION_LABELS.auditEngine.primary,    technicalLabel: SECTION_LABELS.auditEngine.technical,    to: '/dashboard',             Icon: Clock },
+    { label: SECTION_LABELS.channelInsights.primary,technicalLabel: SECTION_LABELS.channelInsights.technical,to: '/channels',              Icon: GitBranch },
+    { label: SECTION_LABELS.capi.primary,           technicalLabel: SECTION_LABELS.capi.technical,           to: '/integrations/capi',     Icon: Activity },
+    { label: SECTION_LABELS.consentHub.primary,     technicalLabel: SECTION_LABELS.consentHub.technical,     to: '/consent',               Icon: ShieldCheck },
+    { label: SECTION_LABELS.signalHealth.primary,   technicalLabel: SECTION_LABELS.signalHealth.technical,   to: '/health',                Icon: HeartPulse },
+    { label: 'Team & Settings',                                                                                   to: `/org/${orgId}/settings`, Icon: Settings },
   ];
 }
 
@@ -70,7 +71,7 @@ const NAV_INACTIVE =
 
 // ── Nav item component ────────────────────────────────────────────────────────
 
-function SidebarNavItem({ label, to, Icon, end = false }: NavItemDef) {
+function SidebarNavItem({ label, technicalLabel, to, Icon, end = false }: NavItemDef) {
   return (
     <NavLink
       to={to}
@@ -81,12 +82,22 @@ function SidebarNavItem({ label, to, Icon, end = false }: NavItemDef) {
         <>
           <Icon
             className={cn(
-              'h-5 w-5 shrink-0',
+              'h-5 w-5 shrink-0 mt-0.5',
               isActive ? 'text-white' : 'text-[#9CA3AF] group-hover:text-[#1A1A1A]',
             )}
             strokeWidth={1.5}
           />
-          {label}
+          <span className="flex flex-col min-w-0">
+            <span className="leading-snug">{label}</span>
+            {technicalLabel && (
+              <span className={cn(
+                'text-[10px] leading-tight font-normal truncate',
+                isActive ? 'text-white/60' : 'text-[#9CA3AF]',
+              )}>
+                {technicalLabel}
+              </span>
+            )}
+          </span>
         </>
       )}
     </NavLink>

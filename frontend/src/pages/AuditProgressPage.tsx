@@ -5,6 +5,7 @@ import { AuditProgressSteps } from '@/components/audit/AuditProgressSteps';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import { SECTION_LABELS } from '@/lib/ui-copy';
 
 const NAVY = '#1B2A4A';
 
@@ -87,6 +88,10 @@ export function AuditProgressPage() {
           </div>
 
           <div className="text-center">
+            <p className="text-xs text-muted-foreground mb-1">
+              {SECTION_LABELS.auditEngine.primary}
+              <span className="ml-1 opacity-60">· {SECTION_LABELS.auditEngine.technical}</span>
+            </p>
             <h1 className="text-page-title">
               {STATUS_LABEL[status ?? 'queued'] ?? 'Initialising…'}
             </h1>

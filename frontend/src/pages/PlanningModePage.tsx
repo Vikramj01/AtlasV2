@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { SECTION_LABELS } from '@/lib/ui-copy';
 import { Check, X } from 'lucide-react';
 import { usePlanningStore } from '@/store/planningStore';
 import { planningApi } from '@/lib/api/planningApi';
@@ -198,7 +199,10 @@ export function PlanningModePage() {
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold text-[#1A1A1A]">Atlas</span>
           <span className="text-[#D1D5DB]">/</span>
-          <span className="text-sm font-medium text-[#6B7280]">Set Up Tracking</span>
+          <span className="text-sm font-medium text-[#6B7280]">
+            {SECTION_LABELS.planningMode.primary}
+            <span className="ml-1 text-[10px] opacity-60">{SECTION_LABELS.planningMode.technical}</span>
+          </span>
         </div>
 
         {/* Step progress */}
