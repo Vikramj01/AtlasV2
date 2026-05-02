@@ -12,6 +12,8 @@
 
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { InfoTooltip } from '@/components/common/InfoTooltip';
+import { TOOLTIPS } from '@/lib/ui-copy';
 
 const GCLID_SNIPPET = `// Add to your landing page <head> — captures GCLID and stores it in sessionStorage
 (function () {
@@ -49,8 +51,9 @@ export function GCLIDCapturePanel() {
           <div className="flex items-start gap-2">
             <span className="text-amber-600 text-base mt-0.5">⚡</span>
             <div>
-              <CardTitle className="text-sm font-semibold text-amber-900">
+              <CardTitle className="text-sm font-semibold text-amber-900 flex items-center gap-1.5">
                 Improve match rates with GCLID capture
+                <InfoTooltip entry={TOOLTIPS.gclid} side="right" />
               </CardTitle>
               <p className="text-xs text-amber-700 mt-0.5">
                 GCLID matching achieves ~90% match rate. Email-only matching achieves ~30–50%.

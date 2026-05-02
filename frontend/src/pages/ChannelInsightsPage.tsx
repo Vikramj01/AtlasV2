@@ -9,7 +9,8 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { RefreshCw, GitBranch, ChevronDown, Code2, BarChart2, Zap } from 'lucide-react';
-import { SECTION_LABELS } from '@/lib/ui-copy';
+import { SECTION_LABELS, TOOLTIPS } from '@/lib/ui-copy';
+import { InfoTooltip } from '@/components/common/InfoTooltip';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { channelApi } from '@/lib/api/channelApi';
@@ -137,10 +138,13 @@ export function ChannelInsightsPage() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-page-title">
-              {SECTION_LABELS.channelInsights.primary}
-              <span className="text-muted-foreground text-sm font-normal ml-2">{SECTION_LABELS.channelInsights.technical}</span>
-            </h1>
+            <div className="flex items-center gap-1.5">
+              <h1 className="text-page-title">
+                {SECTION_LABELS.channelInsights.primary}
+                <span className="text-muted-foreground text-sm font-normal ml-2">{SECTION_LABELS.channelInsights.technical}</span>
+              </h1>
+              <InfoTooltip entry={TOOLTIPS.channelSignalBehaviour} side="right" />
+            </div>
 
             {/* Site selector */}
             {sites.length > 1 && (

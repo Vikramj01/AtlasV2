@@ -16,6 +16,8 @@ import { useConsentStore } from '@/store/consentStore';
 import { generateBannerSnippet } from '@/lib/consent/banner-generator';
 import { CMPIntegration } from '@/components/consent/CMPIntegration';
 import { BannerPreview } from '@/components/consent/BannerPreview';
+import { InfoTooltip } from '@/components/common/InfoTooltip';
+import { TOOLTIPS } from '@/lib/ui-copy';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
@@ -250,7 +252,10 @@ export function ConsentSettings() {
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Consent Mode</CardTitle>
+              <CardTitle className="text-base flex items-center gap-1.5">
+                Consent Mode
+                <InfoTooltip entry={TOOLTIPS.consentMode} side="right" />
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
@@ -461,6 +466,11 @@ export function ConsentSettings() {
 
       {/* ── Integrations tab ───────────────────────────────────────────────── */}
       {activeTab === 'integrations' && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-1.5">
+            <h2 className="text-base font-semibold">Consent Platform Sync</h2>
+            <InfoTooltip entry={TOOLTIPS.cmpSync} side="right" />
+          </div>
         <CMPIntegration
           projectId={resolvedProjectId}
           currentMode={cmpMode}
@@ -468,6 +478,7 @@ export function ConsentSettings() {
           onSave={handleCMPSave}
           saving={saving}
         />
+        </div>
       )}
 
       {/* ── Analytics tab ──────────────────────────────────────────────── */}

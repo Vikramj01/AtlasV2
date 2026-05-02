@@ -2,6 +2,8 @@ import { useState } from 'react';
 import type * as React from 'react';
 
 import Markdown from 'react-markdown';
+import { InfoTooltip } from '@/components/common/InfoTooltip';
+import { TOOLTIPS } from '@/lib/ui-copy';
 import { Check, AlertTriangle, X, ChevronLeft, Lock, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -9,6 +11,12 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
 import { useStrategyStore } from '@/store/strategyStore';
 import type { BriefMode, EventVerdict } from '@/types/strategy';
+
+const VERDICT_TOOLTIP: Record<EventVerdict, (typeof TOOLTIPS)[keyof typeof TOOLTIPS]> = {
+  CONFIRM: TOOLTIPS.strategyVerdict_CONFIRM,
+  AUGMENT: TOOLTIPS.strategyVerdict_AUGMENT,
+  REPLACE: TOOLTIPS.strategyVerdict_REPLACE,
+};
 
 const VERDICT_CONFIG: Record<
   EventVerdict,
@@ -113,14 +121,17 @@ export function Step2Verdict({ objectiveId, mode, onLocked, onEditInputs }: Step
         <>
           {/* Verdict block */}
           <div className={cn('rounded-lg border p-5', verdictCfg.accentClass)}>
-            <div
-              className={cn(
-                'inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm font-semibold mb-3',
-                verdictCfg.badgeClass,
-              )}
-            >
-              <VerdictIcon className="size-4" />
-              {verdictCfg.label}
+            <div className="flex items-center gap-2 mb-3">
+              <div
+                className={cn(
+                  'inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm font-semibold',
+                  verdictCfg.badgeClass,
+                )}
+              >
+                <VerdictIcon className="size-4" />
+                {verdictCfg.label}
+              </div>
+              {obj.verdict && <InfoTooltip entry={VERDICT_TOOLTIP[obj.verdict]} side="right" />}
             </div>
             {obj.rationale && (
               <p className="text-sm text-foreground/80">{obj.rationale}</p>
@@ -145,8 +156,9 @@ export function Step2Verdict({ objectiveId, mode, onLocked, onEditInputs }: Step
               {obj.proxy_event_required && obj.recommended_proxy_event && (
                 <Card className="overflow-hidden border-l-4 border-l-amber-400">
                   <CardHeader className="pb-2 pt-4">
-                    <CardTitle className="text-sm font-medium text-muted-foreground">
+                    <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
                       Proxy Event
+                      <InfoTooltip entry={TOOLTIPS.proxyEvent} side="right" />
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="pb-4">
@@ -177,19 +189,22 @@ export function Step2Verdict({ objectiveId, mode, onLocked, onEditInputs }: Step
       )}
 
       <div className="flex flex-col gap-3">
-        <Button onClick={handleLock} disabled={locking} className="w-full">
-          {locking ? (
-            <>
-              <Loader2 className="mr-2 size-4 animate-spin" />
-              Locking…
-            </>
-          ) : (
-            <>
-              <Lock className="mr-2 size-4" />
-              Lock this objective
-            </>
-          )}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button onClick={handleLock} disabled={locking} className="flex-1">
+            {locking ? (
+              <>
+                <Loader2 className="mr-2 size-4 animate-spin" />
+                Locking…
+              </>
+            ) : (
+              <>
+                <Lock className="mr-2 size-4" />
+                Lock this objective
+              </>
+            )}
+          </Button>
+          <InfoTooltip entry={TOOLTIPS.lockBrief} side="left" />
+        </div>
         <Button variant="outline" onClick={onEditInputs} disabled={locking} className="w-full">
           <ChevronLeft className="mr-1 size-4" />
           Edit inputs

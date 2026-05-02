@@ -16,6 +16,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { useJourneyWizardStore } from '@/store/journeyWizardStore';
 import { StageCard } from './StageCard';
+import { InfoTooltip } from '@/components/common/InfoTooltip';
+import { TOOLTIPS } from '@/lib/ui-copy';
 
 interface Step2Props {
   onNext: () => void;
@@ -44,9 +46,12 @@ export function Step2JourneyEditor({ onNext, onBack }: Step2Props) {
 
   return (
     <div>
-      <h2 className="text-2xl font-bold text-center">
-        Here's your customer journey — adjust it to match your site
-      </h2>
+      <div className="flex items-center justify-center gap-2">
+        <h2 className="text-2xl font-bold text-center">
+          Here's your customer journey — adjust it to match your site
+        </h2>
+        <InfoTooltip entry={TOOLTIPS.journeyStage} side="top" />
+      </div>
       <p className="mt-2 text-center text-muted-foreground text-sm">
         Rename stages, paste your real URLs, and toggle what happens on each page. Drag to reorder.
       </p>

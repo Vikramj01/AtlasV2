@@ -3,6 +3,8 @@ import type * as React from 'react';
 
 import { Plus, Lock, Check, AlertTriangle, X, ChevronRight, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { InfoTooltip } from '@/components/common/InfoTooltip';
+import { TOOLTIPS } from '@/lib/ui-copy';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
 import { useStrategyStore } from '@/store/strategyStore';
@@ -83,19 +85,22 @@ export function ObjectivesList({
       )}
 
       <div className="space-y-2">
-        <Button onClick={handleLockBrief} disabled={!allLocked || locking} className="w-full">
-          {locking ? (
-            <>
-              <Loader2 className="mr-2 size-4 animate-spin" />
-              Locking brief…
-            </>
-          ) : (
-            <>
-              <Lock className="mr-2 size-4" />
-              Lock strategy brief
-            </>
-          )}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button onClick={handleLockBrief} disabled={!allLocked || locking} className="flex-1">
+            {locking ? (
+              <>
+                <Loader2 className="mr-2 size-4 animate-spin" />
+                Locking brief…
+              </>
+            ) : (
+              <>
+                <Lock className="mr-2 size-4" />
+                Lock strategy brief
+              </>
+            )}
+          </Button>
+          <InfoTooltip entry={TOOLTIPS.lockBrief} side="left" />
+        </div>
         {!allLocked && (
           <p className="text-center text-xs text-muted-foreground">
             Lock all objectives to enable this button.

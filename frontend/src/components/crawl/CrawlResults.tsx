@@ -1,6 +1,7 @@
 import { cn } from '@/lib/utils';
 import type { CrawlRunSummary, CrawlPageResult, SignalHealthStatus } from '@/types/crawl';
-import { STATUS_LABELS } from '@/lib/ui-copy';
+import { STATUS_LABELS, TOOLTIPS } from '@/lib/ui-copy';
+import { InfoTooltip } from '@/components/common/InfoTooltip';
 
 interface CrawlResultsProps {
   run: CrawlRunSummary;
@@ -22,6 +23,12 @@ function signalStatusLabel(status: SignalHealthStatus): string {
     return STATUS_LABELS.warning.badge;
   }
   return status;
+}
+
+function signalTooltip(status: SignalHealthStatus): (typeof TOOLTIPS)[keyof typeof TOOLTIPS] {
+  if (status === 'healthy') return TOOLTIPS.signalHealthy;
+  if (status === 'missing') return TOOLTIPS.signalError;
+  return TOOLTIPS.signalWarning;
 }
 
 const SIGNAL_LABEL: Record<string, string> = {
@@ -143,12 +150,15 @@ function PageResultCard({ page }: { page: CrawlPageResult }) {
                   <span className="text-[10px] text-[#9CA3AF] font-mono truncate">{sig.signal_id}</span>
                 )}
               </div>
-              <span className={cn(
-                'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium shrink-0 ml-3',
-                HEALTH_COLOR[sig.health_status],
-              )}>
-                {signalStatusLabel(sig.health_status)}
-              </span>
+              <div className="flex items-center gap-1 shrink-0 ml-3">
+                <span className={cn(
+                  'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium',
+                  HEALTH_COLOR[sig.health_status],
+                )}>
+                  {signalStatusLabel(sig.health_status)}
+                </span>
+                <InfoTooltip entry={signalTooltip(sig.health_status)} side="left" />
+              </div>
             </div>
           ))}
         </div>

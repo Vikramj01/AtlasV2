@@ -25,7 +25,8 @@ import { KeyMetricsRow } from '@/components/health/KeyMetricsRow';
 import { ActiveAlertsFeed } from '@/components/health/ActiveAlertsFeed';
 import { HealthHistoryChart } from '@/components/health/HealthHistoryChart';
 import { ReadinessScore } from '@/components/health/ReadinessScore';
-import { SECTION_LABELS, LOW_HEALTH_CALLOUT } from '@/lib/ui-copy';
+import { SECTION_LABELS, LOW_HEALTH_CALLOUT, TOOLTIPS } from '@/lib/ui-copy';
+import { InfoTooltip } from '@/components/common/InfoTooltip';
 import { EmptyState } from '@/components/common/EmptyState';
 import { PageSkeleton } from '@/components/common/SkeletonCard';
 import { Button } from '@/components/ui/button';
@@ -232,6 +233,12 @@ export default function HealthDashboardPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[auto_1fr]">
         {/* Score ring — centered in its own card */}
         <div className="flex items-center justify-center rounded-lg border border-[#E5E7EB] bg-white px-10 py-8">
+          <div className="flex flex-col items-center gap-1 mb-3">
+            <div className="flex items-center gap-1">
+              <span className="text-caption-upper">Overall Score</span>
+              <InfoTooltip entry={TOOLTIPS.healthScore} side="right" />
+            </div>
+          </div>
           <OverallScoreRing score={score.overall_score} computedAt={score.computed_at} />
         </div>
 
@@ -265,7 +272,10 @@ export default function HealthDashboardPage() {
 
       {/* ── Zone 4: Setup completeness ────────────────────────────────────── */}
       <section>
-        <h2 className="text-section-header mb-3">Setup completeness</h2>
+        <div className="flex items-center gap-1.5 mb-3">
+          <h2 className="text-section-header">Setup completeness</h2>
+          <InfoTooltip entry={TOOLTIPS.readinessScore} side="right" />
+        </div>
         <ReadinessScore />
       </section>
 

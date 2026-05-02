@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useCrawlStore } from '@/store/crawlStore';
-import { SECTION_LABELS } from '@/lib/ui-copy';
+import { SECTION_LABELS, TOOLTIPS } from '@/lib/ui-copy';
+import { InfoTooltip } from '@/components/common/InfoTooltip';
 import { CrawlProgress } from '@/components/crawl/CrawlProgress';
 import { CrawlResults } from '@/components/crawl/CrawlResults';
 import { Button } from '@/components/ui/button';
@@ -64,10 +65,19 @@ export function CrawlStatusPage() {
         {/* Header */}
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-lg font-semibold text-[#1A1A1A]">
-              {SECTION_LABELS.crawlSignalExtractor.primary}
-              <span className="text-muted-foreground text-sm font-normal ml-2">{SECTION_LABELS.crawlSignalExtractor.technical}</span>
-            </h1>
+            <div className="flex items-center gap-1.5">
+              <h1 className="text-lg font-semibold text-[#1A1A1A]">
+                {SECTION_LABELS.crawlSignalExtractor.primary}
+                <span className="text-muted-foreground text-sm font-normal ml-2">{SECTION_LABELS.crawlSignalExtractor.technical}</span>
+              </h1>
+              <InfoTooltip entry={TOOLTIPS.crawlRun} side="right" />
+            </div>
+            {run.status === 'partial' && (
+              <div className="flex items-center gap-1 mt-0.5">
+                <span className="text-xs text-amber-700 font-medium">{TOOLTIPS.partialCrawl.label}</span>
+                <InfoTooltip entry={TOOLTIPS.partialCrawl} side="bottom" />
+              </div>
+            )}
             <p className="text-sm text-[#6B7280] mt-0.5 font-mono">{run.id}</p>
           </div>
           {isTerminal && (
