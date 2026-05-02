@@ -11,6 +11,7 @@ import { ProgressBar } from '@/components/developer/ProgressBar';
 import { ChangeDetectionResults } from '@/components/planning/ChangeDetectionResults';
 import { SkeletonCard } from '@/components/common/SkeletonCard';
 import { StrategyGateBanner } from '@/components/strategy/StrategyGateBanner';
+import { EMPTY_STATES } from '@/lib/ui-copy';
 
 const STATUS_LABELS: Record<PlanningSession['status'], string> = {
   setup:         'Setup',
@@ -279,14 +280,12 @@ export function PlanningDashboard() {
       )}
 
       {!isLoading && !error && sessions.length === 0 && (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-20 text-center">
-          <div className="mb-3 text-4xl text-muted-foreground/40">◎</div>
-          <p className="text-sm font-medium text-muted-foreground">No planning sessions yet</p>
-          <p className="mt-1 text-xs text-muted-foreground/60">
-            Create your first plan to generate a GTM container and implementation guide.
-          </p>
-          <Button onClick={handleNew} className="mt-5">
-            Get Started
+        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-20 text-center gap-2">
+          <div className="text-4xl text-muted-foreground/40">◎</div>
+          <p className="text-sm font-medium">{EMPTY_STATES.crawlRuns.heading}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground max-w-sm mx-auto">{EMPTY_STATES.crawlRuns.body}</p>
+          <Button onClick={handleNew} className="mt-3">
+            {EMPTY_STATES.crawlRuns.cta}
           </Button>
         </div>
       )}

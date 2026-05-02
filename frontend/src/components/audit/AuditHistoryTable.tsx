@@ -4,6 +4,7 @@ import { Trash2, Check, X } from 'lucide-react';
 import { HealthBadge } from '@/components/common/HealthBadge';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { EMPTY_STATES } from '@/lib/ui-copy';
 import type { AuditStatus } from '@/types/audit';
 
 export interface AuditHistoryItem {
@@ -50,9 +51,9 @@ export function AuditHistoryTable({ audits, loading, onDelete }: Props) {
 
   if (audits.length === 0) {
     return (
-      <div className="flex h-32 flex-col items-center justify-center gap-1 text-sm text-muted-foreground">
-        <span>No audits yet.</span>
-        <span>Run your first audit above to get started.</span>
+      <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed py-16 text-center">
+        <p className="text-sm font-medium">{EMPTY_STATES.auditHistory.heading}</p>
+        <p className="max-w-sm text-xs text-muted-foreground">{EMPTY_STATES.auditHistory.body}</p>
       </div>
     );
   }

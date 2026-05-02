@@ -11,6 +11,7 @@ import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { offlineConversionsApi } from '@/lib/api/offlineConversionsApi';
 import { useOfflineConversionsStore } from '@/store/offlineConversionsStore';
+import { EMPTY_STATES } from '@/lib/ui-copy';
 import type { OfflineConversionUpload } from '@/types/offline-conversions';
 
 const PAGE_SIZE = 10;
@@ -69,13 +70,12 @@ export function UploadHistory({ onStartUpload }: Props) {
 
   if (uploads.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
-        <div className="text-3xl">📂</div>
-        <div className="space-y-1">
-          <p className="text-sm font-medium">No uploads yet</p>
-          <p className="text-xs text-muted-foreground">Upload your first CSV to get started.</p>
+      <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-16 gap-3 text-center">
+        <div className="space-y-1.5">
+          <p className="text-sm font-medium">{EMPTY_STATES.offlineConversions.heading}</p>
+          <p className="max-w-sm text-xs text-muted-foreground">{EMPTY_STATES.offlineConversions.body}</p>
         </div>
-        <Button onClick={onStartUpload}>Upload CSV</Button>
+        <Button onClick={onStartUpload}>{EMPTY_STATES.offlineConversions.cta}</Button>
       </div>
     );
   }

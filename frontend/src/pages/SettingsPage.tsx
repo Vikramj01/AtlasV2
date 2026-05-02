@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Lock, Plus, ExternalLink } from 'lucide-react';
+import { EMPTY_STATES } from '@/lib/ui-copy';
 import type { StrategyBriefRecord } from '@/types/strategy';
 
 const PLAN_CONFIG = {
@@ -154,10 +155,11 @@ export function SettingsPage() {
         <Separator />
         <CardContent className="pt-4">
           {briefs.length === 0 ? (
-            <div className="py-4 text-center">
-              <p className="text-xs text-muted-foreground">No strategy briefs yet.</p>
-              <Button size="sm" variant="outline" className="mt-3 text-xs" onClick={() => navigate('/planning/strategy')}>
-                Create your first brief
+            <div className="py-6 text-center space-y-2">
+              <p className="text-sm font-medium">{EMPTY_STATES.strategyBriefs.heading}</p>
+              <p className="text-xs text-muted-foreground max-w-xs mx-auto">{EMPTY_STATES.strategyBriefs.body}</p>
+              <Button size="sm" variant="outline" className="mt-1 text-xs" onClick={() => navigate('/planning/strategy')}>
+                {EMPTY_STATES.strategyBriefs.cta}
               </Button>
             </div>
           ) : (

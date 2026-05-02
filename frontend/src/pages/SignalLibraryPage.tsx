@@ -19,6 +19,7 @@ import { MetricGuidance } from '@/components/shared/MetricGuidance';
 import { signalCoverageGuidance } from '@/lib/guidance/metricGuidance';
 import { EmptyState } from '@/components/common/EmptyState';
 import { SkeletonCard } from '@/components/common/SkeletonCard';
+import { EMPTY_STATES } from '@/lib/ui-copy';
 import type { Signal } from '@/types/signal';
 import type { TaxonomyNode } from '@/types/taxonomy';
 
@@ -355,11 +356,11 @@ export function SignalLibraryPage() {
           ) : Object.keys(grouped).length === 0 ? (
             <EmptyState
               icon="signals"
-              title={search || activeCategories.size > 0 ? 'No signals match your filter' : 'No signals yet'}
+              title={search || activeCategories.size > 0 ? 'No signals match your filter' : EMPTY_STATES.signalLibrary.heading}
               description={
                 search || activeCategories.size > 0
                   ? 'Try adjusting your search or clearing the category filters.'
-                  : 'Switch to Tree view to browse the taxonomy and add events to your Tracking Map.'
+                  : EMPTY_STATES.signalLibrary.body
               }
               action={
                 activeCategories.size > 0 ? (

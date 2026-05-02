@@ -8,6 +8,7 @@
 import { useState } from 'react';
 import { GitBranch } from 'lucide-react';
 import { JourneyStepCard } from './JourneyStep';
+import { EMPTY_STATES } from '@/lib/ui-copy';
 import type { ChannelJourneyMap, ChannelType } from '@/types/channel';
 
 const CHANNEL_LABELS: Record<ChannelType, string> = {
@@ -48,17 +49,11 @@ export function JourneyFlowComparison({ journeys }: JourneyFlowComparisonProps) 
 
   if (journeys.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed border-[#E5E7EB] py-16 text-center">
+      <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-[#E5E7EB] py-16 text-center">
         <GitBranch className="h-8 w-8 text-[#D1D5DB]" strokeWidth={1.5} />
-        <div>
-          <p className="text-section-header">Journey maps not yet computed</p>
-          <p className="mt-1 text-body text-[#6B7280] max-w-sm mx-auto">
-            Once sessions are ingested via{' '}
-            <code className="bg-[#F3F4F6] px-1 py-0.5 rounded text-[11px]">
-              POST /api/channels/ingest
-            </code>
-            , use the Refresh button to compute journey maps.
-          </p>
+        <div className="space-y-1">
+          <p className="text-sm font-medium">{EMPTY_STATES.journeys.heading}</p>
+          <p className="text-xs text-[#6B7280] max-w-sm mx-auto">{EMPTY_STATES.journeys.body}</p>
         </div>
       </div>
     );

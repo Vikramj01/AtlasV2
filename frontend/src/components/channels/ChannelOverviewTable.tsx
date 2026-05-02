@@ -1,4 +1,5 @@
 import { ChannelHealthIndicator } from './ChannelHealthIndicator';
+import { EMPTY_STATES } from '@/lib/ui-copy';
 import type { ChannelOverview, ChannelType } from '@/types/channel';
 
 interface ChannelOverviewTableProps {
@@ -76,12 +77,9 @@ function getChannelSummary(overviews: ChannelOverview[]): string {
 export function ChannelOverviewTable({ overviews }: ChannelOverviewTableProps) {
   if (overviews.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-[#E5E7EB] bg-white px-6 py-12 text-center">
-        <p className="text-sm text-[#6B7280]">
-          No channel data yet. Send sessions via{' '}
-          <code className="text-xs bg-[#F3F4F6] px-1 py-0.5 rounded">POST /api/channels/ingest</code>{' '}
-          to start seeing channel comparisons.
-        </p>
+      <div className="rounded-lg border border-dashed border-[#E5E7EB] bg-white px-6 py-12 text-center space-y-1">
+        <p className="text-sm font-medium text-[#1A1A1A]">{EMPTY_STATES.channelInsights.heading}</p>
+        <p className="text-xs text-[#6B7280] max-w-sm mx-auto">{EMPTY_STATES.channelInsights.body}</p>
       </div>
     );
   }
