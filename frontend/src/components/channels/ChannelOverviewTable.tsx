@@ -54,6 +54,25 @@ function SignalScoreBar({ score }: { score: number }) {
   );
 }
 
+function getChannelSummary(overviews: ChannelOverview[]): string {
+  if (overviews.length === 0) return '';
+  const sorted = [...overviews].sort((a, b) => b.signal_completion_score - a.signal_completion_score);
+  const best  = sorted[0];
+  const worst = sorted[sorted.length - 1];
+  const bestLabel  = CHANNEL_LABELS[best.channel]  ?? best.channel;
+  const worstLabel = CHANNEL_LABELS[worst.channel] ?? worst.channel;
+  const bestPct  = Math.round(best.signal_completion_score  * 100);
+  const worstPct = Math.round(worst.signal_completion_score * 100);
+
+  if (best.channel === worst.channel) {
+    return bestPct >= 80
+      ? `${bestLabel} signal quality looks good at ${bestPct}%.`
+      : `${bestLabel} signal quality needs attention at ${bestPct}%.`;
+  }
+  const worstNote = worstPct < 50 ? `${worstLabel} signals need attention.` : `${worstLabel} has the weakest signal quality.`;
+  return `${bestLabel} has the strongest signal quality. ${worstNote}`;
+}
+
 export function ChannelOverviewTable({ overviews }: ChannelOverviewTableProps) {
   if (overviews.length === 0) {
     return (
@@ -67,7 +86,24 @@ export function ChannelOverviewTable({ overviews }: ChannelOverviewTableProps) {
     );
   }
 
+  const summary = getChannelSummary(overviews);
+  const sorted  = [...overviews].sort((a, b) => b.signal_completion_score - a.signal_completion_score);
+  const bestPct = Math.round(sorted[0].signal_completion_score * 100);
+  const summaryBg = bestPct >= 80 ? 'bg-green-50 border-green-200 text-green-800'
+    : bestPct >= 50 ? 'bg-amber-50 border-amber-200 text-amber-800'
+    : 'bg-red-50 border-red-200 text-red-800';
+
   return (
+    <div className="space-y-4">
+
+      {/* Channel summary */}
+      <div className={`rounded-lg border px-4 py-3 ${summaryBg}`}>
+        <div className="flex items-start justify-between gap-4">
+          <p className="text-sm font-medium leading-snug">{summary}</p>
+          <span className="text-xs opacity-70 shrink-0">{overviews.length} channel{overviews.length !== 1 ? 's' : ''}</span>
+        </div>
+      </div>
+
     <div className="rounded-lg border border-[#E5E7EB] overflow-hidden">
       <table className="w-full text-sm">
         <thead>
@@ -145,6 +181,7 @@ export function ChannelOverviewTable({ overviews }: ChannelOverviewTableProps) {
           })}
         </tbody>
       </table>
+    </div>
     </div>
   );
 }

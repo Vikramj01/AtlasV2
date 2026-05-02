@@ -45,6 +45,16 @@ const SIGNAL_LABEL: Record<string, string> = {
   custom_event:           'Custom',
 };
 
+function getHeadlineCopy(warning: number, error: number, pages: number): string {
+  if (error > 0) {
+    return `${error} signal${error > 1 ? 's are' : ' is'} not working across ${pages} page${pages !== 1 ? 's' : ''}. This is likely affecting your conversion reporting.`;
+  }
+  if (warning > 0) {
+    return `${warning} signal${warning > 1 ? 's need' : ' needs'} attention across ${pages} page${pages !== 1 ? 's' : ''}. Your ad platforms may be missing some data.`;
+  }
+  return `All tracking signals are working correctly across ${pages} page${pages !== 1 ? 's' : ''}.`;
+}
+
 export function CrawlResults({ run, pages }: CrawlResultsProps) {
   const completedPages = pages.filter(p => p.status === 'completed');
 
@@ -52,6 +62,8 @@ export function CrawlResults({ run, pages }: CrawlResultsProps) {
   const totalHealthy  = completedPages.reduce((s, p) => s + p.signals_healthy,  0);
   const totalDegraded = completedPages.reduce((s, p) => s + p.signals_degraded, 0);
   const totalMissing  = completedPages.reduce((s, p) => s + p.signals_missing,  0);
+
+  const totalWarning = totalDegraded;
 
   if (run.status === 'failed') {
     return (
@@ -62,15 +74,30 @@ export function CrawlResults({ run, pages }: CrawlResultsProps) {
     );
   }
 
+  const headlineCopy = getHeadlineCopy(totalWarning, totalMissing, completedPages.length);
+  const headlineBg   = totalMissing > 0 ? 'bg-red-50 border-red-200 text-red-800'
+    : totalWarning > 0 ? 'bg-amber-50 border-amber-200 text-amber-800'
+    : 'bg-green-50 border-green-200 text-green-800';
+
   return (
     <div className="space-y-6">
+
+      {/* Headline summary */}
+      {completedPages.length > 0 && (
+        <div className={cn('rounded-lg border px-4 py-3', headlineBg)}>
+          <p className="text-sm font-medium leading-snug">{headlineCopy}</p>
+          <p className="mt-1 text-xs opacity-70">
+            {completedPages.length} page{completedPages.length !== 1 ? 's' : ''} scanned · {totalSignals} signal{totalSignals !== 1 ? 's' : ''} detected
+          </p>
+        </div>
+      )}
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <SummaryCard label="Signals found"  value={totalSignals}  />
-        <SummaryCard label="Healthy"        value={totalHealthy}  color="text-[#065F46]" />
-        <SummaryCard label="Degraded"       value={totalDegraded} color="text-[#92400E]" />
-        <SummaryCard label="Missing"        value={totalMissing}  color="text-[#DC2626]" />
+        <SummaryCard label={STATUS_LABELS.healthy.badge}  value={totalHealthy}  color="text-[#065F46]" />
+        <SummaryCard label={STATUS_LABELS.warning.badge}  value={totalWarning}  color="text-[#92400E]" />
+        <SummaryCard label={STATUS_LABELS.error.badge}    value={totalMissing}  color="text-[#DC2626]" />
       </div>
 
       {/* Per-page breakdown */}
