@@ -25,7 +25,7 @@ import { KeyMetricsRow } from '@/components/health/KeyMetricsRow';
 import { ActiveAlertsFeed } from '@/components/health/ActiveAlertsFeed';
 import { HealthHistoryChart } from '@/components/health/HealthHistoryChart';
 import { ReadinessScore } from '@/components/health/ReadinessScore';
-import { SECTION_LABELS } from '@/lib/ui-copy';
+import { SECTION_LABELS, LOW_HEALTH_CALLOUT } from '@/lib/ui-copy';
 import { EmptyState } from '@/components/common/EmptyState';
 import { PageSkeleton } from '@/components/common/SkeletonCard';
 import { Button } from '@/components/ui/button';
@@ -213,6 +213,21 @@ export default function HealthDashboardPage() {
         </button>
       </div>
 
+      {/* ── Low-score callout ─────────────────────────────────────────────── */}
+      {score.overall_score < 60 && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-5 py-4">
+          <p className="text-sm text-amber-900 leading-relaxed">
+            {LOW_HEALTH_CALLOUT(score.overall_score)}
+          </p>
+          <a
+            href="#active-alerts"
+            className="mt-2 inline-block text-sm font-medium text-amber-800 underline underline-offset-2 hover:text-amber-900"
+          >
+            See what needs fixing →
+          </a>
+        </div>
+      )}
+
       {/* ── Zone 1: Score ring + key metrics ──────────────────────────────── */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[auto_1fr]">
         {/* Score ring — centered in its own card */}
@@ -228,7 +243,7 @@ export default function HealthDashboardPage() {
       </div>
 
       {/* ── Zone 2: Active alerts ──────────────────────────────────────────── */}
-      <section>
+      <section id="active-alerts">
         <div className="flex items-center gap-2 mb-3">
           <h2 className="text-section-header">Active Alerts</h2>
           {alerts.length > 0 && (

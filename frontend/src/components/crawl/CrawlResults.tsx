@@ -1,5 +1,6 @@
 import { cn } from '@/lib/utils';
 import type { CrawlRunSummary, CrawlPageResult, SignalHealthStatus } from '@/types/crawl';
+import { STATUS_LABELS } from '@/lib/ui-copy';
 
 interface CrawlResultsProps {
   run: CrawlRunSummary;
@@ -13,6 +14,15 @@ const HEALTH_COLOR: Record<SignalHealthStatus, string> = {
   duplicate:     'bg-[#EDE9FE] text-[#5B21B6]',
   misconfigured: 'bg-[#FFF7ED] text-[#C2410C]',
 };
+
+function signalStatusLabel(status: SignalHealthStatus): string {
+  if (status === 'healthy')                          return STATUS_LABELS.healthy.badge;
+  if (status === 'missing')                          return STATUS_LABELS.error.badge;
+  if (status === 'degraded' || status === 'misconfigured' || status === 'duplicate') {
+    return STATUS_LABELS.warning.badge;
+  }
+  return status;
+}
 
 const SIGNAL_LABEL: Record<string, string> = {
   gtm_container:          'GTM',
@@ -137,7 +147,7 @@ function PageResultCard({ page }: { page: CrawlPageResult }) {
                 'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium shrink-0 ml-3',
                 HEALTH_COLOR[sig.health_status],
               )}>
-                {sig.health_status}
+                {signalStatusLabel(sig.health_status)}
               </span>
             </div>
           ))}
