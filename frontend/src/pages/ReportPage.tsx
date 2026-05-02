@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { SECTION_LABELS } from '@/lib/ui-copy';
 import { useReport } from '@/hooks/useReport';
 import { ReportNav } from '@/components/audit/ReportNav';
 import { ExecutiveSummary } from '@/components/audit/ReportPages/ExecutiveSummary';
@@ -63,7 +64,10 @@ export function ReportPage() {
             <div className="flex items-center gap-2 text-sm text-muted-foreground/60 mb-1">
               <Link to="/dashboard" className="hover:text-[#1B2A4A]">← Audits</Link>
             </div>
-            <h1 className="text-xl font-bold text-foreground">Signal Health Report</h1>
+            <h1 className="text-xl font-bold text-foreground">
+              {SECTION_LABELS.auditEngine.primary}
+              <span className="text-muted-foreground text-sm font-normal ml-2">{SECTION_LABELS.auditEngine.technical}</span>
+            </h1>
             <p className="mt-0.5 text-sm text-muted-foreground">
               {new Date(report.generated_at).toLocaleDateString('en-US', {
                 year: 'numeric', month: 'long', day: 'numeric',

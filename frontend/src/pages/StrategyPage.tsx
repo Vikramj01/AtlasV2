@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Loader2, CheckCircle2 } from 'lucide-react';
+import { SECTION_LABELS } from '@/lib/ui-copy';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Step1Define } from '@/components/strategy/Step1Define';
 import { Step2Verdict } from '@/components/strategy/Step2Verdict';
@@ -131,7 +132,10 @@ function Landing({ onSelectMode, loading, error }: LandingProps) {
     <div className="space-y-10">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Lock your conversion strategy</h1>
+        <h1 className="text-3xl font-bold tracking-tight">
+          {SECTION_LABELS.conversionStrategyGate.primary}
+          <span className="text-muted-foreground text-base font-normal ml-3">{SECTION_LABELS.conversionStrategyGate.technical}</span>
+        </h1>
         <p className="mt-3 text-muted-foreground max-w-lg">
           Your ad platforms optimise toward whatever conversion event you send them. If that event
           isn't tied to real business success, Meta and Google will find you more of the wrong

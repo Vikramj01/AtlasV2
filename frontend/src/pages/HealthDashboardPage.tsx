@@ -25,6 +25,7 @@ import { KeyMetricsRow } from '@/components/health/KeyMetricsRow';
 import { ActiveAlertsFeed } from '@/components/health/ActiveAlertsFeed';
 import { HealthHistoryChart } from '@/components/health/HealthHistoryChart';
 import { ReadinessScore } from '@/components/health/ReadinessScore';
+import { SECTION_LABELS } from '@/lib/ui-copy';
 import { EmptyState } from '@/components/common/EmptyState';
 import { PageSkeleton } from '@/components/common/SkeletonCard';
 import { Button } from '@/components/ui/button';
@@ -140,7 +141,10 @@ export default function HealthDashboardPage() {
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-page-title">Signal Health</h1>
+            <h1 className="text-page-title">
+              {SECTION_LABELS.signalHealth.primary}
+              <span className="text-muted-foreground text-sm font-normal ml-2">{SECTION_LABELS.signalHealth.technical}</span>
+            </h1>
 
             {/* Site selector */}
             {sites.length > 1 && (

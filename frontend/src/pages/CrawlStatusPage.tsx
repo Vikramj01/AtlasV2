@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useCrawlStore } from '@/store/crawlStore';
+import { SECTION_LABELS } from '@/lib/ui-copy';
 import { CrawlProgress } from '@/components/crawl/CrawlProgress';
 import { CrawlResults } from '@/components/crawl/CrawlResults';
 import { Button } from '@/components/ui/button';
@@ -63,7 +64,10 @@ export function CrawlStatusPage() {
         {/* Header */}
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-lg font-semibold text-[#1A1A1A]">Signal scan</h1>
+            <h1 className="text-lg font-semibold text-[#1A1A1A]">
+              {SECTION_LABELS.crawlSignalExtractor.primary}
+              <span className="text-muted-foreground text-sm font-normal ml-2">{SECTION_LABELS.crawlSignalExtractor.technical}</span>
+            </h1>
             <p className="text-sm text-[#6B7280] mt-0.5 font-mono">{run.id}</p>
           </div>
           {isTerminal && (
