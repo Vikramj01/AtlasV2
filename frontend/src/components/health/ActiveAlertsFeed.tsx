@@ -13,6 +13,7 @@ import type { SeverityLevel } from '@/components/common/SeverityCard';
 import { InfoTooltip } from '@/components/common/EducationTooltip';
 import type { HealthAlert } from '@/types/health';
 import { healthApi } from '@/lib/api/healthApi';
+import { STATUS_LABELS, EMPTY_STATES } from '@/lib/ui-copy';
 
 // ── Severity mapping ──────────────────────────────────────────────────────────
 
@@ -20,6 +21,11 @@ const SEVERITY_MAP: Record<HealthAlert['severity'], SeverityLevel> = {
   critical: 'critical',
   warning:  'warning',
   info:     'info',
+};
+
+const SEVERITY_STATUS_DESCRIPTION: Partial<Record<HealthAlert['severity'], string>> = {
+  critical: STATUS_LABELS.error.description,
+  warning:  STATUS_LABELS.warning.description,
 };
 
 const BADGE_STYLES: Record<HealthAlert['severity'], string> = {
@@ -88,6 +94,12 @@ function AlertCard({ alert, onAcknowledge }: AlertCardProps) {
           <p className="text-sm font-semibold text-[#1A1A1A]">{alert.title}</p>
           {/* Message */}
           <p className="text-xs text-[#6B7280] mt-0.5 leading-relaxed">{alert.message}</p>
+          {/* Signal status context */}
+          {SEVERITY_STATUS_DESCRIPTION[alert.severity] && (
+            <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+              {SEVERITY_STATUS_DESCRIPTION[alert.severity]}
+            </p>
+          )}
           {/* Timestamp */}
           <p className="text-[10px] text-[#9CA3AF] mt-1.5">
             Triggered {new Date(alert.triggered_at).toLocaleDateString()}
@@ -131,9 +143,10 @@ export function ActiveAlertsFeed({ alerts }: ActiveAlertsFeedProps) {
       <SeverityCard severity="success" compact>
         <div className="flex items-center gap-2">
           <CheckCircle2 className="h-4 w-4 text-[#059669] shrink-0" strokeWidth={1.5} />
-          <p className="text-sm font-medium text-[#059669]">
-            No active alerts — everything looks good.
-          </p>
+          <div>
+            <p className="text-sm font-medium text-[#059669]">{EMPTY_STATES.alerts.heading}</p>
+            <p className="text-xs text-[#059669]/70 mt-0.5">{EMPTY_STATES.alerts.body}</p>
+          </div>
         </div>
       </SeverityCard>
     );

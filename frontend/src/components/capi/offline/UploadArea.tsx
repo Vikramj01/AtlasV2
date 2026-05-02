@@ -15,6 +15,8 @@ import type * as React from 'react';
 
 import { Button } from '@/components/ui/button';
 import { offlineConversionsApi } from '@/lib/api/offlineConversionsApi';
+import { InfoTooltip } from '@/components/common/InfoTooltip';
+import { TOOLTIPS } from '@/lib/ui-copy';
 import { useOfflineConversionsStore } from '@/store/offlineConversionsStore';
 import type { UploadValidationResponse } from '@/types/offline-conversions';
 
@@ -132,9 +134,12 @@ export function UploadArea({ onValidated }: Props) {
           📂
         </div>
         <div className="text-center space-y-1">
-          <p className="text-sm font-medium">
-            {isDraggingOver ? 'Drop your CSV here' : 'Drag & drop your CSV, or click to browse'}
-          </p>
+          <div className="flex items-center justify-center gap-1.5">
+            <p className="text-sm font-medium">
+              {isDraggingOver ? 'Drop your CSV here' : 'Drag & drop your CSV, or click to browse'}
+            </p>
+            <InfoTooltip entry={TOOLTIPS.offlineUpload} side="top" />
+          </div>
           <p className="text-xs text-muted-foreground">CSV files only · Max 10 MB · ~50,000 rows</p>
         </div>
         <Button variant="outline" size="sm" tabIndex={-1}>

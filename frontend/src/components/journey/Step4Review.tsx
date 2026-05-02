@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { InfoTooltip } from '@/components/common/InfoTooltip';
+import { TOOLTIPS } from '@/lib/ui-copy';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { useJourneyWizardStore } from '@/store/journeyWizardStore';
@@ -207,15 +209,18 @@ export function Step4Review({ onBack }: Step4Props) {
           {loading === 'audit' ? 'Setting up audit…' : 'Run Audit'}
         </Button>
 
-        <Button
-          type="button"
-          variant="secondary"
-          onClick={() => submitJourney('spec')}
-          disabled={loading !== null}
-          className="w-full py-3"
-        >
-          {loading === 'spec' ? 'Generating spec…' : 'Just Generate the Spec'}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => submitJourney('spec')}
+            disabled={loading !== null}
+            className="flex-1 py-3"
+          >
+            {loading === 'spec' ? 'Generating spec…' : 'Just Generate the Spec'}
+          </Button>
+          <InfoTooltip entry={TOOLTIPS.gtmContainerExport} side="left" />
+        </div>
 
         <Button
           type="button"

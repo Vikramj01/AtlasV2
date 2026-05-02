@@ -10,6 +10,8 @@
  * Below: plain-English sentence + severity-coloured status label.
  */
 
+import { HEALTH_SCORE_CONTEXT } from '@/lib/ui-copy';
+
 // ── Score interpretation helpers ──────────────────────────────────────────────
 
 function scoreStatus(score: number): 'critical' | 'warning' | 'success' {
@@ -29,15 +31,6 @@ const STATUS_LABEL: Record<'critical' | 'warning' | 'success', string> = {
   warning:  'Needs attention',
   critical: 'Critical issues',
 };
-
-function plainLanguageGuide(score: number): string {
-  if (score >= 90) return 'Your tracking is in excellent shape. Keep monitoring for drift.';
-  if (score >= 80) return 'Your tracking is healthy. A few minor gaps remain — review the alerts below.';
-  if (score >= 70) return 'Your tracking is mostly working, but some signals are missing or misconfigured.';
-  if (score >= 60) return 'Several tracking gaps detected. Ad platforms may be under-optimising your spend.';
-  if (score >= 40) return 'Significant tracking issues found. Your attribution data is likely incomplete.';
-  return 'Critical tracking failures detected. Take action to avoid major attribution loss.';
-}
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -110,9 +103,8 @@ export function OverallScoreRing({ score, computedAt }: OverallScoreRingProps) {
         <p className="text-sm font-semibold mb-1" style={{ color: scoreColor }}>
           {STATUS_LABEL[status]}
         </p>
-        {/* Plain-language interpretation — design spec: "critical below the score" */}
         <p className="text-xs text-[#6B7280] leading-relaxed">
-          {plainLanguageGuide(score)}
+          {HEALTH_SCORE_CONTEXT(score)}
         </p>
         <p className="text-[10px] text-[#9CA3AF] mt-2">
           Updated {formattedAt}

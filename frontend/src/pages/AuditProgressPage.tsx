@@ -5,7 +5,8 @@ import { AuditProgressSteps } from '@/components/audit/AuditProgressSteps';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import { SECTION_LABELS } from '@/lib/ui-copy';
+import { SECTION_LABELS, TOOLTIPS } from '@/lib/ui-copy';
+import { InfoTooltip } from '@/components/common/InfoTooltip';
 
 const NAVY = '#1B2A4A';
 
@@ -88,10 +89,13 @@ export function AuditProgressPage() {
           </div>
 
           <div className="text-center">
-            <p className="text-xs text-muted-foreground mb-1">
-              {SECTION_LABELS.auditEngine.primary}
-              <span className="ml-1 opacity-60">· {SECTION_LABELS.auditEngine.technical}</span>
-            </p>
+            <div className="flex items-center justify-center gap-1 mb-1">
+              <p className="text-xs text-muted-foreground">
+                {SECTION_LABELS.auditEngine.primary}
+                <span className="ml-1 opacity-60">· {SECTION_LABELS.auditEngine.technical}</span>
+              </p>
+              <InfoTooltip entry={TOOLTIPS.auditRun} side="right" />
+            </div>
             <h1 className="text-page-title">
               {STATUS_LABEL[status ?? 'queued'] ?? 'Initialising…'}
             </h1>

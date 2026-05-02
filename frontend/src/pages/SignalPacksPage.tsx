@@ -3,6 +3,8 @@ import { useParams } from 'react-router-dom';
 import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { InfoTooltip } from '@/components/common/InfoTooltip';
+import { TOOLTIPS } from '@/lib/ui-copy';
 import { Input } from '@/components/ui/input';
 import { signalApi } from '@/lib/api/signalApi';
 import { useSignalStore } from '@/store/signalStore';
@@ -75,9 +77,12 @@ export function SignalPacksPage() {
 
           {systemPacks.length > 0 && (
             <div>
-              <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              <div className="flex items-center gap-1.5 mb-3">
+              <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
                 Atlas system packs
               </h2>
+              <InfoTooltip entry={TOOLTIPS.signalPack} side="right" />
+            </div>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {systemPacks.map((pack) => (
                   <PackCard key={pack.id} pack={pack} orgId={orgId!} />

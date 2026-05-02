@@ -8,6 +8,8 @@
 
 import { cn } from '@/lib/utils';
 import type { HealthScore } from '@/types/health';
+import { InfoTooltip } from '@/components/common/InfoTooltip';
+import { TOOLTIPS } from '@/lib/ui-copy';
 
 // ── Severity config (matches SummaryBar pattern from Sprint 1) ────────────────
 
@@ -41,13 +43,17 @@ interface MetricCellProps {
   value: string;
   subtext: string;
   status: CellStatus;
+  tooltip?: (typeof TOOLTIPS)[keyof typeof TOOLTIPS];
 }
 
-function MetricCell({ label, value, subtext, status }: MetricCellProps) {
+function MetricCell({ label, value, subtext, status, tooltip }: MetricCellProps) {
   return (
     <div className={cn('rounded-lg border px-4 py-4', CELL_BG[status], CELL_BORDER[status])}>
       {/* Label — 12px uppercase per design spec */}
-      <p className="text-caption-upper mb-1">{label}</p>
+      <div className="flex items-center gap-1 mb-1">
+        <p className="text-caption-upper">{label}</p>
+        {tooltip && <InfoTooltip entry={tooltip} side="top" />}
+      </div>
       {/* Value — 24px semibold per design spec */}
       <p className={cn('text-2xl font-semibold tabular-nums leading-tight', VALUE_COLOR[status])}>
         {value}
@@ -105,6 +111,7 @@ export function KeyMetricsRow({ score }: KeyMetricsRowProps) {
         value={capiValue}
         subtext={score.capi_delivery_rate === 0 ? 'No providers connected' : 'Delivered successfully'}
         status={capiStatus(score.capi_delivery_rate)}
+        tooltip={TOOLTIPS.emq}
       />
       <MetricCell
         label="Consent"
@@ -117,6 +124,7 @@ export function KeyMetricsRow({ score }: KeyMetricsRowProps) {
         value={`${score.tag_firing_rate}%`}
         subtext="Conversion events firing"
         status={signalStatus(score.tag_firing_rate)}
+        tooltip={TOOLTIPS.deduplication}
       />
     </div>
   );

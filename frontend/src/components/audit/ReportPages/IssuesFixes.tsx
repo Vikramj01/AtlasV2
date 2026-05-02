@@ -3,6 +3,8 @@ import { cn } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { SeverityBadge } from '@/components/common/SeverityBadge';
+import { InfoTooltip } from '@/components/common/InfoTooltip';
+import { TOOLTIPS } from '@/lib/ui-copy';
 import type { ReportJSON, ReportIssue, Severity } from '@/types/audit';
 import { EFFORT_LABELS } from '@/utils/languageMap';
 
@@ -95,7 +97,10 @@ export function IssuesFixes({ report }: Props) {
   return (
     <div className="space-y-5" id="issues">
       <div>
-        <h2 className="text-lg font-semibold">Issues & Fixes</h2>
+        <div className="flex items-center gap-1.5">
+          <h2 className="text-lg font-semibold">Issues & Fixes</h2>
+          <InfoTooltip entry={TOOLTIPS.gapClassification} side="right" />
+        </div>
         <p className="mt-1 text-sm text-muted-foreground">
           {sorted.length} issue{sorted.length !== 1 ? 's' : ''} found, sorted by priority.
         </p>
