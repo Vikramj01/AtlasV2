@@ -9,7 +9,7 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
-import { generateAllOutputs } from '@/services/planning/generators/outputGenerator';
+import { generateAllOutputs, GenerationValidationError } from '@/services/planning/generators/outputGenerator';
 import { validateGTMContainer } from '@/services/planning/generators/gtmSchemaValidator';
 import { mergeGTMContainers } from '@/services/planning/generators/gtmMerge';
 import { authMiddleware } from '../middleware/authMiddleware';
@@ -355,11 +355,27 @@ router.post('/sessions/:id/generate', async (req: Request, res: Response) => {
     // Mark as generating before the (synchronous) generation run
     await updateSessionStatus(session.id, 'generating');
 
-    const result = await generateAllOutputs(session);
+    let result;
+    try {
+      result = await generateAllOutputs(session);
+    } catch (genErr) {
+      if (genErr instanceof GenerationValidationError) {
+        // Revert session status so the user can retry after fixing recommendations
+        await updateSessionStatus(session.id, 'review_ready').catch(() => { /* best-effort */ });
+        return res.status(422).json({
+          error: genErr.message,
+          validation_errors: genErr.validationResult.errors,
+          validation_warnings: genErr.validationResult.warnings,
+        });
+      }
+      throw genErr;
+    }
 
     res.json({
       session_id: session.id,
       status: 'outputs_ready',
+      // HIGH-severity validation errors are surfaced as warnings — delivery proceeded
+      validation_warnings: result.validationResult?.errors.filter(e => e.severity === 'HIGH') ?? [],
       outputs: result.outputs.map(o => ({
         id: o.id,
         type: o.output_type,
