@@ -846,7 +846,7 @@ export function generateGTMContainer(
       name: 'GA4 - Config',
       type: 'gaawc',
       parameter: [
-        tmpl('measurementId', platformIds?.ga4 ?? '{{GA4_MEASUREMENT_ID}}'),
+        tmpl('measurementId', '{{CONST - GA4 Measurement ID}}'),
         bool('sendPageView', 'true'),
         bool('enableSendToServerContainer', 'false'),
       ],
@@ -918,11 +918,11 @@ n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
 n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
 t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
 document,'script','https://connect.facebook.net/en_US/fbevents.js');
-fbq('init', '${platformIds?.meta ?? '{{META_PIXEL_ID}}'}');
+fbq('init', '{{CONST - Meta Pixel ID}}');
 fbq('track', 'PageView');
 </script>
 <noscript><img height="1" width="1" style="display:none"
-src="https://www.facebook.com/tr?id=${platformIds?.meta ?? '{{META_PIXEL_ID}}'}&ev=PageView&noscript=1"/></noscript>`),
+src="https://www.facebook.com/tr?id={{CONST - Meta Pixel ID}}&ev=PageView&noscript=1"/></noscript>`),
         bool('supportDocumentWrite', 'false'),
       ],
       firingTriggerId: [allPagesTrigId],
@@ -968,7 +968,7 @@ src="https://www.facebook.com/tr?id=${platformIds?.meta ?? '{{META_PIXEL_ID}}'}&
   o.type="text/javascript",o.async=!0,o.src=i+"?sdkid="+e+"&lib="+t;
   var a=document.getElementsByTagName("script")[0];
   a.parentNode.insertBefore(o,a)};
-  ttq.load('${platformIds?.tiktok ?? '{{TIKTOK_PIXEL_ID}}'}');ttq.page();
+  ttq.load('{{CONST - TikTok Pixel ID}}');ttq.page();
 }(window, document, 'ttq');
 </script>`),
         bool('supportDocumentWrite', 'false'),
@@ -1002,7 +1002,7 @@ src="https://www.facebook.com/tr?id=${platformIds?.meta ?? '{{META_PIXEL_ID}}'}&
       type: 'html',
       parameter: [
         tmpl('html', `<script type="text/javascript">
-_linkedin_partner_id = "${platformIds?.linkedin ?? '{{LINKEDIN_PARTNER_ID}}'}";
+_linkedin_partner_id = "{{CONST - LinkedIn Partner ID}}";
 window._linkedin_data_partner_ids = window._linkedin_data_partner_ids || [];
 window._linkedin_data_partner_ids.push(_linkedin_partner_id);
 </script><script type="text/javascript">
@@ -1016,7 +1016,7 @@ b.src = "https://snap.licdn.com/li.lms-analytics/insight.min.js";
 s.parentNode.insertBefore(b, s);})(window.lintrk);
 </script>
 <noscript><img height="1" width="1" style="display:none;" alt=""
-src="https://px.ads.linkedin.com/collect/?pid=${platformIds?.linkedin ?? '{{LINKEDIN_PARTNER_ID}}'}&fmt=gif" /></noscript>`),
+src="https://px.ads.linkedin.com/collect/?pid={{CONST - LinkedIn Partner ID}}&fmt=gif" /></noscript>`),
         bool('supportDocumentWrite', 'false'),
       ],
       firingTriggerId: [allPagesTrigId],
