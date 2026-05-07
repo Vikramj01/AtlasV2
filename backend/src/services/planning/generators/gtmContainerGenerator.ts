@@ -27,6 +27,7 @@ import {
   renderMetaEventTag,
   renderTikTokEventTag,
   renderLinkedInConversionTag,
+  renderStandardEventAliasTag,
   dlvPathForParam,
 } from './renderer/gtm.renderer';
 
@@ -244,6 +245,20 @@ function recToIREvent(
     rec.action_type === 'form_submit' &&
     /(?:lead|contact|enqui|signup|sign.up|register|book|demo|quote)/i.test(rec.event_name);
 
+  // Standard event alias: when the custom event name differs from the GA4
+  // standard name, add a second GA4 tag firing the standard name for Smart Bidding.
+  // e.g. event_name='contact_form_submit', action_type='generate_lead'
+  //   → standard_event_alias='generate_lead'
+  let standard_event_alias: string | undefined;
+  if (rec.action_type === 'generate_lead' && rec.event_name !== 'generate_lead') {
+    standard_event_alias = 'generate_lead';
+  } else if (rec.action_type === 'sign_up' && rec.event_name !== 'sign_up') {
+    standard_event_alias = 'sign_up';
+  } else if (isConversionFormSubmit && rec.event_name !== 'generate_lead') {
+    // form_submit conversion with a custom event name → alias as generate_lead
+    standard_event_alias = 'generate_lead';
+  }
+
   return {
     event_id: '',
     event_name: rec.event_name,
@@ -254,6 +269,7 @@ function recToIREvent(
     parameters,
     trigger,
     is_conversion: isConversionByActionType || isConversionFormSubmit,
+    standard_event_alias,
   };
 }
 
@@ -472,9 +488,12 @@ export function generateGTMContainer(
   const FLAT_DLV_PATHS = ['value', 'currency', 'form_id', 'method', 'search_term'];
   for (const path of FLAT_DLV_PATHS) { ensureDlv(path); }
 
-  // User data (Enhanced Conversions) — always scoped under user_data
-  ensureDlv('user_data.email');
-  ensureDlv('user_data.phone_number');
+  // User data DLVs — only when Google Ads is selected (Enhanced Conversions).
+  // For other setups, user_data DLVs are created on-demand via the per-event ensureDlv loop.
+  if (hasGoogleAds) {
+    ensureDlv('user_data.email');
+    ensureDlv('user_data.phone_number');
+  }
 
   // ── All Pages trigger ─────────────────────────────────────────────────────
   const allPagesTrigId = trigIds.next();
@@ -1061,6 +1080,13 @@ src="https://px.ads.linkedin.com/collect/?pid=${platformIds?.linkedin ?? '{{LINK
         fingerprint: '0',
         tagManagerUrl: 'https://tagmanager.google.com/',
       });
+
+      // ── Standard Event Alias Tag (Smart Bidding) ──────────────────────────
+      // Fires a second GA4 tag with the standard event name so Smart Bidding
+      // can recognise the conversion without renaming the primary event.
+      // e.g. GA4 - contact_form_submit (generate_lead alias)
+      const aliasTag = renderStandardEventAliasTag(irEvent, trigId, tagIds.next(), folderId);
+      if (aliasTag) tags.push(aliasTag);
     }
 
     // ── Google Ads Conversion Tag (per-event label variable) ────────────────

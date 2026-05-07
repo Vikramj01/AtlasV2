@@ -240,8 +240,50 @@ export function generateDeveloperHandoffDoc(
   lines.push(`---`);
   lines.push(``);
 
-  // ── Section 5: Testing checklist ─────────────────────────────────────────
-  lines.push(`## 5. Testing checklist`);
+  // ── Section 5: Enhanced Conversions (Google Ads) ──────────────────────────
+  if (platforms.includes('google_ads')) {
+    lines.push(`## 5. Enhanced Conversions (Google Ads)`);
+    lines.push(``);
+    lines.push(`The GTM container is configured with Enhanced Conversions enabled on every Google Ads conversion tag.`);
+    lines.push(`This improves measurement accuracy by matching hashed first-party data to signed-in Google accounts.`);
+    lines.push(``);
+    lines.push(`**What you need to do:**`);
+    lines.push(``);
+    lines.push(`Before each conversion event fires, push the user's contact details to the dataLayer:`);
+    lines.push(``);
+    lines.push(`\`\`\`js`);
+    lines.push(`// Push user data BEFORE the conversion event`);
+    lines.push(`window.dataLayer = window.dataLayer || [];`);
+    lines.push(`window.dataLayer.push({`);
+    lines.push(`  user_data: {`);
+    lines.push(`    email: user.email,           // Required — raw email; Google hashes it`);
+    lines.push(`    phone_number: user.phone,    // Optional — E.164 format, e.g. '+447911123456'`);
+    lines.push(`  }`);
+    lines.push(`});`);
+    lines.push(``);
+    lines.push(`// Then push the conversion event`);
+    lines.push(`window.dataLayer.push({`);
+    lines.push(`  event: 'your_conversion_event',`);
+    lines.push(`  value: 0,`);
+    lines.push(`  currency: 'GBP'`);
+    lines.push(`});`);
+    lines.push(`\`\`\``);
+    lines.push(``);
+    lines.push(`**GTM variables used:**`);
+    lines.push(``);
+    lines.push(`| Variable | dataLayer path | Purpose |`);
+    lines.push(`|---|---|---|`);
+    lines.push(`| \`DLV - user_data.email\` | \`user_data.email\` | Raw email for EC matching |`);
+    lines.push(`| \`DLV - user_data.phone_number\` | \`user_data.phone_number\` | Phone number for EC matching |`);
+    lines.push(``);
+    lines.push(`> **Privacy note:** Email and phone are sent over HTTPS and hashed by Google's servers. Never log or expose these values outside of the secure dataLayer push.`);
+    lines.push(``);
+    lines.push(`---`);
+    lines.push(``);
+  }
+
+  // ── Section 6: Testing checklist ─────────────────────────────────────────
+  lines.push(`## ${platforms.includes('google_ads') ? '6' : '5'}. Testing checklist`);
   lines.push(``);
   lines.push(`Use GTM Preview mode + GA4 DebugView to verify each item:`);
   lines.push(``);
