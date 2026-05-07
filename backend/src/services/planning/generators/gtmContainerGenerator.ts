@@ -17,7 +17,18 @@
  * import JSON.
  */
 import type { PlanningRecommendation, PlanningSession } from '@/types/planning';
-import { ACTION_PRIMITIVES } from '@/services/journey/actionPrimitives';
+import type { IREvent, IRParameter, IRTrigger, ActionType, BusinessType, Platform } from './ir.types';
+import { ECOMMERCE_SNIPPET_ACTIONS } from './ir.types';
+import { renderGTMTrigger } from './renderer/trigger.renderer';
+import { consentSettingsForTag } from './renderer/consent.renderer';
+import {
+  renderGA4EventParameters,
+  renderGoogleAdsConversionTag,
+  renderMetaEventTag,
+  renderTikTokEventTag,
+  renderLinkedInConversionTag,
+  dlvPathForParam,
+} from './renderer/gtm.renderer';
 
 // ── GTM type interfaces ──────────────────────────────────────────────────────
 
@@ -141,34 +152,7 @@ const FOLDER = {
   TRIGGERS:    '5',
 } as const;
 
-// ── Meta event name mapping ───────────────────────────────────────────────────
-
-const META_EVENT: Record<string, string> = {
-  purchase:        'Purchase',
-  add_to_cart:     'AddToCart',
-  begin_checkout:  'InitiateCheckout',
-  generate_lead:   'Lead',
-  sign_up:         'CompleteRegistration',
-  view_item:       'ViewContent',
-  view_item_list:  'ViewContent',
-  search:          'Search',
-};
-
-// ── TikTok event name mapping ─────────────────────────────────────────────────
-
-const TIKTOK_EVENT: Record<string, string> = {
-  purchase:        'CompletePayment',
-  add_to_cart:     'AddToCart',
-  begin_checkout:  'InitiateCheckout',
-  generate_lead:   'SubmitForm',
-  sign_up:         'CompleteRegistration',
-  view_item:       'ViewContent',
-  search:          'Search',
-};
-
-// ── Conversion event actions (go into Conversion folder) ────────────────────
-
-const CONVERSION_ACTIONS = new Set(['purchase', 'generate_lead', 'sign_up']);
+// (META_EVENT, TIKTOK_EVENT, CONVERSION_ACTIONS moved to renderer modules)
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -191,17 +175,74 @@ function stub(accountId = '0', containerId = '0') {
   };
 }
 
-function ecommerceDlvPath(paramKey: string): string {
-  // Map param keys to their dataLayer paths
-  const ECOMMERCE_PARAMS = new Set(['transaction_id', 'value', 'currency', 'items', 'tax', 'shipping', 'coupon', 'item_list_name']);
-  if (ECOMMERCE_PARAMS.has(paramKey)) return `ecommerce.${paramKey}`;
-  if (paramKey === 'email' || paramKey === 'user_email') return 'user_data.email';
-  if (paramKey === 'phone' || paramKey === 'phone_number' || paramKey === 'user_phone') return 'user_data.phone_number';
-  return paramKey;
+function dlvName(path: string): string { return `DLV - ${path}`; }
+
+// ── Rec → IR adapter ─────────────────────────────────────────────────────────
+// Converts a PlanningRecommendation to a minimal IREvent so the deterministic
+// renderers can drive tag/trigger generation. In Sprint 2.5-C this adapter is
+// removed and the LLM outputs IR directly.
+
+/** Infer JS type for a parameter from its key and example value. */
+function inferIRParamType(key: string, example: string): IRParameter['type'] {
+  if (key === 'items' || key.endsWith('_list')) return 'array';
+  if (example !== '' && !Number.isNaN(Number(example))) return 'number';
+  const numericKeys = ['value', 'price', 'quantity', 'amount', 'count', 'tax', 'shipping'];
+  if (numericKeys.some(k => key === k || key.endsWith(`_${k}`))) return 'number';
+  if (example === 'true' || example === 'false') return 'boolean';
+  return 'string';
 }
 
-function dlvName(path: string): string { return `DLV - ${path}`; }
-function dlvRef(path: string): string { return `{{DLV - ${path}}}`; }
+const ADAPTER_CONVERSION_ACTIONS = new Set([
+  'purchase', 'generate_lead', 'sign_up', 'begin_checkout',
+]);
+
+function recToIREvent(
+  rec: PlanningRecommendation,
+  selectedPlatforms: Platform[],
+): IREvent {
+  // Infer trigger type from selector and action_type
+  let trigger: IRTrigger;
+  const sel = rec.element_selector;
+  if (!sel) {
+    trigger = { trigger_type: 'page_load' };
+  } else if (sel.includes(':contains(')) {
+    // Convert legacy :contains() to click_text (avoids invalid selector rule)
+    const textMatch = sel.match(/:contains\(['"]([^'"]+)['"]\)/);
+    trigger = {
+      trigger_type: 'click_text',
+      click_text: textMatch?.[1] ?? rec.element_text ?? sel,
+    };
+  } else if (rec.action_type === 'form_submit') {
+    trigger = { trigger_type: 'form_submit', selector: sel };
+  } else {
+    trigger = { trigger_type: 'click_css', selector: sel };
+  }
+
+  const parameters: IRParameter[] = (rec.required_params ?? []).map(p => ({
+    key: p.param_key,
+    label: p.param_label,
+    type: inferIRParamType(p.param_key, p.example_value ?? ''),
+    required: true,
+    value_source: { strategy: 'developer_provided' as const },
+    example: p.example_value ?? '',
+  }));
+
+  const platforms = (
+    rec.affected_platforms?.length > 0 ? rec.affected_platforms : selectedPlatforms
+  ) as Platform[];
+
+  return {
+    event_id: '',
+    event_name: rec.event_name,
+    business_justification: rec.business_justification,
+    action_type: rec.action_type as ActionType,
+    priority: 'required',
+    platforms,
+    parameters,
+    trigger,
+    is_conversion: ADAPTER_CONVERSION_ACTIONS.has(rec.action_type),
+  };
+}
 
 // ── Main generator ────────────────────────────────────────────────────────────
 
@@ -388,27 +429,11 @@ export function generateGTMContainer(
   // ── Collect unique DLV paths needed across all recommendations ────────────
   const dlvPathsSeen = new Map<string, string>(); // path → variableId
 
-  // Build a lookup of param_key → human label from all recommendation params.
-  // Used to add descriptive notes to DLV variables in the GTM container.
-  const paramLabelLookup = new Map<string, string>();
-  for (const rec of recommendations) {
-    for (const p of (rec.required_params as unknown as Array<{ param_key: string; param_label: string }>) ?? []) {
-      if (p.param_key && p.param_label && !paramLabelLookup.has(p.param_key)) {
-        paramLabelLookup.set(p.param_key, p.param_label);
-      }
-    }
-    for (const p of (rec.optional_params as unknown as Array<{ param_key: string; param_label: string }>) ?? []) {
-      if (p.param_key && p.param_label && !paramLabelLookup.has(p.param_key)) {
-        paramLabelLookup.set(p.param_key, p.param_label);
-      }
-    }
-  }
-
-  function ensureDlv(paramKey: string): string {
-    const path = ecommerceDlvPath(paramKey);
+  // ensureDlv takes a pre-computed dataLayer PATH (not a raw key).
+  // Call dlvPathForParam(key, isEcommerce) before calling this function.
+  function ensureDlv(path: string): string {
     if (dlvPathsSeen.has(path)) return dlvPathsSeen.get(path)!;
     const vid = varIds.next();
-    const paramLabel = paramLabelLookup.get(paramKey);
     variables.push({
       ...stub(),
       variableId: vid,
@@ -420,16 +445,23 @@ export function generateGTMContainer(
         tmpl('name', path),
       ],
       folderId: FOLDER.VARIABLES,
-      ...(paramLabel ? { notes: `${paramLabel} — reads from dataLayer path: ${path}` } : {}),
     });
     dlvPathsSeen.set(path, vid);
     return vid;
   }
 
-  // Pre-create common DLVs used by multiple events
-  for (const key of ['transaction_id', 'value', 'currency', 'items', 'email', 'phone_number', 'form_id', 'method']) {
-    ensureDlv(key);
-  }
+  // Pre-create both ecommerce-scoped and flat DLVs for common parameter keys.
+  // Ecommerce events reference DLV - ecommerce.*, lead_gen events reference DLV - * (flat).
+  const ECOMMERCE_DLV_PATHS = ['ecommerce.transaction_id', 'ecommerce.value', 'ecommerce.currency',
+    'ecommerce.items', 'ecommerce.tax', 'ecommerce.shipping', 'ecommerce.coupon'];
+  for (const path of ECOMMERCE_DLV_PATHS) { ensureDlv(path); }
+
+  const FLAT_DLV_PATHS = ['value', 'currency', 'form_id', 'method', 'search_term'];
+  for (const path of FLAT_DLV_PATHS) { ensureDlv(path); }
+
+  // User data (Enhanced Conversions) — always scoped under user_data
+  ensureDlv('user_data.email');
+  ensureDlv('user_data.phone_number');
 
   // ── All Pages trigger ─────────────────────────────────────────────────────
   const allPagesTrigId = trigIds.next();
@@ -789,7 +821,7 @@ export function generateGTMContainer(
       firingTriggerId: [allPagesTrigId],
       tagFiringOption: 'oncePerEvent',
       folderId: FOLDER.CONFIG,
-      consentSettings: { consentStatus: 'notSet' },
+      consentSettings: consentSettingsForTag('gaawc', ''),
       fingerprint: '0',
       tagManagerUrl: 'https://tagmanager.google.com/',
     });
@@ -822,7 +854,7 @@ export function generateGTMContainer(
       firingTriggerId: [allPagesTrigId],
       tagFiringOption: 'oncePerEvent',
       folderId: FOLDER.CONFIG,
-      consentSettings: { consentStatus: 'notSet' },
+      consentSettings: consentSettingsForTag('gclidw', ''),
       fingerprint: '0',
       tagManagerUrl: 'https://tagmanager.google.com/',
     });
@@ -864,7 +896,7 @@ src="https://www.facebook.com/tr?id=${platformIds?.meta ?? '{{META_PIXEL_ID}}'}&
       firingTriggerId: [allPagesTrigId],
       tagFiringOption: 'oncePerEvent',
       folderId: FOLDER.CONFIG,
-      consentSettings: { consentStatus: 'notSet' },
+      consentSettings: consentSettingsForTag('html', 'Meta - Base Pixel'),
       fingerprint: '0',
       tagManagerUrl: 'https://tagmanager.google.com/',
     });
@@ -912,7 +944,7 @@ src="https://www.facebook.com/tr?id=${platformIds?.meta ?? '{{META_PIXEL_ID}}'}&
       firingTriggerId: [allPagesTrigId],
       tagFiringOption: 'oncePerEvent',
       folderId: FOLDER.CONFIG,
-      consentSettings: { consentStatus: 'notSet' },
+      consentSettings: consentSettingsForTag('html', 'TikTok - Base Pixel'),
       fingerprint: '0',
       tagManagerUrl: 'https://tagmanager.google.com/',
     });
@@ -958,7 +990,7 @@ src="https://px.ads.linkedin.com/collect/?pid=${platformIds?.linkedin ?? '{{LINK
       firingTriggerId: [allPagesTrigId],
       tagFiringOption: 'oncePerEvent',
       folderId: FOLDER.CONFIG,
-      consentSettings: { consentStatus: 'notSet' },
+      consentSettings: consentSettingsForTag('html', 'LinkedIn - Insight Tag'),
       fingerprint: '0',
       tagManagerUrl: 'https://tagmanager.google.com/',
     });
@@ -979,193 +1011,79 @@ src="https://px.ads.linkedin.com/collect/?pid=${platformIds?.linkedin ?? '{{LINK
   // Deduplicate by event_name — one trigger per unique event name
   const eventTriggerMap = new Map<string, string>(); // event_name → triggerId
 
-  function ensureEventTrigger(eventName: string): string {
-    if (eventTriggerMap.has(eventName)) return eventTriggerMap.get(eventName)!;
+  function ensureEventTrigger(irEvent: IREvent): string {
+    if (eventTriggerMap.has(irEvent.event_name)) return eventTriggerMap.get(irEvent.event_name)!;
     const tid = trigIds.next();
-    triggers.push({
-      ...stub(),
-      triggerId: tid,
-      name: `CE - ${eventName}`,
-      type: 'CUSTOM_EVENT',
-      customEventFilter: [{
-        type: 'EQUALS',
-        parameter: [
-          tmpl('arg0', '{{Event}}'),
-          tmpl('arg1', eventName),
-        ],
-      }],
-      folderId: FOLDER.TRIGGERS,
-    });
-    eventTriggerMap.set(eventName, tid);
+    const trigDef = renderGTMTrigger(irEvent.trigger, irEvent.event_name, tid, FOLDER.TRIGGERS);
+    triggers.push(trigDef);
+    eventTriggerMap.set(irEvent.event_name, tid);
     return tid;
   }
 
   for (const rec of recommendations) {
-    const eventName = rec.event_name;
-    const actionKey = rec.action_type;
-    const isConversion = CONVERSION_ACTIONS.has(actionKey);
+    const irEvent = recToIREvent(rec, session.selected_platforms as Platform[]);
+    const isConversion = irEvent.is_conversion;
     const folderId = isConversion ? FOLDER.CONVERSION : FOLDER.ENGAGEMENT;
-    const trigId = ensureEventTrigger(eventName);
+    const trigId = ensureEventTrigger(irEvent);
 
-    // Ensure DLVs exist for all required params
-    const recParams = (rec.required_params as unknown as Array<{ param_key: string }>) ?? [];
-    for (const p of recParams) {
-      ensureDlv(p.param_key);
+    // Ensure DLVs for all IR event parameters
+    const isEcommerce = ECOMMERCE_SNIPPET_ACTIONS.has(irEvent.action_type);
+    for (const param of irEvent.parameters) {
+      ensureDlv(dlvPathForParam(param.key, isEcommerce));
     }
-
-    const primitive = ACTION_PRIMITIVES.find(a => a.key === actionKey);
-    const label = primitive?.label ?? eventName;
 
     // ── GA4 Event Tag ───────────────────────────────────────────────────────
     if (hasGA4) {
-      const ga4Params: GTMParameter[] = [];
-      const ga4TagParams: GTMParameter[] = [
-        { type: 'TEMPLATE', key: 'eventName', value: eventName },
-      ];
-
-      // Map standard parameters
-      const paramsList: GTMParameter[] = [];
-
-      if (['purchase', 'add_to_cart', 'begin_checkout', 'view_item', 'view_item_list'].includes(actionKey)) {
-        paramsList.push({ type: 'MAP', map: [tmpl('key', 'items'), tmpl('value', dlvRef('ecommerce.items'))] });
-        paramsList.push({ type: 'MAP', map: [tmpl('key', 'value'), tmpl('value', dlvRef('ecommerce.value'))] });
-        paramsList.push({ type: 'MAP', map: [tmpl('key', 'currency'), tmpl('value', dlvRef('ecommerce.currency'))] });
-        if (actionKey === 'purchase') {
-          paramsList.push({ type: 'MAP', map: [tmpl('key', 'transaction_id'), tmpl('value', dlvRef('ecommerce.transaction_id'))] });
-        }
-      } else if (actionKey === 'generate_lead') {
-        paramsList.push({ type: 'MAP', map: [tmpl('key', 'form_id'), tmpl('value', dlvRef('form_id'))] });
-        paramsList.push({ type: 'MAP', map: [tmpl('key', 'value'), tmpl('value', dlvRef('value'))] });
-        paramsList.push({ type: 'MAP', map: [tmpl('key', 'currency'), tmpl('value', dlvRef('currency'))] });
-      } else if (actionKey === 'sign_up') {
-        paramsList.push({ type: 'MAP', map: [tmpl('key', 'method'), tmpl('value', dlvRef('method'))] });
-      } else if (actionKey === 'search') {
-        paramsList.push({ type: 'MAP', map: [tmpl('key', 'search_term'), tmpl('value', dlvRef('search_term'))] });
-      }
-
-      if (paramsList.length > 0) {
-        ga4TagParams.push({ type: 'LIST', key: 'eventParameters', list: paramsList });
-      }
-
-      void ga4Params; // unused, kept for clarity
+      const ga4EventParams = renderGA4EventParameters(irEvent);
       tags.push({
         ...stub(),
         tagId: tagIds.next(),
-        name: `GA4 - ${label}`,
+        name: `GA4 - ${irEvent.event_name}`,
         type: 'gaawe',
-        parameter: ga4TagParams,
+        parameter: [tmpl('eventName', irEvent.event_name), ...ga4EventParams],
         firingTriggerId: [trigId],
         tagFiringOption: 'oncePerEvent',
         folderId,
-        consentSettings: { consentStatus: 'notSet' },
+        consentSettings: consentSettingsForTag('gaawe', ''),
         fingerprint: '0',
         tagManagerUrl: 'https://tagmanager.google.com/',
       });
     }
 
-    // ── Google Ads Conversion Tag ───────────────────────────────────────────
+    // ── Google Ads Conversion Tag (per-event label variable) ────────────────
     if (hasGoogleAds && isConversion) {
-      const gadsParams: GTMParameter[] = [
-        tmpl('conversionId', '{{CONST - Google Ads Conversion ID}}'),
-        tmpl('conversionLabel', platformIds?.google_ads_conversion_label ?? '{{CONVERSION_LABEL}}'),
-        tmpl('currencyCode', dlvRef('ecommerce.currency')),
-      ];
-      if (actionKey === 'purchase') {
-        gadsParams.push(tmpl('conversionValue', dlvRef('ecommerce.value')));
-        gadsParams.push(tmpl('orderId', dlvRef('ecommerce.transaction_id')));
-      }
-      tags.push({
-        ...stub(),
-        tagId: tagIds.next(),
-        name: `Google Ads - ${label} Conversion`,
-        type: 'awct',
-        parameter: gadsParams,
-        firingTriggerId: [trigId],
-        tagFiringOption: 'oncePerEvent',
-        folderId,
-        consentSettings: { consentStatus: 'notSet' },
-        fingerprint: '0',
-        tagManagerUrl: 'https://tagmanager.google.com/',
-      });
+      const { tag: gadsTag, labelVar } = renderGoogleAdsConversionTag(
+        irEvent,
+        trigId,
+        tagIds.next(),
+        varIds.next(),
+        FOLDER.CONVERSION,
+        'CONST - Google Ads Conversion ID',
+        platformIds,
+      );
+      variables.push(labelVar);
+      tags.push(gadsTag);
     }
 
     // ── Meta Event Tag ──────────────────────────────────────────────────────
     if (hasMeta) {
-      const metaEvent = META_EVENT[actionKey] ?? 'CustomEvent';
-      let fbqParams = '{}';
-      if (actionKey === 'purchase') {
-        fbqParams = `{value: {{DLV - ecommerce.value}}, currency: {{DLV - ecommerce.currency}}, content_type: 'product'}`;
-      } else if (actionKey === 'add_to_cart') {
-        fbqParams = `{value: {{DLV - ecommerce.value}}, currency: {{DLV - ecommerce.currency}}, content_type: 'product'}`;
-      } else if (actionKey === 'generate_lead') {
-        fbqParams = `{value: {{DLV - value}}, currency: {{DLV - currency}}}`;
-      }
-      // Conversion events include the 4th fbq() argument so Meta can deduplicate
-      // against the server-side CAPI event carrying the same event_id.
-      const fbqCall = isConversion
-        ? `fbq('track', '${metaEvent}', ${fbqParams}, {eventID: '{{Atlas - Event ID}}'})`
-        : `fbq('track', '${metaEvent}', ${fbqParams})`;
-      tags.push({
-        ...stub(),
-        tagId: tagIds.next(),
-        name: `Meta - ${label}`,
-        type: 'html',
-        parameter: [
-          tmpl('html', `<script>${fbqCall};</script>`),
-          bool('supportDocumentWrite', 'false'),
-        ],
-        firingTriggerId: [trigId],
-        tagFiringOption: 'oncePerEvent',
-        folderId,
-        consentSettings: { consentStatus: 'notSet' },
-        fingerprint: '0',
-        tagManagerUrl: 'https://tagmanager.google.com/',
-      });
+      tags.push(renderMetaEventTag(irEvent, trigId, tagIds.next(), folderId));
     }
 
     // ── TikTok Event Tag ────────────────────────────────────────────────────
     if (hasTikTok) {
-      const ttEvent = TIKTOK_EVENT[actionKey] ?? 'CustomEvent';
-      let ttParams = '{}';
-      if (actionKey === 'purchase') {
-        ttParams = `{value: {{DLV - ecommerce.value}}, currency: {{DLV - ecommerce.currency}}, content_type: 'product'}`;
-      }
-      tags.push({
-        ...stub(),
-        tagId: tagIds.next(),
-        name: `TikTok - ${label}`,
-        type: 'html',
-        parameter: [
-          tmpl('html', `<script>ttq.track('${ttEvent}', ${ttParams});</script>`),
-          bool('supportDocumentWrite', 'false'),
-        ],
-        firingTriggerId: [trigId],
-        tagFiringOption: 'oncePerEvent',
-        folderId,
-        consentSettings: { consentStatus: 'notSet' },
-        fingerprint: '0',
-        tagManagerUrl: 'https://tagmanager.google.com/',
-      });
+      tags.push(renderTikTokEventTag(irEvent, trigId, tagIds.next(), folderId));
     }
 
     // ── LinkedIn Conversion Tag ─────────────────────────────────────────────
     if (hasLinkedIn && isConversion) {
-      tags.push({
-        ...stub(),
-        tagId: tagIds.next(),
-        name: `LinkedIn - ${label}`,
-        type: 'html',
-        parameter: [
-          tmpl('html', `<script>lintrk('track', {conversion_id: '${platformIds?.linkedin_conversion_id ?? '{{LINKEDIN_CONVERSION_ID}}' }'});</script>`),
-          bool('supportDocumentWrite', 'false'),
-        ],
-        firingTriggerId: [trigId],
-        tagFiringOption: 'oncePerEvent',
+      tags.push(renderLinkedInConversionTag(
+        irEvent,
+        trigId,
+        tagIds.next(),
         folderId,
-        consentSettings: { consentStatus: 'notSet' },
-        fingerprint: '0',
-        tagManagerUrl: 'https://tagmanager.google.com/',
-      });
+        platformIds?.linkedin_conversion_id,
+      ));
     }
   }
 
@@ -1227,7 +1145,7 @@ src="https://px.ads.linkedin.com/collect/?pid=${platformIds?.linkedin ?? '{{LINK
       firingTriggerId: allEventTrigIds,
       tagFiringOption: 'oncePerEvent',
       folderId: FOLDER.CONFIG,
-      consentSettings: { consentStatus: 'notSet' },
+      consentSettings: consentSettingsForTag('html', 'Meta - Signal Tag'),
       fingerprint: '0',
       tagManagerUrl: 'https://tagmanager.google.com/',
     });

@@ -9,6 +9,8 @@
  *   human_documentation — explanatory content for marketing/analytics teams
  */
 import type { PlanningRecommendation, PlanningPage, PlanningSession, SuggestedParam } from '@/types/planning';
+import type { IREvent, IRParameter, IRTrigger, ActionType, Platform } from './ir.types';
+import { renderCodeSnippet as renderIRCodeSnippet } from './renderer/spec.renderer';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -221,6 +223,48 @@ const ATTRIBUTION_REPLACEMENT: Record<string, string> = {
   gclid_value:        'gclid',
   fbclid_value:       'fbclid',
 };
+
+// ── Rec → IR adapter (for spec renderer) ────────────────────────────────────
+
+const SPEC_CONVERSION_ACTIONS = new Set([
+  'purchase', 'generate_lead', 'sign_up', 'begin_checkout',
+]);
+
+function recToIREventForSpec(rec: PlanningRecommendation): IREvent {
+  const sel = rec.element_selector;
+  let trigger: IRTrigger;
+  if (!sel) {
+    trigger = { trigger_type: 'page_load' };
+  } else if (sel.includes(':contains(')) {
+    const textMatch = sel.match(/:contains\(['"]([^'"]+)['"]\)/);
+    trigger = { trigger_type: 'click_text', click_text: textMatch?.[1] ?? rec.element_text ?? sel };
+  } else if (rec.action_type === 'form_submit') {
+    trigger = { trigger_type: 'form_submit', selector: sel };
+  } else {
+    trigger = { trigger_type: 'click_css', selector: sel };
+  }
+
+  const parameters: IRParameter[] = (rec.required_params ?? []).map(p => ({
+    key: p.param_key,
+    label: p.param_label,
+    type: inferParamType(p.param_key, p.example_value ?? '') as IRParameter['type'],
+    required: true,
+    value_source: { strategy: 'developer_provided' as const },
+    example: p.example_value ?? '',
+  }));
+
+  return {
+    event_id: '',
+    event_name: rec.event_name,
+    business_justification: rec.business_justification,
+    action_type: rec.action_type as ActionType,
+    priority: 'required',
+    platforms: (rec.affected_platforms ?? []) as Platform[],
+    parameters,
+    trigger,
+    is_conversion: SPEC_CONVERSION_ACTIONS.has(rec.action_type),
+  };
+}
 
 // ── Code snippet builder ──────────────────────────────────────────────────────
 
@@ -619,7 +663,7 @@ export function generateDataLayerSpec(
         action_type:          rec.action_type,
         element_selector:     rec.element_selector ?? undefined,
         element_text:         rec.element_text ?? undefined,
-        trigger_type:         rec.element_selector ? 'click/submit' : 'page_load',
+        trigger_type:         recToIREventForSpec(rec).trigger.trigger_type,
         business_justification: rec.business_justification,
         priority:             'required',
         parameters:           allParams.map(p => ({
@@ -629,7 +673,7 @@ export function generateDataLayerSpec(
           example:  p.example_value ?? '',
           required: p.required,
         })),
-        code_snippet: buildCodeSnippet(rec),
+        code_snippet: renderIRCodeSnippet(recToIREventForSpec(rec)),
         platforms:    rec.affected_platforms,
       };
     });
