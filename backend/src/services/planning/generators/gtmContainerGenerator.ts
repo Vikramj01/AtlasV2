@@ -200,19 +200,25 @@ function recToIREvent(
   rec: PlanningRecommendation,
   selectedPlatforms: Platform[],
 ): IREvent {
-  // Infer trigger type from selector and action_type
   let trigger: IRTrigger;
   const sel = rec.element_selector;
+
   if (!sel) {
-    trigger = { trigger_type: 'page_load' };
+    // Sprint 2.5-C: click_text triggers store no CSS selector; element_text carries the
+    // text value. Detect by element_type = 'track_click' + element_text presence.
+    if (rec.element_type === 'track_click' && rec.element_text) {
+      trigger = { trigger_type: 'click_text', click_text: rec.element_text };
+    } else {
+      trigger = { trigger_type: 'page_load' };
+    }
   } else if (sel.includes(':contains(')) {
-    // Convert legacy :contains() to click_text (avoids invalid selector rule)
+    // Backward compat: legacy :contains() selectors — convert to click_text
     const textMatch = sel.match(/:contains\(['"]([^'"]+)['"]\)/);
     trigger = {
       trigger_type: 'click_text',
       click_text: textMatch?.[1] ?? rec.element_text ?? sel,
     };
-  } else if (rec.action_type === 'form_submit') {
+  } else if (rec.action_type === 'form_submit' || rec.element_type === 'track_form_submit') {
     trigger = { trigger_type: 'form_submit', selector: sel };
   } else {
     trigger = { trigger_type: 'click_css', selector: sel };
@@ -231,6 +237,13 @@ function recToIREvent(
     rec.affected_platforms?.length > 0 ? rec.affected_platforms : selectedPlatforms
   ) as Platform[];
 
+  // Conversion detection: explicit action_type match OR form_submit with conversion
+  // event name patterns (Sprint 2.5-C: LLM now uses form_submit for lead gen forms)
+  const isConversionByActionType = ADAPTER_CONVERSION_ACTIONS.has(rec.action_type);
+  const isConversionFormSubmit =
+    rec.action_type === 'form_submit' &&
+    /(?:lead|contact|enqui|signup|sign.up|register|book|demo|quote)/i.test(rec.event_name);
+
   return {
     event_id: '',
     event_name: rec.event_name,
@@ -240,7 +253,7 @@ function recToIREvent(
     platforms,
     parameters,
     trigger,
-    is_conversion: ADAPTER_CONVERSION_ACTIONS.has(rec.action_type),
+    is_conversion: isConversionByActionType || isConversionFormSubmit,
   };
 }
 

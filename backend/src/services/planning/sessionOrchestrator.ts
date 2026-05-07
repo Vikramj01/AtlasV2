@@ -237,24 +237,33 @@ async function scanOnePage(
     }, orgId, sessionId);
 
     // ── Persist recommendations ──────────────────────────────────────────────
-    const recInputs: CreateRecommendationInput[] = aiResponse.recommended_elements.map((rec) => ({
-      page_id: pageId,
-      element_selector: rec.selector !== 'document' ? rec.selector : undefined,
-      element_text: capture.interactive_elements.find((el) => el.element_id === rec.element_reference)?.text,
-      element_type: rec.recommendation_type,
-      action_type: rec.action_primitive_key,
-      event_name: rec.suggested_event_name,
-      required_params: rec.parameters_to_capture.filter((_, i) => i < 5), // store as required_params
-      optional_params: [],
-      bbox_x: rec.screenshot_annotation.x,
-      bbox_y: rec.screenshot_annotation.y,
-      bbox_width: rec.screenshot_annotation.width,
-      bbox_height: rec.screenshot_annotation.height,
-      confidence_score: rec.confidence,
-      business_justification: rec.business_justification,
-      affected_platforms: session.selected_platforms,
-      source: 'ai',
-    }));
+    const recInputs: CreateRecommendationInput[] = aiResponse.recommended_elements.map((rec) => {
+      // For click_text triggers the parser sets selector = 'document' and there is no
+      // CSS selector. The element_text is looked up by element_reference and stored so
+      // the gtmContainerGenerator adapter can build a click_text GTM trigger.
+      const isCSSSelector = rec.selector !== 'document';
+      const elementText =
+        capture.interactive_elements.find((el) => el.element_id === rec.element_reference)?.text;
+
+      return {
+        page_id: pageId,
+        element_selector: isCSSSelector ? rec.selector : undefined,
+        element_text: elementText,
+        element_type: rec.recommendation_type,
+        action_type: rec.action_primitive_key,
+        event_name: rec.suggested_event_name,
+        required_params: rec.parameters_to_capture.slice(0, 5),
+        optional_params: [],
+        bbox_x: rec.screenshot_annotation.x,
+        bbox_y: rec.screenshot_annotation.y,
+        bbox_width: rec.screenshot_annotation.width,
+        bbox_height: rec.screenshot_annotation.height,
+        confidence_score: rec.confidence,
+        business_justification: rec.business_justification,
+        affected_platforms: session.selected_platforms,
+        source: 'ai',
+      };
+    });
 
     const createdRecs = await createRecommendations(recInputs);
 

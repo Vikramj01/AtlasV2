@@ -10,6 +10,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { ACTION_PRIMITIVES } from '@/services/journey/actionPrimitives';
 import { callClaude } from '@/services/usage/claudeClient';
+import { IR_PROMPT_GUARDRAILS, buildIROutputSchemaSection } from './generators/prompts/ir-schema.prompt';
+import { ATTRIBUTION_PARAMS, ECOMMERCE_ACTION_TYPES as IR_ECOMMERCE_ACTION_TYPES } from './generators/ir.types';
 import type {
   AIAnalysisRequest,
   AIAnalysisResponse,
@@ -38,14 +40,14 @@ Key principles:
 - Include page_view tracking for EVERY page — it is always valuable for funnel analysis
 - If an element is already tracked by existing infrastructure, still include it but note this in the justification
 - On checkout/cart/product pages always recommend the relevant ecommerce events (add_to_cart, begin_checkout, purchase, view_item)
-- Do NOT return an empty recommended_elements array — the minimum is always a page_view recommendation`;
+- Do NOT return an empty recommended_elements array — the minimum is always a page_view recommendation
+- NEVER use :contains() in selectors — use trigger_type "click_text" instead
+- NEVER add attribution params (gclid, fbclid, etc.) to the parameters array`;
 
 function buildUserPrompt(req: AIAnalysisRequest): string {
-  const actionPrimitiveList = ACTION_PRIMITIVES.map((a) => `  - "${a.key}": ${a.description}`).join('\n');
-
   const domSummary = JSON.stringify(req.simplified_dom, null, 0).slice(0, 8000);
   const elementSummary = req.interactive_elements
-    .slice(0, 30) // Cap at 30 elements to control token usage
+    .slice(0, 30)
     .map(
       (el) =>
         `  [${el.element_id}] <${el.tag}> "${el.text.slice(0, 60)}" (${el.element_type}${el.is_above_fold ? ', above-fold' : ''})`,
@@ -70,6 +72,8 @@ function buildUserPrompt(req: AIAnalysisRequest): string {
     ? `\n## Organisation Event Taxonomy\nThis org uses a standardised event taxonomy. When naming events, prefer these taxonomy slugs over ad-hoc names.\nIf a page interaction clearly maps to a taxonomy event, use that exact slug as suggested_event_name.\n\n${req.taxonomy_context.slice(0, 3000)}\n`
     : '';
 
+  const irSchema = buildIROutputSchemaSection(req.business_type);
+
   return `Analyse this web page and recommend which elements to track.
 
 ## Page Details
@@ -89,65 +93,9 @@ ${formSummary || '  (none detected)'}
 ## Simplified DOM (abbreviated)
 ${domSummary}
 ${taxonomySection}
-## Available Action Primitive Keys
-Use one of these for action_primitive_key (or "custom" if none fit):
-${actionPrimitiveList}
+${IR_PROMPT_GUARDRAILS}
 
-## Required Output Schema
-Return ONLY a JSON object with this exact structure:
-
-{
-  "page_classification": {
-    "page_type": "string (e.g. checkout, product_page, homepage, lead_form, pricing, sign_up, category)",
-    "funnel_position": "top | middle | bottom | post_conversion",
-    "business_importance": "critical | high | medium | low",
-    "reasoning": "1-2 sentences explaining why"
-  },
-  "page_summary": "2-3 sentence plain-English summary of what this page does and why it matters",
-  "existing_tracking_assessment": {
-    "has_existing_tracking": true | false,
-    "quality": "none | minimal | partial | comprehensive",
-    "summary": "What tracking exists and what gaps remain",
-    "conflicts": ["List any potential issues with existing setup"]
-  },
-  "recommended_elements": [
-    {
-      "element_reference": "element_id from the list above, or 'page_level' for page-level events",
-      "selector": "CSS selector",
-      "recommendation_type": "track_click | track_form_submit | track_page_view | track_scroll | track_video | track_custom",
-      "action_primitive_key": "purchase | add_to_cart | begin_checkout | generate_lead | sign_up | view_item | view_item_list | search | ad_landing | custom",
-      "suggested_event_name": "ga4_event_name",
-      "suggested_event_category": "ecommerce | lead_generation | engagement | navigation",
-      "business_justification": "Plain English: why tracking this element matters for the business",
-      "priority": "must_have | should_have | nice_to_have",
-      "confidence": 0.0,
-      "parameters_to_capture": [
-        {
-          "param_key": "value",
-          "param_label": "Order Total",
-          "source": "element_text | element_attribute | parent_context | page_url | developer_provided",
-          "source_detail": "Where this data comes from on the page",
-          "example_value": "99.99"
-        }
-      ],
-      "screenshot_annotation": {
-        "x": 0,
-        "y": 0,
-        "width": 100,
-        "height": 40,
-        "label": "Short label for annotation"
-      }
-    }
-  ]
-}
-
-Rules:
-- ALWAYS include at least 1 recommendation — a page_view event at minimum
-- Include 1–8 recommendations total
-- confidence between 0.0 and 1.0
-- screenshot_annotation coordinates must be in pixels, relative to the 1280×800 viewport; use the bounding_box values from the element list above
-- For page-level events (page_view), use element_reference: "page_level" and selector: "document", screenshot_annotation x:0 y:0 width:1280 height:800
-- NEVER return an empty recommended_elements array — if the page has no specific interactive elements, add a page_view recommendation`;
+${irSchema}`;
 }
 
 // ── Main analysis function ───────────────────────────────────────────────────
@@ -270,7 +218,6 @@ function parseAndValidateResponse(rawText: string, req: AIAnalysisRequest): AIAn
   try {
     parsed = JSON.parse(cleaned);
   } catch {
-    // Try to extract JSON from the response if there's surrounding text
     const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       throw new Error(`Could not parse JSON from AI response. Raw: ${rawText.slice(0, 200)}`);
@@ -284,13 +231,13 @@ function parseAndValidateResponse(rawText: string, req: AIAnalysisRequest): AIAn
 
   const raw = parsed as Record<string, unknown>;
 
-  // Validate and coerce the response into our typed shape
   const page_classification = validatePageClassification(raw['page_classification']);
-  const recommended_elements = validateRecommendedElements(raw['recommended_elements']);
+  // Pass business_type for guardrail enforcement (ecommerce isolation)
+  const recommended_elements = validateRecommendedElements(raw['recommended_elements'], req.business_type);
   const existing_tracking_assessment = validateTrackingAssessment(raw['existing_tracking_assessment']);
   const page_summary = typeof raw['page_summary'] === 'string' ? raw['page_summary'] : '';
 
-  // Enrich recommendations with platform info from ACTION_PRIMITIVES
+  // Enrich with missing required params from ACTION_PRIMITIVES
   const enriched = recommended_elements.map((rec) => enrichRecommendation(rec, req.platforms_selected));
 
   return {
@@ -318,25 +265,97 @@ function validatePageClassification(raw: unknown): PageClassification {
   };
 }
 
-function validateRecommendedElements(raw: unknown): RecommendedElement[] {
+// ── IR trigger type → RecommendedElement.recommendation_type ─────────────────
+
+function triggerTypeToRecommendationType(
+  triggerType: string,
+): RecommendedElement['recommendation_type'] {
+  switch (triggerType) {
+    case 'page_load':    return 'track_page_view';
+    case 'form_submit':  return 'track_form_submit';
+    case 'scroll_depth': return 'track_scroll';
+    case 'custom_event': return 'track_custom';
+    default:             return 'track_click'; // click_css, click_text, click_url
+  }
+}
+
+// ── IR trigger → canonical selector value ────────────────────────────────────
+// The selector field in RecommendedElement carries the CSS selector; for
+// click_text triggers we store 'document' (the orchestrator uses element_text
+// from the interactive elements lookup, and the adapter detects click_text by
+// element_type + element_text presence).
+
+function triggerToSelector(trigger: Record<string, unknown>): string {
+  const type = String(trigger['trigger_type'] ?? 'page_load');
+  switch (type) {
+    case 'click_css':
+    case 'form_submit':
+      return String(trigger['selector'] ?? 'document');
+    case 'click_url':
+      return String(trigger['click_url_pattern'] ?? 'document');
+    default:
+      return 'document';
+  }
+}
+
+// ── Guardrail: strip attribution params from a param list ────────────────────
+
+function stripAttributionParams(params: SuggestedParam[]): SuggestedParam[] {
+  return params.filter((p) => !ATTRIBUTION_PARAMS.has(p.param_key));
+}
+
+// ── Guardrail: fix ecommerce action_type on non-ecommerce business ────────────
+
+const ECOMMERCE_PRIMITIVE_KEYS = new Set([...IR_ECOMMERCE_ACTION_TYPES as unknown as string[]]);
+
+function sanitiseActionType(actionType: string, businessType: string): string {
+  if (ECOMMERCE_PRIMITIVE_KEYS.has(actionType) && businessType === 'lead_gen') {
+    return 'form_submit';
+  }
+  return actionType;
+}
+
+// ── Parse IR-format parameters array ─────────────────────────────────────────
+
+function parseIRParameters(raw: unknown): SuggestedParam[] {
+  if (!Array.isArray(raw)) return [];
+  const validSources = ['element_text', 'element_attribute', 'parent_context', 'page_url', 'developer_provided', 'runtime_computed'] as const;
+
+  return raw
+    .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
+    .slice(0, 10)
+    .flatMap((item): SuggestedParam[] => {
+      const key = String(item['key'] ?? item['param_key'] ?? '');
+      if (!key) return [];
+      // Strip attribution params here as the first guardrail
+      if (ATTRIBUTION_PARAMS.has(key)) return [];
+      const rawStrategy =
+        typeof item['value_source'] === 'object' && item['value_source'] !== null
+          ? String((item['value_source'] as Record<string, unknown>)['strategy'] ?? 'developer_provided')
+          : String(item['source'] ?? 'developer_provided');
+      const source = validSources.includes(rawStrategy as typeof validSources[number])
+        ? (rawStrategy as SuggestedParam['source'])
+        : 'developer_provided';
+      return [{
+        param_key: key,
+        param_label: String(item['label'] ?? item['param_label'] ?? key),
+        source,
+        source_detail: String(item['source_detail'] ?? ''),
+        example_value: String(item['example'] ?? item['example_value'] ?? ''),
+      }];
+    });
+}
+
+function validateRecommendedElements(raw: unknown, businessType = ''): RecommendedElement[] {
   if (!Array.isArray(raw)) return [];
 
-  const validTypes = ['track_click', 'track_form_submit', 'track_page_view', 'track_scroll', 'track_video', 'track_custom'] as const;
   const validPriorities = ['must_have', 'should_have', 'nice_to_have'] as const;
   const validActionKeys = new Set(ACTION_PRIMITIVES.map((a) => a.key).concat(['custom']));
 
   return raw
     .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
-    .slice(0, 8) // Cap at 8 recommendations
+    .slice(0, 8)
     .map((item): RecommendedElement => {
-      const recType = validTypes.includes(item['recommendation_type'] as 'track_click')
-        ? (item['recommendation_type'] as RecommendedElement['recommendation_type'])
-        : 'track_click';
-
-      const actionKey = validActionKeys.has(String(item['action_primitive_key'] ?? ''))
-        ? String(item['action_primitive_key'])
-        : 'custom';
-
       const priority = validPriorities.includes(item['priority'] as 'must_have')
         ? (item['priority'] as RecommendedElement['priority'])
         : 'should_have';
@@ -346,14 +365,51 @@ function validateRecommendedElements(raw: unknown): RecommendedElement[] {
         : 0.5;
 
       const annotation = validateAnnotation(item['screenshot_annotation']);
-      const params = validateParams(item['parameters_to_capture']);
+
+      // ── IR format (trigger object + parameters array) ───────────────────
+      const hasTrigger = typeof item['trigger'] === 'object' && item['trigger'] !== null;
+      const trigger = hasTrigger ? (item['trigger'] as Record<string, unknown>) : null;
+
+      const triggerType = trigger ? String(trigger['trigger_type'] ?? 'click_css') : 'click_css';
+
+      const recType = hasTrigger
+        ? triggerTypeToRecommendationType(triggerType)
+        : (() => {
+            const validTypes = ['track_click', 'track_form_submit', 'track_page_view', 'track_scroll', 'track_video', 'track_custom'] as const;
+            return validTypes.includes(item['recommendation_type'] as 'track_click')
+              ? (item['recommendation_type'] as RecommendedElement['recommendation_type'])
+              : 'track_click';
+          })();
+
+      // Resolve selector: prefer IR trigger fields; fall back to legacy selector key
+      let selector = hasTrigger
+        ? triggerToSelector(trigger!)
+        : String(item['selector'] ?? 'document');
+
+      // Guardrail: :contains() — convert to 'document' so the adapter uses element_text
+      if (selector.includes(':contains(')) {
+        selector = 'document';
+      }
+
+      // Determine action_type: new format uses action_type; old format used action_primitive_key
+      const rawActionType = String(item['action_type'] ?? item['action_primitive_key'] ?? 'custom');
+      const actionKey = validActionKeys.has(rawActionType) ? rawActionType : 'custom';
+      const safeActionKey = sanitiseActionType(actionKey, businessType);
+
+      // Parameters: new IR format uses parameters[]; legacy uses parameters_to_capture[]
+      const rawParams = Array.isArray(item['parameters'])
+        ? parseIRParameters(item['parameters'])
+        : validateParams(item['parameters_to_capture']);
+
+      // Strip attribution params (second pass for legacy format)
+      const params = stripAttributionParams(rawParams);
 
       return {
         element_reference: String(item['element_reference'] ?? 'page_level'),
-        selector: String(item['selector'] ?? 'document'),
+        selector,
         recommendation_type: recType,
-        action_primitive_key: actionKey,
-        suggested_event_name: String(item['suggested_event_name'] ?? actionKey),
+        action_primitive_key: safeActionKey,
+        suggested_event_name: String(item['suggested_event_name'] ?? safeActionKey),
         suggested_event_category: String(item['suggested_event_category'] ?? 'engagement'),
         business_justification: String(item['business_justification'] ?? ''),
         priority,
