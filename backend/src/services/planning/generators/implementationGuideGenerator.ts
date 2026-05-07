@@ -13,6 +13,8 @@
  *   6. What's Next (Atlas Audit Mode CTA)
  */
 import type { PlanningRecommendation, PlanningPage, PlanningSession } from '@/types/planning';
+import type { GTMContainerJSON } from './gtmContainerGenerator';
+import { derivePlaceholderTable } from './renderer/guide.renderer';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -89,10 +91,15 @@ const CSS = `
 
 // ── Main generator ────────────────────────────────────────────────────────────
 
+const GUIDE_CONVERSION_ACTION_TYPES = new Set([
+  'purchase', 'generate_lead', 'sign_up', 'begin_checkout', 'form_submit',
+]);
+
 export function generateImplementationGuide(
   recommendations: PlanningRecommendation[],
   pages: PlanningPage[],
   session: PlanningSession,
+  gtmContainer?: GTMContainerJSON,
 ): string {
   const platforms = session.selected_platforms;
   const hasGA4 = platforms.includes('ga4');
@@ -101,10 +108,9 @@ export function generateImplementationGuide(
   const hasTikTok = platforms.includes('tiktok');
   const hasLinkedIn = platforms.includes('linkedin');
 
-  const conversionRecs = recommendations.filter(r =>
-    ['purchase', 'generate_lead', 'sign_up'].includes(r.action_type));
-  const engagementRecs = recommendations.filter(r =>
-    !['purchase', 'generate_lead', 'sign_up'].includes(r.action_type));
+  // Count by action_type — custom event names would produce wrong counts if matching by name
+  const conversionRecs = recommendations.filter(r => GUIDE_CONVERSION_ACTION_TYPES.has(r.action_type));
+  const engagementRecs = recommendations.filter(r => !GUIDE_CONVERSION_ACTION_TYPES.has(r.action_type));
 
   const pageMap = new Map(pages.map(p => [p.id, p]));
   const byPage = new Map<string, PlanningRecommendation[]>();
@@ -205,10 +211,25 @@ height="0" width="0" style="display:none;visibility:hidden"&gt;&lt;/iframe&gt;&l
   </div>`;
 
   // ── Section 4: Platform Setup ─────────────────────────────────────────────
-  const platformRows: string[] = [];
+  // Use derivePlaceholderTable when the rendered container is available;
+  // otherwise fall back to per-platform hardcoded rows.
+  let platformRows: string[] = [];
 
-  if (hasGA4) {
-    platformRows.push(`
+  if (gtmContainer) {
+    const rows = derivePlaceholderTable(gtmContainer.containerVersion.variable, platforms);
+    platformRows = rows.map(row => `
+    <div class="platform-row">
+      <div class="platform-name" style="font-size:13px;word-break:break-all"><code>${esc(row.variable_name)}</code></div>
+      <div class="platform-detail">
+        <strong>${esc(row.description)}</strong><br>
+        <strong>Where to find it:</strong> ${esc(row.where_to_find)}<br>
+        <strong>Example:</strong> <code>${esc(row.example)}</code>
+      </div>
+    </div>`);
+  } else {
+    // Static fallback rows — only include platforms that are selected
+    if (hasGA4) {
+      platformRows.push(`
     <div class="platform-row">
       <div class="platform-name">Google Analytics 4</div>
       <div class="platform-detail">
@@ -217,22 +238,20 @@ height="0" width="0" style="display:none;visibility:hidden"&gt;&lt;/iframe&gt;&l
         <strong>Example:</strong> <code>G-XXXXXXXXXX</code>
       </div>
     </div>`);
-  }
-
-  if (hasGoogleAds) {
-    platformRows.push(`
+    }
+    if (hasGoogleAds) {
+      platformRows.push(`
     <div class="platform-row">
       <div class="platform-name">Google Ads</div>
       <div class="platform-detail">
         <strong>Variable to update:</strong> <code>CONST - Google Ads Conversion ID</code><br>
         <strong>Where to find it:</strong> Google Ads → Tools → Conversions → select a conversion → Tag setup → "Conversion ID" (starts with <code>AW-</code>)<br>
-        <strong>Also update:</strong> Each <em>Google Ads Conversion</em> tag — replace <code>{{CONVERSION_LABEL}}</code> with the conversion label for each event.
+        <strong>Also update:</strong> Each Google Ads Conversion tag — update the per-event <code>CONST - GAds Conversion Label - *</code> variable.
       </div>
     </div>`);
-  }
-
-  if (hasMeta) {
-    platformRows.push(`
+    }
+    if (hasMeta) {
+      platformRows.push(`
     <div class="platform-row">
       <div class="platform-name">Meta (Facebook)</div>
       <div class="platform-detail">
@@ -241,10 +260,9 @@ height="0" width="0" style="display:none;visibility:hidden"&gt;&lt;/iframe&gt;&l
         <strong>Example:</strong> <code>1234567890123456</code>
       </div>
     </div>`);
-  }
-
-  if (hasTikTok) {
-    platformRows.push(`
+    }
+    if (hasTikTok) {
+      platformRows.push(`
     <div class="platform-row">
       <div class="platform-name">TikTok Ads</div>
       <div class="platform-detail">
@@ -252,25 +270,24 @@ height="0" width="0" style="display:none;visibility:hidden"&gt;&lt;/iframe&gt;&l
         <strong>Where to find it:</strong> TikTok Ads Manager → Assets → Events → Web Events → your pixel → Pixel ID
       </div>
     </div>`);
-  }
-
-  if (hasLinkedIn) {
-    platformRows.push(`
+    }
+    if (hasLinkedIn) {
+      platformRows.push(`
     <div class="platform-row">
       <div class="platform-name">LinkedIn</div>
       <div class="platform-detail">
         <strong>Variable to update:</strong> <code>CONST - LinkedIn Partner ID</code><br>
-        <strong>Where to find it:</strong> LinkedIn Campaign Manager → Account Assets → Insight Tag → Partner ID<br>
-        <strong>Also update:</strong> Each <em>LinkedIn Conversion</em> tag — replace <code>{{LINKEDIN_CONVERSION_ID}}</code> with the conversion ID.
+        <strong>Where to find it:</strong> LinkedIn Campaign Manager → Account Assets → Insight Tag → Partner ID
       </div>
     </div>`);
+    }
   }
 
   const platformSection = `
   <div class="section">
     <h2>4. Platform Setup — Values to Fill In</h2>
     <p>After importing the GTM container, update these variables in GTM under <strong>Variables → User-Defined Variables</strong>:</p>
-    ${platformRows.join('')}
+    ${platformRows.length > 0 ? platformRows.join('') : '<p><em>No placeholder variables — all platform IDs have been pre-filled.</em></p>'}
     <div class="info-box" style="margin-top:16px">
       💡 <strong>Consent Mode:</strong> The imported container includes a Consent Mode v2 default tag that sets all consent signals to "denied" by default. If you use a Consent Management Platform (CMP) like Cookiebot or OneTrust, configure it to update these consent signals when the user accepts cookies.
     </div>

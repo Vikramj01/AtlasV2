@@ -8,6 +8,8 @@
  * Replaces the HTML implementation guide for developer-facing output.
  */
 import type { PlanningRecommendation, PlanningPage, PlanningSession } from '@/types/planning';
+import type { GTMContainerJSON } from './gtmContainerGenerator';
+import { derivePlaceholderTable } from './renderer/guide.renderer';
 
 // ── TrackingPlan type ─────────────────────────────────────────────────────────
 
@@ -57,7 +59,9 @@ function buildTrackingPlan(
   });
 
   const allPlatforms = new Set(events.flatMap((e) => e.platforms));
-  const conversionCount = events.filter((e) => conversionActions.has(e.event_name)).length;
+  // Count by trigger (= action_type), not event_name — custom event names like
+  // "contact_form_submit" have action_type "generate_lead" which IS a conversion.
+  const conversionCount = events.filter((e) => conversionActions.has(e.trigger)).length;
 
   return {
     session_id:      session.id,
@@ -85,8 +89,10 @@ export function generateDeveloperHandoffDoc(
   recommendations: PlanningRecommendation[],
   pages: PlanningPage[],
   session: PlanningSession,
+  gtmContainer?: GTMContainerJSON,
 ): string {
   const plan = buildTrackingPlan(recommendations, pages, session);
+  const platforms = session.selected_platforms as string[];
   const now = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 
   const lines: string[] = [];
@@ -171,13 +177,43 @@ export function generateDeveloperHandoffDoc(
   // ── Section 3: Platform IDs ───────────────────────────────────────────────
   lines.push(`## 3. Platform IDs to fill in`);
   lines.push(``);
-  lines.push(`After importing, search for \`PLACEHOLDER\` in the GTM workspace and replace:`);
+  lines.push(`After importing, update these GTM variables (Variables → User-Defined Variables):`);
   lines.push(``);
-  lines.push(`| Placeholder | Where to find it | Example |`);
-  lines.push(`|---|---|---|`);
-  lines.push(`| \`G-XXXXXXXXXX\` | GA4 → Admin → Data streams → Measurement ID | \`G-ABC123DEF\` |`);
-  lines.push(`| \`AW-XXXXXXXXXX/YYYYY\` | Google Ads → Tools → Conversions → Conversion ID + Label | \`AW-12345678/AbCdEfGh\` |`);
-  lines.push(`| \`0000000000\` (10 zeros) | Meta Events Manager → Pixel ID | \`1234567890\` |`);
+
+  // Derive placeholder table from the rendered container's CONST variables.
+  // Falls back to a platform-filtered heuristic when the container is not available.
+  if (gtmContainer) {
+    const rows = derivePlaceholderTable(gtmContainer.containerVersion.variable, platforms);
+    if (rows.length > 0) {
+      lines.push(`| Variable name | Description | Where to find it | Example |`);
+      lines.push(`|---|---|---|---|`);
+      for (const row of rows) {
+        lines.push(`| \`${row.variable_name}\` | ${row.description} | ${row.where_to_find} | \`${row.example}\` |`);
+      }
+    } else {
+      lines.push(`_No placeholder variables found — all platform IDs may have been pre-filled._`);
+    }
+  } else {
+    // Static fallback when container is not threaded through
+    lines.push(`| Variable name | Where to find it | Example |`);
+    lines.push(`|---|---|---|`);
+    if (platforms.includes('ga4')) {
+      lines.push(`| \`CONST - GA4 Measurement ID\` | GA4 → Admin → Data Streams → Measurement ID | \`G-XXXXXXXXXX\` |`);
+    }
+    if (platforms.includes('google_ads')) {
+      lines.push(`| \`CONST - Google Ads Conversion ID\` | Google Ads → Tools → Conversions → Tag setup | \`AW-XXXXXXXXX\` |`);
+      lines.push(`| \`CONST - GAds Conversion Label - *\` | Google Ads → Goals → Conversions → select conversion | \`AbCdEfGhIj\` |`);
+    }
+    if (platforms.includes('meta')) {
+      lines.push(`| \`CONST - Meta Pixel ID\` | Meta Business Manager → Events Manager → Pixel ID | \`1234567890123456\` |`);
+    }
+    if (platforms.includes('tiktok')) {
+      lines.push(`| \`CONST - TikTok Pixel ID\` | TikTok Ads Manager → Assets → Events → Pixel ID | \`C4XXXXXXXXXX\` |`);
+    }
+    if (platforms.includes('linkedin')) {
+      lines.push(`| \`CONST - LinkedIn Partner ID\` | LinkedIn Campaign Manager → Account Assets → Insight Tag | \`1234567\` |`);
+    }
+  }
   lines.push(``);
   lines.push(`---`);
   lines.push(``);

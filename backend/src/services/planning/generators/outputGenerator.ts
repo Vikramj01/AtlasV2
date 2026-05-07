@@ -101,7 +101,8 @@ export async function generateAllOutputs(session: PlanningSession): Promise<Gene
 
   // ── 3. Developer Handoff Document (Markdown) ─────────────────────────────
   logger.info({ sessionId }, 'Generating developer handoff doc');
-  const handoffMd = generateDeveloperHandoffDoc(approvedRecs, pages, session);
+  // Pass gtmContainer so the placeholder table reflects the actual CONST variables.
+  const handoffMd = generateDeveloperHandoffDoc(approvedRecs, pages, session, gtmContainer);
 
   // ── Validate before delivery ──────────────────────────────────────────────
   logger.info({ sessionId }, 'Running GenerationValidator');
