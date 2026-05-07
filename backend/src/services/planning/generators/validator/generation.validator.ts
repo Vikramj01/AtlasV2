@@ -263,8 +263,9 @@ export function validateGeneration(input: GenerationValidationInput): Validation
       // Ecommerce events use a nested ecommerce: object — skip flat key comparison
       if (ECOMMERCE_SNIPPET_ACTIONS.has(event.action_type)) continue;
 
+      // Only check required params — optional params are intentionally absent from the snippet.
       const schemaKeys = new Set(
-        event.parameters.map(p => p.key).filter(k => k !== 'event'),
+        event.parameters.filter(p => p.required).map(p => p.key).filter(k => k !== 'event'),
       );
       const snippetKeys = extractSnippetKeys(event.code_snippet);
 
