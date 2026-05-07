@@ -228,7 +228,8 @@ export function renderMetaEventTag(
   const metaEvent = META_EVENT_NAME[event.event_name] ?? META_EVENT_NAME[event.action_type] ?? 'CustomEvent';
   const isEcommercePurchase = event.action_type === 'purchase';
   const isAddToCart = event.action_type === 'add_to_cart';
-  const isLead = event.action_type === 'generate_lead';
+  // action_type may be 'generate_lead' from the DB adapter (Sprint 2.5-C backward compat)
+  const isLead = (event.action_type as string) === 'generate_lead' || event.action_type === 'form_submit';
 
   let fbqParams = '{}';
   if (isEcommercePurchase || isAddToCart) {
