@@ -13,7 +13,7 @@
  * because file upload + CSV parsing is computationally expensive.
  */
 
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import type { Request } from 'express';
 
 const WINDOW_MS = 15 * 60 * 1000; // 15 minutes
@@ -32,7 +32,7 @@ export const offlineUploadLimiter = rateLimit({
     return PLAN_MAX[plan] ?? PLAN_MAX.free;
   },
   // Key by user id — one counter per org, not per IP
-  keyGenerator: (req: Request) => req.user?.id ?? req.ip ?? 'anonymous',
+  keyGenerator: (req: Request) => req.user?.id ?? ipKeyGenerator(req.ip ?? ''),
   standardHeaders: 'draft-7', // Return RateLimit-* headers
   legacyHeaders: false,
   message: {

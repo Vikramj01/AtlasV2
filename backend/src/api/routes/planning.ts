@@ -8,7 +8,7 @@
  */
 import { Router } from 'express';
 import type { Request, Response } from 'express';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { generateAllOutputs, GenerationValidationError } from '@/services/planning/generators/outputGenerator';
 import { validateGTMContainer } from '@/services/planning/generators/gtmSchemaValidator';
 import { mergeGTMContainers } from '@/services/planning/generators/gtmMerge';
@@ -57,7 +57,7 @@ router.use(authMiddleware, planGuard('pro'));
 const detectRateLimit = rateLimit({
   windowMs: 60_000,
   max: 10,
-  keyGenerator: (req) => req.user?.id ?? req.ip ?? 'unknown',
+  keyGenerator: (req) => req.user?.id ?? ipKeyGenerator(req.ip ?? ''),
   standardHeaders: true,
   legacyHeaders: false,
   validate: { xForwardedForHeader: false },

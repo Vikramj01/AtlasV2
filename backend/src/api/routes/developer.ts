@@ -21,7 +21,7 @@
 
 import { Router } from 'express';
 import type { Request, Response } from 'express';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { sendInternalError } from '@/utils/apiError';
 import { env } from '@/config/env';
@@ -63,7 +63,7 @@ const devPortalLimiter = rateLimit({
 const quickCheckLimiter = rateLimit({
   windowMs: 60 * 60_000, // 1 hour
   max: 20,
-  keyGenerator: (req) => (req.params as { shareToken?: string }).shareToken ?? req.ip ?? 'unknown',
+  keyGenerator: (req) => (req.params as { shareToken?: string }).shareToken ?? ipKeyGenerator(req.ip ?? ''),
   standardHeaders: true,
   legacyHeaders: false,
   validate: { xForwardedForHeader: false },
