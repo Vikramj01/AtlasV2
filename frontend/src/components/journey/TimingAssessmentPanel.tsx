@@ -53,19 +53,10 @@ export function TimingAssessmentPanel({
         <PlatformStatusRow platform="google" lagClass={lagClass} />
       </div>
 
-      {/* Proxy recommendations slot (Sprint 3) */}
+      {/* Proxy recommendations — only rendered for amber/red risk levels */}
       {!isOptimal && proxySlot && (
         <div className="pt-1 border-t border-black/5">
           {proxySlot}
-        </div>
-      )}
-
-      {/* Placeholder shown until Sprint 3 wires in real recommendations */}
-      {!isOptimal && !proxySlot && (
-        <div className="pt-1 border-t border-black/5">
-          <p className="text-[11px] text-muted-foreground italic">
-            → Proxy event recommendations coming in next step.
-          </p>
         </div>
       )}
     </div>
