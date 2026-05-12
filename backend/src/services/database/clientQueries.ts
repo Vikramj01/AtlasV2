@@ -10,6 +10,7 @@ import type {
   UpsertPagesRequest,
 } from '../../types/organisation';
 import type { Deployment, ClientOutput } from '../../types/signal';
+import { getTimingRiskForClient } from './journeyQueries';
 
 // ─── Clients ──────────────────────────────────────────────────────────────────
 
@@ -48,7 +49,7 @@ export async function listClients(orgId: string): Promise<ClientWithDetails[]> {
   const results: ClientWithDetails[] = [];
 
   for (const client of clients) {
-    const [platforms, pages, deploymentCount] = await Promise.all([
+    const [platforms, pages, deploymentCount, timingRisk] = await Promise.all([
       getClientPlatforms(client.id),
       getClientPages(client.id),
       supabase
@@ -56,6 +57,7 @@ export async function listClients(orgId: string): Promise<ClientWithDetails[]> {
         .select('*', { count: 'exact', head: true })
         .eq('client_id', client.id)
         .then((r) => r.count ?? 0),
+      getTimingRiskForClient(client.id),
     ]);
 
     // Get latest audit score for this client
@@ -77,7 +79,7 @@ export async function listClients(orgId: string): Promise<ClientWithDetails[]> {
       signal_health = reports?.[0]?.report_json?.executive_summary?.scores?.conversion_signal_health ?? null;
     }
 
-    results.push({ ...client, platforms, pages, signal_health, last_audit_at, deployment_count: deploymentCount as number });
+    results.push({ ...client, platforms, pages, signal_health, last_audit_at, deployment_count: deploymentCount as number, timing_risk_flag: timingRisk });
   }
 
   return results;

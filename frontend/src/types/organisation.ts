@@ -63,6 +63,7 @@ export interface ClientWithDetails extends Client {
   signal_health?: number | null;
   last_audit_at?: string | null;
   deployment_count?: number;
+  timing_risk_flag?: 'flagged' | null;
 }
 
 export interface ClientDeployment {

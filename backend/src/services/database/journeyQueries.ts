@@ -312,3 +312,44 @@ export async function deleteTemplate(templateId: string, userId: string): Promis
 
   if (error) throw new Error(`Failed to delete template: ${error.message}`);
 }
+
+// ── Timing risk ───────────────────────────────────────────────────────────────
+
+/**
+ * Returns 'flagged' if the client's most recent journey has at least one
+ * conversion event with unresolved timing risk (i.e. timing_risk !== 'none'
+ * and the stage has no __proxy__ marker in its conversion_event_metadata).
+ * Returns null when no linked journey exists yet.
+ */
+export async function getTimingRiskForClient(clientId: string): Promise<'flagged' | null> {
+  // Find the most recent journey linked to this client
+  const { data: journey } = await supabase
+    .from('journeys')
+    .select('id')
+    .eq('client_id', clientId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!journey) return null;
+
+  // Pull all stages for that journey that have non-empty metadata
+  const { data: stages } = await supabase
+    .from('journey_stages')
+    .select('conversion_event_metadata')
+    .eq('journey_id', journey.id);
+
+  if (!stages?.length) return null;
+
+  for (const stage of stages) {
+    const meta = (stage.conversion_event_metadata ?? {}) as Record<string, { timing_risk?: string; is_proxy?: boolean }>;
+    // Skip stages that are themselves proxy stages
+    if (meta['__proxy__']?.is_proxy) continue;
+    for (const [key, entry] of Object.entries(meta)) {
+      if (key === '__proxy__') continue;
+      if (entry?.timing_risk && entry.timing_risk !== 'none') return 'flagged';
+    }
+  }
+
+  return null;
+}

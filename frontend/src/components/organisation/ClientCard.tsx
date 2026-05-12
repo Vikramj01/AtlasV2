@@ -42,7 +42,17 @@ export function ClientCard({ client, orgId }: Props) {
                 <ExternalLink className="h-3 w-3 shrink-0" />
               </a>
             </div>
-            <HealthBadge score={client.signal_health} />
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              {client.timing_risk_flag === 'flagged' && (
+                <span
+                  title="This client has conversion events with unresolved signal timing risk"
+                  className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700"
+                >
+                  ⏱ Timing risk
+                </span>
+              )}
+              <HealthBadge score={client.signal_health} />
+            </div>
           </div>
 
           <div className="mt-3 flex items-center gap-3 text-xs text-muted-foreground">
