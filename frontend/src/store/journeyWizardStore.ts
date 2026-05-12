@@ -1,6 +1,7 @@
 import { create } from 'zustand';
-import type { BusinessType, ImplementationFormat, Platform, WizardStage, WizardPlatformSelection, WizardState } from '../types/journey';
+import type { BusinessType, ImplementationFormat, Platform, WizardStage, WizardPlatformSelection, WizardState, JourneyDuration, StageTimingMap } from '../types/journey';
 import { DEFAULT_STAGES, PLATFORM_OPTIONS } from '../types/journey';
+import { buildTimingResult } from '../lib/journey/classifyEvent';
 import type { SavedTemplate } from '../lib/api/journeyApi';
 
 function generateId(): string {
@@ -35,6 +36,12 @@ interface JourneyWizardStore extends WizardState {
   toggleAction: (stageId: string, actionKey: string) => void;
   reorderStages: (reorderedStages: WizardStage[]) => void;
 
+  // Step 2 — signal timing
+  stageTiming: StageTimingMap;
+  setStageJourneyDuration: (stageId: string, duration: JourneyDuration) => void;
+  addProxyStage: (parentStageId: string, proxyActionKey: string, proxyLabel: string, duration: JourneyDuration) => void;
+  removeProxyStage: (stageId: string) => void;
+
   // Step 3 — platforms
   togglePlatform: (platform: Platform) => void;
   setPlatformId: (platform: Platform, id: string) => void;
@@ -47,12 +54,13 @@ interface JourneyWizardStore extends WizardState {
   reset: () => void;
 }
 
-const INITIAL_STATE: WizardState = {
+const INITIAL_STATE: WizardState & { stageTiming: StageTimingMap } = {
   currentStep: 1,
   businessType: null,
   stages: [],
   platforms: makeDefaultPlatforms(),
   implementationFormat: 'gtm',
+  stageTiming: {},
 };
 
 export const useJourneyWizardStore = create<JourneyWizardStore>((set, get) => ({
@@ -135,6 +143,50 @@ export const useJourneyWizardStore = create<JourneyWizardStore>((set, get) => ({
     set({ stages: reorderedStages.map((s, i) => ({ ...s, order: i + 1 })) });
   },
 
+  // ── Signal timing ────────────────────────────────────────────────────────────
+
+  setStageJourneyDuration(stageId, duration) {
+    const timing = buildTimingResult(duration);
+    set({ stageTiming: { ...get().stageTiming, [stageId]: timing } });
+  },
+
+  addProxyStage(parentStageId, proxyActionKey, proxyLabel, duration) {
+    const { stages, stageTiming } = get();
+    const parent = stages.find((s) => s.id === parentStageId);
+    if (!parent) return;
+
+    const proxyId = generateId();
+    const proxyStage: WizardStage = {
+      id: proxyId,
+      order: parent.order + 0.5, // will be normalised on reorder
+      label: proxyLabel,
+      pageType: 'custom',
+      sampleUrl: '',
+      actions: [proxyActionKey],
+    };
+
+    const updated = [...stages, proxyStage]
+      .sort((a, b) => a.order - b.order)
+      .map((s, i) => ({ ...s, order: i + 1 }));
+
+    const proxyTiming = buildTimingResult(duration, true, parentStageId);
+
+    set({
+      stages: updated,
+      stageTiming: { ...stageTiming, [proxyId]: proxyTiming },
+    });
+  },
+
+  removeProxyStage(stageId) {
+    const { stages, stageTiming } = get();
+    const filtered = stages
+      .filter((s) => s.id !== stageId)
+      .map((s, i) => ({ ...s, order: i + 1 }));
+
+    const { [stageId]: _removed, ...remainingTiming } = stageTiming;
+    set({ stages: filtered, stageTiming: remainingTiming });
+  },
+
   togglePlatform(platform) {
     set({
       platforms: get().platforms.map((p) =>
@@ -167,11 +219,12 @@ export const useJourneyWizardStore = create<JourneyWizardStore>((set, get) => ({
     set({
       businessType: template.business_type,
       stages,
+      stageTiming: {},
       currentStep: 2,
     });
   },
 
   reset() {
-    set({ ...INITIAL_STATE, platforms: makeDefaultPlatforms() });
+    set({ ...INITIAL_STATE, platforms: makeDefaultPlatforms(), stageTiming: {} });
   },
 }));
