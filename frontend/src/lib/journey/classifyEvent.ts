@@ -59,6 +59,17 @@ export function buildTimingResult(
   };
 }
 
+// Maps a library lag_class back to a representative JourneyDuration so proxy
+// stages can be classified consistently when added via "Add to Journey".
+export function lagClassToDefaultDuration(lagClass: LagClass): JourneyDuration {
+  switch (lagClass) {
+    case 'immediate':  return 'immediate';
+    case 'short_lag':  return 'one_to_seven_days';
+    case 'long_lag':   return 'one_to_four_weeks';
+    case 'deep_lag':   return 'over_one_month';
+  }
+}
+
 // ─── Display helpers ──────────────────────────────────────────────────────────
 
 export interface TimingBadgeConfig {

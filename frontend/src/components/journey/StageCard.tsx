@@ -29,8 +29,10 @@ interface StageCardProps {
 }
 
 export function StageCard({ stage, canRemove }: StageCardProps) {
-  const { removeStage, updateStageLabel, updateStageUrl } = useJourneyWizardStore();
+  const { removeStage, removeProxyStage, updateStageLabel, updateStageUrl, stageTiming } = useJourneyWizardStore();
   const convention = useTaxonomyStore((s) => s.convention);
+
+  const isProxy = stageTiming[stage.id]?.is_proxy === true;
   const [editingLabel, setEditingLabel] = useState(false);
   const [labelDraft, setLabelDraft] = useState(stage.label);
 
@@ -111,6 +113,11 @@ export function StageCard({ stage, canRemove }: StageCardProps) {
                 <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
               </span>
             )}
+            {isProxy && (
+              <span className="flex-shrink-0 inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700">
+                Proxy signal
+              </span>
+            )}
           </div>
 
           {canRemove && (
@@ -119,7 +126,13 @@ export function StageCard({ stage, canRemove }: StageCardProps) {
               variant="ghost"
               size="icon"
               onClick={() => {
-                if (window.confirm('Remove this stage?')) removeStage(stage.id);
+                const msg = isProxy
+                  ? 'Remove this proxy signal stage?'
+                  : 'Remove this stage?';
+                if (window.confirm(msg)) {
+                  if (isProxy) removeProxyStage(stage.id);
+                  else removeStage(stage.id);
+                }
               }}
               className="ml-2 h-6 w-6 text-muted-foreground hover:text-destructive flex-shrink-0"
               aria-label="Remove stage"

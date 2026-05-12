@@ -6,6 +6,7 @@ import { useJourneyWizardStore } from '@/store/journeyWizardStore';
 import { classifyEvent } from '@/lib/journey/classifyEvent';
 import { BusinessModelContextSelector } from './BusinessModelContextSelector';
 import { TimingAssessmentPanel } from './TimingAssessmentPanel';
+import { ProxyRecommendationList } from './ProxyRecommendationList';
 
 interface ActionTogglesProps {
   stageId: string;
@@ -14,19 +15,14 @@ interface ActionTogglesProps {
 
 export function ActionToggles({ stageId, actions }: ActionTogglesProps) {
   const [open, setOpen] = useState(false);
-  const { toggleAction, stageTiming, setStageJourneyDuration } = useJourneyWizardStore();
+  const { toggleAction, setStageJourneyDuration } = useJourneyWizardStore();
 
-  // Track per-toggle journey duration selections locally — only conversion actions
-  // that are currently ON need a duration. We mirror confirmed selections into the
-  // store via setStageJourneyDuration when the user picks an option.
   const [localDurations, setLocalDurations] = useState<Record<string, JourneyDuration | null>>({});
 
   const activeCount = actions.filter((a) => a !== 'ad_landing').length;
 
   function handleDurationChange(actionKey: string, duration: JourneyDuration) {
     setLocalDurations((prev: Record<string, JourneyDuration | null>) => ({ ...prev, [actionKey]: duration }));
-    // Persist to store — keyed by stageId + actionKey so multiple conversion
-    // actions on one stage each get their own timing entry.
     setStageJourneyDuration(`${stageId}::${actionKey}`, duration);
   }
 
@@ -52,8 +48,6 @@ export function ActionToggles({ stageId, actions }: ActionTogglesProps) {
             const isOn = actions.includes(toggle.key);
             const isConversion = CONVERSION_ACTION_KEYS.has(toggle.key);
             const selectedDuration = localDurations[toggle.key] ?? null;
-            const timingKey = `${stageId}::${toggle.key}`;
-            const timing = stageTiming[timingKey];
 
             return (
               <div key={toggle.key}>
@@ -78,7 +72,6 @@ export function ActionToggles({ stageId, actions }: ActionTogglesProps) {
                   <span className="text-xs text-muted-foreground">{toggle.label}</span>
                 </label>
 
-                {/* Journey duration selector + timing panel for conversion actions */}
                 {isOn && isConversion && (
                   <div className="ml-11">
                     <BusinessModelContextSelector
@@ -90,15 +83,14 @@ export function ActionToggles({ stageId, actions }: ActionTogglesProps) {
                       <TimingAssessmentPanel
                         eventName={toggle.label}
                         lagClass={classifyEvent(selectedDuration)}
-                        // proxySlot wired in Sprint 3
+                        proxySlot={
+                          <ProxyRecommendationList
+                            lagClass={classifyEvent(selectedDuration)}
+                            parentStageId={stageId}
+                            parentDuration={selectedDuration}
+                          />
+                        }
                       />
-                    )}
-
-                    {/* Proxy badge if this stage was added as a proxy */}
-                    {timing?.is_proxy && (
-                      <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700">
-                        Proxy signal
-                      </span>
                     )}
                   </div>
                 )}

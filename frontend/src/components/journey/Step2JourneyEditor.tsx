@@ -16,6 +16,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { useJourneyWizardStore } from '@/store/journeyWizardStore';
 import { StageCard } from './StageCard';
+import { TimingAssessmentSummary } from './TimingAssessmentSummary';
 import { InfoTooltip } from '@/components/common/InfoTooltip';
 import { TOOLTIPS } from '@/lib/ui-copy';
 
@@ -90,6 +91,8 @@ export function Step2JourneyEditor({ onNext, onBack }: Step2Props) {
           <AddStageButton onAdd={() => addStage(0)} label="+ Add First Stage" />
         )}
       </div>
+
+      <TimingAssessmentSummary />
 
       <div className="mt-8 flex gap-3">
         <Button type="button" variant="outline" onClick={onBack} className="flex-1">
