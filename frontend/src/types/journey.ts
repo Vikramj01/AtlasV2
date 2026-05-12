@@ -144,6 +144,64 @@ export const ACTION_TOGGLES: ActionToggle[] = [
   { key: 'ad_landing', label: 'This page is important for ad tracking', defaultForPageTypes: ['landing'] },
 ];
 
+// ─── Signal Timing Assessment ─────────────────────────────────────────────────
+
+export type JourneyDuration =
+  | 'immediate'
+  | 'one_to_seven_days'
+  | 'one_to_four_weeks'
+  | 'over_one_month';
+
+export type LagClass = 'immediate' | 'short_lag' | 'long_lag' | 'deep_lag';
+
+export type TimingRisk = 'none' | 'meta' | 'meta_and_loop' | 'critical';
+
+export type PlatformSignalStatus = 'optimal' | 'marginal' | 'outside_window';
+
+export interface ConversionEventTiming {
+  journey_duration: JourneyDuration;
+  lag_class: LagClass;
+  timing_risk: TimingRisk;
+  is_proxy: boolean;
+  proxy_for?: string; // id of primary WizardStage the proxy belongs to
+  platform_flags: {
+    meta: PlatformSignalStatus;
+    google: PlatformSignalStatus;
+  };
+}
+
+// Timing metadata keyed by stage id — stored alongside the WizardStage array.
+// Kept separate so existing WizardStage / JourneyStage types remain unchanged.
+export type StageTimingMap = Record<string, ConversionEventTiming>;
+
+export interface ProxyEvent {
+  id: string;
+  name: string;
+  lag_class: LagClass;
+  platform_benefit: 'meta' | 'google' | 'both';
+  rationale: string;
+  event_type: string;
+  verticals: string[];
+}
+
+export interface JourneyDurationOption {
+  value: JourneyDuration;
+  label: string;
+}
+
+export const JOURNEY_DURATION_OPTIONS: JourneyDurationOption[] = [
+  { value: 'immediate',          label: 'Same session or within a few hours' },
+  { value: 'one_to_seven_days',  label: '1–7 days' },
+  { value: 'one_to_four_weeks',  label: '1–4 weeks' },
+  { value: 'over_one_month',     label: 'More than a month' },
+];
+
+// Conversion-category action keys — these are the toggles that produce
+// a timing assessment when switched on.
+export const CONVERSION_ACTION_KEYS = new Set(['purchase', 'generate_lead', 'sign_up']);
+
+// ─── Platform display info ────────────────────────────────────────────────────
+
 // Platform display info
 export interface PlatformInfo {
   value: Platform;

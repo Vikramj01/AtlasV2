@@ -3,6 +3,8 @@ import type { Request, Response } from 'express';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { strategyGate } from '../middleware/strategyGate';
 import { sendInternalError } from '../../utils/apiError';
+import { fetchProxyEvents } from '../../services/database/proxyEventQueries';
+import type { ProxyEventRow } from '../../services/database/proxyEventQueries';
 import {
   createJourney,
   listJourneys,
@@ -282,5 +284,38 @@ router.get('/:id/specs/:format', async (req: Request, res: Response) => {
   }
 });
 
+
+// ── Proxy Event Library ────────────────────────────────────────────────────────
+// GET /api/journeys/proxy-events?lag_class=long_lag&business_type=saas
+// Returns proxy event recommendations filtered by lag class and optional vertical.
+
+const VALID_LAG_CLASSES: ProxyEventRow['lag_class'][] = [
+  'immediate',
+  'short_lag',
+  'long_lag',
+  'deep_lag',
+];
+
+router.get('/proxy-events', async (req: Request, res: Response) => {
+  try {
+    const lagClass = req.query.lag_class as string | undefined;
+    const businessType = req.query.business_type as string | undefined;
+
+    if (!lagClass || !VALID_LAG_CLASSES.includes(lagClass as ProxyEventRow['lag_class'])) {
+      return res.status(400).json({
+        error: `lag_class is required and must be one of: ${VALID_LAG_CLASSES.join(', ')}`,
+      });
+    }
+
+    const events = await fetchProxyEvents(
+      lagClass as ProxyEventRow['lag_class'],
+      businessType ?? null,
+    );
+
+    res.json({ data: events });
+  } catch (err) {
+    sendInternalError(res, err);
+  }
+});
 
 export { router as journeysRouter };
