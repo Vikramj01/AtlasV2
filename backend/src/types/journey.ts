@@ -93,6 +93,7 @@ export interface JourneyStage {
   page_type: string;
   sample_url: string | null;
   actions: string[];
+  conversion_event_metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
 }
@@ -185,6 +186,7 @@ export interface UpsertStageRequest {
   page_type: string;
   sample_url?: string | null;
   actions: string[];
+  conversion_event_metadata?: Record<string, unknown>;
 }
 
 export interface UpsertPlatformsRequest {
@@ -210,6 +212,8 @@ export interface ExpectedEvent {
   event_name_by_platform: Record<string, string>;
   required_params: string[];
   optional_params: string[];
+  signal_role: 'primary' | 'supporting';
+  timing_risk?: string;
 }
 
 export interface ExpectedPlatform {
