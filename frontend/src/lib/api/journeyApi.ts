@@ -34,6 +34,7 @@ export interface CreateJourneyPayload {
     page_type: string;
     sample_url?: string | null;
     actions: string[];
+    conversion_event_metadata?: Record<string, unknown>;
   }>;
   platforms?: Array<{
     platform: Platform;

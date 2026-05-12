@@ -24,6 +24,7 @@ export interface JourneyStage {
   page_type: string;
   sample_url: string | null;
   actions: string[];
+  conversion_event_metadata: Record<string, ConversionEventTiming>;
   created_at: string;
   updated_at: string;
 }

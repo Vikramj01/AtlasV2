@@ -11,7 +11,11 @@ import type {
 import { getActionPrimitive } from '../actionPrimitives';
 import { getPlatformSchema } from '../platformSchemas';
 
-function buildExpectedEvents(actions: string[], activePlatforms: Platform[]): ExpectedEvent[] {
+function buildExpectedEvents(
+  actions: string[],
+  activePlatforms: Platform[],
+  conversionEventMetadata: Record<string, unknown>,
+): ExpectedEvent[] {
   const events: ExpectedEvent[] = [];
 
   for (const actionKey of actions) {
@@ -29,11 +33,16 @@ function buildExpectedEvents(actions: string[], activePlatforms: Platform[]): Ex
 
     if (Object.keys(eventNameByPlatform).length === 0) continue;
 
+    const meta = conversionEventMetadata[actionKey] as { is_proxy?: boolean; timing_risk?: string } | undefined;
+    const isProxy = meta?.is_proxy === true;
+
     events.push({
       action_key: actionKey,
       event_name_by_platform: eventNameByPlatform,
       required_params: primitive.required_params.map((p) => p.key),
       optional_params: primitive.optional_params.map((p) => p.key),
+      signal_role: isProxy ? 'supporting' : 'primary',
+      ...(meta?.timing_risk ? { timing_risk: meta.timing_risk } : {}),
     });
   }
 
@@ -104,7 +113,7 @@ export function generateValidationSpec(journey: JourneyDefinition, platforms: Pl
       stage_order: stage.stage_order,
       stage_label: stage.label,
       sample_url: stage.sample_url,
-      expected_events: buildExpectedEvents(stage.actions, activePlatforms),
+      expected_events: buildExpectedEvents(stage.actions, activePlatforms, stage.conversion_event_metadata ?? {}),
       expected_platforms: buildExpectedPlatforms(activePlatforms),
     }));
 
