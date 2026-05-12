@@ -111,6 +111,7 @@ export interface ClientWithDetails extends Client {
   signal_health?: number | null;           // Latest audit score, if any
   last_audit_at?: string | null;
   deployment_count?: number;
+  timing_risk_flag?: 'flagged' | null;     // Unresolved signal timing risk in latest linked journey
 }
 
 export interface OrgWithStats extends Organisation {
