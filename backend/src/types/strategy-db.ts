@@ -84,6 +84,8 @@ export interface SetObjectiveEvalInput {
   proxy_event_required: boolean;
   rationale: string;
   summary_markdown: string;
+  conversion_tier?: 'primary' | 'secondary' | 'suppression' | null;
+  platform_action_types?: Record<string, string> | null;
 }
 
 export interface AddCampaignInput {

@@ -18,6 +18,7 @@ export type OutcomeCategory =
   | 'donation';
 
 export type EventVerdict = 'CONFIRM' | 'AUGMENT' | 'REPLACE';
+export type ConversionTier = 'primary' | 'secondary' | 'suppression';
 
 // ── Legacy wizard types (Sprint 1 — single-objective wizard) ──────────────────
 
@@ -72,6 +73,8 @@ export interface StrategyObjective {
   locked_at: string | null;
   created_at: string;
   updated_at: string;
+  conversion_tier: ConversionTier | null;
+  platform_action_types: Record<string, string> | null;
 }
 
 export interface StrategyObjectiveCampaign {

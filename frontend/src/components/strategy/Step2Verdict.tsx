@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
 import { useStrategyStore } from '@/store/strategyStore';
-import type { BriefMode, EventVerdict } from '@/types/strategy';
+import type { BriefMode, ConversionTier, EventVerdict } from '@/types/strategy';
 
 const VERDICT_TOOLTIP: Record<EventVerdict, (typeof TOOLTIPS)[keyof typeof TOOLTIPS]> = {
   CONFIRM: TOOLTIPS.strategyVerdict_CONFIRM,
@@ -43,6 +43,12 @@ const VERDICT_CONFIG: Record<
     borderClass: 'border-l-4 border-l-red-500',
     accentClass: 'bg-red-50 border-red-200',
   },
+};
+
+const TIER_CONFIG: Record<ConversionTier, { label: string; chipClass: string; description: string }> = {
+  primary:     { label: 'Primary signal',     chipClass: 'bg-blue-100 text-blue-800',  description: 'Bid on this event — set as primary conversion action in each platform.' },
+  secondary:   { label: 'Secondary signal',   chipClass: 'bg-slate-100 text-slate-700', description: 'Observe only — useful for diagnostics but do not optimise toward it.' },
+  suppression: { label: 'Suppression signal', chipClass: 'bg-red-100 text-red-700',    description: 'Do not use as a conversion — would mislead Smart Bidding.' },
 };
 
 const TIMING_LABEL: Record<number, string> = {
@@ -137,6 +143,32 @@ export function Step2Verdict({ objectiveId, mode, onLocked, onEditInputs }: Step
               <p className="text-sm text-foreground/80">{obj.rationale}</p>
             )}
           </div>
+
+          {/* Measurement governance tier */}
+          {obj.conversion_tier && (() => {
+            const tierCfg = TIER_CONFIG[obj.conversion_tier];
+            return (
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <span className={cn('inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold', tierCfg.chipClass)}>
+                    {tierCfg.label}
+                  </span>
+                  <span className="text-xs text-muted-foreground">{tierCfg.description}</span>
+                </div>
+                {obj.platform_action_types && Object.keys(obj.platform_action_types).length > 0 && (
+                  <div className="rounded-md border border-border bg-muted/20 px-3 py-2 text-xs space-y-1">
+                    <p className="font-semibold text-muted-foreground uppercase tracking-wide text-[10px] mb-1.5">Platform settings</p>
+                    {Object.entries(obj.platform_action_types).map(([platform, action]) => (
+                      <div key={platform} className="flex items-center gap-2">
+                        <span className="font-medium capitalize min-w-[90px]">{platform.replace('_', ' ')}</span>
+                        <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">{action}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Event cards */}
           {(obj.recommended_primary_event || obj.proxy_event_required) && (

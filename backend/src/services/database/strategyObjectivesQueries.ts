@@ -247,6 +247,8 @@ export async function setObjectiveEvaluation(
       proxy_event_required: eval_.proxy_event_required,
       rationale: eval_.rationale,
       summary_markdown: eval_.summary_markdown,
+      conversion_tier: eval_.conversion_tier ?? null,
+      platform_action_types: eval_.platform_action_types ?? null,
       updated_at: new Date().toISOString(),
     })
     .eq('id', objectiveId)

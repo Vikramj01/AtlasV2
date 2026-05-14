@@ -17,6 +17,8 @@ export const EvalResponseSchema = z.object({
   proxyEventRationale: z.string().nullable(),
   platformRationale: z.record(z.string()).nullable(),
   summaryMarkdown: z.string(),
+  conversionTier: z.enum(['primary', 'secondary', 'suppression']),
+  platformActionTypes: z.record(z.string()).nullable(),
 });
 
 export type EvalResponse = z.infer<typeof EvalResponseSchema>;
@@ -54,8 +56,23 @@ Respond with this exact JSON structure:
   "recommendedProxyEvent": "Recommended proxy event name if timing > 1 day, or null",
   "proxyEventRationale": "Why this proxy is a good upstream predictor, or null",
   "platformRationale": ${input.platforms.length > 0 ? `{ ${input.platforms.map(p => `"${p}": "Platform-specific implementation note"`).join(', ')} }` : 'null'},
-  "summaryMarkdown": "A full strategy brief in markdown (3-5 short paragraphs) covering: the objective, the verdict, the recommended event, platform-specific notes, and the proxy event if applicable. Written for a marketing practitioner."
-}`;
+  "summaryMarkdown": "A full strategy brief in markdown (3-5 short paragraphs) covering: the objective, the verdict, the recommended event, platform-specific notes, and the proxy event if applicable. Written for a marketing practitioner.",
+  "conversionTier": "primary | secondary | suppression",
+  "platformActionTypes": ${input.platforms.length > 0 ? `{ ${input.platforms.map(p => `"${p}": "primary_action | secondary_action | optimization_event | custom_event | ..."`).join(', ')} }` : 'null'}
+}
+
+conversionTier rules:
+- "primary": this is the main bidding signal — the platform should optimise toward it
+- "secondary": useful diagnostic signal — set to "observe only" in the platform, do not bid
+- "suppression": do not use as a conversion; it would mislead the algorithm
+
+platformActionTypes rules (use the exact platform setting name):
+- google_ads: "primary_action" or "secondary_action"
+- meta: "optimization_event" or "custom_event" (not optimised)
+- linkedin: "primary_conversion" or "secondary_conversion"
+- tiktok: "standard_event" or "custom_event"
+- ga4: "key_event" or "event"
+Set to null if no platforms are specified.`;
 }
 
 export function enforceProxyRule(result: EvalResponse, outcomeTimingDays: number): EvalResponse {

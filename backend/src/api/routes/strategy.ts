@@ -377,6 +377,8 @@ router.post('/objectives/:id/evaluate', async (req: Request, res: Response): Pro
       proxy_event_required: evalResult.proxyEventRequired,
       rationale: evalResult.verdictRationale,
       summary_markdown: evalResult.summaryMarkdown,
+      conversion_tier: evalResult.conversionTier ?? null,
+      platform_action_types: evalResult.platformActionTypes ?? null,
     });
 
     res.json({ data: { objective: updated, platformRationale: evalResult.platformRationale }, error: null, message: null });
