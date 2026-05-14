@@ -49,6 +49,9 @@ import {
 } from '@/services/database/journeyQueries';
 import type { Platform as JourneyPlatform } from '@/types/journey';
 import type { CreateSessionInput, UpdateDecisionInput } from '@/types/planning';
+import { listSignals, createSignal } from '@/services/database/signalQueries';
+import { supabaseAdmin } from '@/services/database/supabase';
+import type { SignalCategory } from '@/types/signal';
 
 const router = Router();
 router.use(authMiddleware, planGuard('pro'));
@@ -674,6 +677,84 @@ router.get('/sessions/:id/pii-warnings', async (req: Request, res: Response) => 
 
     const warnings = detectPiiWarnings(approvedRecs as Parameters<typeof detectPiiWarnings>[0]);
     res.json({ warnings });
+  } catch (err) {
+    sendInternalError(res, err);
+  }
+});
+
+// ── POST /api/planning/sessions/:id/save-to-library ──────────────────────────
+// Convert approved recommendations into org signals in the Signal Library.
+// Skips any event_name that already exists as a signal for the org.
+// Returns { created: Signal[], skipped: string[] }.
+
+function actionTypeToCategory(actionType: string): SignalCategory {
+  const conversions = new Set(['purchase', 'add_to_cart', 'begin_checkout', 'generate_lead', 'sign_up']);
+  const engagement  = new Set(['view_item', 'view_item_list', 'search', 'scroll', 'video_play', 'page_view']);
+  const navigation  = new Set(['navigate', 'click']);
+  if (conversions.has(actionType)) return 'conversion';
+  if (engagement.has(actionType))  return 'engagement';
+  if (navigation.has(actionType))  return 'navigation';
+  return 'custom';
+}
+
+function toTitleCase(key: string): string {
+  return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+router.post('/sessions/:id/save-to-library', async (req: Request, res: Response) => {
+  try {
+    const session = await getSession(req.params.id, req.user!.id);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    const { data: profileRow } = await supabaseAdmin
+      .from('profiles')
+      .select('organization_id')
+      .eq('id', req.user!.id)
+      .single();
+    const orgId = (profileRow as { organization_id: string } | null)?.organization_id ?? '';
+    if (!orgId) return res.status(403).json({ error: 'No organisation associated with your account' });
+
+    const [approvedRecs, existingSignals] = await Promise.all([
+      getApprovedRecommendations(session.id),
+      listSignals(orgId),
+    ]);
+
+    if (approvedRecs.length === 0) {
+      return res.json({ created: [], skipped: [] });
+    }
+
+    const existingKeys = new Set(existingSignals.map((s) => s.key));
+
+    const toCreate = approvedRecs.filter((r) => !existingKeys.has(r.event_name));
+    const skipped  = approvedRecs.filter((r) => existingKeys.has(r.event_name)).map((r) => r.event_name);
+
+    const created = await Promise.all(
+      toCreate.map((rec) => {
+        const platformMappings: Record<string, { event_name: string; param_mapping: Record<string, string> }> = {};
+        for (const platform of (rec.affected_platforms as string[] | undefined) ?? []) {
+          platformMappings[platform] = { event_name: rec.event_name, param_mapping: {} };
+        }
+
+        return createSignal({
+          organisation_id: orgId,
+          key:             rec.event_name,
+          name:            toTitleCase(rec.event_name),
+          description:     rec.business_justification ?? '',
+          category:        actionTypeToCategory(rec.action_type),
+          required_params: (rec.required_params as Array<{ param_key: string; param_label: string }> ?? []).map(
+            (p) => ({ key: p.param_key, label: p.param_label, type: 'string' as const }),
+          ),
+          optional_params: (rec.optional_params as Array<{ param_key: string; param_label: string }> ?? []).map(
+            (p) => ({ key: p.param_key, label: p.param_label, type: 'string' as const }),
+          ),
+          platform_mappings:  platformMappings,
+          taxonomy_event_id:  rec.taxonomy_event_id ?? undefined,
+          taxonomy_path:      rec.taxonomy_path ?? undefined,
+        });
+      }),
+    );
+
+    res.json({ created, skipped });
   } catch (err) {
     sendInternalError(res, err);
   }

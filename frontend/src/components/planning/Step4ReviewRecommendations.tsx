@@ -29,12 +29,21 @@ export function Step4ReviewRecommendations() {
 
   // Pack coverage: signal key → pack name (for recommendations already in a deployed pack)
   const [packCoverage, setPackCoverage] = useState<Map<string, string>>(new Map());
+  // Library signals: set of signal keys already saved in the org's Signal Library
+  const [librarySignals, setLibrarySignals] = useState<Set<string>>(new Set());
 
   const clientId = currentSession?.client_id ?? draftSetup.client_id;
   const orgId = currentOrg?.id ?? organisations[0]?.id;
 
   useEffect(() => {
-    if (!clientId || !orgId) return;
+    if (!orgId) return;
+
+    // Fetch all org library signals for the "In library" chip
+    signalApi.listSignals(orgId)
+      .then((signals) => setLibrarySignals(new Set(signals.map((s) => s.key))))
+      .catch(() => { /* non-blocking */ });
+
+    if (!clientId) return;
     clientApi.get(orgId, clientId)
       .then(async (client) => {
         if (!client.deployments?.length) return;
@@ -245,6 +254,7 @@ export function Step4ReviewRecommendations() {
                   isSelected={rec.id === selectedRecId}
                   onSelect={() => setSelectedRecId(rec.id)}
                   packCoverage={packCoverage}
+                  inLibrary={librarySignals.has(rec.event_name)}
                 />
               ))
             )}
