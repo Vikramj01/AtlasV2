@@ -4,7 +4,7 @@ import type { LucideIcon } from 'lucide-react';
 import {
   Home, MapPin, CheckCircle, Clock, Settings,
   Building2, LayoutGrid, ShieldCheck, Activity,
-  HeartPulse, ShieldAlert, GitBranch,
+  HeartPulse, ShieldAlert, GitBranch, Tag,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { OrgSwitcher } from '@/components/organisation/OrgSwitcher';
@@ -28,6 +28,7 @@ const PERSONAL_NAV_GROUPS: { label: string; items: NavItemDef[] }[] = [
     items: [
       { label: SECTION_LABELS.planningMode.primary,   technicalLabel: SECTION_LABELS.planningMode.technical,   to: '/planning',          Icon: MapPin },
       { label: SECTION_LABELS.journeyBuilder.primary, technicalLabel: SECTION_LABELS.journeyBuilder.technical, to: '/journey/new',       Icon: CheckCircle },
+      { label: SECTION_LABELS.tagLibrary.primary,    technicalLabel: SECTION_LABELS.tagLibrary.technical,    to: '/signals',           Icon: Tag },
       { label: SECTION_LABELS.consentHub.primary,     technicalLabel: SECTION_LABELS.consentHub.technical,     to: '/consent',           Icon: ShieldCheck },
       { label: SECTION_LABELS.capi.primary,           technicalLabel: SECTION_LABELS.capi.technical,           to: '/integrations/capi', Icon: Activity },
     ],

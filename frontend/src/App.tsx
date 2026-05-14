@@ -69,6 +69,8 @@ export default function App() {
               <Route path="/settings" element={<SectionErrorBoundary label="Settings"><SettingsPage /></SectionErrorBoundary>} />
               <Route path="/settings/billing/success" element={<BillingSuccessPage />} />
               <Route path="/settings/billing/cancel" element={<BillingCancelPage />} />
+              {/* Tag Library */}
+              <Route path="/signals" element={<SectionErrorBoundary label="Tag library"><SignalLibraryPage /></SectionErrorBoundary>} />
               {/* Consent Hub */}
               <Route path="/consent" element={<SectionErrorBoundary label="Consent & Privacy"><ConsentPage /></SectionErrorBoundary>} />
               {/* CAPI Integrations */}
