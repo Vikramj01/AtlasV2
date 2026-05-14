@@ -51,12 +51,14 @@ export function Step4Review({ onBack }: Step4Props) {
           }
           if (stageTiming[s.id]?.is_proxy) metadata['__proxy__'] = stageTiming[s.id];
           return {
-            stage_order: s.order,
-            label: s.label,
-            page_type: s.pageType,
-            sample_url: s.sampleUrl || null,
-            actions: s.actions,
+            stage_order:              s.order,
+            label:                    s.label,
+            page_type:                s.pageType,
+            sample_url:               s.sampleUrl || null,
+            actions:                  s.actions,
             conversion_event_metadata: metadata,
+            proxy_value_gbp:          s.proxyValueGbp ?? null,
+            buyer_intent_level:       s.buyerIntentLevel ?? null,
           };
         }),
         platforms: platforms.map((p) => ({

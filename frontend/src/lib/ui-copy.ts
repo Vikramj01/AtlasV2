@@ -51,6 +51,10 @@ export const SECTION_LABELS = {
     primary: 'Tracking Event Templates',
     technical: 'Signal Library',
   },
+  tagLibrary: {
+    primary: 'Tag Library',
+    technical: 'Signal Library',
+  },
   readinessScore: {
     primary: 'Platform Readiness',
     technical: 'Readiness Score',

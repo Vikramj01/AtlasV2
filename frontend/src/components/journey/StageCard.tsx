@@ -29,7 +29,7 @@ interface StageCardProps {
 }
 
 export function StageCard({ stage, canRemove }: StageCardProps) {
-  const { removeStage, removeProxyStage, updateStageLabel, updateStageUrl, stageTiming } = useJourneyWizardStore();
+  const { removeStage, removeProxyStage, updateStageLabel, updateStageUrl, updateStageProxyValue, stageTiming } = useJourneyWizardStore();
   const convention = useTaxonomyStore((s) => s.convention);
 
   const isProxy = stageTiming[stage.id]?.is_proxy === true;
@@ -160,6 +160,28 @@ export function StageCard({ stage, canRemove }: StageCardProps) {
         </div>
 
         <ActionToggles stageId={stage.id} actions={stage.actions} />
+
+        {stage.actions.some((a) => ['generate_lead', 'sign_up', 'purchase'].includes(a)) && (
+          <div className="mt-3 flex items-center gap-2">
+            <label className="text-xs text-muted-foreground whitespace-nowrap">
+              Proxy value (£)
+            </label>
+            <Input
+              type="number"
+              min={0}
+              step={1}
+              value={stage.proxyValueGbp ?? ''}
+              onChange={(e) => {
+                const raw = e.target.value;
+                updateStageProxyValue(stage.id, raw === '' ? undefined : Number(raw));
+              }}
+              placeholder="e.g. 150"
+              className="h-7 w-28 text-xs bg-muted/40"
+              title="Assign an estimated £ value to this stage for Value-Based Bidding. E.g. MQL = £150, SQL = £500."
+            />
+            <span className="text-[10px] text-muted-foreground">for Value-Based Bidding</span>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

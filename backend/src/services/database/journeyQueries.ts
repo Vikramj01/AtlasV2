@@ -117,6 +117,8 @@ export async function upsertStage(journeyId: string, data: UpsertStageRequest): 
       sample_url: data.sample_url ?? null,
       actions: data.actions,
       conversion_event_metadata: data.conversion_event_metadata ?? {},
+      proxy_value_gbp:           data.proxy_value_gbp ?? null,
+      buyer_intent_level:        data.buyer_intent_level ?? null,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'journey_id,stage_order' })
     .select('*')

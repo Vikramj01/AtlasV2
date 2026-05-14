@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Plus, Download, LayoutGrid, List, TreePine, Settings2 } from 'lucide-react';
+import { useOrganisationStore } from '@/store/organisationStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { signalApi } from '@/lib/api/signalApi';
@@ -38,7 +39,9 @@ const LS_VIEW_KEY = 'atlas_tracking_map_view';
 const NAVY = '#1B2A4A';
 
 export function SignalLibraryPage() {
-  const { orgId } = useParams<{ orgId: string }>();
+  const { orgId: orgIdFromParams } = useParams<{ orgId: string }>();
+  const { currentOrg } = useOrganisationStore();
+  const orgId = orgIdFromParams ?? currentOrg?.id;
   const { signals, setSignals, addSignal, updateSignal, removeSignal } = useSignalStore();
   const { tree, isLoadingTree, convention, setTree, setConvention, setLoadingTree, setLoadingConvention } = useTaxonomyStore();
 

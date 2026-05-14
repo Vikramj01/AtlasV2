@@ -12,11 +12,12 @@ interface Step1Props {
 }
 
 const BUSINESS_TYPE_LABELS: Record<string, string> = {
-  ecommerce: 'E-commerce',
-  saas: 'SaaS',
-  lead_gen: 'Lead Gen',
-  content: 'Content',
-  marketplace: 'Marketplace',
+  ecommerce:    'E-commerce',
+  saas:         'SaaS',
+  lead_gen:     'Lead Gen',
+  b2b_lead_gen: 'B2B / Enterprise',
+  content:      'Content',
+  marketplace:  'Marketplace',
 };
 
 export function Step1BusinessType({ onNext }: Step1Props) {

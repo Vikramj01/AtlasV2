@@ -1,4 +1,5 @@
-export type BusinessType = 'ecommerce' | 'saas' | 'lead_gen' | 'content' | 'marketplace' | 'custom';
+export type BusinessType = 'ecommerce' | 'saas' | 'lead_gen' | 'b2b_lead_gen' | 'content' | 'marketplace' | 'custom';
+export type BuyerIntentLevel = 'problem_aware' | 'solution_aware' | 'vendor_aware';
 export type ImplementationFormat = 'gtm';
 export type Platform = 'ga4' | 'google_ads' | 'meta' | 'sgtm' | 'tiktok' | 'linkedin';
 export type JourneyStatus = 'draft' | 'active' | 'archived';
@@ -53,6 +54,8 @@ export interface WizardStage {
   pageType: string;
   sampleUrl: string;
   actions: string[];
+  proxyValueGbp?: number;
+  buyerIntentLevel?: BuyerIntentLevel;
 }
 
 export interface WizardPlatformSelection {
@@ -79,16 +82,26 @@ export interface BusinessTypeOption {
 }
 
 export const BUSINESS_TYPE_OPTIONS: BusinessTypeOption[] = [
-  { value: 'ecommerce', title: 'Online Store', description: 'You sell products online', icon: '🛍️', stageCount: 6 },
-  { value: 'saas', title: 'SaaS / Software', description: 'You sell software or subscriptions', icon: '💻', stageCount: 5 },
-  { value: 'lead_gen', title: 'Lead Generation', description: 'You collect leads via forms', icon: '📋', stageCount: 4 },
-  { value: 'content', title: 'Content / Media', description: 'You publish content and grow audience', icon: '📰', stageCount: 4 },
-  { value: 'marketplace', title: 'Marketplace', description: 'You connect buyers and sellers', icon: '🏪', stageCount: 5 },
-  { value: 'custom', title: 'Custom', description: "I'll build my own funnel", icon: '⚙️', stageCount: 0 },
+  { value: 'ecommerce',    title: 'Online Store',        description: 'You sell products online',                  icon: '🛍️', stageCount: 6 },
+  { value: 'saas',         title: 'SaaS / Software',     description: 'You sell software or subscriptions',        icon: '💻', stageCount: 5 },
+  { value: 'lead_gen',     title: 'Lead Generation',     description: 'You collect leads via forms',               icon: '📋', stageCount: 4 },
+  { value: 'b2b_lead_gen', title: 'B2B / Enterprise',    description: 'Long sales cycle, CRM-driven pipeline',     icon: '🏢', stageCount: 7 },
+  { value: 'content',      title: 'Content / Media',     description: 'You publish content and grow audience',     icon: '📰', stageCount: 4 },
+  { value: 'marketplace',  title: 'Marketplace',         description: 'You connect buyers and sellers',            icon: '🏪', stageCount: 5 },
+  { value: 'custom',       title: 'Custom',              description: "I'll build my own funnel",                  icon: '⚙️', stageCount: 0 },
 ];
 
 // Default stages per business type
 export const DEFAULT_STAGES: Record<BusinessType, Omit<WizardStage, 'id'>[]> = {
+  b2b_lead_gen: [
+    { order: 1, label: 'Ad Landing Page',    pageType: 'landing',       sampleUrl: '', actions: ['ad_landing'],                buyerIntentLevel: 'problem_aware' },
+    { order: 2, label: 'Solutions / Use Cases', pageType: 'features',   sampleUrl: '', actions: ['view_item'],                 buyerIntentLevel: 'problem_aware' },
+    { order: 3, label: 'Pricing / ROI',      pageType: 'pricing',       sampleUrl: '', actions: ['view_item'],                 buyerIntentLevel: 'solution_aware' },
+    { order: 4, label: 'Demo Request Form',  pageType: 'form',          sampleUrl: '', actions: ['generate_lead'],             buyerIntentLevel: 'vendor_aware',  proxyValueGbp: 50 },
+    { order: 5, label: 'MQL',                pageType: 'custom',        sampleUrl: '', actions: ['generate_lead'],             buyerIntentLevel: 'vendor_aware',  proxyValueGbp: 150 },
+    { order: 6, label: 'SQL',                pageType: 'custom',        sampleUrl: '', actions: ['generate_lead'],             buyerIntentLevel: 'vendor_aware',  proxyValueGbp: 500 },
+    { order: 7, label: 'Closed-Won',         pageType: 'confirmation',  sampleUrl: '', actions: ['purchase'],                  buyerIntentLevel: 'vendor_aware',  proxyValueGbp: 0 },
+  ],
   ecommerce: [
     { order: 1, label: 'Landing Page', pageType: 'landing', sampleUrl: '', actions: ['ad_landing'] },
     { order: 2, label: 'Category Page', pageType: 'category', sampleUrl: '', actions: ['view_item_list'] },

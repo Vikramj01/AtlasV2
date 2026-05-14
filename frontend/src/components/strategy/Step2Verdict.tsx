@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type * as React from 'react';
 
 import Markdown from 'react-markdown';
+import { useNavigate } from 'react-router-dom';
 import { InfoTooltip } from '@/components/common/InfoTooltip';
 import { TOOLTIPS } from '@/lib/ui-copy';
 import { Check, AlertTriangle, X, ChevronLeft, Lock, Loader2 } from 'lucide-react';
@@ -10,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
 import { useStrategyStore } from '@/store/strategyStore';
-import type { BriefMode, EventVerdict } from '@/types/strategy';
+import type { BriefMode, ConversionTier, EventVerdict } from '@/types/strategy';
 
 const VERDICT_TOOLTIP: Record<EventVerdict, (typeof TOOLTIPS)[keyof typeof TOOLTIPS]> = {
   CONFIRM: TOOLTIPS.strategyVerdict_CONFIRM,
@@ -45,6 +46,20 @@ const VERDICT_CONFIG: Record<
   },
 };
 
+const TIER_CONFIG: Record<ConversionTier, { label: string; chipClass: string; description: string }> = {
+  primary:     { label: 'Primary signal',     chipClass: 'bg-blue-100 text-blue-800',  description: 'Bid on this event — set as primary conversion action in each platform.' },
+  secondary:   { label: 'Secondary signal',   chipClass: 'bg-slate-100 text-slate-700', description: 'Observe only — useful for diagnostics but do not optimise toward it.' },
+  suppression: { label: 'Suppression signal', chipClass: 'bg-red-100 text-red-700',    description: 'Do not use as a conversion — would mislead Smart Bidding.' },
+};
+
+const CRM_KEYWORDS = ['sql', 'mql', 'opportunity', 'closed_won', 'closed won', 'qualified_lead', 'pipeline', 'offline', 'crm', 'deal', 'sales qualified', 'marketing qualified'];
+
+function isCrmStageEvent(name: string | null | undefined): boolean {
+  if (!name) return false;
+  const lower = name.toLowerCase();
+  return CRM_KEYWORDS.some((k) => lower.includes(k));
+}
+
 const TIMING_LABEL: Record<number, string> = {
   0: 'Same day',
   2: '1–3 days',
@@ -63,6 +78,7 @@ interface Step2VerdictProps {
 
 export function Step2Verdict({ objectiveId, mode, onLocked, onEditInputs }: Step2VerdictProps) {
   const { activeBrief, lockObjective, lockBrief } = useStrategyStore();
+  const navigate = useNavigate();
   const [locking, setLocking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -138,6 +154,32 @@ export function Step2Verdict({ objectiveId, mode, onLocked, onEditInputs }: Step
             )}
           </div>
 
+          {/* Measurement governance tier */}
+          {obj.conversion_tier && (() => {
+            const tierCfg = TIER_CONFIG[obj.conversion_tier];
+            return (
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <span className={cn('inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold', tierCfg.chipClass)}>
+                    {tierCfg.label}
+                  </span>
+                  <span className="text-xs text-muted-foreground">{tierCfg.description}</span>
+                </div>
+                {obj.platform_action_types && Object.keys(obj.platform_action_types).length > 0 && (
+                  <div className="rounded-md border border-border bg-muted/20 px-3 py-2 text-xs space-y-1">
+                    <p className="font-semibold text-muted-foreground uppercase tracking-wide text-[10px] mb-1.5">Platform settings</p>
+                    {Object.entries(obj.platform_action_types).map(([platform, action]) => (
+                      <div key={platform} className="flex items-center gap-2">
+                        <span className="font-medium capitalize min-w-[90px]">{platform.replace('_', ' ')}</span>
+                        <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">{action}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           {/* Event cards */}
           {(obj.recommended_primary_event || obj.proxy_event_required) && (
             <div className="grid gap-4 sm:grid-cols-2">
@@ -170,6 +212,28 @@ export function Step2Verdict({ objectiveId, mode, onLocked, onEditInputs }: Step
                   </CardContent>
                 </Card>
               )}
+            </div>
+          )}
+
+          {/* OCI nudge — shown when the recommended primary event is a CRM stage */}
+          {isCrmStageEvent(obj.recommended_primary_event) && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 flex items-start gap-3">
+              <span className="mt-0.5 text-amber-500 text-lg leading-none">⚡</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-amber-900">This event fires in your CRM, not on the website</p>
+                <p className="mt-0.5 text-xs text-amber-800">
+                  To credit this conversion back to your campaigns, you'll need to import it via Offline Conversion Import (OCI).
+                  Atlas has a built-in OCI pipeline for Google Ads.
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => navigate('/integrations/capi')}
+                  className="mt-2 h-7 text-xs border-amber-300 text-amber-800 hover:bg-amber-100"
+                >
+                  Set up Offline Conversion Import →
+                </Button>
+              </div>
             </div>
           )}
 

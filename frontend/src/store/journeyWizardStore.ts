@@ -33,6 +33,7 @@ interface JourneyWizardStore extends WizardState {
   removeStage: (stageId: string) => void;
   updateStageLabel: (stageId: string, label: string) => void;
   updateStageUrl: (stageId: string, url: string) => void;
+  updateStageProxyValue: (stageId: string, value: number | undefined) => void;
   toggleAction: (stageId: string, actionKey: string) => void;
   reorderStages: (reorderedStages: WizardStage[]) => void;
 
@@ -125,6 +126,10 @@ export const useJourneyWizardStore = create<JourneyWizardStore>((set, get) => ({
 
   updateStageUrl(stageId, url) {
     set({ stages: get().stages.map((s) => (s.id === stageId ? { ...s, sampleUrl: url } : s)) });
+  },
+
+  updateStageProxyValue(stageId, value) {
+    set({ stages: get().stages.map((s) => (s.id === stageId ? { ...s, proxyValueGbp: value } : s)) });
   },
 
   toggleAction(stageId, actionKey) {
