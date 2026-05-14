@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { usePlanningStore } from '@/store/planningStore';
+import { planningApi } from '@/lib/api/planningApi';
 import type { Platform } from '@/types/planning';
 
 const PLATFORM_LABELS: Record<Platform, string> = {
@@ -39,7 +41,21 @@ export function Step5TrackingPlanSummary() {
 
   const estimatedHours = Math.max(1, Math.ceil(approved.length * 0.5));
 
-  void sessionId; // used by parent context
+  type SaveStatus = 'idle' | 'saving' | 'done' | 'error';
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
+  const [saveResult, setSaveResult] = useState<{ created: number; skipped: number } | null>(null);
+
+  async function handleSaveToLibrary() {
+    if (!sessionId) return;
+    setSaveStatus('saving');
+    try {
+      const result = await planningApi.saveToLibrary(sessionId);
+      setSaveResult({ created: result.created.length, skipped: result.skipped.length });
+      setSaveStatus('done');
+    } catch {
+      setSaveStatus('error');
+    }
+  }
 
   return (
     <div className="mx-auto max-w-2xl px-6 py-10">
@@ -138,6 +154,59 @@ export function Step5TrackingPlanSummary() {
           </div>
         </CardContent>
       </Card>
+
+      {approved.length > 0 && (
+        <Card className="mb-6 border-teal-200 bg-teal-50">
+          <CardContent className="pt-4">
+            {saveStatus === 'done' && saveResult ? (
+              <div className="flex items-start gap-3">
+                <span className="mt-0.5 text-teal-600">✓</span>
+                <div>
+                  <p className="text-sm font-medium text-teal-800">Saved to Tag Library</p>
+                  <p className="text-xs text-teal-700">
+                    {saveResult.created} new signal{saveResult.created !== 1 ? 's' : ''} added
+                    {saveResult.skipped > 0 && `, ${saveResult.skipped} already existed`}.
+                  </p>
+                </div>
+              </div>
+            ) : saveStatus === 'error' ? (
+              <div className="flex items-start gap-3">
+                <span className="mt-0.5 text-red-600">✕</span>
+                <div>
+                  <p className="text-sm font-medium text-red-800">Failed to save</p>
+                  <p className="text-xs text-red-700">
+                    Could not save signals to library. You can try again or continue.
+                  </p>
+                  <Button
+                    size="sm"
+                    onClick={handleSaveToLibrary}
+                    className="mt-2 h-7 text-xs bg-teal-700 hover:bg-teal-800"
+                  >
+                    Retry
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium text-teal-800">Save events to your Tag Library</p>
+                  <p className="text-xs text-teal-700">
+                    Reuse these {approved.length} signal{approved.length !== 1 ? 's' : ''} across future campaigns and landing pages.
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={handleSaveToLibrary}
+                  disabled={saveStatus === 'saving'}
+                  className="shrink-0 bg-teal-700 hover:bg-teal-800 text-white"
+                >
+                  {saveStatus === 'saving' ? 'Saving…' : 'Save to Library'}
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="flex items-center justify-between">
         <Button variant="ghost" onClick={prevStep} className="text-muted-foreground">

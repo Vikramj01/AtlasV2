@@ -19,6 +19,8 @@ interface RecommendationCardProps {
   onSelect: () => void;
   /** Map of signal key → pack name for signals already deployed to the linked client */
   packCoverage?: Map<string, string>;
+  /** True when this event already exists as a signal in the org's library */
+  inLibrary?: boolean;
 }
 
 // Simple client-side check against the org's naming convention format.
@@ -56,7 +58,7 @@ const DECISION_STYLES: Record<UserDecision, string> = {
   edited:   'border-[#1B2A4A]/30 bg-[#EEF1F7]',
 };
 
-export function RecommendationCard({ rec, index, sessionId, isSelected, onSelect, packCoverage }: RecommendationCardProps) {
+export function RecommendationCard({ rec, index, sessionId, isSelected, onSelect, packCoverage, inLibrary }: RecommendationCardProps) {
   const updateRecommendation = usePlanningStore((s) => s.updateRecommendation);
   const convention = useTaxonomyStore((s) => s.convention);
   const [isSaving, setIsSaving] = useState(false);
@@ -151,6 +153,14 @@ export function RecommendationCard({ rec, index, sessionId, isSelected, onSelect
               title={`This signal is already included in the "${coveredByPack}" pack deployed to this client`}
             >
               📦 In {coveredByPack}
+            </Badge>
+          )}
+          {inLibrary && !coveredByPack && (
+            <Badge
+              className="bg-teal-50 text-teal-700 hover:bg-teal-50 whitespace-nowrap"
+              title="This event already exists as a signal in your Tag Library"
+            >
+              In library
             </Badge>
           )}
         </div>

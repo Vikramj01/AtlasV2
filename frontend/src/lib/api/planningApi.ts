@@ -17,6 +17,7 @@ import type {
   ChangeDetectionResult,
   PiiWarning,
 } from '@/types/planning';
+import type { Signal } from '@/types/signal';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
 
@@ -164,6 +165,10 @@ export const planningApi = {
 
   deleteSession(sessionId: string): Promise<{ deleted: boolean }> {
     return apiFetch(`/api/planning/sessions/${sessionId}`, { method: 'DELETE' });
+  },
+
+  saveToLibrary(sessionId: string): Promise<{ created: Signal[]; skipped: string[] }> {
+    return apiFetch(`/api/planning/sessions/${sessionId}/save-to-library`, { method: 'POST' });
   },
 
   // ── Site Detection ───────────────────────────────────────────────────────────
