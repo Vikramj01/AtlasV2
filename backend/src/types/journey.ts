@@ -187,6 +187,8 @@ export interface UpsertStageRequest {
   sample_url?: string | null;
   actions: string[];
   conversion_event_metadata?: Record<string, unknown>;
+  proxy_value_gbp?: number | null;
+  buyer_intent_level?: string | null;
 }
 
 export interface UpsertPlatformsRequest {
