@@ -8,6 +8,13 @@ import { strategyApi } from '@/lib/api/strategyApi';
 import { useStrategyStore } from '@/store/strategyStore';
 import type { EventVerdict } from '@/types/strategy';
 
+const CRM_KEYWORDS = ['sql', 'mql', 'opportunity', 'closed_won', 'closed won', 'qualified_lead', 'pipeline', 'offline', 'crm', 'deal', 'sales qualified', 'marketing qualified'];
+function isCrmStageEvent(name: string | null | undefined): boolean {
+  if (!name) return false;
+  const lower = name.toLowerCase();
+  return CRM_KEYWORDS.some((k) => lower.includes(k));
+}
+
 const VERDICT_LABELS: Record<EventVerdict, string> = {
   CONFIRM: 'Keep current event',
   AUGMENT: 'Add proxy event',
@@ -147,11 +154,18 @@ export function BriefLocked({ onNewBrief }: BriefLockedProps) {
                 description: 'See how your current tracking matches this strategy.',
                 href: '/planning',
               },
-              {
-                title: 'Configure CAPI',
-                description: 'Send your locked events server-side to Meta and Google.',
-                href: '/integrations/capi',
-              },
+              objectives.some((o) => isCrmStageEvent(o.recommended_primary_event))
+                ? {
+                    title: 'Set up Offline Conversion Import',
+                    description: 'Your strategy uses a CRM-stage event. Import it to Google Ads via OCI.',
+                    href: '/integrations/capi',
+                    highlight: true,
+                  }
+                : {
+                    title: 'Configure CAPI',
+                    description: 'Send your locked events server-side to Meta and Google.',
+                    href: '/integrations/capi',
+                  },
               {
                 title: 'Set up consent',
                 description: 'Make sure everything works under Consent Mode v2.',
@@ -163,13 +177,17 @@ export function BriefLocked({ onNewBrief }: BriefLockedProps) {
                 type="button"
                 onClick={() => navigate(step.href)}
                 className={cn(
-                  'flex flex-col items-start rounded-lg border border-border bg-background p-4 text-left',
-                  'hover:border-primary/40 hover:bg-muted/40 transition-colors',
+                  'flex flex-col items-start rounded-lg border p-4 text-left transition-colors',
+                  'highlight' in step && step.highlight
+                    ? 'border-amber-300 bg-amber-50 hover:bg-amber-100'
+                    : 'border-border bg-background hover:border-primary/40 hover:bg-muted/40',
                 )}
               >
                 <p className="text-sm font-medium">{step.title}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{step.description}</p>
-                <span className="mt-3 text-xs text-primary font-medium">
+                <p className={cn('mt-1 text-xs', 'highlight' in step && step.highlight ? 'text-amber-700' : 'text-muted-foreground')}>
+                  {step.description}
+                </p>
+                <span className={cn('mt-3 text-xs font-medium', 'highlight' in step && step.highlight ? 'text-amber-800' : 'text-primary')}>
                   Go <ArrowRight className="inline size-3" />
                 </span>
               </button>

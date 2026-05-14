@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type * as React from 'react';
 
 import Markdown from 'react-markdown';
+import { useNavigate } from 'react-router-dom';
 import { InfoTooltip } from '@/components/common/InfoTooltip';
 import { TOOLTIPS } from '@/lib/ui-copy';
 import { Check, AlertTriangle, X, ChevronLeft, Lock, Loader2 } from 'lucide-react';
@@ -51,6 +52,14 @@ const TIER_CONFIG: Record<ConversionTier, { label: string; chipClass: string; de
   suppression: { label: 'Suppression signal', chipClass: 'bg-red-100 text-red-700',    description: 'Do not use as a conversion — would mislead Smart Bidding.' },
 };
 
+const CRM_KEYWORDS = ['sql', 'mql', 'opportunity', 'closed_won', 'closed won', 'qualified_lead', 'pipeline', 'offline', 'crm', 'deal', 'sales qualified', 'marketing qualified'];
+
+function isCrmStageEvent(name: string | null | undefined): boolean {
+  if (!name) return false;
+  const lower = name.toLowerCase();
+  return CRM_KEYWORDS.some((k) => lower.includes(k));
+}
+
 const TIMING_LABEL: Record<number, string> = {
   0: 'Same day',
   2: '1–3 days',
@@ -69,6 +78,7 @@ interface Step2VerdictProps {
 
 export function Step2Verdict({ objectiveId, mode, onLocked, onEditInputs }: Step2VerdictProps) {
   const { activeBrief, lockObjective, lockBrief } = useStrategyStore();
+  const navigate = useNavigate();
   const [locking, setLocking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -202,6 +212,28 @@ export function Step2Verdict({ objectiveId, mode, onLocked, onEditInputs }: Step
                   </CardContent>
                 </Card>
               )}
+            </div>
+          )}
+
+          {/* OCI nudge — shown when the recommended primary event is a CRM stage */}
+          {isCrmStageEvent(obj.recommended_primary_event) && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 flex items-start gap-3">
+              <span className="mt-0.5 text-amber-500 text-lg leading-none">⚡</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-amber-900">This event fires in your CRM, not on the website</p>
+                <p className="mt-0.5 text-xs text-amber-800">
+                  To credit this conversion back to your campaigns, you'll need to import it via Offline Conversion Import (OCI).
+                  Atlas has a built-in OCI pipeline for Google Ads.
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => navigate('/integrations/capi')}
+                  className="mt-2 h-7 text-xs border-amber-300 text-amber-800 hover:bg-amber-100"
+                >
+                  Set up Offline Conversion Import →
+                </Button>
+              </div>
             </div>
           )}
 
