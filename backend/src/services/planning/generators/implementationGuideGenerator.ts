@@ -108,6 +108,11 @@ export function generateImplementationGuide(
   const hasTikTok = platforms.includes('tiktok');
   const hasLinkedIn = platforms.includes('linkedin');
 
+  const isLeadGenBusiness = ['lead_gen', 'b2b_lead_gen', 'saas'].includes(session.business_type ?? '');
+  const needsGclidCapture = hasGoogleAds && isLeadGenBusiness && recommendations.some(
+    r => GUIDE_CONVERSION_ACTION_TYPES.has(r.action_type),
+  );
+
   // Count by action_type — custom event names would produce wrong counts if matching by name
   const conversionRecs = recommendations.filter(r => GUIDE_CONVERSION_ACTION_TYPES.has(r.action_type));
   const engagementRecs = recommendations.filter(r => !GUIDE_CONVERSION_ACTION_TYPES.has(r.action_type));
@@ -191,6 +196,135 @@ height="0" width="0" style="display:none;visibility:hidden"&gt;&lt;/iframe&gt;&l
         </div>`).join('')}`;
     }).join('')}
   </div>`;
+
+  // ── Section 2b: GCLID & UTM Hidden Field Capture (lead-gen + Google Ads only)
+  const gclidSection = needsGclidCapture ? `
+  <div class="section">
+    <h2>2b. GCLID &amp; UTM Hidden Field Capture</h2>
+    <p>
+      Because your sales cycle has a significant lag between ad click and conversion, Google needs to
+      match the offline outcome back to the original ad click. This requires capturing and storing the
+      <strong>Google Click Identifier (GCLID)</strong> from the landing page URL and passing it into
+      your CRM when a lead submits a form.
+    </p>
+
+    <div class="info-box">
+      💡 <strong>Why this matters:</strong> Without GCLID capture, offline conversion imports cannot
+      attribute closed deals back to the campaigns and keywords that generated the lead. Smart Bidding
+      will be flying blind.
+    </div>
+
+    <h3>Step 1 — Add the GCLID capture script</h3>
+    <p>
+      Add this JavaScript to your site's global header (before the GTM snippet). It reads the GCLID
+      from the URL and stores it in a first-party cookie that persists for 90 days.
+    </p>
+    <div class="code-label">Global header script — paste before GTM snippet</div>
+    <pre><code>// GCLID &amp; UTM capture — Atlas B2B tracking infrastructure
+(function () {
+  function getParam(name) {
+    return new URLSearchParams(window.location.search).get(name);
+  }
+  function setCookie(name, value, days) {
+    var expires = new Date(Date.now() + days * 864e5).toUTCString();
+    document.cookie = name + '=' + encodeURIComponent(value) +
+      '; expires=' + expires + '; path=/; SameSite=Lax';
+  }
+  function getCookie(name) {
+    return (document.cookie.match('(?:^|; )' + name + '=([^;]*)') || [])[1];
+  }
+  // Capture GCLID from URL on landing (overwrite if a new click arrives)
+  var gclid = getParam('gclid');
+  if (gclid) setCookie('atlas_gclid', gclid, 90);
+  // Capture UTM parameters on first touch only
+  ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'].forEach(function (p) {
+    var val = getParam(p);
+    if (val &amp;&amp; !getCookie('atlas_' + p)) setCookie('atlas_' + p, val, 90);
+  });
+  // Expose helper for forms to call
+  window.atlasGetCapturedParams = function () {
+    return {
+      gclid:        decodeURIComponent(getCookie('atlas_gclid') || ''),
+      utm_source:   decodeURIComponent(getCookie('atlas_utm_source') || ''),
+      utm_medium:   decodeURIComponent(getCookie('atlas_utm_medium') || ''),
+      utm_campaign: decodeURIComponent(getCookie('atlas_utm_campaign') || ''),
+    };
+  };
+})();</code></pre>
+
+    <h3>Step 2 — Add hidden fields to every lead capture form</h3>
+    <p>
+      Add these hidden inputs to <strong>every form</strong> on your site that captures a lead.
+      The script above will auto-fill them when the form loads.
+    </p>
+    <div class="code-label">HTML — inside each &lt;form&gt; element</div>
+    <pre><code>&lt;input type="hidden" name="gclid"        id="atlas_gclid_field" /&gt;
+&lt;input type="hidden" name="utm_source"   id="atlas_utm_source_field" /&gt;
+&lt;input type="hidden" name="utm_medium"   id="atlas_utm_medium_field" /&gt;
+&lt;input type="hidden" name="utm_campaign" id="atlas_utm_campaign_field" /&gt;</code></pre>
+
+    <div class="code-label">JavaScript — run once the form is in the DOM</div>
+    <pre><code>// Auto-fill GCLID &amp; UTM hidden fields when page loads
+document.addEventListener('DOMContentLoaded', function () {
+  var params = window.atlasGetCapturedParams ? window.atlasGetCapturedParams() : {};
+  var fieldMap = {
+    gclid:        'atlas_gclid_field',
+    utm_source:   'atlas_utm_source_field',
+    utm_medium:   'atlas_utm_medium_field',
+    utm_campaign: 'atlas_utm_campaign_field',
+  };
+  Object.keys(fieldMap).forEach(function (key) {
+    var el = document.getElementById(fieldMap[key]);
+    if (el &amp;&amp; params[key]) el.value = params[key];
+  });
+});</code></pre>
+
+    <h3>Step 3 — Pass GCLID into your CRM on form submission</h3>
+    <p>
+      When your form submission handler sends the lead to your CRM (HubSpot, Salesforce, etc.),
+      include the <code>gclid</code> field value as a custom property on the Contact or Lead record.
+    </p>
+    <ul>
+      <li><strong>HubSpot:</strong> Create a custom contact property called <code>Google Click ID</code> (internal: <code>google_click_id</code>). Map the hidden field to it in your form settings.</li>
+      <li><strong>Salesforce:</strong> Add a custom field <code>GCLID__c</code> to the Lead object. Pass the value via your web-to-lead form or API submission.</li>
+      <li><strong>Other CRMs:</strong> Create a custom text field and populate it on lead creation. This value is required for Offline Conversion Import.</li>
+    </ul>
+
+    <h3>Step 4 — Enable Enhanced Conversions for Leads (optional but recommended)</h3>
+    <p>
+      For leads where the GCLID is unavailable (direct traffic, ad blockers), Google can still
+      match conversions using hashed first-party data (email address). This requires one additional
+      GTM configuration.
+    </p>
+    <div class="step">
+      <div class="step-num">A</div>
+      <div class="step-body">
+        <h4>Enable in Google Ads</h4>
+        <p>Google Ads → Tools &amp; Settings → Conversions → Settings → Enhanced conversions for leads → Enable.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">B</div>
+      <div class="step-body">
+        <h4>The GTM tag is already generated</h4>
+        <p>The Atlas-generated GTM container includes an Enhanced Conversions tag configured to read a hashed email from the <code>user_data.email</code> field in the dataLayer. Confirm the form's email field value is being pushed in the <code>generate_lead</code> dataLayer event above.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">C</div>
+      <div class="step-body">
+        <h4>Verify in Tag Assistant</h4>
+        <p>Submit a test form. In Tag Assistant, confirm the Enhanced Conversion tag fires and shows a hashed email in its payload.</p>
+      </div>
+    </div>
+
+    <div class="warning-box">
+      ⚠️ <strong>Extend your conversion windows:</strong> B2B sales cycles average 84–130 days.
+      In Google Ads, go to Tools → Conversions → select each conversion action → Edit settings →
+      set the <strong>Click-through conversion window to 90 days</strong> (or 180 days for enterprise deals).
+      If you leave this at the default 30 days, Google will stop crediting closed deals back to campaigns.
+    </div>
+  </div>` : '';
 
   // ── Section 3: For Your GTM Implementer ───────────────────────────────────
   const gtmSection = `
@@ -307,6 +441,8 @@ height="0" width="0" style="display:none;visibility:hidden"&gt;&lt;/iframe&gt;&l
       ? 'Clicking "Add to Cart" shows an "add_to_cart" event in GA4 DebugView'
       : null,
     hasGoogleAds ? 'Google Ads Tag Assistant shows conversion tags firing (not blocked by consent)' : null,
+    needsGclidCapture ? 'Click a Google Ad, land on the site, open browser console and run: document.cookie — confirm atlas_gclid cookie is set' : null,
+    needsGclidCapture ? 'Submit a test lead form — confirm the gclid hidden field value is populated and received by your CRM' : null,
     hasMeta ? 'Meta Pixel Helper Chrome extension shows events firing on the relevant pages' : null,
     'No duplicate events in GA4 DebugView (each action fires the event exactly once)',
     'Test with a real browser (not incognito) to verify cookies are being set',
@@ -356,6 +492,7 @@ height="0" width="0" style="display:none;visibility:hidden"&gt;&lt;/iframe&gt;&l
 <div class="container">
   ${execSummary}
   ${devSection}
+  ${gclidSection}
   ${gtmSection}
   ${platformSection}
   ${testingSection}
