@@ -40,6 +40,8 @@ import { BillingCancelPage } from '@/pages/BillingCancelPage';
 import { PlanGate } from '@/components/common/PlanGate';
 import { StrategyGateGuard } from '@/components/strategy/StrategyGateGuard';
 import { CrawlStatusPage } from '@/pages/CrawlStatusPage';
+import { ConnectionsPage } from '@/pages/ConnectionsPage';
+import { ClientConnectionsPage } from '@/pages/ClientConnectionsPage';
 
 export default function App() {
   return (
@@ -69,6 +71,11 @@ export default function App() {
               <Route path="/settings" element={<SectionErrorBoundary label="Settings"><SettingsPage /></SectionErrorBoundary>} />
               <Route path="/settings/billing/success" element={<BillingSuccessPage />} />
               <Route path="/settings/billing/cancel" element={<BillingCancelPage />} />
+              {/* Platform Connections */}
+              <Route path="/connections" element={<ConnectionsPage />} />
+              <Route path="/connections/:clientId" element={<ClientConnectionsPage />} />
+              {/* OAuth callback page — reads code+state from URL, calls API */}
+              <Route path="/connections/oauth/:platform/callback" element={<ConnectionsPage />} />
               {/* Tag Library */}
               <Route path="/signals" element={<SectionErrorBoundary label="Tag library"><SignalLibraryPage /></SectionErrorBoundary>} />
               {/* Consent Hub */}
