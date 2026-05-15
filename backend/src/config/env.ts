@@ -65,6 +65,18 @@ export const env = {
   // Developer token required for every Google Ads API request
   GOOGLE_ADS_DEVELOPER_TOKEN: optional('GOOGLE_ADS_DEVELOPER_TOKEN', ''),
 
+  // Platform Reconciliation — separate encryption key for OAuth tokens
+  // Generate: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+  PLATFORM_CONNECTIONS_ENCRYPTION_KEY: optional('PLATFORM_CONNECTIONS_ENCRYPTION_KEY', ''),
+
+  // Meta OAuth app credentials (Platform Reconciliation)
+  META_APP_ID: optional('META_APP_ID', ''),
+  META_APP_SECRET: optional('META_APP_SECRET', ''),
+
+  // HMAC secret for OAuth state parameter CSRF protection
+  // Generate: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+  OAUTH_STATE_SECRET: optional('OAUTH_STATE_SECRET', 'dev-oauth-state-secret-change-in-production'),
+
   // Email — Resend (https://resend.com). Optional: emails are silently skipped if not set.
   RESEND_API_KEY: optional('RESEND_API_KEY', ''),
   FROM_EMAIL: optional('FROM_EMAIL', 'Atlas <notifications@atlas.vimi.digital>'),
