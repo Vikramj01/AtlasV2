@@ -2,13 +2,18 @@
 -- Creates the platform_connections table with three connection types
 -- (manager, child, standalone) and full RLS.
 --
--- Encryption note: oauth_tokens stores an AES-256-GCM encrypted JSON envelope.
+-- FK pattern follows existing Atlas migrations:
+--   organization_id → auth.users(id)   (Supabase auth user = org owner)
+--   client_id       → plain UUID, no FK (clients table may not exist in preview envs)
+--   parent_connection_id → self-referential FK on this table
+--
+-- oauth_tokens stores an AES-256-GCM encrypted JSON envelope.
 -- Child rows carry NULL oauth_tokens — tokens always live on the parent manager row.
 
 CREATE TABLE IF NOT EXISTS platform_connections (
   id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  organization_id       UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-  client_id             UUID REFERENCES clients(id) ON DELETE CASCADE,
+  organization_id       UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  client_id             UUID,              -- soft ref to clients; no FK (preview env safety)
   platform              TEXT NOT NULL CHECK (platform IN ('google_ads', 'meta', 'ga4', 'gtm_destinations')),
   connection_type       TEXT NOT NULL CHECK (connection_type IN ('manager', 'child', 'standalone')),
   parent_connection_id  UUID REFERENCES platform_connections(id) ON DELETE CASCADE,
@@ -57,8 +62,4 @@ ALTER TABLE platform_connections ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users access own org connections"
   ON platform_connections
   FOR ALL
-  USING (
-    organization_id = (
-      SELECT organization_id FROM profiles WHERE id = auth.uid()
-    )
-  );
+  USING (organization_id = auth.uid());
