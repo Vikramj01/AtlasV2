@@ -4,7 +4,11 @@ import { useConnectionStore } from '@/store/connectionStore';
 import { SectionErrorBoundary } from '@/components/common/ErrorBoundary';
 import { PlanGate } from '@/components/common/PlanGate';
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, RefreshCw, AlertTriangle } from 'lucide-react';
+import { ChevronLeft, RefreshCw } from 'lucide-react';
+import { ReauthBanner } from '@/components/connections/ReauthBanner';
+import { ConnectionCard } from '@/components/connections/ConnectionCard';
+import { OAuthInitiateButton } from '@/components/connections/OAuthInitiateButton';
+import { AccountPickerModal } from '@/components/connections/AccountPickerModal';
 import type { Platform, PlatformConnectionPublic, ConnectionGroup } from '@/types/connections';
 
 const PLATFORM_LABELS: Record<Platform, string> = {
@@ -32,14 +36,18 @@ function ClientConnectionsPageInner() {
     loading,
     error,
     oauthInProgress,
-    actionLoadingId,
+    discoveredAccounts,
+    standaloneDiscovered,
+    showPickerForManager,
     testResults,
     testingId,
+    actionLoadingId,
     fetchConnections,
     startOAuth,
     connectAccount,
     disconnectAccount,
     testConnection,
+    clearPicker,
     clearError,
   } = useConnectionStore();
 
@@ -47,7 +55,6 @@ function ClientConnectionsPageInner() {
     fetchConnections();
   }, [fetchConnections]);
 
-  // Collect all connections that belong to this client
   const clientConnections = (() => {
     if (!connections || !clientId) return [];
     const all: PlatformConnectionPublic[] = [
@@ -65,15 +72,33 @@ function ClientConnectionsPageInner() {
 
   const availableForClient = (() => {
     if (!connections || !clientId) return [];
-    // Available child rows under managers in this org
     return [
       ...connections.google_ads.flatMap((g: ConnectionGroup) => g.children),
       ...connections.meta.flatMap((g: ConnectionGroup) => g.children),
     ].filter((c) => c.status === 'available');
   })();
 
+  const expiredCount = activeForClient.filter((c) => c.status === 'expired').length;
+
+  const allDiscovered = [...discoveredAccounts, ...standaloneDiscovered];
+
+  const testResultsTyped = testResults as Record<string, { ok: boolean; latency_ms: number; error?: string }>;
+
   return (
     <div className="min-h-screen bg-[#F9FAFB]">
+      <ReauthBanner expiredCount={expiredCount} />
+
+      {showPickerForManager && (
+        <AccountPickerModal
+          managerId={showPickerForManager}
+          accounts={allDiscovered}
+          clientId={clientId}
+          onConnect={connectAccount}
+          onClose={clearPicker}
+          actionLoadingId={actionLoadingId}
+        />
+      )}
+
       <div className="max-w-4xl mx-auto px-6 py-8">
         {/* Back nav */}
         <Link
@@ -133,15 +158,20 @@ function ClientConnectionsPageInner() {
               ) : (
                 <div className="space-y-3">
                   {activeForClient.map((conn) => (
-                    <ConnectionRow
+                    <ConnectionCard
                       key={conn.id}
                       conn={conn}
-                      testResult={testResults[conn.id] as TestResult | undefined}
-                      isTesting={testingId === conn.id}
-                      isActioning={actionLoadingId === conn.id}
-                      onDisconnect={() => disconnectAccount(conn.id)}
-                      onTest={() => testConnection(conn.id)}
-                      onReauth={() => startOAuth(conn.platform, clientId)}
+                      actions={
+                        <ActiveConnectionActions
+                          conn={conn}
+                          testResult={testResultsTyped[conn.id]}
+                          isTesting={testingId === conn.id}
+                          isActioning={actionLoadingId === conn.id}
+                          onDisconnect={disconnectAccount}
+                          onTest={testConnection}
+                          onReauth={(p) => startOAuth(p, clientId)}
+                        />
+                      }
                     />
                   ))}
                 </div>
@@ -187,15 +217,14 @@ function ClientConnectionsPageInner() {
               <h2 className="text-sm font-semibold text-[#1B2A4A] mb-3">Add new connection</h2>
               <div className="flex flex-wrap gap-2">
                 {(['google_ads', 'meta', 'ga4'] as Platform[]).map((p) => (
-                  <Button
+                  <OAuthInitiateButton
                     key={p}
+                    platform={p}
+                    clientId={clientId}
+                    inProgress={oauthInProgress === p}
+                    onStart={startOAuth}
                     variant="outline"
-                    size="sm"
-                    onClick={() => startOAuth(p, clientId)}
-                    disabled={oauthInProgress !== null}
-                  >
-                    {oauthInProgress === p ? 'Connecting…' : `Connect ${PLATFORM_LABELS[p]}`}
-                  </Button>
+                  />
                 ))}
               </div>
             </section>
@@ -206,103 +235,53 @@ function ClientConnectionsPageInner() {
   );
 }
 
-interface TestResult {
-  ok: boolean;
-  latency_ms: number;
-  error?: string;
-}
-
-interface ConnectionRowProps {
+interface ActiveConnectionActionsProps {
   conn: PlatformConnectionPublic;
-  testResult?: TestResult;
+  testResult?: { ok: boolean; latency_ms: number; error?: string };
   isTesting: boolean;
   isActioning: boolean;
-  onDisconnect: () => unknown;
-  onTest: () => unknown;
-  onReauth: () => unknown;
+  onDisconnect: (id: string) => void;
+  onTest: (id: string) => void;
+  onReauth: (platform: Platform) => void;
 }
 
-function ConnectionRow({
+function ActiveConnectionActions({
   conn,
-  testResult,
   isTesting,
   isActioning,
   onDisconnect,
   onTest,
   onReauth,
-}: ConnectionRowProps) {
+}: ActiveConnectionActionsProps) {
   const isExpired = conn.status === 'expired';
 
-  return (
-    <div className="rounded-lg border border-[#E5E7EB] bg-white px-4 py-3">
-      <div className="flex items-center justify-between gap-4">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <p className="text-sm font-medium text-[#1B2A4A] truncate">
-              {conn.account_label ?? conn.account_id}
-            </p>
-            <span className={`shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${statusChip(conn.status)}`}>
-              {conn.status}
-            </span>
-          </div>
-          <p className="text-xs text-[#9CA3AF]">
-            {PLATFORM_LABELS[conn.platform as Platform]} · {conn.account_id}
-            {conn.last_synced_at && ` · Last synced ${new Date(conn.last_synced_at).toLocaleDateString()}`}
-          </p>
-          {conn.last_error && (
-            <p className="text-xs text-red-500 mt-0.5 flex items-center gap-1">
-              <AlertTriangle className="h-3 w-3" />
-              {conn.last_error}
-            </p>
-          )}
-          {testResult && (
-            <p className={`text-xs mt-0.5 ${testResult.ok ? 'text-green-600' : 'text-red-500'}`}>
-              {testResult.ok
-                ? `✓ Connected (${testResult.latency_ms}ms)`
-                : `✗ ${testResult.error ?? 'Test failed'}`}
-            </p>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-          {isExpired ? (
-            <Button size="sm" variant="outline" onClick={onReauth} disabled={isActioning}>
-              Re-authorise
-            </Button>
-          ) : (
-            <>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={onTest}
-                disabled={isTesting || isActioning}
-              >
-                {isTesting ? 'Testing…' : 'Test'}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={onDisconnect}
-                disabled={isActioning}
-                className="text-red-600 hover:text-red-700 border-red-200 hover:border-red-300"
-              >
-                {isActioning ? 'Disconnecting…' : 'Disconnect'}
-              </Button>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function statusChip(status: string) {
-  switch (status) {
-    case 'active':    return 'bg-green-100 text-green-700';
-    case 'available': return 'bg-gray-100 text-gray-600';
-    case 'expired':   return 'bg-amber-100 text-amber-700';
-    case 'revoked':   return 'bg-red-100 text-red-700';
-    case 'error':     return 'bg-red-100 text-red-700';
-    default:          return 'bg-gray-100 text-gray-600';
+  if (isExpired) {
+    return (
+      <Button size="sm" variant="outline" onClick={() => onReauth(conn.platform)} disabled={isActioning}>
+        Re-authorise
+      </Button>
+    );
   }
+
+  return (
+    <>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => onTest(conn.id)}
+        disabled={isTesting || isActioning}
+      >
+        {isTesting ? 'Testing…' : 'Test'}
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => onDisconnect(conn.id)}
+        disabled={isActioning}
+        className="text-red-600 hover:text-red-700 border-red-200 hover:border-red-300"
+      >
+        {isActioning ? 'Disconnecting…' : 'Disconnect'}
+      </Button>
+    </>
+  );
 }
