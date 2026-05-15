@@ -32,7 +32,7 @@ export async function listConnectionsForOrg(orgId: string): Promise<PlatformConn
     .order('created_at');
 
   if (error) throw new Error(`listConnectionsForOrg: ${error.message}`);
-  return (data ?? []) as PlatformConnectionPublic[];
+  return (data ?? []) as unknown as PlatformConnectionPublic[];
 }
 
 export async function getConnectionById(id: string, orgId: string): Promise<PlatformConnection | null> {
@@ -44,7 +44,7 @@ export async function getConnectionById(id: string, orgId: string): Promise<Plat
     .maybeSingle();
 
   if (error) throw new Error(`getConnectionById: ${error.message}`);
-  return data as PlatformConnection | null;
+  return data as unknown as PlatformConnection | null;
 }
 
 // Used internally by tokenManager — fetches full row including oauth_tokens
@@ -56,7 +56,7 @@ export async function getConnectionByIdInternal(id: string): Promise<PlatformCon
     .maybeSingle();
 
   if (error) throw new Error(`getConnectionByIdInternal: ${error.message}`);
-  return data as PlatformConnection | null;
+  return data as unknown as PlatformConnection | null;
 }
 
 export async function getChildConnections(parentId: string): Promise<PlatformConnectionPublic[]> {
@@ -67,7 +67,7 @@ export async function getChildConnections(parentId: string): Promise<PlatformCon
     .order('account_label');
 
   if (error) throw new Error(`getChildConnections: ${error.message}`);
-  return (data ?? []) as PlatformConnectionPublic[];
+  return (data ?? []) as unknown as PlatformConnectionPublic[];
 }
 
 export async function getManagerConnections(
@@ -83,7 +83,7 @@ export async function getManagerConnections(
     .order('created_at');
 
   if (error) throw new Error(`getManagerConnections: ${error.message}`);
-  return (data ?? []) as PlatformConnectionPublic[];
+  return (data ?? []) as unknown as PlatformConnectionPublic[];
 }
 
 // ── Write ──────────────────────────────────────────────────────────────────────
@@ -116,7 +116,7 @@ export async function upsertConnection(input: UpsertConnectionInput): Promise<Pl
     .single();
 
   if (error) throw new Error(`upsertConnection: ${error.message}`);
-  return data as PlatformConnectionPublic;
+  return data as unknown as PlatformConnectionPublic;
 }
 
 export async function updateConnectionStatus(
