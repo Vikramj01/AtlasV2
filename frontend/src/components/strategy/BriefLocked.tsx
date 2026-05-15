@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { strategyApi } from '@/lib/api/strategyApi';
 import { useStrategyStore } from '@/store/strategyStore';
 import type { EventVerdict } from '@/types/strategy';
+import { AlignmentMatrix } from '@/components/reconciliation/AlignmentMatrix';
 
 const CRM_KEYWORDS = ['sql', 'mql', 'opportunity', 'closed_won', 'closed won', 'qualified_lead', 'pipeline', 'offline', 'crm', 'deal', 'sales qualified', 'marketing qualified'];
 function isCrmStageEvent(name: string | null | undefined): boolean {
@@ -130,6 +131,22 @@ export function BriefLocked({ onNewBrief }: BriefLockedProps) {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Live Alignment Matrix */}
+      {briefId && activeBrief?.client_id && objectives.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Platform alignment
+          </p>
+          <div className="rounded-xl border border-border bg-card p-5">
+            <AlignmentMatrix
+              briefId={briefId}
+              clientId={activeBrief.client_id}
+              objectives={objectives.map((o) => ({ id: o.id, name: o.name }))}
+            />
+          </div>
         </div>
       )}
 

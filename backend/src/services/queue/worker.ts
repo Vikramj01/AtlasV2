@@ -1,4 +1,7 @@
-import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue, crawlQueue } from './jobQueue';
+import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue, crawlQueue, reconciliationSyncQueue, reconciliationRunQueue } from './jobQueue';
+import { runConfigSyncForConnection, getConnectionsDueForSync } from '@/services/reconciliation/sync/syncOrchestrator';
+import { executeRun } from '@/services/reconciliation/reconciliationRunner';
+import type { SyncJobData, ReconciliationJobData } from './jobQueue';
 // Side-effect import: registers the crawl queue processor
 import '@/services/crawl/crawlJob';
 import { env } from '@/config/env';
@@ -581,3 +584,40 @@ async function isCrawlDue(org_id: string, scans_per_month: number): Promise<bool
 
   return daysSinceLastRun >= daysBetweenScans;
 }
+
+// ── Reconciliation Sync Worker ────────────────────────────────────────────────
+
+reconciliationSyncQueue.process(3, async (job) => {
+  await runConfigSyncForConnection(job.data as SyncJobData);
+});
+
+logger.info('Reconciliation sync queue worker registered');
+
+// 6-hourly repeatable job: find connections due for sync and enqueue them
+reconciliationSyncQueue.add(
+  { connectionId: '__scheduler__', orgId: '__scheduler__', platform: 'google_ads' } as SyncJobData,
+  {
+    repeat: { cron: '0 */6 * * *' },
+    jobId: 'recon-sync-scheduler',
+  },
+);
+
+// Override: when the scheduler job runs, find and enqueue real connection jobs
+reconciliationSyncQueue.process('__scheduler__', async () => {
+  const due = await getConnectionsDueForSync();
+  for (const job of due) {
+    await reconciliationSyncQueue.add(job, {
+      jobId: `recon-sync-${job.connectionId}`,
+      removeOnComplete: true,
+    });
+  }
+  logger.info({ count: due.length }, 'Reconciliation sync jobs enqueued');
+});
+
+// ── Reconciliation Run Worker ─────────────────────────────────────────────────
+
+reconciliationRunQueue.process(2, async (job) => {
+  await executeRun(job.data as ReconciliationJobData);
+});
+
+logger.info('Reconciliation run queue worker registered');

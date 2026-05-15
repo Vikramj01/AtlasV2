@@ -313,3 +313,52 @@ crawlQueue.on('stalled', (job) => {
   logger.warn({ jobId: job.id, org_id: job.data.org_id, crawl_run_id: job.data.crawl_run_id }, 'Crawl job stalled');
 });
 
+// ── Reconciliation Queues ─────────────────────────────────────────────────────
+// Two queues: one for periodic config syncs (6h cadence), one for full
+// reconciliation runs (post-brief-lock, manual, or scheduled).
+
+import type { SyncJobData } from '@/services/reconciliation/sync/syncOrchestrator';
+import type { ReconciliationJobData } from '@/services/reconciliation/reconciliationRunner';
+export type { SyncJobData, ReconciliationJobData };
+
+export const reconciliationSyncQueue = new Bull<SyncJobData>('reconciliation-sync', {
+  redis: buildRedisOpts(env.REDIS_URL),
+  defaultJobOptions: {
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 10000 },
+    removeOnComplete: 200,
+    removeOnFail: 100,
+  },
+});
+
+reconciliationSyncQueue.on('error', (err) => {
+  logger.error({ err }, 'Reconciliation sync queue error');
+});
+
+reconciliationSyncQueue.on('failed', (job, err) => {
+  logger.error({ jobId: job?.id, connectionId: job?.data?.connectionId, err: err.message }, 'Reconciliation sync job failed');
+});
+
+export const reconciliationRunQueue = new Bull<ReconciliationJobData>('reconciliation-run', {
+  redis: buildRedisOpts(env.REDIS_URL),
+  defaultJobOptions: {
+    attempts: 2,
+    backoff: { type: 'fixed', delay: 5000 },
+    timeout: 10 * 60 * 1000,   // 10-minute hard cap
+    removeOnComplete: 100,
+    removeOnFail: 50,
+  },
+});
+
+reconciliationRunQueue.on('error', (err) => {
+  logger.error({ err }, 'Reconciliation run queue error');
+});
+
+reconciliationRunQueue.on('completed', (job) => {
+  logger.info({ jobId: job.id, runId: job.data.runId }, 'Reconciliation run completed');
+});
+
+reconciliationRunQueue.on('failed', (job, err) => {
+  logger.error({ jobId: job?.id, runId: job?.data?.runId, err: err.message }, 'Reconciliation run failed');
+});
+
