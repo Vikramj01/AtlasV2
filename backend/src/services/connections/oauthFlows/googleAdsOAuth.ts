@@ -12,8 +12,10 @@ const SCOPES = [
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 
+// Redirect URI points to the frontend SPA callback page, which reads code+state
+// from the URL and calls POST /api/connections/oauth/google_ads/callback.
 function buildRedirectUri(): string {
-  return `${env.FRONTEND_URL.replace(/\/$/, '')}/api/connections/oauth/google_ads/callback`;
+  return `${env.FRONTEND_URL.replace(/\/$/, '')}/connections/oauth/google_ads/callback`;
 }
 
 // HMAC-SHA256 state parameter for CSRF protection.

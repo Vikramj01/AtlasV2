@@ -12,7 +12,7 @@ const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 
 function buildRedirectUri(): string {
-  return `${env.FRONTEND_URL.replace(/\/$/, '')}/api/connections/oauth/ga4/callback`;
+  return `${env.FRONTEND_URL.replace(/\/$/, '')}/connections/oauth/ga4/callback`;
 }
 
 export function generateState(clientId?: string): string {
