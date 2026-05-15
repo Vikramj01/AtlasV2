@@ -20,6 +20,7 @@ import { z } from 'zod';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { planGuard } from '../middleware/planGuard';
 import { sendInternalError } from '@/utils/apiError';
+import { supabaseAdmin } from '@/services/database/supabase';
 import {
   initiateOAuth,
   handleOAuthCallback,

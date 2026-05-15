@@ -5,7 +5,7 @@ import { SectionErrorBoundary } from '@/components/common/ErrorBoundary';
 import { PlanGate } from '@/components/common/PlanGate';
 import { Button } from '@/components/ui/button';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
-import type { Platform } from '@/types/connections';
+import type { Platform, ConnectionsResponse, ConnectionGroup, PlatformConnectionPublic } from '@/types/connections';
 
 const PLATFORM_LABELS: Record<Platform, string> = {
   google_ads:       'Google Ads',
@@ -150,7 +150,7 @@ function ConnectionsPageInner() {
 
 interface ConnectionTabContentProps {
   platform: Platform;
-  connections: ReturnType<typeof useConnectionStore>['connections'];
+  connections: ConnectionsResponse;
   onStartOAuth: (platform: Platform, clientId?: string) => void;
   oauthInProgress: Platform | null;
 }
@@ -163,13 +163,13 @@ function ConnectionTabContent({
 }: ConnectionTabContentProps) {
   if (!connections) return null;
 
-  const groups =
+  const groups: ConnectionGroup[] =
     platform === 'google_ads' ? connections.google_ads
     : platform === 'meta'     ? connections.meta
     : [];
 
-  const standalones =
-    platform === 'ga4' ? connections.ga4 : connections.standalone.filter((c) => c.platform === platform);
+  const standalones: PlatformConnectionPublic[] =
+    platform === 'ga4' ? connections.ga4 : connections.standalone.filter((c: PlatformConnectionPublic) => c.platform === platform);
 
   const isEmpty = groups.length === 0 && standalones.length === 0;
 
@@ -192,7 +192,7 @@ function ConnectionTabContent({
       )}
 
       {/* Manager groups — components filled in Sprint 1.E */}
-      {groups.map((group) => (
+      {groups.map((group: ConnectionGroup) => (
         <div key={group.manager.id} className="rounded-lg border border-[#E5E7EB] bg-white p-4">
           <div className="flex items-center justify-between">
             <div>
@@ -210,7 +210,7 @@ function ConnectionTabContent({
       ))}
 
       {/* Standalone rows */}
-      {standalones.map((conn) => (
+      {standalones.map((conn: PlatformConnectionPublic) => (
         <div key={conn.id} className="rounded-lg border border-[#E5E7EB] bg-white p-4">
           <div className="flex items-center justify-between">
             <div>
