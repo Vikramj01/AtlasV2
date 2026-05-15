@@ -10,7 +10,7 @@ const TOKEN_URL = 'https://graph.facebook.com/v19.0/oauth/access_token';
 const META_TOKEN_TTL_MS = 60 * 24 * 60 * 60 * 1000;
 
 function buildRedirectUri(): string {
-  return `${env.FRONTEND_URL.replace(/\/$/, '')}/api/connections/oauth/meta/callback`;
+  return `${env.FRONTEND_URL.replace(/\/$/, '')}/connections/oauth/meta/callback`;
 }
 
 export function generateState(clientId?: string): string {
