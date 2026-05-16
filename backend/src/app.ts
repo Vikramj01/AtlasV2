@@ -28,6 +28,7 @@ import { strategyRouter } from '@/api/routes/strategy';
 import { crawlRouter } from '@/api/routes/crawl';
 import { connectionsRouter } from '@/api/routes/connections';
 import { reconciliationRouter } from '@/api/routes/reconciliation';
+import { gtmRouter } from '@/api/routes/gtm';
 import logger from '@/utils/logger';
 import { env } from '@/config/env';
 
@@ -145,6 +146,7 @@ app.use('/api/strategy', strategyRouter);
 app.use('/api/crawl', crawlRouter);
 app.use('/api/connections', connectionsRouter);
 app.use('/api/reconciliation', reconciliationRouter);
+app.use('/api/gtm', gtmRouter);
 
 // ─── 404 handler ─────────────────────────────────────────────────────────────
 

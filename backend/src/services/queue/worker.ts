@@ -1,4 +1,5 @@
-import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue, crawlQueue, reconciliationSyncQueue, reconciliationRunQueue, reconciliationStatsQueue, reconciliationStaleResyncQueue } from './jobQueue';
+import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue, crawlQueue, reconciliationSyncQueue, reconciliationRunQueue, reconciliationStatsQueue, reconciliationStaleResyncQueue, gtmContainerSyncQueue, ihcRulesQueue } from './jobQueue';
+import type { GtmContainerSyncJobData, IhcRulesJobData } from './jobQueue';
 import { runConfigSyncForConnection, getConnectionsDueForSync, runStatsSyncForConnection, getConnectionsDueForStatsSync, runStaleResyncForConnection, getConnectionsForStaleResync } from '@/services/reconciliation/sync/syncOrchestrator';
 import { executeRun } from '@/services/reconciliation/reconciliationRunner';
 import type { SyncJobData, StatsSyncJobData, StaleResyncJobData, ReconciliationJobData } from './jobQueue';
@@ -679,3 +680,226 @@ reconciliationStaleResyncQueue.process('__stale_scheduler__', async () => {
   }
   logger.info({ count: connections.length }, 'Reconciliation stale resync jobs enqueued');
 });
+
+// ── GTM Container Sync Worker ─────────────────────────────────────────────────
+// For OAuth connections: fetches the live container from the GTM API, writes
+// a new snapshot row if the version changed, then enqueues ihcRulesQueue.
+// For manual uploads: skip_fetch=true so only the IHC rules enqueue step runs.
+// Credentials are loaded from DB — never stored in the job payload.
+
+gtmContainerSyncQueue.process(2, async (job) => {
+  const data = job.data as GtmContainerSyncJobData;
+  logger.info({ connectionId: data.connection_id, jobId: job.id }, 'GTM container sync job received');
+
+  const { supabaseAdmin } = await import('@/services/database/supabase');
+  const { parseContainerJson } = await import('@/services/gtm/containerParser');
+  const { refreshGtmToken } = await import('@/api/routes/gtm');
+
+  const { data: connection, error: connErr } = await supabaseAdmin
+    .from('gtm_container_connections')
+    .select('id, organization_id, property_id, container_id, account_id, auth_method, last_container_json_snapshot_id')
+    .eq('id', data.connection_id)
+    .single();
+
+  if (connErr || !connection) {
+    throw new Error(`GTM connection not found: ${data.connection_id}`);
+  }
+
+  let snapshotId = data.snapshot_id;
+
+  if (!data.skip_fetch && connection.auth_method === 'oauth') {
+    const accessToken = await refreshGtmToken(connection.id);
+
+    // Fetch the live container version from GTM API
+    const accountId = connection.account_id ?? '';
+    const containerId = connection.container_id;
+    const apiUrl = `https://www.googleapis.com/tagmanager/v2/accounts/${accountId}/containers/${containerId}/versions:live`;
+
+    const apiResponse = await fetch(apiUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!apiResponse.ok) {
+      const body = await apiResponse.text();
+      throw new Error(`GTM API fetch failed (${apiResponse.status}): ${body}`);
+    }
+
+    const containerJson = await apiResponse.json() as Record<string, unknown>;
+    const snapshot = parseContainerJson(containerJson, 'gtm_api');
+
+    // Check if version actually changed before writing a new snapshot row
+    const { data: lastSnap } = await supabaseAdmin
+      .from('gtm_container_snapshots')
+      .select('container_version')
+      .eq('id', connection.last_container_json_snapshot_id ?? '')
+      .maybeSingle();
+
+    if (lastSnap?.container_version === snapshot.container_id) {
+      logger.info({ connectionId: connection.id }, 'GTM container version unchanged — skipping snapshot');
+      return;
+    }
+
+    // Deactivate previous snapshot
+    await supabaseAdmin
+      .from('gtm_container_snapshots')
+      .update({ is_active: false })
+      .eq('connection_id', connection.id)
+      .eq('is_active', true);
+
+    const { data: newSnap, error: snapErr } = await supabaseAdmin
+      .from('gtm_container_snapshots')
+      .insert({
+        connection_id: connection.id,
+        organization_id: data.organization_id,
+        container_json: containerJson,
+        container_version: snapshot.container_id,
+        is_active: true,
+      })
+      .select('id')
+      .single();
+
+    if (snapErr || !newSnap) {
+      throw new Error(`Failed to store container snapshot: ${snapErr?.message}`);
+    }
+
+    snapshotId = newSnap.id;
+
+    await supabaseAdmin
+      .from('gtm_container_connections')
+      .update({
+        last_synced_at: new Date().toISOString(),
+        last_container_json_snapshot_id: snapshotId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', connection.id);
+  }
+
+  if (!snapshotId) {
+    logger.warn({ connectionId: connection.id }, 'No snapshot_id after sync — skipping IHC rules');
+    return;
+  }
+
+  // Enqueue IHC rules run (Sprint A2 worker will process this)
+  await ihcRulesQueue.add({
+    connection_id: connection.id,
+    snapshot_id: snapshotId,
+    organization_id: data.organization_id,
+    property_id: connection.property_id,
+  });
+
+  logger.info({ connectionId: connection.id, snapshotId }, 'IHC rules job enqueued after container sync');
+});
+
+logger.info('GTM container sync worker registered');
+
+// Hourly cron: re-sync all OAuth-connected containers
+gtmContainerSyncQueue.add(
+  { connection_id: '__scheduler__', organization_id: '__scheduler__' },
+  { repeat: { cron: '0 * * * *' }, jobId: 'gtm-sync-hourly' },
+).catch((err) => logger.error({ err }, 'Failed to schedule GTM container sync'));
+
+gtmContainerSyncQueue.process('__scheduler__', async () => {
+  const { supabaseAdmin } = await import('@/services/database/supabase');
+
+  const { data: connections, error } = await supabaseAdmin
+    .from('gtm_container_connections')
+    .select('id, organization_id')
+    .eq('auth_method', 'oauth');
+
+  if (error) {
+    logger.error({ err: error.message }, 'GTM sync scheduler: failed to list connections');
+    return;
+  }
+
+  if (!connections?.length) return;
+
+  for (const conn of connections) {
+    await gtmContainerSyncQueue.add(
+      { connection_id: conn.id, organization_id: conn.organization_id },
+      { jobId: `gtm-sync-${conn.id}`, removeOnComplete: true },
+    );
+  }
+
+  logger.info({ count: connections.length }, 'GTM container sync jobs enqueued');
+});
+
+// ── IHC Rules Worker ──────────────────────────────────────────────────────────
+// Loads the container snapshot, runs all tag_configuration rules, upserts
+// findings into audit_findings.
+// Sprint A2 will register the actual rule functions — this worker is the
+// harness that loads them dynamically so Sprint A1 can ship standalone.
+
+ihcRulesQueue.process(2, async (job) => {
+  const data = job.data as IhcRulesJobData;
+  logger.info({ snapshotId: data.snapshot_id, connectionId: data.connection_id, jobId: job.id }, 'IHC rules job received');
+
+  const { supabaseAdmin } = await import('@/services/database/supabase');
+  const { parseContainerJson } = await import('@/services/gtm/containerParser');
+  const { upsertFindings } = await import('@/services/ihc/findingsWriter');
+
+  // Load snapshot
+  const { data: snap, error: snapErr } = await supabaseAdmin
+    .from('gtm_container_snapshots')
+    .select('container_json, connection_id')
+    .eq('id', data.snapshot_id)
+    .single();
+
+  if (snapErr || !snap) {
+    throw new Error(`Snapshot not found: ${data.snapshot_id}`);
+  }
+
+  const containerSnapshot = parseContainerJson(snap.container_json as Record<string, unknown>, 'gtm_api');
+
+  // Dynamically import tag_configuration rules (registered in Sprint A2)
+  let tagConfigRules: Array<{
+    rule_id: string;
+    validation_layer: string;
+    severity: string;
+    test: (auditData: { gtmContainer: typeof containerSnapshot }) => { rule_id: string; status: string; technical_details: { evidence: string[] } };
+  }>;
+
+  try {
+    const rulesModule = await import('@/services/ihc/tagConfigurationRules');
+    tagConfigRules = rulesModule.TAG_CONFIGURATION_RULES ?? [];
+  } catch {
+    // Sprint A2 not yet deployed — skip gracefully
+    logger.info({ snapshotId: data.snapshot_id }, 'IHC rules worker: tagConfigurationRules not yet available');
+    return;
+  }
+
+  const auditInput = { gtmContainer: containerSnapshot };
+  const passingRuleIds: string[] = [];
+  const failingFindings: import('@/services/ihc/findingsWriter').FindingInput[] = [];
+
+  for (const rule of tagConfigRules) {
+    const result = rule.test(auditInput);
+    if (result.status === 'skipped') continue;
+
+    if (result.status === 'pass') {
+      passingRuleIds.push(rule.rule_id);
+    } else {
+      failingFindings.push({
+        organization_id: data.organization_id,
+        property_id: data.property_id,
+        rule_id: rule.rule_id,
+        validation_layer: rule.validation_layer as import('@/types/audit').ValidationLayer,
+        severity: rule.severity as import('@/types/audit').Severity,
+        evidence: {
+          snapshot_id: data.snapshot_id,
+          connection_id: data.connection_id,
+          details: result.technical_details.evidence,
+          status: result.status,
+        },
+      });
+    }
+  }
+
+  await upsertFindings(passingRuleIds, failingFindings);
+
+  logger.info(
+    { snapshotId: data.snapshot_id, passing: passingRuleIds.length, failing: failingFindings.length },
+    'IHC rules run complete',
+  );
+});
+
+logger.info('IHC rules worker registered');
