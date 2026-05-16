@@ -3,9 +3,14 @@
 export type FunnelType = 'ecommerce' | 'saas' | 'lead_gen';
 export type Region = 'us' | 'eu' | 'global';
 export type AuditStatus = 'queued' | 'running' | 'completed' | 'failed';
-export type ValidationLayer = 'signal_initiation' | 'parameter_completeness' | 'persistence';
+export type ValidationLayer =
+  | 'signal_initiation'
+  | 'parameter_completeness'
+  | 'persistence'
+  | 'tag_configuration'
+  | 'implementation_drift';
 export type Severity = 'critical' | 'high' | 'medium' | 'low';
-export type RuleStatus = 'pass' | 'fail' | 'warning';
+export type RuleStatus = 'pass' | 'fail' | 'warning' | 'skipped';
 
 // ─── Captured data (from Browserbase) ────────────────────────────────────────
 
@@ -64,6 +69,53 @@ export interface LocalStorageSnapshot {
   entries: Record<string, string>;
 }
 
+// ─── GTM container snapshot (for tag_configuration layer) ────────────────────
+
+export interface GTMConsentSettings {
+  consentStatus: 'NOT_SET' | 'NEEDED' | 'NOT_NEEDED';
+  consentType?: string[];
+}
+
+export interface GTMTag {
+  tagId: string;
+  name: string;
+  type: string;
+  firingTriggerId: string[];
+  blockingTriggerId?: string[];
+  parameter?: Array<{ type: string; key: string; value?: string; list?: unknown[] }>;
+  consentSettings?: GTMConsentSettings;
+  tagFiringOption?: string;
+  monitoringMetadata?: unknown;
+}
+
+export interface GTMTrigger {
+  triggerId: string;
+  name: string;
+  type: string;
+  filter?: Array<{ type: string; parameter: Array<{ type: string; key: string; value?: string }> }>;
+  autoEventFilter?: unknown[];
+  customEventFilter?: unknown[];
+  parameter?: Array<{ type: string; key: string; value?: string }>;
+}
+
+export interface GTMVariable {
+  variableId: string;
+  name: string;
+  type: string;
+  parameter?: Array<{ type: string; key: string; value?: string }>;
+}
+
+export interface GTMContainerSnapshot {
+  container_id: string;
+  fetched_at: string;
+  source: 'gtm_api' | 'manual_upload';
+  tags: GTMTag[];
+  triggers: GTMTrigger[];
+  variables: GTMVariable[];
+  built_in_variables: string[];
+  consent_default_tag: GTMTag | null;
+}
+
 // ─── AuditData passed to validation engine ───────────────────────────────────
 
 export interface AuditData {
@@ -86,6 +138,9 @@ export interface AuditData {
   storage?: Record<string, string>;        // localStorage at conversion step
   cookies?: Record<string, string>;        // Merged cookie map (all steps)
   pageMetadata?: Record<string, unknown>;  // Misc page metadata
+  // IHC extensions — absent when the respective data source is not connected
+  gtmContainer?: GTMContainerSnapshot;     // tag_configuration layer input
+  baselineAuditData?: AuditData;           // implementation_drift layer input
 }
 
 // ─── API inputs ───────────────────────────────────────────────────────────────

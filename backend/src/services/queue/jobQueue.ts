@@ -406,3 +406,75 @@ reconciliationStaleResyncQueue.on('failed', (job, err) => {
   logger.error({ jobId: job?.id, connectionId: job?.data?.connectionId, err: err.message }, 'Reconciliation stale resync job failed');
 });
 
+// ── GTM Container Sync Queue ──────────────────────────────────────────────────
+// Fetches the live container from the GTM API (or processes a just-uploaded
+// manual snapshot), writes a new gtm_container_snapshots row when the version
+// changes, and enqueues ihcRulesQueue to re-run all tag_configuration rules.
+// OAuth connections: hourly cron. Manual uploads: triggered on demand.
+// No PII in the payload — credentials are loaded from DB inside the worker.
+
+export interface GtmContainerSyncJobData {
+  connection_id: string;
+  organization_id: string;
+  snapshot_id?: string;   // pre-existing snapshot for manual upload path
+  skip_fetch?: boolean;   // true for manual uploads (no API fetch needed)
+}
+
+export const gtmContainerSyncQueue = new Bull<GtmContainerSyncJobData>('gtm-container-sync', {
+  redis: buildRedisOpts(env.REDIS_URL),
+  defaultJobOptions: {
+    attempts: 2,
+    backoff: { type: 'exponential', delay: 10_000 },
+    timeout: 5 * 60 * 1000,
+    removeOnComplete: 50,
+    removeOnFail: 25,
+  },
+});
+
+gtmContainerSyncQueue.on('error', (err) => {
+  logger.error({ err }, 'GTM container sync queue error');
+});
+
+gtmContainerSyncQueue.on('completed', (job) => {
+  logger.info({ jobId: job.id, connectionId: job.data.connection_id }, 'GTM container sync job completed');
+});
+
+gtmContainerSyncQueue.on('failed', (job, err) => {
+  logger.error({ jobId: job?.id, connectionId: job?.data?.connection_id, err: err.message }, 'GTM container sync job failed');
+});
+
+// ── IHC Rules Queue ───────────────────────────────────────────────────────────
+// Runs all tag_configuration rules against a GTM container snapshot and
+// upserts findings into audit_findings.
+// Triggered after every GTM container sync (no delta — always re-run all rules).
+
+export interface IhcRulesJobData {
+  connection_id: string;
+  snapshot_id: string;
+  organization_id: string;
+  property_id: string;
+}
+
+export const ihcRulesQueue = new Bull<IhcRulesJobData>('ihc-rules', {
+  redis: buildRedisOpts(env.REDIS_URL),
+  defaultJobOptions: {
+    attempts: 2,
+    backoff: { type: 'fixed', delay: 5_000 },
+    timeout: 3 * 60 * 1000,
+    removeOnComplete: 100,
+    removeOnFail: 50,
+  },
+});
+
+ihcRulesQueue.on('error', (err) => {
+  logger.error({ err }, 'IHC rules queue error');
+});
+
+ihcRulesQueue.on('completed', (job) => {
+  logger.info({ jobId: job.id, snapshotId: job.data.snapshot_id }, 'IHC rules job completed');
+});
+
+ihcRulesQueue.on('failed', (job, err) => {
+  logger.error({ jobId: job?.id, snapshotId: job?.data?.snapshot_id, err: err.message }, 'IHC rules job failed');
+});
+
