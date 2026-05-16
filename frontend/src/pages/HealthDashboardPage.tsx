@@ -25,6 +25,8 @@ import { KeyMetricsRow } from '@/components/health/KeyMetricsRow';
 import { ActiveAlertsFeed } from '@/components/health/ActiveAlertsFeed';
 import { HealthHistoryChart } from '@/components/health/HealthHistoryChart';
 import { ReadinessScore } from '@/components/health/ReadinessScore';
+import { PlatformAcceptanceTile } from '@/components/health/PlatformAcceptanceTile';
+import { ReauthBanner } from '@/components/health/ReauthBanner';
 import { SECTION_LABELS, LOW_HEALTH_CALLOUT, TOOLTIPS } from '@/lib/ui-copy';
 import { InfoTooltip } from '@/components/common/InfoTooltip';
 import { EmptyState } from '@/components/common/EmptyState';
@@ -214,6 +216,9 @@ export default function HealthDashboardPage() {
         </button>
       </div>
 
+      {/* ── Reauth banner (expired platform connections) ──────────────────── */}
+      <ReauthBanner />
+
       {/* ── Low-score callout ─────────────────────────────────────────────── */}
       {score.overall_score < 60 && (
         <div className="rounded-lg border border-amber-300 bg-amber-50 px-5 py-4">
@@ -246,6 +251,7 @@ export default function HealthDashboardPage() {
         <div className="flex flex-col justify-center gap-4">
           <p className="text-caption-upper">Sub-scores</p>
           <KeyMetricsRow score={score} />
+          <PlatformAcceptanceTile score={score} />
         </div>
       </div>
 

@@ -12,7 +12,7 @@
  *   - POST /api/health/compute (manual trigger, single user)
  */
 
-import { computeHealthMetrics } from './scoreEngine';
+import { computeHealthMetrics, fetchOrgId } from './scoreEngine';
 import { evaluateAlerts } from './alertEngine';
 import { upsertHealthScore, insertSnapshot } from '@/services/database/healthQueries';
 import { supabaseAdmin } from '@/services/database/supabase';
@@ -31,14 +31,27 @@ export async function runHealthPipeline(userId: string, websiteUrl?: string): Pr
   ]);
 
   // 3. Evaluate alert rules
+  const orgId = await fetchOrgId(userId);
   const capiConfigured = metrics.capi_delivery_rate > 0 || await checkCAPIConfigured(userId);
   const daysSinceAudit = metrics.last_audit_at
     ? Math.floor((Date.now() - new Date(metrics.last_audit_at).getTime()) / (1000 * 60 * 60 * 24))
     : null;
 
+  const [hasExpiredConnections, hasCriticalReconFindings, hasCriticalAlignmentFindings] =
+    orgId
+      ? await Promise.all([
+          checkExpiredConnections(orgId),
+          checkCriticalReconFindings(orgId),
+          checkCriticalAlignmentFindings(orgId),
+        ])
+      : [false, false, false];
+
   await evaluateAlerts(userId, metrics, {
     capi_configured: capiConfigured,
     days_since_audit: daysSinceAudit,
+    has_expired_connections: hasExpiredConnections,
+    has_critical_recon_findings: hasCriticalReconFindings,
+    has_critical_alignment_findings: hasCriticalAlignmentFindings,
   });
 
   logger.info({ userId, overallScore }, 'Health pipeline complete');
@@ -51,6 +64,39 @@ async function checkCAPIConfigured(userId: string): Promise<boolean> {
     .eq('organization_id', userId)
     .eq('status', 'active')
     .limit(1);
+  return (data?.length ?? 0) > 0;
+}
+
+async function checkExpiredConnections(orgId: string): Promise<boolean> {
+  const { data } = await (supabaseAdmin
+    .from('platform_connections')
+    .select('id')
+    .eq('organization_id', orgId)
+    .in('status', ['expired', 'revoked'])
+    .limit(1) as unknown as Promise<{ data: { id: string }[] | null }>);
+  return (data?.length ?? 0) > 0;
+}
+
+async function checkCriticalReconFindings(orgId: string): Promise<boolean> {
+  const { data } = await (supabaseAdmin
+    .from('reconciliation_findings')
+    .select('id')
+    .eq('organization_id', orgId)
+    .eq('severity', 'critical')
+    .is('resolved_at', null)
+    .limit(1) as unknown as Promise<{ data: { id: string }[] | null }>);
+  return (data?.length ?? 0) > 0;
+}
+
+async function checkCriticalAlignmentFindings(orgId: string): Promise<boolean> {
+  const { data } = await (supabaseAdmin
+    .from('reconciliation_findings')
+    .select('id')
+    .eq('organization_id', orgId)
+    .eq('dimension', 'alignment')
+    .eq('severity', 'critical')
+    .is('resolved_at', null)
+    .limit(1) as unknown as Promise<{ data: { id: string }[] | null }>);
   return (data?.length ?? 0) > 0;
 }
 
