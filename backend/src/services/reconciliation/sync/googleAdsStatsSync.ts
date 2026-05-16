@@ -10,18 +10,27 @@ interface ConversionRow {
   conversions: number;
 }
 
+function buildDateRange(daysBack: number): { since: string; until: string } {
+  const until = new Date(Date.now() - 24 * 60 * 60 * 1000); // yesterday
+  const since = new Date(until.getTime() - (daysBack - 1) * 24 * 60 * 60 * 1000);
+  const fmt = (d: Date) => d.toISOString().split('T')[0];
+  return { since: fmt(since), until: fmt(until) };
+}
+
 async function fetchConversionStats(
   customerId: string,
   accessToken: string,
   managerId?: string,
+  daysBack = 7,
 ): Promise<ConversionRow[]> {
+  const { since, until } = buildDateRange(daysBack);
   const query = `
     SELECT
       segments.date,
       conversion_action.name,
       metrics.conversions
     FROM conversion_action
-    WHERE segments.date DURING LAST_7_DAYS
+    WHERE segments.date BETWEEN '${since}' AND '${until}'
     ORDER BY segments.date DESC
   `;
 
@@ -77,7 +86,7 @@ async function getAtlasCount(clientId: string, eventName: string, date: string):
   return count ?? null;
 }
 
-export async function syncConversionStats(connectionId: string, orgId: string, clientId: string): Promise<void> {
+export async function syncConversionStats(connectionId: string, orgId: string, clientId: string, daysBack = 7): Promise<void> {
   const tokens = await resolveTokens(connectionId);
   const { data: conn } = await supabaseAdmin
     .from('platform_connections')
@@ -99,7 +108,7 @@ export async function syncConversionStats(connectionId: string, orgId: string, c
     if (parent) managerId = (parent as { account_id: string }).account_id.replace(/-/g, '');
   }
 
-  const rows = await fetchConversionStats(customerId, tokens.access_token, managerId);
+  const rows = await fetchConversionStats(customerId, tokens.access_token, managerId, daysBack);
 
   // Aggregate by (date, eventName)
   const agg = new Map<string, number>();

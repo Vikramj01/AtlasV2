@@ -25,6 +25,14 @@ export interface StatsSyncJobData {
   platform: Platform;
 }
 
+export interface StaleResyncJobData {
+  connectionId: string;
+  orgId: string;
+  clientId: string;
+  platform: Platform;
+  daysBack: number;
+}
+
 export async function getConnectionsDueForSync(): Promise<SyncJobData[]> {
   const cutoff = new Date(Date.now() - SYNC_INTERVAL_MS).toISOString();
 
@@ -118,6 +126,53 @@ export async function runStatsSyncForConnection(job: StatsSyncJobData): Promise<
     logger.info({ connectionId, platform }, 'Stats sync completed');
   } catch (err) {
     logger.error({ connectionId, platform, err: (err as Error).message }, 'Stats sync failed');
+    throw err;
+  }
+}
+
+export async function getConnectionsForStaleResync(): Promise<StaleResyncJobData[]> {
+  const { data, error } = await supabaseAdmin
+    .from('platform_connections')
+    .select('id, organization_id, client_id, platform')
+    .eq('status', 'active')
+    .in('platform', ['google_ads', 'meta', 'ga4']) as unknown as {
+      data: { id: string; organization_id: string; client_id: string; platform: string }[] | null;
+      error: Error | null;
+    };
+
+  if (error) {
+    logger.error({ err: error.message }, 'Failed to query connections for stale resync');
+    return [];
+  }
+
+  return (data ?? [])
+    .filter((row) => row.client_id)
+    .map((row) => ({
+      connectionId: row.id,
+      orgId: row.organization_id,
+      clientId: row.client_id,
+      platform: row.platform as Platform,
+      daysBack: 30,
+    }));
+}
+
+export async function runStaleResyncForConnection(job: StaleResyncJobData): Promise<void> {
+  const { connectionId, orgId, clientId, platform, daysBack } = job;
+
+  logger.info({ connectionId, platform, daysBack }, 'Stale resync started');
+
+  try {
+    if (platform === 'google_ads') {
+      await syncConversionStats(connectionId, orgId, clientId, daysBack);
+    } else if (platform === 'meta') {
+      await syncAdAccountStats(connectionId, orgId, clientId, daysBack);
+    } else if (platform === 'ga4') {
+      await syncKeyEventStats(connectionId, orgId, clientId, daysBack);
+    }
+
+    logger.info({ connectionId, platform, daysBack }, 'Stale resync completed');
+  } catch (err) {
+    logger.error({ connectionId, platform, daysBack, err: (err as Error).message }, 'Stale resync failed');
     throw err;
   }
 }

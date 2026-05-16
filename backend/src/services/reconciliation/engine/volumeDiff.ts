@@ -24,13 +24,14 @@ interface Connection {
   platform: string;
 }
 
+const GA4_DIVERGENCE_THRESHOLD = 25; // percent
+
 export async function runVolumeDiff(
   runId: string,
   clientId: string,
   briefId: string | null,
   orgId: string,
 ): Promise<void> {
-  // Load active connections for this client
   const { data: connections } = await supabaseAdmin
     .from('platform_connections')
     .select('id, platform')
@@ -42,22 +43,19 @@ export async function runVolumeDiff(
   const connectionIds = connections.map((c) => c.id);
   const connPlatform = new Map(connections.map((c) => [c.id, c.platform]));
 
-  // Load stats rows where atlas_count is populated (CAPI-backed data only)
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
   const { data: statsRows } = await supabaseAdmin
     .from('platform_event_stats_daily')
     .select('connection_id, date, event_name, platform_count, atlas_count, delta_pct')
     .in('connection_id', connectionIds)
-    .gte('date', sevenDaysAgo)
-    .not('atlas_count', 'is', null) as unknown as { data: StatsRow[] | null };
+    .gte('date', sevenDaysAgo) as unknown as { data: StatsRow[] | null };
 
   if (!statsRows?.length) {
-    logger.info({ runId, clientId }, 'No CAPI-backed stats data; skipping volume diff');
+    logger.info({ runId, clientId }, 'No stats data; skipping volume diff');
     return;
   }
 
-  // Load tolerance configs (most specific match: event+platform > event-only > client-wide)
   const { data: toleranceRows } = await supabaseAdmin
     .from('reconciliation_tolerance_configs')
     .select('event_name, platform, volume_tolerance_pct, enabled')
@@ -68,41 +66,32 @@ export async function runVolumeDiff(
 
   function getTolerance(eventName: string, platform: string): number {
     const configs = (toleranceRows ?? []).filter((t) => t.enabled);
-    // Most specific: event+platform match
     const exact = configs.find((t) => t.event_name === eventName && t.platform === platform);
     if (exact) return exact.volume_tolerance_pct;
-    // Event-only
     const eventOnly = configs.find((t) => t.event_name === eventName && t.platform === null);
     if (eventOnly) return eventOnly.volume_tolerance_pct;
-    // Platform-only
     const platformOnly = configs.find((t) => t.event_name === null && t.platform === platform);
     if (platformOnly) return platformOnly.volume_tolerance_pct;
-    // Client-wide default
     const clientWide = configs.find((t) => t.event_name === null && t.platform === null);
     return clientWide?.volume_tolerance_pct ?? DEFAULT_TOLERANCE;
   }
 
+  // ── VOLUME_DELTA_EXCEEDED — atlas vs platform divergence ──────────────────
   for (const row of statsRows) {
     if (row.delta_pct === null || row.atlas_count === null) continue;
 
     const platform = connPlatform.get(row.connection_id) ?? 'unknown';
+    if (platform === 'ga4') continue; // GA4 handled separately below
+
     const absDelta = Math.abs(row.delta_pct);
     const tolerance = getTolerance(row.event_name, platform);
-
     if (absDelta <= tolerance) continue;
 
-    // Severity: error if delta > 2× tolerance, else warning
     const severity = absDelta > tolerance * 2 ? 'error' : 'warning';
 
     await writeFinding({
-      runId,
-      orgId,
-      clientId,
-      briefId,
-      objectiveId: null,
-      platform,
-      dimension: 'volume',
-      severity,
+      runId, orgId, clientId, briefId, objectiveId: null,
+      platform, dimension: 'volume', severity,
       findingCode: 'VOLUME_DELTA_EXCEEDED',
       expected: { atlas_count: row.atlas_count, tolerance_pct: tolerance },
       observed: { platform_count: row.platform_count, delta_pct: row.delta_pct },
@@ -117,4 +106,53 @@ export async function runVolumeDiff(
       remediationHint: buildRemediation('VOLUME_DELTA_EXCEEDED', {}),
     });
   }
+
+  // ── GA4_VOLUME_DIVERGENCE — GA4 vs primary platform divergence ────────────
+  // Group counts by (event_name, date) per platform, then compare GA4 vs others
+  type DayKey = string; // `${event_name}::${date}`
+  const byKey = new Map<DayKey, { ga4: number | null; primary: number | null; primaryPlatform: string }>();
+
+  for (const row of statsRows) {
+    const platform = connPlatform.get(row.connection_id) ?? 'unknown';
+    const key: DayKey = `${row.event_name}::${row.date}`;
+    const existing = byKey.get(key) ?? { ga4: null, primary: null, primaryPlatform: '' };
+
+    if (platform === 'ga4') {
+      existing.ga4 = (existing.ga4 ?? 0) + row.platform_count;
+    } else {
+      // Use google_ads preferentially over meta as "primary"
+      if (existing.primary === null || platform === 'google_ads') {
+        existing.primary = row.platform_count;
+        existing.primaryPlatform = platform;
+      }
+    }
+    byKey.set(key, existing);
+  }
+
+  for (const [key, counts] of byKey) {
+    if (counts.ga4 === null || counts.primary === null || counts.primary === 0) continue;
+
+    const [eventName, date] = key.split('::');
+    const deltaPct = ((counts.ga4 - counts.primary) / counts.primary) * 100;
+
+    if (Math.abs(deltaPct) <= GA4_DIVERGENCE_THRESHOLD) continue;
+
+    await writeFinding({
+      runId, orgId, clientId, briefId, objectiveId: null,
+      platform: 'ga4', dimension: 'volume', severity: 'info',
+      findingCode: 'GA4_VOLUME_DIVERGENCE',
+      expected: { platform_count: counts.primary, platform: counts.primaryPlatform },
+      observed: { ga4_count: counts.ga4, delta_pct: Math.round(deltaPct * 100) / 100 },
+      narrative: buildNarrative('GA4_VOLUME_DIVERGENCE', {
+        event_name: eventName,
+        event_date: date,
+        ga4_count: counts.ga4.toString(),
+        platform_count: counts.primary.toString(),
+        platform: counts.primaryPlatform,
+        delta_pct: Math.round(deltaPct).toString(),
+      }),
+      remediationHint: buildRemediation('GA4_VOLUME_DIVERGENCE', {}),
+    });
+  }
 }
+

@@ -4,8 +4,10 @@ import { RefreshCw, XCircle, AlertTriangle, ChevronRight, CheckCircle2 } from 'l
 import { Button } from '@/components/ui/button';
 import { useReconciliationStore } from '@/store/reconciliationStore';
 import { AlignmentMatrix } from '@/components/reconciliation/AlignmentMatrix';
+import { DimensionScorePanel } from '@/components/reconciliation/DimensionScorePanel';
+import { ToleranceConfigPanel } from '@/components/reconciliation/ToleranceConfigPanel';
 import { SectionErrorBoundary } from '@/components/common/ErrorBoundary';
-import type { ReconciliationRun } from '@/lib/api/reconciliationApi';
+import type { ReconciliationRun, ReconciliationFinding } from '@/lib/api/reconciliationApi';
 
 type RunStatus = ReconciliationRun['status'];
 
@@ -22,6 +24,68 @@ const RUN_TYPE_LABELS: Record<string, string> = {
   post_brief_lock: 'Post-lock',
 };
 
+// ── 30-day trend chart (CSS bars, no chart library) ──────────────────────────
+
+interface TrendBucket {
+  label: string;    // DD/MM
+  count: number;
+}
+
+function buildTrendBuckets(runs: ReconciliationRun[]): TrendBucket[] {
+  const now = Date.now();
+  const cutoff = now - 30 * 24 * 60 * 60 * 1000;
+
+  const bucketMap = new Map<string, number>();
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(now - i * 24 * 60 * 60 * 1000);
+    const key = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+    bucketMap.set(key, 0);
+  }
+
+  for (const run of runs) {
+    const ts = new Date(run.started_at).getTime();
+    if (ts < cutoff) continue;
+    const d = new Date(ts);
+    const key = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+    if (bucketMap.has(key)) {
+      bucketMap.set(key, (bucketMap.get(key) ?? 0) + run.total_findings);
+    }
+  }
+
+  return Array.from(bucketMap.entries()).map(([label, count]) => ({ label, count }));
+}
+
+function TrendChart({ runs }: { runs: ReconciliationRun[] }) {
+  const buckets = buildTrendBuckets(runs);
+  const maxCount = Math.max(...buckets.map((b) => b.count), 1);
+
+  // Show every 5th label to avoid crowding
+  return (
+    <div className="rounded-xl border border-[#E5E7EB] bg-white p-5 space-y-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-[#9CA3AF]">30-day findings trend</p>
+      <div className="flex items-end gap-0.5 h-20">
+        {buckets.map((b, i) => {
+          const heightPct = maxCount > 0 ? (b.count / maxCount) * 100 : 0;
+          return (
+            <div key={b.label} className="flex-1 flex flex-col items-center justify-end gap-0.5" title={`${b.label}: ${b.count} findings`}>
+              <div
+                className="w-full rounded-sm bg-[#1B2A4A] opacity-70 transition-all duration-300"
+                style={{ height: heightPct > 0 ? `${Math.max(heightPct, 4)}%` : '2px', minHeight: '2px' }}
+              />
+              {i % 5 === 0 && (
+                <span className="text-[8px] text-[#9CA3AF] leading-none">{b.label}</span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <p className="text-[10px] text-[#9CA3AF]">Findings per run, last 30 days</p>
+    </div>
+  );
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
+
 export function ReconciliationPage() {
   return (
     <SectionErrorBoundary label="Reconciliation">
@@ -33,26 +97,42 @@ export function ReconciliationPage() {
 function ReconciliationPageInner() {
   const { clientId } = useParams<{ clientId: string }>();
   const navigate = useNavigate();
-  const { runs, loading, triggering, fetchRuns, triggerRun } = useReconciliationStore();
+  const {
+    runs,
+    findings,
+    loading,
+    triggering,
+    fetchRuns,
+    triggerRun,
+    fetchRunDetail,
+  } = useReconciliationStore();
   const [pollingTimeout, setPollingTimeout] = useState<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (clientId) fetchRuns(clientId);
+    if (!clientId) return;
+    fetchRuns(clientId).then(() => {
+      // Pre-load findings for the latest run to power DimensionScorePanel
+    });
     return () => {
       if (pollingTimeout) clearTimeout(pollingTimeout);
     };
   }, [clientId, fetchRuns]);
 
+  // Load findings for the latest completed run to power DimensionScorePanel
+  useEffect(() => {
+    const latestDone = runs.find((r) => r.status !== 'running');
+    if (latestDone) fetchRunDetail(latestDone.id);
+  }, [runs, fetchRunDetail]);
+
   async function handleRunNow() {
     if (!clientId) return;
     await triggerRun(clientId);
-    // Poll once after 4s to pick up the completed run
     const t = setTimeout(() => fetchRuns(clientId), 4000);
     setPollingTimeout(t);
   }
 
   const latestRun = runs[0] ?? null;
-  const totalOpenFindings = runs.reduce((acc: number, r: ReconciliationRun) => acc + (r.total_findings ?? 0), 0);
+  const totalOpenFindings = findings.filter((f: ReconciliationFinding) => f.resolved_at === null).length;
 
   if (!clientId) {
     return (
@@ -92,10 +172,16 @@ function ReconciliationPageInner() {
         <div className="flex gap-2 flex-wrap">
           <span className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-full bg-red-100 text-red-700 font-medium">
             <XCircle className="h-3 w-3" />
-            {totalOpenFindings} total findings
+            {totalOpenFindings} open finding{totalOpenFindings === 1 ? '' : 's'}
           </span>
         </div>
       )}
+
+      {/* Dimension scores (only when findings loaded) */}
+      {findings.length > 0 && <DimensionScorePanel findings={findings} />}
+
+      {/* 30-day trend chart */}
+      {runs.length > 0 && <TrendChart runs={runs} />}
 
       {/* Latest alignment matrix (only when brief_id is on the latest run) */}
       {latestRun?.brief_id ? (
@@ -178,6 +264,9 @@ function ReconciliationPageInner() {
           </div>
         </div>
       )}
+
+      {/* Tolerance config */}
+      <ToleranceConfigPanel clientId={clientId} />
     </div>
   );
 }

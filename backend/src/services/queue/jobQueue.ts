@@ -317,9 +317,9 @@ crawlQueue.on('stalled', (job) => {
 // Two queues: one for periodic config syncs (6h cadence), one for full
 // reconciliation runs (post-brief-lock, manual, or scheduled).
 
-import type { SyncJobData, StatsSyncJobData } from '@/services/reconciliation/sync/syncOrchestrator';
+import type { SyncJobData, StatsSyncJobData, StaleResyncJobData } from '@/services/reconciliation/sync/syncOrchestrator';
 import type { ReconciliationJobData } from '@/services/reconciliation/reconciliationRunner';
-export type { SyncJobData, StatsSyncJobData, ReconciliationJobData };
+export type { SyncJobData, StatsSyncJobData, StaleResyncJobData, ReconciliationJobData };
 
 export const reconciliationSyncQueue = new Bull<SyncJobData>('reconciliation-sync', {
   redis: buildRedisOpts(env.REDIS_URL),
@@ -382,5 +382,27 @@ reconciliationStatsQueue.on('error', (err) => {
 
 reconciliationStatsQueue.on('failed', (job, err) => {
   logger.error({ jobId: job?.id, connectionId: job?.data?.connectionId, err: err.message }, 'Reconciliation stats job failed');
+});
+
+// ── Reconciliation Stale Resync Queue ─────────────────────────────────────────
+// Re-pulls last 30 days of stats daily at 03:00 UTC to backfill any gaps or
+// corrections made retroactively by platforms.
+
+export const reconciliationStaleResyncQueue = new Bull<StaleResyncJobData>('reconciliation-stale-resync', {
+  redis: buildRedisOpts(env.REDIS_URL),
+  defaultJobOptions: {
+    attempts: 2,
+    backoff: { type: 'exponential', delay: 30000 },
+    removeOnComplete: 100,
+    removeOnFail: 50,
+  },
+});
+
+reconciliationStaleResyncQueue.on('error', (err) => {
+  logger.error({ err }, 'Reconciliation stale resync queue error');
+});
+
+reconciliationStaleResyncQueue.on('failed', (job, err) => {
+  logger.error({ jobId: job?.id, connectionId: job?.data?.connectionId, err: err.message }, 'Reconciliation stale resync job failed');
 });
 

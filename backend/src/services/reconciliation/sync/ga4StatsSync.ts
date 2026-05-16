@@ -8,7 +8,7 @@ interface ReportRow {
   metricValues: { value: string }[];
 }
 
-async function fetchKeyEventReport(propertyId: string, accessToken: string): Promise<ReportRow[]> {
+async function fetchKeyEventReport(propertyId: string, accessToken: string, daysBack = 7): Promise<ReportRow[]> {
   const res = await fetch(`${GA4_DATA_BASE}/properties/${propertyId}:runReport`, {
     method: 'POST',
     headers: {
@@ -18,7 +18,7 @@ async function fetchKeyEventReport(propertyId: string, accessToken: string): Pro
     body: JSON.stringify({
       dimensions: [{ name: 'keyEventName' }, { name: 'date' }],
       metrics: [{ name: 'keyEvents' }],
-      dateRanges: [{ startDate: '7daysAgo', endDate: 'yesterday' }],
+      dateRanges: [{ startDate: `${daysBack}daysAgo`, endDate: 'yesterday' }],
       limit: 10000,
     }),
   });
@@ -39,7 +39,7 @@ async function getAtlasCount(clientId: string, eventName: string, date: string):
   return count ?? null;
 }
 
-export async function syncKeyEventStats(connectionId: string, orgId: string, clientId: string): Promise<void> {
+export async function syncKeyEventStats(connectionId: string, orgId: string, clientId: string, daysBack = 7): Promise<void> {
   const tokens = await resolveTokens(connectionId);
   const { data: conn } = await supabaseAdmin
     .from('platform_connections')
@@ -52,7 +52,7 @@ export async function syncKeyEventStats(connectionId: string, orgId: string, cli
   const rawPropertyId = (conn as { account_id: string }).account_id;
   const propertyId = rawPropertyId.startsWith('properties/') ? rawPropertyId.split('/')[1] : rawPropertyId;
 
-  const rows = await fetchKeyEventReport(propertyId, tokens.access_token);
+  const rows = await fetchKeyEventReport(propertyId, tokens.access_token, daysBack);
 
   const upserts: object[] = [];
   for (const row of rows) {
