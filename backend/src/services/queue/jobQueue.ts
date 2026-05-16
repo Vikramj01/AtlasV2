@@ -1,5 +1,6 @@
 import Bull from 'bull';
 import IORedis from 'ioredis';
+import type { RedisOptions } from 'ioredis';
 import { env } from '@/config/env';
 import logger from '@/utils/logger';
 
@@ -22,9 +23,9 @@ export interface AuditJobData {
 // Parse REDIS_URL into explicit ioredis options so TLS is handled correctly.
 // enableReadyCheck: false + maxRetriesPerRequest: null are required by Bull.
 // retryStrategy + keepAlive prevent ECONNRESET/EPIPE on Render-managed Redis.
-function buildRedisOpts(url: string): IORedis.RedisOptions {
+function buildRedisOpts(url: string): RedisOptions {
   const parsed = new URL(url);
-  const opts: IORedis.RedisOptions = {
+  const opts: RedisOptions = {
     host: parsed.hostname,
     port: Number(parsed.port) || 6379,
     password: parsed.password || undefined,
@@ -52,7 +53,7 @@ const sharedSubscriber = new IORedis(redisOpts);
 sharedClient.on('error', (err) => logger.error({ err }, 'Redis shared client error'));
 sharedSubscriber.on('error', (err) => logger.error({ err }, 'Redis shared subscriber error'));
 
-function createClient(type: 'client' | 'subscriber' | 'bclient'): IORedis.Redis {
+function createClient(type: 'client' | 'subscriber' | 'bclient'): IORedis {
   if (type === 'client') return sharedClient;
   if (type === 'subscriber') return sharedSubscriber;
   // bclient must be a dedicated connection per queue (used for blocking ops)
