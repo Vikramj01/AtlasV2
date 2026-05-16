@@ -10,6 +10,9 @@ import {
   ChevronRight,
   Loader2,
   AlertTriangle,
+  Square,
+  CheckSquare,
+  EyeOff,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -317,6 +320,8 @@ function FindingsSection() {
   const [loading, setLoading] = useState(true);
   const [activeLayer, setActiveLayer] = useState<string>('all');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkActing, setBulkActing] = useState(false);
 
   useEffect(() => {
     Promise.all([ihcApi.getFindings(), ihcApi.getFindingsSummary()])
@@ -336,6 +341,62 @@ function FindingsSection() {
 
   const open = visible.filter((f) => f.status === 'open');
   const resolved = visible.filter((f) => f.status !== 'open');
+
+  const openIds = open.map((f) => f.id);
+  const allSelected = openIds.length > 0 && openIds.every((id) => selectedIds.has(id));
+  const someSelected = openIds.some((id) => selectedIds.has(id));
+
+  function toggleSelectAll() {
+    if (allSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(openIds));
+    }
+  }
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function applyLocalStatus(ids: string[], status: AuditFinding['status']) {
+    setFindings((prev) =>
+      prev.map((f) => (ids.includes(f.id) ? { ...f, status } : f)),
+    );
+    setSelectedIds(new Set());
+  }
+
+  async function handleSingleAction(
+    id: string,
+    action: 'acknowledge' | 'resolve' | 'suppress',
+  ) {
+    const statusMap = { acknowledge: 'acknowledged', resolve: 'resolved', suppress: 'suppressed' } as const;
+    try {
+      await ihcApi.updateFinding(id, statusMap[action]);
+      applyLocalStatus([id], statusMap[action]);
+    } catch {
+      alert('Failed to update finding. Please try again.');
+    }
+  }
+
+  async function handleBulkAction(action: 'acknowledge' | 'resolve' | 'suppress') {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    setBulkActing(true);
+    try {
+      await ihcApi.bulkUpdateFindings(ids, action);
+      const statusMap = { acknowledge: 'acknowledged', resolve: 'resolved', suppress: 'suppressed' } as const;
+      applyLocalStatus(ids, statusMap[action]);
+    } catch {
+      alert('Bulk action failed. Please try again.');
+    } finally {
+      setBulkActing(false);
+    }
+  }
 
   return (
     <Card>
@@ -392,19 +453,84 @@ function FindingsSection() {
               </div>
             )}
 
+            {/* Bulk action bar */}
+            {someSelected && (
+              <div className="flex items-center gap-2 rounded-lg border border-[#1B2A4A]/20 bg-[#1B2A4A]/5 px-4 py-2">
+                <span className="text-xs font-medium text-[#1B2A4A] mr-2">
+                  {selectedIds.size} selected
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs gap-1.5"
+                  disabled={bulkActing}
+                  onClick={() => handleBulkAction('acknowledge')}
+                >
+                  {bulkActing ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+                  Acknowledge
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs gap-1.5"
+                  disabled={bulkActing}
+                  onClick={() => handleBulkAction('resolve')}
+                >
+                  {bulkActing ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3 text-green-600" />}
+                  Resolve
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs gap-1.5 text-muted-foreground"
+                  disabled={bulkActing}
+                  onClick={() => handleBulkAction('suppress')}
+                >
+                  {bulkActing ? <Loader2 className="h-3 w-3 animate-spin" /> : <EyeOff className="h-3 w-3" />}
+                  Suppress
+                </Button>
+                <button
+                  type="button"
+                  className="ml-auto text-xs text-muted-foreground hover:text-foreground"
+                  onClick={() => setSelectedIds(new Set())}
+                >
+                  Clear
+                </button>
+              </div>
+            )}
+
             {/* Open findings */}
             {open.length > 0 && (
               <div className="space-y-2">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Open ({open.length})
-                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={toggleSelectAll}
+                    className="text-muted-foreground hover:text-foreground transition-colors"
+                    title={allSelected ? 'Deselect all' : 'Select all open'}
+                  >
+                    {allSelected ? (
+                      <CheckSquare className="h-4 w-4 text-[#1B2A4A]" />
+                    ) : (
+                      <Square className="h-4 w-4" />
+                    )}
+                  </button>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Open ({open.length})
+                  </p>
+                </div>
                 <div className="rounded-lg border border-border overflow-hidden divide-y divide-border">
                   {open.map((f) => (
                     <FindingCard
                       key={f.id}
                       finding={f}
                       expanded={expandedId === f.id}
+                      selected={selectedIds.has(f.id)}
                       onToggle={() => setExpandedId((prev) => (prev === f.id ? null : f.id))}
+                      onSelect={() => toggleSelect(f.id)}
+                      onAcknowledge={() => handleSingleAction(f.id, 'acknowledge')}
+                      onResolve={() => handleSingleAction(f.id, 'resolve')}
+                      onSuppress={() => handleSingleAction(f.id, 'suppress')}
                     />
                   ))}
                 </div>
@@ -439,43 +565,72 @@ function FindingsSection() {
 function FindingCard({
   finding,
   expanded,
+  selected,
   onToggle,
+  onSelect,
+  onAcknowledge,
+  onResolve,
+  onSuppress,
 }: {
   finding: AuditFinding;
   expanded: boolean;
+  selected?: boolean;
   onToggle: () => void;
+  onSelect?: () => void;
+  onAcknowledge?: () => void;
+  onResolve?: () => void;
+  onSuppress?: () => void;
 }) {
   const evidenceEntries = Object.entries(finding.evidence ?? {}).slice(0, 6);
+  const isOpen = finding.status === 'open';
 
   return (
     <div>
-      <button
-        type="button"
-        onClick={onToggle}
-        className="flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-muted/40 transition-colors"
-      >
-        <span
-          className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${SEVERITY_DOT[finding.severity]}`}
-        />
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold font-mono truncate">{finding.rule_id}</p>
-          <div className="mt-0.5 flex flex-wrap items-center gap-2">
-            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${STATUS_BADGE[finding.status] ?? 'bg-gray-100 text-gray-600'}`}>
-              {finding.status}
-            </span>
-            <span className="text-[10px] text-muted-foreground">
-              {LAYER_LABELS[finding.validation_layer as keyof typeof LAYER_LABELS] ?? finding.validation_layer}
-            </span>
-            <span className="text-[10px] text-muted-foreground">
-              Detected {new Date(finding.first_detected_at).toLocaleDateString()}
-            </span>
+      <div className="flex items-start gap-2 px-4 py-3 hover:bg-muted/40 transition-colors">
+        {/* Checkbox (open findings only) */}
+        {isOpen && onSelect ? (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onSelect(); }}
+            className="mt-1 shrink-0 text-muted-foreground hover:text-[#1B2A4A] transition-colors"
+          >
+            {selected ? (
+              <CheckSquare className="h-4 w-4 text-[#1B2A4A]" />
+            ) : (
+              <Square className="h-4 w-4" />
+            )}
+          </button>
+        ) : (
+          <span className="mt-2 h-2 w-2 shrink-0 rounded-full" />
+        )}
+
+        {/* Main row — click to expand */}
+        <button
+          type="button"
+          onClick={onToggle}
+          className="flex flex-1 items-start gap-2 text-left min-w-0"
+        >
+          <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${SEVERITY_DOT[finding.severity]}`} />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold font-mono truncate">{finding.rule_id}</p>
+            <div className="mt-0.5 flex flex-wrap items-center gap-2">
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${STATUS_BADGE[finding.status] ?? 'bg-gray-100 text-gray-600'}`}>
+                {finding.status}
+              </span>
+              <span className="text-[10px] text-muted-foreground">
+                {LAYER_LABELS[finding.validation_layer as keyof typeof LAYER_LABELS] ?? finding.validation_layer}
+              </span>
+              <span className="text-[10px] text-muted-foreground">
+                Detected {new Date(finding.first_detected_at).toLocaleDateString()}
+              </span>
+            </div>
           </div>
-        </div>
-        <ChevronRight className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${expanded ? 'rotate-90' : ''}`} />
-      </button>
+          <ChevronRight className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${expanded ? 'rotate-90' : ''}`} />
+        </button>
+      </div>
 
       {expanded && (
-        <div className="px-4 pb-4 ml-5">
+        <div className="px-4 pb-4 ml-10">
           {evidenceEntries.length > 0 && (
             <div className="rounded-md bg-muted p-3 space-y-1.5">
               <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Evidence</p>
@@ -490,6 +645,42 @@ function FindingCard({
           <p className="mt-2 text-[10px] text-muted-foreground">
             Last seen: {new Date(finding.last_seen_at).toLocaleString()}
           </p>
+
+          {/* Per-finding action buttons (open only) */}
+          {isOpen && (onAcknowledge || onResolve || onSuppress) && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {onAcknowledge && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs gap-1.5"
+                  onClick={onAcknowledge}
+                >
+                  <CheckCircle2 className="h-3 w-3" /> Acknowledge
+                </Button>
+              )}
+              {onResolve && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs gap-1.5 text-green-700 border-green-200 hover:bg-green-50"
+                  onClick={onResolve}
+                >
+                  <CheckCircle2 className="h-3 w-3" /> Resolve
+                </Button>
+              )}
+              {onSuppress && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 text-xs gap-1.5 text-muted-foreground"
+                  onClick={onSuppress}
+                >
+                  <EyeOff className="h-3 w-3" /> Suppress
+                </Button>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

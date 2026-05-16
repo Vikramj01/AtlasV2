@@ -117,6 +117,29 @@ export async function savePreferences(prefs: Partial<IHCPreferences>): Promise<v
   });
 }
 
+export async function updateFinding(
+  id: string,
+  status: 'acknowledged' | 'resolved' | 'suppressed' | 'open',
+  opts?: { resolution_note?: string; suppressed_until?: string },
+): Promise<void> {
+  await apiFetch(`/ihc/findings/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status, ...opts }),
+  });
+}
+
+export async function bulkUpdateFindings(
+  findingIds: string[],
+  action: 'acknowledge' | 'resolve' | 'suppress' | 'reopen',
+  opts?: { resolution_note?: string },
+): Promise<{ updated: number }> {
+  const res = await apiFetch<{ data: { updated: number } }>('/ihc/findings/bulk', {
+    method: 'POST',
+    body: JSON.stringify({ finding_ids: findingIds, action, ...opts }),
+  });
+  return res.data;
+}
+
 export const ihcApi = {
   getFindings,
   getFindingsSummary,
@@ -128,4 +151,6 @@ export const ihcApi = {
   disconnectContainer,
   getPreferences,
   savePreferences,
+  updateFinding,
+  bulkUpdateFindings,
 };

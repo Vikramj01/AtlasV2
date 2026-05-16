@@ -182,3 +182,193 @@ ihcRouter.post('/baseline', planGuard('pro'), async (req: Request, res: Response
 
   res.json({ data: { crawl_run_id: parsed.data.crawl_run_id }, message: 'Baseline updated' });
 });
+
+// ── Finding status management (pro+) ─────────────────────────────────────────
+
+const updateFindingSchema = z.object({
+  status: z.enum(['acknowledged', 'resolved', 'suppressed', 'open']),
+  resolution_note: z.string().max(1000).optional(),
+  suppressed_until: z.string().datetime().optional(),
+});
+
+const bulkActionSchema = z.object({
+  finding_ids: z.array(z.string().uuid()).min(1).max(100),
+  action: z.enum(['acknowledge', 'resolve', 'suppress', 'reopen']),
+  resolution_note: z.string().max(1000).optional(),
+  suppressed_until: z.string().datetime().optional(),
+});
+
+// PATCH /api/ihc/findings/:id — update a single finding's status
+ihcRouter.patch('/findings/:id', planGuard('pro'), async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const parsed = updateFindingSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.flatten().fieldErrors });
+    return;
+  }
+
+  const userId = req.user!.id;
+  const orgId = await resolveOrgId(userId);
+  if (!orgId) {
+    res.status(404).json({ error: 'Organisation not found' });
+    return;
+  }
+
+  const update: Record<string, unknown> = {
+    status: parsed.data.status,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (parsed.data.resolution_note !== undefined) {
+    update.resolution_note = parsed.data.resolution_note;
+  }
+  if (parsed.data.suppressed_until !== undefined) {
+    update.suppressed_until = parsed.data.suppressed_until;
+  }
+  if (parsed.data.status === 'resolved') {
+    update.resolved_at = new Date().toISOString();
+  }
+  if (parsed.data.status === 'open') {
+    update.resolved_at = null;
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('audit_findings')
+    .update(update)
+    .eq('id', id)
+    .eq('organization_id', orgId)
+    .select('id, status')
+    .single();
+
+  if (error || !data) {
+    logger.error({ err: error?.message, id, orgId }, 'ihc/findings PATCH: DB error');
+    res.status(error ? 500 : 404).json({ error: error?.message ?? 'Finding not found' });
+    return;
+  }
+
+  res.json({ data, message: `Finding ${parsed.data.status}` });
+});
+
+// POST /api/ihc/findings/bulk — bulk status update
+ihcRouter.post('/findings/bulk', planGuard('pro'), async (req: Request, res: Response) => {
+  const parsed = bulkActionSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.flatten().fieldErrors });
+    return;
+  }
+
+  const userId = req.user!.id;
+  const orgId = await resolveOrgId(userId);
+  if (!orgId) {
+    res.status(404).json({ error: 'Organisation not found' });
+    return;
+  }
+
+  const actionToStatus = {
+    acknowledge: 'acknowledged',
+    resolve: 'resolved',
+    suppress: 'suppressed',
+    reopen: 'open',
+  } as const;
+
+  const status = actionToStatus[parsed.data.action];
+  const update: Record<string, unknown> = {
+    status,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (parsed.data.resolution_note !== undefined) update.resolution_note = parsed.data.resolution_note;
+  if (parsed.data.suppressed_until !== undefined) update.suppressed_until = parsed.data.suppressed_until;
+  if (status === 'resolved') update.resolved_at = new Date().toISOString();
+  if (status === 'open') update.resolved_at = null;
+
+  const { data, error } = await supabaseAdmin
+    .from('audit_findings')
+    .update(update)
+    .in('id', parsed.data.finding_ids)
+    .eq('organization_id', orgId)
+    .select('id');
+
+  if (error) {
+    logger.error({ err: error.message, orgId }, 'ihc/findings/bulk: DB error');
+    res.status(500).json({ error: 'Bulk update failed' });
+    return;
+  }
+
+  res.json({
+    data: { updated: (data ?? []).length },
+    message: `${(data ?? []).length} finding${(data ?? []).length !== 1 ? 's' : ''} ${status}`,
+  });
+});
+
+// ── Preferences (pro+) ────────────────────────────────────────────────────────
+
+const prefsSchema = z.object({
+  email_critical_enabled: z.boolean().optional(),
+  email_high_digest_enabled: z.boolean().optional(),
+  email_medium_digest_enabled: z.boolean().optional(),
+  email_low_enabled: z.boolean().optional(),
+  daily_digest_hour: z.number().int().min(0).max(23).optional(),
+  weekly_digest_day: z.number().int().min(1).max(7).optional(),
+  weekly_digest_hour: z.number().int().min(0).max(23).optional(),
+  critical_alert_batch_minutes: z.number().int().min(5).max(120).optional(),
+  recipient_user_ids: z.array(z.string().uuid()).optional(),
+  paused_properties: z.array(z.string()).optional(),
+});
+
+// GET /api/ihc/preferences
+ihcRouter.get('/preferences', planGuard('pro'), async (req: Request, res: Response) => {
+  const userId = req.user!.id;
+  const orgId = await resolveOrgId(userId);
+  if (!orgId) {
+    res.status(404).json({ error: 'Organisation not found' });
+    return;
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('ihc_alert_preferences')
+    .select('*')
+    .eq('organization_id', orgId)
+    .maybeSingle();
+
+  if (error) {
+    logger.error({ err: error.message, orgId }, 'ihc/preferences GET: DB error');
+    res.status(500).json({ error: 'Failed to load preferences' });
+    return;
+  }
+
+  res.json({ data: data ?? null });
+});
+
+// PATCH /api/ihc/preferences
+ihcRouter.patch('/preferences', planGuard('pro'), async (req: Request, res: Response) => {
+  const parsed = prefsSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.flatten().fieldErrors });
+    return;
+  }
+
+  const userId = req.user!.id;
+  const orgId = await resolveOrgId(userId);
+  if (!orgId) {
+    res.status(404).json({ error: 'Organisation not found' });
+    return;
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('ihc_alert_preferences')
+    .upsert(
+      { organization_id: orgId, ...parsed.data, updated_at: new Date().toISOString() },
+      { onConflict: 'organization_id' },
+    )
+    .select('*')
+    .single();
+
+  if (error) {
+    logger.error({ err: error.message, orgId }, 'ihc/preferences PATCH: DB error');
+    res.status(500).json({ error: 'Failed to save preferences' });
+    return;
+  }
+
+  res.json({ data, message: 'Preferences saved' });
+});
