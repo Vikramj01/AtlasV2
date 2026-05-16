@@ -1,4 +1,5 @@
 import Bull from 'bull';
+import IORedis from 'ioredis';
 import { env } from '@/config/env';
 import logger from '@/utils/logger';
 
@@ -18,15 +19,12 @@ export interface AuditJobData {
   scheduled_audit_id?: string;
 }
 
-// Parse REDIS_URL into explicit options so ioredis handles TLS correctly
-// (passing a rediss:// URL string to Bull doesn't reliably enable TLS).
-// enableReadyCheck + maxRetriesPerRequest are required by Bull — without them
-// ioredis throws "ERR_USE_BEFORE_CONNECT" on pending commands during reconnect.
-// retryStrategy + keepAlive prevent ECONNRESET/EPIPE on Render-managed Redis,
-// which drops idle TCP connections after ~60s.
-function buildRedisOpts(url: string): object {
+// Parse REDIS_URL into explicit ioredis options so TLS is handled correctly.
+// enableReadyCheck: false + maxRetriesPerRequest: null are required by Bull.
+// retryStrategy + keepAlive prevent ECONNRESET/EPIPE on Render-managed Redis.
+function buildRedisOpts(url: string): IORedis.RedisOptions {
   const parsed = new URL(url);
-  const opts: Record<string, unknown> = {
+  const opts: IORedis.RedisOptions = {
     host: parsed.hostname,
     port: Number(parsed.port) || 6379,
     password: parsed.password || undefined,
@@ -38,20 +36,39 @@ function buildRedisOpts(url: string): object {
     reconnectOnError: (err: Error) => err.message.includes('READONLY'),
   };
   if (parsed.protocol === 'rediss:') {
-    opts['tls'] = { rejectUnauthorized: false };
+    opts.tls = { rejectUnauthorized: false };
   }
   return opts;
 }
 
-export const auditQueue = new Bull<AuditJobData>('audit', {
-  redis: buildRedisOpts(env.REDIS_URL),
-  defaultJobOptions: {
-    attempts: 2,
-    backoff: { type: 'exponential', delay: 5000 },
-    removeOnComplete: 100,
-    removeOnFail: 50,
-  },
-});
+// Bull creates 3 ioredis connections per queue (client, subscriber, bclient).
+// With 16 queues that's 48 connections — well above Render's starter Redis limit.
+// Sharing a single client + subscriber across all queues drops this to
+// 2 + N_queues (one bclient per queue for blocking BRPOPLPUSH).
+const redisOpts = buildRedisOpts(env.REDIS_URL);
+const sharedClient = new IORedis(redisOpts);
+const sharedSubscriber = new IORedis(redisOpts);
+
+sharedClient.on('error', (err) => logger.error({ err }, 'Redis shared client error'));
+sharedSubscriber.on('error', (err) => logger.error({ err }, 'Redis shared subscriber error'));
+
+function createClient(type: 'client' | 'subscriber' | 'bclient'): IORedis.Redis {
+  if (type === 'client') return sharedClient;
+  if (type === 'subscriber') return sharedSubscriber;
+  // bclient must be a dedicated connection per queue (used for blocking ops)
+  return new IORedis(redisOpts);
+}
+
+function makeBullOpts(defaultJobOptions?: Bull.JobOptions): Bull.QueueOptions {
+  return { createClient, defaultJobOptions };
+}
+
+export const auditQueue = new Bull<AuditJobData>('audit', makeBullOpts({
+  attempts: 2,
+  backoff: { type: 'exponential', delay: 5000 },
+  removeOnComplete: 100,
+  removeOnFail: 50,
+}));
 
 auditQueue.on('error', (err) => {
   logger.error({ err }, 'Audit queue error');
@@ -75,15 +92,12 @@ export interface PlanningJobData {
   session_id: string;
 }
 
-export const planningQueue = new Bull<PlanningJobData>('planning', {
-  redis: buildRedisOpts(env.REDIS_URL),
-  defaultJobOptions: {
-    attempts: 1,                              // No retry — failed sessions must be restarted by user
-    timeout: 10 * 60 * 1000,                 // 10-minute timeout (vs 5 min for audits)
-    removeOnComplete: 100,
-    removeOnFail: 50,
-  },
-});
+export const planningQueue = new Bull<PlanningJobData>('planning', makeBullOpts({
+  attempts: 1,                              // No retry — failed sessions must be restarted by user
+  timeout: 10 * 60 * 1000,                 // 10-minute timeout (vs 5 min for audits)
+  removeOnComplete: 100,
+  removeOnFail: 50,
+}));
 
 planningQueue.on('error', (err) => {
   logger.error({ err }, 'Planning queue error');
@@ -111,14 +125,11 @@ export interface HealthJobData {
   website_url?: string; // optional site filter for manual runs
 }
 
-export const healthQueue = new Bull<HealthJobData>('health', {
-  redis: buildRedisOpts(env.REDIS_URL),
-  defaultJobOptions: {
-    attempts: 1,
-    removeOnComplete: 10,
-    removeOnFail: 10,
-  },
-});
+export const healthQueue = new Bull<HealthJobData>('health', makeBullOpts({
+  attempts: 1,
+  removeOnComplete: 10,
+  removeOnFail: 10,
+}));
 
 healthQueue.on('error', (err) => {
   logger.error({ err }, 'Health queue error');
@@ -141,15 +152,12 @@ export interface ChannelJobData {
   website_url?: string; // optional site filter
 }
 
-export const channelQueue = new Bull<ChannelJobData>('channel', {
-  redis: buildRedisOpts(env.REDIS_URL),
-  defaultJobOptions: {
-    attempts: 1,
-    timeout: 5 * 60 * 1000,
-    removeOnComplete: 10,
-    removeOnFail: 10,
-  },
-});
+export const channelQueue = new Bull<ChannelJobData>('channel', makeBullOpts({
+  attempts: 1,
+  timeout: 5 * 60 * 1000,
+  removeOnComplete: 10,
+  removeOnFail: 10,
+}));
 
 channelQueue.on('error', (err) => {
   logger.error({ err }, 'Channel queue error');
@@ -170,14 +178,11 @@ export interface ScheduleRunnerJobData {
   trigger: 'scheduled';
 }
 
-export const scheduleRunnerQueue = new Bull<ScheduleRunnerJobData>('schedule-runner', {
-  redis: buildRedisOpts(env.REDIS_URL),
-  defaultJobOptions: {
-    attempts: 1,
-    removeOnComplete: 10,
-    removeOnFail: 10,
-  },
-});
+export const scheduleRunnerQueue = new Bull<ScheduleRunnerJobData>('schedule-runner', makeBullOpts({
+  attempts: 1,
+  removeOnComplete: 10,
+  removeOnFail: 10,
+}));
 
 scheduleRunnerQueue.on('error', (err) => {
   logger.error({ err }, 'Schedule runner queue error');
@@ -203,15 +208,12 @@ export interface OfflineConversionJobData {
   organization_id: string;
 }
 
-export const offlineConversionQueue = new Bull<OfflineConversionJobData>('offline-conversion-upload', {
-  redis: buildRedisOpts(env.REDIS_URL),
-  defaultJobOptions: {
-    attempts: 3,
-    backoff: { type: 'exponential', delay: 30_000 },
-    removeOnComplete: 100,
-    removeOnFail: 50,
-  },
-});
+export const offlineConversionQueue = new Bull<OfflineConversionJobData>('offline-conversion-upload', makeBullOpts({
+  attempts: 3,
+  backoff: { type: 'exponential', delay: 30_000 },
+  removeOnComplete: 100,
+  removeOnFail: 50,
+}));
 
 offlineConversionQueue.on('error', (err) => {
   logger.error({ err }, 'Offline conversion queue error');
@@ -238,14 +240,11 @@ export interface GoogleOAuthRefreshJobData {
   trigger: 'scheduled';
 }
 
-export const googleOAuthRefreshQueue = new Bull<GoogleOAuthRefreshJobData>('google-oauth-refresh', {
-  redis: buildRedisOpts(env.REDIS_URL),
-  defaultJobOptions: {
-    attempts: 1,
-    removeOnComplete: 10,
-    removeOnFail: 10,
-  },
-});
+export const googleOAuthRefreshQueue = new Bull<GoogleOAuthRefreshJobData>('google-oauth-refresh', makeBullOpts({
+  attempts: 1,
+  removeOnComplete: 10,
+  removeOnFail: 10,
+}));
 
 googleOAuthRefreshQueue.on('error', (err) => {
   logger.error({ err }, 'Google OAuth refresh queue error');
@@ -266,14 +265,11 @@ export interface UsageSummaryJobData {
   trigger: 'scheduled';
 }
 
-export const usageSummaryQueue = new Bull<UsageSummaryJobData>('usage-summary', {
-  redis: buildRedisOpts(env.REDIS_URL),
-  defaultJobOptions: {
-    attempts: 1,
-    removeOnComplete: 10,
-    removeOnFail: 10,
-  },
-});
+export const usageSummaryQueue = new Bull<UsageSummaryJobData>('usage-summary', makeBullOpts({
+  attempts: 1,
+  removeOnComplete: 10,
+  removeOnFail: 10,
+}));
 
 usageSummaryQueue.on('error', (err) => {
   logger.error({ err }, 'Usage summary queue error');
@@ -295,16 +291,13 @@ usageSummaryQueue.on('failed', (job, err) => {
 import type { CrawlJobData } from '@/types/crawl';
 export type { CrawlJobData };
 
-export const crawlQueue = new Bull<CrawlJobData>('crawl', {
-  redis: buildRedisOpts(env.REDIS_URL),
-  defaultJobOptions: {
-    attempts:         3,
-    backoff:          { type: 'exponential', delay: 5000 },
-    removeOnComplete: 100,
-    removeOnFail:     50,
-    timeout:          25 * 60 * 1000, // 25-minute hard cap (12 pages × ~2 min each + headroom)
-  },
-});
+export const crawlQueue = new Bull<CrawlJobData>('crawl', makeBullOpts({
+  attempts:         3,
+  backoff:          { type: 'exponential', delay: 5000 },
+  removeOnComplete: 100,
+  removeOnFail:     50,
+  timeout:          25 * 60 * 1000, // 25-minute hard cap (12 pages × ~2 min each + headroom)
+}));
 
 crawlQueue.on('error', (err) => {
   logger.error({ err }, 'Crawl queue error');
@@ -330,15 +323,12 @@ import type { SyncJobData, StatsSyncJobData, StaleResyncJobData } from '@/servic
 import type { ReconciliationJobData } from '@/services/reconciliation/reconciliationRunner';
 export type { SyncJobData, StatsSyncJobData, StaleResyncJobData, ReconciliationJobData };
 
-export const reconciliationSyncQueue = new Bull<SyncJobData>('reconciliation-sync', {
-  redis: buildRedisOpts(env.REDIS_URL),
-  defaultJobOptions: {
-    attempts: 3,
-    backoff: { type: 'exponential', delay: 10000 },
-    removeOnComplete: 200,
-    removeOnFail: 100,
-  },
-});
+export const reconciliationSyncQueue = new Bull<SyncJobData>('reconciliation-sync', makeBullOpts({
+  attempts: 3,
+  backoff: { type: 'exponential', delay: 10000 },
+  removeOnComplete: 200,
+  removeOnFail: 100,
+}));
 
 reconciliationSyncQueue.on('error', (err) => {
   logger.error({ err }, 'Reconciliation sync queue error');
@@ -348,16 +338,13 @@ reconciliationSyncQueue.on('failed', (job, err) => {
   logger.error({ jobId: job?.id, connectionId: job?.data?.connectionId, err: err.message }, 'Reconciliation sync job failed');
 });
 
-export const reconciliationRunQueue = new Bull<ReconciliationJobData>('reconciliation-run', {
-  redis: buildRedisOpts(env.REDIS_URL),
-  defaultJobOptions: {
-    attempts: 2,
-    backoff: { type: 'fixed', delay: 5000 },
-    timeout: 10 * 60 * 1000,   // 10-minute hard cap
-    removeOnComplete: 100,
-    removeOnFail: 50,
-  },
-});
+export const reconciliationRunQueue = new Bull<ReconciliationJobData>('reconciliation-run', makeBullOpts({
+  attempts: 2,
+  backoff: { type: 'fixed', delay: 5000 },
+  timeout: 10 * 60 * 1000,   // 10-minute hard cap
+  removeOnComplete: 100,
+  removeOnFail: 50,
+}));
 
 reconciliationRunQueue.on('error', (err) => {
   logger.error({ err }, 'Reconciliation run queue error');
@@ -375,15 +362,12 @@ reconciliationRunQueue.on('failed', (job, err) => {
 // Pulls daily event counts from platform APIs (Google Ads, Meta, GA4).
 // 24h cadence; processed by a separate worker to avoid blocking config sync.
 
-export const reconciliationStatsQueue = new Bull<StatsSyncJobData>('reconciliation-stats', {
-  redis: buildRedisOpts(env.REDIS_URL),
-  defaultJobOptions: {
-    attempts: 2,
-    backoff: { type: 'exponential', delay: 15000 },
-    removeOnComplete: 200,
-    removeOnFail: 100,
-  },
-});
+export const reconciliationStatsQueue = new Bull<StatsSyncJobData>('reconciliation-stats', makeBullOpts({
+  attempts: 2,
+  backoff: { type: 'exponential', delay: 15000 },
+  removeOnComplete: 200,
+  removeOnFail: 100,
+}));
 
 reconciliationStatsQueue.on('error', (err) => {
   logger.error({ err }, 'Reconciliation stats queue error');
@@ -397,15 +381,12 @@ reconciliationStatsQueue.on('failed', (job, err) => {
 // Re-pulls last 30 days of stats daily at 03:00 UTC to backfill any gaps or
 // corrections made retroactively by platforms.
 
-export const reconciliationStaleResyncQueue = new Bull<StaleResyncJobData>('reconciliation-stale-resync', {
-  redis: buildRedisOpts(env.REDIS_URL),
-  defaultJobOptions: {
-    attempts: 2,
-    backoff: { type: 'exponential', delay: 30000 },
-    removeOnComplete: 100,
-    removeOnFail: 50,
-  },
-});
+export const reconciliationStaleResyncQueue = new Bull<StaleResyncJobData>('reconciliation-stale-resync', makeBullOpts({
+  attempts: 2,
+  backoff: { type: 'exponential', delay: 30000 },
+  removeOnComplete: 100,
+  removeOnFail: 50,
+}));
 
 reconciliationStaleResyncQueue.on('error', (err) => {
   logger.error({ err }, 'Reconciliation stale resync queue error');
@@ -429,16 +410,13 @@ export interface GtmContainerSyncJobData {
   skip_fetch?: boolean;   // true for manual uploads (no API fetch needed)
 }
 
-export const gtmContainerSyncQueue = new Bull<GtmContainerSyncJobData>('gtm-container-sync', {
-  redis: buildRedisOpts(env.REDIS_URL),
-  defaultJobOptions: {
-    attempts: 2,
-    backoff: { type: 'exponential', delay: 10_000 },
-    timeout: 5 * 60 * 1000,
-    removeOnComplete: 50,
-    removeOnFail: 25,
-  },
-});
+export const gtmContainerSyncQueue = new Bull<GtmContainerSyncJobData>('gtm-container-sync', makeBullOpts({
+  attempts: 2,
+  backoff: { type: 'exponential', delay: 10_000 },
+  timeout: 5 * 60 * 1000,
+  removeOnComplete: 50,
+  removeOnFail: 25,
+}));
 
 gtmContainerSyncQueue.on('error', (err) => {
   logger.error({ err }, 'GTM container sync queue error');
@@ -464,16 +442,13 @@ export interface IhcRulesJobData {
   property_id: string;
 }
 
-export const ihcRulesQueue = new Bull<IhcRulesJobData>('ihc-rules', {
-  redis: buildRedisOpts(env.REDIS_URL),
-  defaultJobOptions: {
-    attempts: 2,
-    backoff: { type: 'fixed', delay: 5_000 },
-    timeout: 3 * 60 * 1000,
-    removeOnComplete: 100,
-    removeOnFail: 50,
-  },
-});
+export const ihcRulesQueue = new Bull<IhcRulesJobData>('ihc-rules', makeBullOpts({
+  attempts: 2,
+  backoff: { type: 'fixed', delay: 5_000 },
+  timeout: 3 * 60 * 1000,
+  removeOnComplete: 100,
+  removeOnFail: 50,
+}));
 
 ihcRulesQueue.on('error', (err) => {
   logger.error({ err }, 'IHC rules queue error');
@@ -497,16 +472,13 @@ export interface IhcDriftJobData {
   crawl_run_id: string;    // the *current* (new) crawl run to compare against baseline
 }
 
-export const ihcDriftQueue = new Bull<IhcDriftJobData>('ihc-drift', {
-  redis: buildRedisOpts(env.REDIS_URL),
-  defaultJobOptions: {
-    attempts: 2,
-    backoff: { type: 'fixed', delay: 10_000 },
-    timeout: 5 * 60 * 1000,
-    removeOnComplete: 100,
-    removeOnFail: 50,
-  },
-});
+export const ihcDriftQueue = new Bull<IhcDriftJobData>('ihc-drift', makeBullOpts({
+  attempts: 2,
+  backoff: { type: 'fixed', delay: 10_000 },
+  timeout: 5 * 60 * 1000,
+  removeOnComplete: 100,
+  removeOnFail: 50,
+}));
 
 ihcDriftQueue.on('error', (err) => {
   logger.error({ err }, 'IHC drift queue error');
