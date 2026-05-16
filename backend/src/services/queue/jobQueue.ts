@@ -437,3 +437,51 @@ ihcDriftQueue.on('failed', (job, err) => {
   logger.error({ jobId: job?.id, crawlRunId: job?.data?.crawl_run_id, err: err.message }, 'IHC drift job failed');
 });
 
+// ── IHC Alert Queue ───────────────────────────────────────────────────────────
+// Triggered after ihcRulesQueue/ihcDriftQueue complete to send critical alerts.
+// Runs within the 15-minute batch window configured per org.
+
+export interface IhcAlertJobData {
+  organization_id: string;
+  trigger: 'post_rules' | 'post_drift' | 'manual';
+}
+
+export const ihcAlertQueue = new Bull<IhcAlertJobData>('ihc-alert', makeBullOpts({
+  attempts: 2,
+  backoff: { type: 'fixed', delay: 5_000 },
+  timeout: 2 * 60 * 1000,
+  removeOnComplete: 100,
+  removeOnFail: 50,
+}));
+
+ihcAlertQueue.on('completed', (job) => {
+  logger.info({ jobId: job.id, orgId: job.data.organization_id }, 'IHC alert job completed');
+});
+
+ihcAlertQueue.on('failed', (job, err) => {
+  logger.error({ jobId: job?.id, orgId: job?.data?.organization_id, err: err.message }, 'IHC alert job failed');
+});
+
+// ── IHC Digest Queue ──────────────────────────────────────────────────────────
+// Hourly cron: checks which orgs are due for daily/weekly digest at this hour
+// and dispatches digest emails.
+
+export interface IhcDigestJobData {
+  trigger: 'scheduled';
+}
+
+export const ihcDigestQueue = new Bull<IhcDigestJobData>('ihc-digest', makeBullOpts({
+  attempts: 1,
+  timeout: 5 * 60 * 1000,
+  removeOnComplete: 24,
+  removeOnFail: 10,
+}));
+
+ihcDigestQueue.on('completed', (job) => {
+  logger.info({ jobId: job.id }, 'IHC digest job completed');
+});
+
+ihcDigestQueue.on('failed', (job, err) => {
+  logger.error({ jobId: job?.id, err: err.message }, 'IHC digest job failed');
+});
+

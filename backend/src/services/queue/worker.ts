@@ -1,5 +1,5 @@
-import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue, crawlQueue, reconciliationSyncQueue, reconciliationRunQueue, reconciliationStatsQueue, reconciliationStaleResyncQueue, gtmContainerSyncQueue, ihcRulesQueue, ihcDriftQueue } from './jobQueue';
-import type { GtmContainerSyncJobData, IhcRulesJobData, IhcDriftJobData } from './jobQueue';
+import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue, crawlQueue, reconciliationSyncQueue, reconciliationRunQueue, reconciliationStatsQueue, reconciliationStaleResyncQueue, gtmContainerSyncQueue, ihcRulesQueue, ihcDriftQueue, ihcAlertQueue, ihcDigestQueue } from './jobQueue';
+import type { GtmContainerSyncJobData, IhcRulesJobData, IhcDriftJobData, IhcAlertJobData, IhcDigestJobData } from './jobQueue';
 import { runConfigSyncForConnection, getConnectionsDueForSync, runStatsSyncForConnection, getConnectionsDueForStatsSync, runStaleResyncForConnection, getConnectionsForStaleResync } from '@/services/reconciliation/sync/syncOrchestrator';
 import { executeRun } from '@/services/reconciliation/reconciliationRunner';
 import type { SyncJobData, StatsSyncJobData, StaleResyncJobData, ReconciliationJobData } from './jobQueue';
@@ -1105,3 +1105,54 @@ ihcDriftQueue.process('__scheduler__', async () => {
 
   logger.info({ enqueued }, 'IHC drift scheduler: jobs enqueued');
 });
+
+// ── IHC Alert Worker ──────────────────────────────────────────────────────────
+// Runs critical alert batch for one org immediately after a rules/drift run.
+
+ihcAlertQueue.process(2, async (job) => {
+  const data = job.data as IhcAlertJobData;
+  logger.info({ orgId: data.organization_id, trigger: data.trigger, jobId: job.id }, 'IHC alert job received');
+
+  const { runCriticalAlertBatch } = await import('@/services/ihc/alertService');
+  await runCriticalAlertBatch(data.organization_id);
+});
+
+logger.info('IHC alert worker registered');
+
+// Trigger critical alert check after ihcRulesQueue completion
+ihcRulesQueue.on('completed', async (job) => {
+  const { organization_id } = job.data as IhcRulesJobData;
+  await ihcAlertQueue.add(
+    { organization_id, trigger: 'post_rules' },
+    { jobId: `ihc-alert-post-rules-${organization_id}-${Date.now()}`, removeOnComplete: true },
+  ).catch((err) => logger.error({ err: err instanceof Error ? err.message : String(err) }, 'Failed to enqueue IHC alert after rules'));
+});
+
+// Trigger critical alert check after ihcDriftQueue completion
+ihcDriftQueue.on('completed', async (job) => {
+  const { organization_id } = job.data as IhcDriftJobData;
+  await ihcAlertQueue.add(
+    { organization_id, trigger: 'post_drift' },
+    { jobId: `ihc-alert-post-drift-${organization_id}-${Date.now()}`, removeOnComplete: true },
+  ).catch((err) => logger.error({ err: err instanceof Error ? err.message : String(err) }, 'Failed to enqueue IHC alert after drift'));
+});
+
+// ── IHC Digest Worker ─────────────────────────────────────────────────────────
+// Hourly cron: dispatches daily and weekly digest emails to orgs whose
+// configured hour matches the current UTC hour.
+
+ihcDigestQueue.process(async (_job) => {
+  logger.info('IHC digest job received');
+  const { runDailyDigestsForDueOrgs, runWeeklyDigestsForDueOrgs } = await import('@/services/ihc/alertService');
+  await Promise.allSettled([
+    runDailyDigestsForDueOrgs(),
+    runWeeklyDigestsForDueOrgs(),
+  ]);
+});
+
+logger.info('IHC digest worker registered');
+
+ihcDigestQueue.add(
+  { trigger: 'scheduled' },
+  { repeat: { cron: '0 * * * *' }, jobId: 'ihc-digest-hourly' }, // runs every hour, checks which orgs are due
+).catch((err) => logger.error({ err }, 'Failed to schedule IHC digest job'));
