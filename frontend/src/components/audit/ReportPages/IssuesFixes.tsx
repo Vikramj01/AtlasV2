@@ -5,7 +5,7 @@ import { Separator } from '@/components/ui/separator';
 import { SeverityBadge } from '@/components/common/SeverityBadge';
 import { InfoTooltip } from '@/components/common/InfoTooltip';
 import { TOOLTIPS } from '@/lib/ui-copy';
-import type { ReportJSON, ReportIssue, Severity } from '@/types/audit';
+import type { ReportJSON, ReportIssue, Severity, ValidationLayerFilter } from '@/types/audit';
 import { EFFORT_LABELS } from '@/utils/languageMap';
 
 const SEVERITY_ORDER: Severity[] = ['critical', 'high', 'medium', 'low'];
@@ -17,8 +17,73 @@ const BORDER_BY_SEVERITY: Record<Severity, string> = {
   low:      'border-border',
 };
 
+// ── Layer filter chip config ───────────────────────────────────────────────────
+
+const LAYER_CHIPS: { value: ValidationLayerFilter; label: string }[] = [
+  { value: 'signal_initiation',      label: 'Signal Initiation' },
+  { value: 'parameter_completeness', label: 'Parameter Completeness' },
+  { value: 'persistence',            label: 'Persistence' },
+  { value: 'tag_configuration',      label: 'Tag Configuration' },
+  { value: 'implementation_drift',   label: 'Drift Detection' },
+];
+
+function LayerFilterChips({
+  active,
+  onChange,
+  availableLayers,
+}: {
+  active: Set<ValidationLayerFilter>;
+  onChange: (next: Set<ValidationLayerFilter>) => void;
+  availableLayers: Set<ValidationLayerFilter>;
+}) {
+  const visible = LAYER_CHIPS.filter((c) => availableLayers.has(c.value));
+  if (visible.length < 2) return null;
+
+  function toggle(layer: ValidationLayerFilter) {
+    const next = new Set(active);
+    if (next.has(layer)) {
+      if (next.size === 1) return; // always keep at least one selected
+      next.delete(layer);
+    } else {
+      next.add(layer);
+    }
+    onChange(next);
+  }
+
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {visible.map(({ value, label }) => {
+        const on = active.has(value);
+        return (
+          <button
+            key={value}
+            type="button"
+            onClick={() => toggle(value)}
+            className={cn(
+              'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
+              on
+                ? 'border-[#1B2A4A] bg-[#1B2A4A] text-white'
+                : 'border-border bg-background text-muted-foreground hover:border-[#1B2A4A]/40',
+            )}
+          >
+            {label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Layer badge on each issue card ────────────────────────────────────────────
+
+const LAYER_BADGE: Partial<Record<ValidationLayerFilter, { label: string; className: string }>> = {
+  tag_configuration:    { label: 'GTM Config', className: 'bg-purple-100 text-purple-700' },
+  implementation_drift: { label: 'Drift',      className: 'bg-amber-100 text-amber-700' },
+};
+
 function IssueCard({ issue }: { issue: ReportIssue }) {
   const [open, setOpen] = useState(issue.severity === 'critical' || issue.severity === 'high');
+  const layerBadge = issue.validation_layer ? LAYER_BADGE[issue.validation_layer] : undefined;
 
   return (
     <Card className={cn('overflow-hidden', BORDER_BY_SEVERITY[issue.severity])}>
@@ -30,6 +95,11 @@ function IssueCard({ issue }: { issue: ReportIssue }) {
           <p className="text-sm font-semibold leading-snug">{issue.problem}</p>
           <div className="flex flex-wrap items-center gap-2">
             <SeverityBadge severity={issue.severity} size="sm" />
+            {layerBadge && (
+              <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-semibold', layerBadge.className)}>
+                {layerBadge.label}
+              </span>
+            )}
             <span className="text-xs text-muted-foreground">{issue.recommended_owner}</span>
           </div>
         </div>
@@ -78,14 +148,26 @@ interface Props {
 }
 
 export function IssuesFixes({ report }: Props) {
-  const sorted = [...report.issues].sort(
-    (a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity)
+  const all = [...report.issues].sort(
+    (a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity),
+  );
+
+  const availableLayers = new Set(
+    all.map((i) => i.validation_layer).filter(Boolean) as ValidationLayerFilter[],
+  );
+
+  const [activeLayers, setActiveLayers] = useState<Set<ValidationLayerFilter>>(
+    () => new Set(LAYER_CHIPS.map((c) => c.value)),
+  );
+
+  const sorted = all.filter(
+    (i) => !i.validation_layer || activeLayers.has(i.validation_layer),
   );
 
   const critical = sorted.filter((i) => i.severity === 'critical');
   const rest = sorted.filter((i) => i.severity !== 'critical');
 
-  if (sorted.length === 0) {
+  if (all.length === 0) {
     return (
       <div className="rounded-xl border border-green-200 bg-green-50 p-8 text-center">
         <p className="font-semibold text-green-800">No issues found.</p>
@@ -96,15 +178,29 @@ export function IssuesFixes({ report }: Props) {
 
   return (
     <div className="space-y-5" id="issues">
-      <div>
-        <div className="flex items-center gap-1.5">
-          <h2 className="text-lg font-semibold">Issues & Fixes</h2>
-          <InfoTooltip entry={TOOLTIPS.gapClassification} side="right" />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="flex items-center gap-1.5">
+            <h2 className="text-lg font-semibold">Issues & Fixes</h2>
+            <InfoTooltip entry={TOOLTIPS.gapClassification} side="right" />
+          </div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {sorted.length} of {all.length} issue{all.length !== 1 ? 's' : ''} shown.
+          </p>
         </div>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {sorted.length} issue{sorted.length !== 1 ? 's' : ''} found, sorted by priority.
-        </p>
+
+        <LayerFilterChips
+          active={activeLayers}
+          onChange={setActiveLayers}
+          availableLayers={availableLayers}
+        />
       </div>
+
+      {sorted.length === 0 && (
+        <div className="rounded-lg border border-dashed py-8 text-center text-sm text-muted-foreground">
+          No issues match the selected filters.
+        </div>
+      )}
 
       {critical.length > 0 && (
         <div className="space-y-3">

@@ -7,7 +7,7 @@ import { strategyApi } from '@/lib/api/strategyApi';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { Lock, Plus, ExternalLink, Link2, AlertTriangle } from 'lucide-react';
+import { Lock, Plus, ExternalLink, Link2, AlertTriangle, ShieldAlert } from 'lucide-react';
 import type { StrategyBriefRecord } from '@/types/strategy';
 import type { PlatformConnectionPublic, ConnectionGroup } from '@/types/connections';
 
@@ -284,6 +284,39 @@ export function SettingsPage() {
               </Button>
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Implementation Health */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm font-semibold">Implementation Health</CardTitle>
+            <Link
+              to="/settings/implementation-health"
+              className="flex items-center gap-1 text-xs text-primary hover:underline"
+            >
+              Manage <ExternalLink className="size-3" />
+            </Link>
+          </div>
+        </CardHeader>
+        <Separator />
+        <CardContent className="pt-4">
+          <div className="flex items-start gap-3">
+            <ShieldAlert className="h-8 w-8 text-[#1B2A4A]/40 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium">GTM Configuration & Drift Detection</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Connect your GTM container to detect configuration issues and track regressions against a known-good baseline.
+              </p>
+              <Link
+                to="/settings/implementation-health"
+                className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-[#1B2A4A] hover:underline"
+              >
+                Open Implementation Health →
+              </Link>
+            </div>
+          </div>
         </CardContent>
       </Card>
 

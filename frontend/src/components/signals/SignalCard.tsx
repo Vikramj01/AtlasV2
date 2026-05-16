@@ -4,6 +4,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { SignalToPlatformPreview } from '@/components/signals/SignalToPlatformPreview';
+import { SignalHealthChecks } from '@/components/signals/SignalHealthChecks';
 import type { Signal } from '@/types/signal';
 
 const PLATFORM_LABELS: Record<string, string> = {
@@ -86,6 +87,7 @@ function ActionButtons({
 function GridCard({ signal, onEdit, onDelete, onAddToPack }: Props) {
   const [showParams, setShowParams] = useState(false);
   const [showMappings, setShowMappings] = useState(false);
+  const [showHealthChecks, setShowHealthChecks] = useState(false);
   const platforms = Object.keys(signal.platform_mappings ?? {});
   const canEdit = !signal.is_system && !!onEdit;
   const canDelete = !signal.is_system && !!onDelete;
@@ -151,12 +153,16 @@ function GridCard({ signal, onEdit, onDelete, onAddToPack }: Props) {
           </div>
         )}
 
+        {showHealthChecks && (
+          <SignalHealthChecks eventName={signal.key} />
+        )}
+
         <div className="mt-3 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 flex-wrap">
             {totalParams > 0 && (
               <button
                 type="button"
-                onClick={() => { setShowParams((v) => !v); if (!showParams) setShowMappings(false); }}
+                onClick={() => { setShowParams((v) => !v); if (!showParams) { setShowMappings(false); setShowHealthChecks(false); } }}
                 className="text-[10px] text-[#9CA3AF] hover:text-[#1A1A1A] transition-colors"
               >
                 {showParams ? 'Hide params ▲' : `${totalParams} params ▾`}
@@ -167,13 +173,23 @@ function GridCard({ signal, onEdit, onDelete, onAddToPack }: Props) {
                 {totalParams > 0 && <span className="text-[10px] text-[#D1D5DB]">·</span>}
                 <button
                   type="button"
-                  onClick={() => { setShowMappings((v) => !v); if (!showMappings) setShowParams(false); }}
+                  onClick={() => { setShowMappings((v) => !v); if (!showMappings) { setShowParams(false); setShowHealthChecks(false); } }}
                   className="text-[10px] text-[#9CA3AF] hover:text-[#1A1A1A] transition-colors"
                 >
                   {showMappings ? 'Hide mappings ▲' : 'Platform mappings ▾'}
                 </button>
               </>
             )}
+            <>
+              {(totalParams > 0 || hasMappings) && <span className="text-[10px] text-[#D1D5DB]">·</span>}
+              <button
+                type="button"
+                onClick={() => { setShowHealthChecks((v) => !v); if (!showHealthChecks) { setShowParams(false); setShowMappings(false); } }}
+                className="text-[10px] text-[#9CA3AF] hover:text-[#1A1A1A] transition-colors"
+              >
+                {showHealthChecks ? 'Hide health checks ▲' : 'Health checks ▾'}
+              </button>
+            </>
           </div>
           <ActionButtons signal={signal} canEdit={canEdit} canDelete={canDelete} onEdit={onEdit} onDelete={onDelete} onAddToPack={onAddToPack} />
         </div>

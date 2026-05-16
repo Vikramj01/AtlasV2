@@ -43,6 +43,7 @@ import { CrawlStatusPage } from '@/pages/CrawlStatusPage';
 import { ConnectionsPage } from '@/pages/ConnectionsPage';
 import { ClientConnectionsPage } from '@/pages/ClientConnectionsPage';
 import { ReconciliationPage } from '@/pages/ReconciliationPage';
+import { ImplementationHealthPage } from '@/pages/ImplementationHealthPage';
 import { ReconciliationRunDetailPage } from '@/pages/ReconciliationRunDetailPage';
 
 export default function App() {
@@ -73,6 +74,8 @@ export default function App() {
               <Route path="/settings" element={<SectionErrorBoundary label="Settings"><SettingsPage /></SectionErrorBoundary>} />
               <Route path="/settings/billing/success" element={<BillingSuccessPage />} />
               <Route path="/settings/billing/cancel" element={<BillingCancelPage />} />
+              <Route path="/settings/implementation-health" element={<SectionErrorBoundary label="Implementation Health"><ImplementationHealthPage /></SectionErrorBoundary>} />
+              <Route path="/settings/implementation-health/gtm/callback" element={<SectionErrorBoundary label="GTM OAuth"><ImplementationHealthPage /></SectionErrorBoundary>} />
               {/* Platform Connections */}
               <Route path="/connections" element={<ConnectionsPage />} />
               <Route path="/connections/:clientId" element={<ClientConnectionsPage />} />
