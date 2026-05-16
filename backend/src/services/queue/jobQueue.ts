@@ -19,7 +19,11 @@ export interface AuditJobData {
 }
 
 // Parse REDIS_URL into explicit options so ioredis handles TLS correctly
-// (passing a rediss:// URL string to Bull doesn't reliably enable TLS)
+// (passing a rediss:// URL string to Bull doesn't reliably enable TLS).
+// enableReadyCheck + maxRetriesPerRequest are required by Bull — without them
+// ioredis throws "ERR_USE_BEFORE_CONNECT" on pending commands during reconnect.
+// retryStrategy + keepAlive prevent ECONNRESET/EPIPE on Render-managed Redis,
+// which drops idle TCP connections after ~60s.
 function buildRedisOpts(url: string): object {
   const parsed = new URL(url);
   const opts: Record<string, unknown> = {
@@ -27,6 +31,11 @@ function buildRedisOpts(url: string): object {
     port: Number(parsed.port) || 6379,
     password: parsed.password || undefined,
     username: parsed.username && parsed.username !== 'default' ? parsed.username : undefined,
+    enableReadyCheck: false,
+    maxRetriesPerRequest: null,
+    keepAlive: 10_000,
+    retryStrategy: (times: number) => Math.min(times * 500, 30_000),
+    reconnectOnError: (err: Error) => err.message.includes('READONLY'),
   };
   if (parsed.protocol === 'rediss:') {
     opts['tls'] = { rejectUnauthorized: false };
