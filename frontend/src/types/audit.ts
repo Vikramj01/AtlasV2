@@ -13,6 +13,13 @@ export interface AuditScores {
   data_consistency_score: 'Low' | 'Medium' | 'High';
 }
 
+export type ValidationLayerFilter =
+  | 'signal_initiation'
+  | 'parameter_completeness'
+  | 'persistence'
+  | 'tag_configuration'
+  | 'implementation_drift';
+
 export interface ReportIssue {
   rule_id: string;
   severity: Severity;
@@ -21,6 +28,7 @@ export interface ReportIssue {
   recommended_owner: string;
   fix_summary: string;
   estimated_effort: 'low' | 'medium' | 'high';
+  validation_layer?: ValidationLayerFilter;
 }
 
 export interface JourneyStage {

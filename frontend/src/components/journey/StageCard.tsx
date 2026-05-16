@@ -1,17 +1,21 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type * as React from 'react';
 
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, ShieldAlert } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ActionToggles } from './ActionToggles';
 import { useJourneyWizardStore } from '@/store/journeyWizardStore';
 import { useTaxonomyStore } from '@/store/taxonomyStore';
+import { ihcApi } from '@/lib/api/ihcApi';
 import type { WizardStage } from '@/types/journey';
 import type { CaseFormat } from '@/types/taxonomy';
+
+const CONVERSION_ACTIONS = new Set(['generate_lead', 'sign_up', 'purchase']);
 
 // Mirror of the regex logic used in RecommendationCard and the backend namingConvention service.
 function matchesCaseFormat(name: string, format: CaseFormat): boolean {
@@ -35,6 +39,17 @@ export function StageCard({ stage, canRemove }: StageCardProps) {
   const isProxy = stageTiming[stage.id]?.is_proxy === true;
   const [editingLabel, setEditingLabel] = useState(false);
   const [labelDraft, setLabelDraft] = useState(stage.label);
+
+  // IHC warning: fetch open critical/high findings if this stage has conversion actions
+  const hasConversionAction = stage.actions.some((a) => CONVERSION_ACTIONS.has(a));
+  const [ihcFindingCount, setIhcFindingCount] = useState<number | null>(null);
+  useEffect(() => {
+    if (!hasConversionAction) return;
+    ihcApi
+      .getFindingsSummary()
+      .then((s) => setIhcFindingCount(s.critical + s.high))
+      .catch(() => { /* non-critical, suppress */ });
+  }, [hasConversionAction]);
 
   // Check if the label looks like a hand-typed event identifier (no spaces)
   // and warn if it violates the org's naming convention.
@@ -117,6 +132,16 @@ export function StageCard({ stage, canRemove }: StageCardProps) {
               <span className="flex-shrink-0 inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700">
                 Proxy signal
               </span>
+            )}
+            {hasConversionAction && ihcFindingCount !== null && ihcFindingCount > 0 && (
+              <Link
+                to="/settings/implementation-health"
+                className="flex-shrink-0 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800 hover:bg-amber-200 transition-colors"
+                title="Implementation issue detected — see Health Checks"
+              >
+                <ShieldAlert className="h-2.5 w-2.5" />
+                Implementation issue
+              </Link>
             )}
           </div>
 
