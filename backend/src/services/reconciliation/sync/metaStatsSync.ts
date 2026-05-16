@@ -13,11 +13,19 @@ interface DayInsight {
   actions?: InsightAction[];
 }
 
-async function fetchInsights(adAccountId: string, accessToken: string): Promise<DayInsight[]> {
+function buildMetaDateRange(daysBack: number): { since: string; until: string } {
+  const until = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const since = new Date(until.getTime() - (daysBack - 1) * 24 * 60 * 60 * 1000);
+  const fmt = (d: Date) => d.toISOString().split('T')[0];
+  return { since: fmt(since), until: fmt(until) };
+}
+
+async function fetchInsights(adAccountId: string, accessToken: string, daysBack = 7): Promise<DayInsight[]> {
+  const { since, until } = buildMetaDateRange(daysBack);
   const params = new URLSearchParams({
     fields: 'date_start,actions',
     time_increment: '1',
-    date_preset: 'last_7_days',
+    time_range: JSON.stringify({ since, until }),
     level: 'account',
     limit: '10',
     access_token: accessToken,
@@ -71,7 +79,7 @@ async function getAtlasCount(clientId: string, eventName: string, date: string):
   return count ?? null;
 }
 
-export async function syncAdAccountStats(connectionId: string, orgId: string, clientId: string): Promise<void> {
+export async function syncAdAccountStats(connectionId: string, orgId: string, clientId: string, daysBack = 7): Promise<void> {
   const tokens = await resolveTokens(connectionId);
   const { data: conn } = await supabaseAdmin
     .from('platform_connections')
@@ -82,7 +90,7 @@ export async function syncAdAccountStats(connectionId: string, orgId: string, cl
 
   const adAccountId = (conn as { account_id: string }).account_id;
   const [insights, matchScores] = await Promise.all([
-    fetchInsights(adAccountId, tokens.access_token),
+    fetchInsights(adAccountId, tokens.access_token, daysBack),
     fetchEventMatchScores(adAccountId, tokens.access_token),
   ]);
 

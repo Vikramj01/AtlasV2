@@ -42,6 +42,9 @@ interface AlertRule {
 interface RawMetrics extends ComputedMetrics {
   capi_configured: boolean;  // true if at least one active CAPI provider exists
   days_since_audit: number | null;
+  has_expired_connections: boolean;
+  has_critical_recon_findings: boolean;
+  has_critical_alignment_findings: boolean;
 }
 
 const ALERT_RULES: AlertRule[] = [
@@ -107,6 +110,36 @@ const ALERT_RULES: AlertRule[] = [
     getMetricValue: () => 0,
     threshold: null,
   },
+  {
+    type: 'connection_expired',
+    check: (_m: ComputedMetrics, r: RawMetrics) => r.has_expired_connections,
+    severity: 'warning',
+    title: 'Platform Connection Expired',
+    getMessage: () =>
+      'One or more platform connections have expired. Reconnect to continue receiving reconciliation data.',
+    getMetricValue: () => null,
+    threshold: null,
+  },
+  {
+    type: 'recon_critical_finding',
+    check: (_m: ComputedMetrics, r: RawMetrics) => r.has_critical_recon_findings,
+    severity: 'critical',
+    title: 'Critical Platform Reconciliation Finding',
+    getMessage: () =>
+      'A critical issue was found during platform reconciliation. Review findings to fix your tracking setup.',
+    getMetricValue: () => null,
+    threshold: null,
+  },
+  {
+    type: 'recon_brief_misaligned',
+    check: (_m: ComputedMetrics, r: RawMetrics) => r.has_critical_alignment_findings,
+    severity: 'critical',
+    title: 'Strategy Brief Misaligned',
+    getMessage: () =>
+      'One or more live campaigns are optimising on the wrong conversion event. Review alignment findings immediately.',
+    getMetricValue: () => null,
+    threshold: null,
+  },
 ];
 
 // ── Alert lifecycle management ────────────────────────────────────────────────
@@ -152,7 +185,13 @@ async function evaluateRule(
 export async function evaluateAlerts(
   userId: string,
   metrics: ComputedMetrics,
-  extra: { capi_configured: boolean; days_since_audit: number | null },
+  extra: {
+    capi_configured: boolean;
+    days_since_audit: number | null;
+    has_expired_connections: boolean;
+    has_critical_recon_findings: boolean;
+    has_critical_alignment_findings: boolean;
+  },
 ): Promise<void> {
   const raw: RawMetrics = { ...metrics, ...extra };
 

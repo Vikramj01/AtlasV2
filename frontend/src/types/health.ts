@@ -7,6 +7,7 @@ export interface HealthScore {
   capi_delivery_rate: number;
   consent_coverage: number;
   tag_firing_rate: number;
+  platform_acceptance_score: number | null;
   last_audit_id: string | null;
   last_audit_at: string | null;
   computed_at: string;
@@ -26,6 +27,7 @@ export interface HealthSnapshot {
   capi_delivery_rate: number | null;
   consent_coverage: number | null;
   tag_firing_rate: number | null;
+  platform_acceptance_score: number | null;
   snapshot_at: string;
 }
 
@@ -36,7 +38,10 @@ export type AlertType =
   | 'tag_firing'
   | 'consent_missing'
   | 'no_recent_audit'
-  | 'capi_not_configured';
+  | 'capi_not_configured'
+  | 'connection_expired'
+  | 'recon_critical_finding'
+  | 'recon_brief_misaligned';
 
 export interface HealthAlert {
   id: string;

@@ -96,6 +96,62 @@ function freshnessScore(daysSinceAudit: number | null): number {
   return 0;
 }
 
+// ── org_id helper ─────────────────────────────────────────────────────────────
+
+export async function fetchOrgId(userId: string): Promise<string | null> {
+  const { data } = await supabaseAdmin
+    .from('profiles')
+    .select('organization_id')
+    .eq('id', userId)
+    .single();
+
+  return (data as { organization_id: string } | null)?.organization_id ?? null;
+}
+
+// ── Platform Acceptance Score ─────────────────────────────────────────────────
+
+type FindingRow = {
+  dimension: string;
+  severity: string;
+};
+
+const DIMENSION_PENALTIES: Record<string, number> = {
+  critical: 25,
+  error: 15,
+  warning: 5,
+  info: 1,
+};
+
+function subScore(findings: FindingRow[], dimension: string): number {
+  const penalty = findings
+    .filter((f) => f.dimension === dimension)
+    .reduce((sum, f) => sum + (DIMENSION_PENALTIES[f.severity] ?? 0), 0);
+  return Math.max(0, 100 - penalty);
+}
+
+export async function fetchPlatformAcceptanceScore(orgId: string): Promise<number | null> {
+  const { data } = await (supabaseAdmin
+    .from('reconciliation_findings')
+    .select('dimension, severity')
+    .eq('organization_id', orgId)
+    .is('resolved_at', null) as unknown as Promise<{ data: FindingRow[] | null }>);
+
+  if (!data || data.length === 0) return null;
+
+  const delivery  = subScore(data, 'delivery');
+  const config    = subScore(data, 'config');
+  const alignment = subScore(data, 'alignment');
+  const volume    = subScore(data, 'volume');
+
+  const score =
+    delivery  * 0.25 +
+    config    * 0.25 +
+    alignment * 0.30 +
+    volume    * 0.20;
+
+  return Math.round(score);
+}
+
 // ── Overall score formula ─────────────────────────────────────────────────────
 
 function computeOverallScore(
@@ -103,16 +159,30 @@ function computeOverallScore(
   capiDelivery: number,
   consent: number,
   daysSince: number | null,
+  platformAcceptance: number | null,
 ): number {
   const capiContribution = capiDelivery === -1
     ? 70  // no CAPI = neutral (not penalised heavily, just not full marks)
     : capiDelivery;
 
-  const score =
-    signalHealth    * 0.40 +
-    capiContribution * 0.30 +
-    consent          * 0.20 +
-    freshnessScore(daysSince) * 0.10;
+  let score: number;
+
+  if (platformAcceptance === null) {
+    // Fall back to original 4-component formula
+    score =
+      signalHealth      * 0.40 +
+      capiContribution  * 0.30 +
+      consent           * 0.20 +
+      freshnessScore(daysSince) * 0.10;
+  } else {
+    // 5-component formula — existing weights scaled to 83.33%, platform_acceptance at 16.67%
+    score =
+      signalHealth      * 0.3333 +
+      capiContribution  * 0.25 +
+      consent           * 0.1667 +
+      freshnessScore(daysSince) * 0.0833 +
+      platformAcceptance * 0.1667;
+  }
 
   return Math.round(Math.min(100, Math.max(0, score)));
 }
@@ -123,20 +193,24 @@ export async function computeHealthMetrics(userId: string, websiteUrl?: string):
   metrics: ComputedMetrics;
   overallScore: number;
 }> {
-  const [auditData, capiRate, consent] = await Promise.all([
+  const orgId = await fetchOrgId(userId);
+
+  const [auditData, capiRate, consent, platformAcceptance] = await Promise.all([
     fetchLatestAuditScore(userId, websiteUrl),
     fetchCAPIDeliveryRate(userId),
     fetchConsentCoverage(userId),
+    orgId ? fetchPlatformAcceptanceScore(orgId) : Promise.resolve(null),
   ]);
 
   const metrics: ComputedMetrics = {
-    signal_health:       auditData.signal_health,
-    capi_delivery_rate:  capiRate === -1 ? 0 : capiRate,
-    consent_coverage:    consent,
-    tag_firing_rate:     auditData.signal_health, // derived from same audit
-    last_audit_id:       auditData.last_audit_id,
-    last_audit_at:       auditData.last_audit_at,
-    website_url:         auditData.website_url,
+    signal_health:            auditData.signal_health,
+    capi_delivery_rate:       capiRate === -1 ? 0 : capiRate,
+    consent_coverage:         consent,
+    tag_firing_rate:          auditData.signal_health, // derived from same audit
+    platform_acceptance_score: platformAcceptance,
+    last_audit_id:            auditData.last_audit_id,
+    last_audit_at:            auditData.last_audit_at,
+    website_url:              auditData.website_url,
   };
 
   const overallScore = computeOverallScore(
@@ -144,6 +218,7 @@ export async function computeHealthMetrics(userId: string, websiteUrl?: string):
     capiRate,
     consent,
     auditData.days_since_audit,
+    platformAcceptance,
   );
 
   return { metrics, overallScore };

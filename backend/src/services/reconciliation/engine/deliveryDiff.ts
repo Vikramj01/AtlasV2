@@ -108,7 +108,7 @@ export async function runDeliveryDiff(
       if (!stats || stats.count === 0) {
         await writeFinding({
           runId,
-          orgId,
+          organizationId: orgId,
           clientId,
           briefId,
           objectiveId: obj.id,
@@ -131,7 +131,7 @@ export async function runDeliveryDiff(
         if (avgDedupRate < threshold) {
           await writeFinding({
             runId,
-            orgId,
+            organizationId: orgId,
             clientId,
             briefId,
             objectiveId: obj.id,

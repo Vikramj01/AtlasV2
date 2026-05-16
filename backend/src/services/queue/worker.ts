@@ -1,7 +1,7 @@
-import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue, crawlQueue, reconciliationSyncQueue, reconciliationRunQueue, reconciliationStatsQueue } from './jobQueue';
-import { runConfigSyncForConnection, getConnectionsDueForSync, runStatsSyncForConnection, getConnectionsDueForStatsSync } from '@/services/reconciliation/sync/syncOrchestrator';
+import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue, crawlQueue, reconciliationSyncQueue, reconciliationRunQueue, reconciliationStatsQueue, reconciliationStaleResyncQueue } from './jobQueue';
+import { runConfigSyncForConnection, getConnectionsDueForSync, runStatsSyncForConnection, getConnectionsDueForStatsSync, runStaleResyncForConnection, getConnectionsForStaleResync } from '@/services/reconciliation/sync/syncOrchestrator';
 import { executeRun } from '@/services/reconciliation/reconciliationRunner';
-import type { SyncJobData, StatsSyncJobData, ReconciliationJobData } from './jobQueue';
+import type { SyncJobData, StatsSyncJobData, StaleResyncJobData, ReconciliationJobData } from './jobQueue';
 // Side-effect import: registers the crawl queue processor
 import '@/services/crawl/crawlJob';
 import { env } from '@/config/env';
@@ -649,4 +649,33 @@ reconciliationStatsQueue.process('__stats_scheduler__', async () => {
     });
   }
   logger.info({ count: due.length }, 'Reconciliation stats jobs enqueued');
+});
+
+// ── Reconciliation Stale Resync Worker ───────────────────────────────────────
+// Re-pulls last 30 days of event stats daily at 03:00 UTC.
+// Overwrites existing rows via UPSERT to capture retroactive platform corrections.
+
+reconciliationStaleResyncQueue.process(2, async (job) => {
+  await runStaleResyncForConnection(job.data as StaleResyncJobData);
+});
+
+logger.info('Reconciliation stale resync queue worker registered');
+
+reconciliationStaleResyncQueue.add(
+  { connectionId: '__stale_scheduler__', orgId: '__stale_scheduler__', clientId: '__stale_scheduler__', platform: 'google_ads', daysBack: 30 } as StaleResyncJobData,
+  {
+    repeat: { cron: '0 3 * * *' },  // 03:00 UTC daily
+    jobId: 'recon-stale-resync-scheduler',
+  },
+);
+
+reconciliationStaleResyncQueue.process('__stale_scheduler__', async () => {
+  const connections = await getConnectionsForStaleResync();
+  for (const job of connections) {
+    await reconciliationStaleResyncQueue.add(job, {
+      jobId: `recon-stale-${job.connectionId}`,
+      removeOnComplete: true,
+    });
+  }
+  logger.info({ count: connections.length }, 'Reconciliation stale resync jobs enqueued');
 });

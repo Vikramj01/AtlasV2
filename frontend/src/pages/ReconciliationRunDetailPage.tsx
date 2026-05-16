@@ -1,9 +1,11 @@
-import { useEffect, useState, type ElementType } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ChevronLeft, CheckCircle2, AlertTriangle, XCircle, RefreshCw } from 'lucide-react';
+import { ChevronLeft, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useReconciliationStore } from '@/store/reconciliationStore';
 import { FindingsList } from '@/components/reconciliation/FindingsList';
+import { ReconciliationRunSummary } from '@/components/reconciliation/ReconciliationRunSummary';
+import { DimensionScorePanel } from '@/components/reconciliation/DimensionScorePanel';
 import { SectionErrorBoundary } from '@/components/common/ErrorBoundary';
 import type { ReconciliationFinding } from '@/lib/api/reconciliationApi';
 
@@ -15,19 +17,6 @@ const DIMENSION_TABS: { key: Dimension; label: string }[] = [
   { key: 'alignment', label: 'Alignment' },
   { key: 'volume',    label: 'Volume' },
 ];
-
-const STATUS_CONFIG: Record<string, { label: string; cls: string; icon: ElementType }> = {
-  running:   { label: 'Running',   cls: 'bg-blue-100 text-blue-700',   icon: RefreshCw },
-  succeeded: { label: 'Succeeded', cls: 'bg-green-100 text-green-700', icon: CheckCircle2 },
-  partial:   { label: 'Partial',   cls: 'bg-amber-100 text-amber-700', icon: AlertTriangle },
-  failed:    { label: 'Failed',    cls: 'bg-red-100 text-red-700',     icon: XCircle },
-};
-
-const RUN_TYPE_LABELS: Record<string, string> = {
-  scheduled:       'Scheduled run',
-  manual:          'Manual run',
-  post_brief_lock: 'Post-lock run',
-};
 
 export function ReconciliationRunDetailPage() {
   return (
@@ -86,16 +75,6 @@ function ReconciliationRunDetailPageInner() {
     );
   }
 
-  const statusCfg = STATUS_CONFIG[currentRun.status] ?? STATUS_CONFIG.failed;
-  const StatusIcon = statusCfg.icon;
-
-  const durationMs = currentRun.finished_at
-    ? new Date(currentRun.finished_at).getTime() - new Date(currentRun.started_at).getTime()
-    : null;
-  const durationLabel = durationMs !== null
-    ? durationMs < 60000 ? `${Math.round(durationMs / 1000)}s` : `${Math.round(durationMs / 60000)}m`
-    : 'In progress';
-
   return (
     <div className="space-y-6 p-6 max-w-5xl mx-auto">
       {/* Back nav */}
@@ -107,33 +86,9 @@ function ReconciliationRunDetailPageInner() {
         Back
       </button>
 
-      {/* Run header */}
-      <div className="rounded-xl border border-[#E5E7EB] bg-white p-5 space-y-3">
-        <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div>
-            <p className="text-xs text-[#9CA3AF] font-medium uppercase tracking-wide">
-              {RUN_TYPE_LABELS[currentRun.run_type] ?? currentRun.run_type}
-            </p>
-            <p className="text-sm text-[#1B2A4A] mt-0.5">
-              {new Date(currentRun.started_at).toLocaleString()}
-            </p>
-          </div>
-          <span className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium ${statusCfg.cls}`}>
-            <StatusIcon className="h-3.5 w-3.5" />
-            {statusCfg.label}
-          </span>
-        </div>
-
-        <div className="flex items-center gap-4 flex-wrap text-xs text-[#6B7280]">
-          <span>Duration: <strong className="text-[#1B2A4A]">{durationLabel}</strong></span>
-          <span>Platforms: <strong className="text-[#1B2A4A]">{currentRun.platforms_run.join(', ') || '—'}</strong></span>
-          <span>Total findings: <strong className="text-[#1B2A4A]">{currentRun.total_findings}</strong></span>
-        </div>
-
-        {currentRun.error_summary && (
-          <p className="text-xs text-red-600 bg-red-50 rounded px-3 py-2">{currentRun.error_summary}</p>
-        )}
-      </div>
+      {/* Run header + dimension scores */}
+      <ReconciliationRunSummary run={currentRun} findings={findings} />
+      <DimensionScorePanel findings={findings} />
 
       {/* Dimension tabs */}
       <div className="space-y-3">

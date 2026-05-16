@@ -9,6 +9,7 @@ export interface HealthScore {
   capi_delivery_rate: number;    // 0–100 %
   consent_coverage: number;      // 0 or 100 (configured = 100)
   tag_firing_rate: number;       // 0–100 % (alias of signal_health for display)
+  platform_acceptance_score: number | null;  // 0–100 composite from reconciliation findings
   last_audit_id: string | null;
   last_audit_at: string | null;
   computed_at: string;
@@ -23,6 +24,7 @@ export interface HealthSnapshot {
   capi_delivery_rate: number | null;
   consent_coverage: number | null;
   tag_firing_rate: number | null;
+  platform_acceptance_score: number | null;
   snapshot_at: string;
 }
 
@@ -33,7 +35,10 @@ export type AlertType =
   | 'tag_firing'
   | 'consent_missing'
   | 'no_recent_audit'
-  | 'capi_not_configured';
+  | 'capi_not_configured'
+  | 'recon_critical_finding'
+  | 'recon_brief_misaligned'
+  | 'connection_expired';
 
 export interface HealthAlert {
   id: string;
@@ -72,6 +77,7 @@ export interface ComputedMetrics {
   capi_delivery_rate: number;
   consent_coverage: number;
   tag_firing_rate: number;
+  platform_acceptance_score: number | null;
   last_audit_id: string | null;
   last_audit_at: string | null;
   website_url: string | null;    // site the audit came from
