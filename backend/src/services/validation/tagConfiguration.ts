@@ -441,3 +441,278 @@ export const TAG_CONFIGURATION_RULES_PHASE_A = [
   HARDCODED_TRANSACTION_ID_IN_TAG_CONFIG,
   DUPLICATE_TAG_CONFIGURATION,
 ];
+
+// ── Phase B rules ─────────────────────────────────────────────────────────────
+
+/**
+ * Required consent types per GTM tag type.
+ * Ad/conversion platforms need ad_storage + ad_user_data (GCM v2).
+ * Analytics platforms need analytics_storage.
+ */
+const REQUIRED_CONSENT_TYPES: Partial<Record<string, string[]>> = {
+  awct:      ['ad_storage', 'ad_user_data'],
+  asp:       ['ad_storage', 'ad_user_data'],
+  sp:        ['ad_storage', 'ad_user_data'],
+  flc:       ['ad_storage', 'ad_user_data'],
+  fls:       ['ad_storage', 'ad_user_data'],
+  ga4_event: ['analytics_storage'],
+  gaawe:     ['analytics_storage'],
+  gaawc:     ['analytics_storage'],
+  fbt:       ['ad_storage', 'ad_user_data'],
+  lia:       ['ad_storage'],
+  tktk:      ['ad_storage'],
+  msadmc:    ['ad_storage'],
+};
+
+/** Consent types where a default of "granted" violates GDPR opt-in requirement. */
+const SENSITIVE_CONSENT_TYPES = new Set([
+  'ad_storage', 'ad_user_data', 'analytics_storage', 'ad_personalization',
+]);
+
+// ── 5.8 CONSENT_SETTINGS_MISSING_ON_MARKETING_TAG ────────────────────────────
+
+export const CONSENT_SETTINGS_MISSING_ON_MARKETING_TAG = {
+  rule_id: 'CONSENT_SETTINGS_MISSING_ON_MARKETING_TAG',
+  validation_layer: 'tag_configuration' as const,
+  severity: 'critical' as const,
+  affected_platforms: ['All'],
+
+  test(auditData: AuditData): ValidationResult {
+    if (!auditData.gtmContainer) return skippedResult(this.rule_id);
+
+    const violations: string[] = [];
+
+    for (const tag of auditData.gtmContainer.tags) {
+      if (!MARKETING_TAG_TYPES.has(tag.type)) continue;
+
+      const hasConsentConfig =
+        tag.consentSettings != null &&
+        tag.consentSettings.consentStatus !== 'NOT_SET';
+
+      if (!hasConsentConfig) {
+        violations.push(`"${tag.name}" (${tag.type}): no consent requirements configured`);
+      }
+    }
+
+    return {
+      rule_id: this.rule_id,
+      validation_layer: this.validation_layer,
+      status: violations.length > 0 ? 'fail' : 'pass',
+      severity: this.severity,
+      technical_details: {
+        found: violations.length > 0
+          ? `${violations.length} marketing tag${violations.length > 1 ? 's' : ''} missing consent settings`
+          : 'All marketing tags have consent settings configured',
+        expected: 'Every marketing/advertising tag must declare required consent types (ad_storage, ad_user_data)',
+        evidence: violations.length > 0 ? violations : ['No consent configuration gaps on marketing tags'],
+      },
+    };
+  },
+};
+
+// ── 5.9 CONSENT_TYPE_MISMATCH ─────────────────────────────────────────────────
+
+export const CONSENT_TYPE_MISMATCH = {
+  rule_id: 'CONSENT_TYPE_MISMATCH',
+  validation_layer: 'tag_configuration' as const,
+  severity: 'critical' as const,
+  affected_platforms: ['All'],
+
+  test(auditData: AuditData): ValidationResult {
+    if (!auditData.gtmContainer) return skippedResult(this.rule_id);
+
+    const violations: string[] = [];
+
+    for (const tag of auditData.gtmContainer.tags) {
+      const requiredTypes = REQUIRED_CONSENT_TYPES[tag.type];
+      if (!requiredTypes) continue;
+
+      // Only check tags that actually have consent configured — missing config is caught by 5.8
+      if (!tag.consentSettings || tag.consentSettings.consentStatus === 'NOT_SET') continue;
+
+      const configuredTypes = tag.consentSettings.consentType ?? [];
+      const missingTypes = requiredTypes.filter((t) => !configuredTypes.includes(t));
+
+      if (missingTypes.length > 0) {
+        violations.push(
+          `"${tag.name}" (${tag.type}): missing ${missingTypes.join(', ')} ` +
+          `(has: ${configuredTypes.length > 0 ? configuredTypes.join(', ') : 'none'})`,
+        );
+      }
+    }
+
+    return {
+      rule_id: this.rule_id,
+      validation_layer: this.validation_layer,
+      status: violations.length > 0 ? 'fail' : 'pass',
+      severity: this.severity,
+      technical_details: {
+        found: violations.length > 0
+          ? `${violations.length} tag${violations.length > 1 ? 's' : ''} with incorrect consent type mapping`
+          : 'All marketing tags have correct consent type mapping',
+        expected: 'Ad tags require ad_storage + ad_user_data; GA4 tags require analytics_storage',
+        evidence: violations.length > 0 ? violations : ['All consent type mappings are correct'],
+      },
+    };
+  },
+};
+
+// ── 5.10 DEFAULT_CONSENT_GRANTED_GLOBALLY ────────────────────────────────────
+
+export const DEFAULT_CONSENT_GRANTED_GLOBALLY = {
+  rule_id: 'DEFAULT_CONSENT_GRANTED_GLOBALLY',
+  validation_layer: 'tag_configuration' as const,
+  severity: 'critical' as const,
+  affected_platforms: ['All'],
+
+  test(auditData: AuditData): ValidationResult {
+    if (!auditData.gtmContainer) return skippedResult(this.rule_id);
+
+    const { consent_default_tag } = auditData.gtmContainer;
+
+    if (!consent_default_tag) {
+      return {
+        rule_id: this.rule_id,
+        validation_layer: this.validation_layer,
+        status: 'fail',
+        severity: this.severity,
+        technical_details: {
+          found: 'No Consent Mode initialisation tag found in container',
+          expected: 'A consent initialisation tag setting sensitive types to "denied" by default',
+          evidence: ['No tag with type "consent_init" or a name matching "Consent Mode" was found'],
+        },
+      };
+    }
+
+    const grantedByDefault: string[] = [];
+
+    for (const param of consent_default_tag.parameter ?? []) {
+      // LIST-of-MAP format used by the native GTM Consent Initialization tag
+      if (param.type === 'LIST' && param.key === 'defaultValue' && Array.isArray(param.list)) {
+        for (const entry of param.list) {
+          const mapEntries = (entry as { map?: Array<{ key: string; value?: string }> }).map ?? [];
+          const typeEntry   = mapEntries.find((m) => m.key === 'consentType');
+          const statusEntry = mapEntries.find((m) => m.key === 'consentStatus');
+          if (
+            typeEntry?.value &&
+            SENSITIVE_CONSENT_TYPES.has(typeEntry.value) &&
+            statusEntry?.value === 'granted'
+          ) {
+            grantedByDefault.push(`${typeEntry.value} defaults to "granted"`);
+          }
+        }
+      }
+
+      // Flat key-value format used by some custom consent tags
+      if (SENSITIVE_CONSENT_TYPES.has(param.key) && param.value === 'granted') {
+        grantedByDefault.push(`${param.key} defaults to "granted"`);
+      }
+    }
+
+    if (grantedByDefault.length > 0) {
+      return {
+        rule_id: this.rule_id,
+        validation_layer: this.validation_layer,
+        status: 'fail',
+        severity: this.severity,
+        technical_details: {
+          found: `${grantedByDefault.length} sensitive consent type${grantedByDefault.length > 1 ? 's' : ''} defaulting to "granted"`,
+          expected: 'All sensitive consent types default to "denied" until explicit user consent is recorded',
+          evidence: [`Consent tag: "${consent_default_tag.name}"`, ...grantedByDefault],
+        },
+      };
+    }
+
+    return {
+      rule_id: this.rule_id,
+      validation_layer: this.validation_layer,
+      status: 'pass',
+      severity: this.severity,
+      technical_details: {
+        found: 'Consent Mode initialised with "denied" defaults for all sensitive consent types',
+        expected: 'All sensitive consent types default to "denied"',
+        evidence: [`Consent tag: "${consent_default_tag.name}" — all sensitive types denied by default`],
+      },
+    };
+  },
+};
+
+// ── 5.11 FRAGILE_CSS_SELECTOR_TRIGGER ────────────────────────────────────────
+
+/** GTM condition types that rely on CSS selectors and break when UI changes. */
+const CSS_CONDITION_TYPES = new Set(['CSS_SELECTOR', 'MATCHES_CSS_SELECTOR', 'MATCHES_CSS']);
+
+export const FRAGILE_CSS_SELECTOR_TRIGGER = {
+  rule_id: 'FRAGILE_CSS_SELECTOR_TRIGGER',
+  validation_layer: 'tag_configuration' as const,
+  severity: 'medium' as const,
+  affected_platforms: ['All'],
+
+  test(auditData: AuditData): ValidationResult {
+    if (!auditData.gtmContainer) return skippedResult(this.rule_id);
+
+    const { tags, triggers } = auditData.gtmContainer;
+
+    // Collect trigger IDs that use CSS selectors
+    const cssTriggerIds = new Set<string>();
+    for (const trigger of triggers) {
+      const isElementVisibility = trigger.type === 'element_visibility';
+      const hasCssFilter = trigger.filter?.some((c) => CSS_CONDITION_TYPES.has(c.type)) ?? false;
+      const hasCssAutoFilter =
+        (trigger.autoEventFilter as Array<{ type: string }> | undefined)?.some(
+          (c) => CSS_CONDITION_TYPES.has(c.type),
+        ) ?? false;
+
+      if (isElementVisibility || hasCssFilter || hasCssAutoFilter) {
+        cssTriggerIds.add(trigger.triggerId);
+      }
+    }
+
+    // Find conversion tags that fire on CSS-selector triggers
+    const violations: string[] = [];
+    for (const tag of tags) {
+      if (!CONVERSION_TAG_TYPES.has(tag.type)) continue;
+
+      const cssFiringTriggers = tag.firingTriggerId.filter((id) => cssTriggerIds.has(id));
+      if (cssFiringTriggers.length === 0) continue;
+
+      const triggerNames = cssFiringTriggers.map((id) => {
+        const t = triggers.find((tr) => tr.triggerId === id);
+        return t ? `"${t.name}"` : id;
+      });
+      violations.push(
+        `"${tag.name}" (${tag.type}) fires on CSS selector trigger${triggerNames.length > 1 ? 's' : ''}: ${triggerNames.join(', ')}`,
+      );
+    }
+
+    return {
+      rule_id: this.rule_id,
+      validation_layer: this.validation_layer,
+      status: violations.length > 0 ? 'fail' : 'pass',
+      severity: this.severity,
+      technical_details: {
+        found: violations.length > 0
+          ? `${violations.length} conversion tag${violations.length > 1 ? 's' : ''} on fragile CSS selector trigger${violations.length > 1 ? 's' : ''}`
+          : 'No conversion tags using CSS selector triggers',
+        expected: 'Conversion tags fire on dataLayer event triggers, not CSS selector or element visibility triggers',
+        evidence: violations.length > 0 ? violations : ['All conversion tags use event-based triggers'],
+      },
+    };
+  },
+};
+
+// ── Phase B rule registry ─────────────────────────────────────────────────────
+
+export const TAG_CONFIGURATION_RULES_PHASE_B = [
+  CONSENT_SETTINGS_MISSING_ON_MARKETING_TAG,
+  CONSENT_TYPE_MISMATCH,
+  DEFAULT_CONSENT_GRANTED_GLOBALLY,
+  FRAGILE_CSS_SELECTOR_TRIGGER,
+];
+
+// ── Combined registry (all 11 tag_configuration rules) ───────────────────────
+
+export const TAG_CONFIGURATION_RULES_ALL = [
+  ...TAG_CONFIGURATION_RULES_PHASE_A,
+  ...TAG_CONFIGURATION_RULES_PHASE_B,
+];

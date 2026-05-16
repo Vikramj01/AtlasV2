@@ -324,6 +324,49 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
     fix_summary: 'Identify the canonical tag and pause or delete duplicates. If sGTM and client-side both legitimately fire for the same event, set event_id on both for deduplication.',
     estimated_effort: 'medium',
   },
+
+  // LAYER 4: TAG CONFIGURATION (Phase B — 4 rules)
+  // ============================================================================
+
+  CONSENT_SETTINGS_MISSING_ON_MARKETING_TAG: {
+    rule_id: 'CONSENT_SETTINGS_MISSING_ON_MARKETING_TAG',
+    business_impact: 'One or more marketing tags have no consent requirements configured in GTM. These tags will fire regardless of what the user consented to, breaching GDPR, ePrivacy, and equivalent regulations. Ad platforms can suspend accounts for consent violations detected during audits.',
+    affected_platforms: ['All'],
+    severity: 'critical',
+    recommended_owner: 'GTM implementer',
+    fix_summary: 'Open each tag in GTM, navigate to Consent Settings, select "Require additional consent for tag to fire", and add the appropriate consent types (ad_storage + ad_user_data for ad platforms, analytics_storage for GA4).',
+    estimated_effort: 'low',
+  },
+
+  CONSENT_TYPE_MISMATCH: {
+    rule_id: 'CONSENT_TYPE_MISMATCH',
+    business_impact: 'A marketing tag has consent settings configured, but the listed consent types are incomplete. Missing consent type requirements means the tag can fire even when the user has denied the relevant consent signal — for example, a Google Ads tag without ad_user_data will send unhashed user data after the user opted out of personalised ads.',
+    affected_platforms: ['All'],
+    severity: 'critical',
+    recommended_owner: 'GTM implementer',
+    fix_summary: 'For Google Ads and Meta tags add both ad_storage and ad_user_data. For GA4 tags add analytics_storage. For LinkedIn/TikTok/Microsoft tags add ad_storage.',
+    estimated_effort: 'low',
+  },
+
+  DEFAULT_CONSENT_GRANTED_GLOBALLY: {
+    rule_id: 'DEFAULT_CONSENT_GRANTED_GLOBALLY',
+    business_impact: 'Either no Consent Mode initialisation tag was found, or the consent tag defaults a sensitive consent type (ad_storage, ad_user_data, analytics_storage) to "granted" before the user has interacted with the consent banner. This is a textbook GDPR opt-in violation. Regulators across the EU and UK have issued substantial fines for exactly this configuration.',
+    affected_platforms: ['All'],
+    severity: 'critical',
+    recommended_owner: 'GTM implementer',
+    fix_summary: 'Add or update the Consent Initialization tag to set all sensitive consent types to "denied" by default. The CMP/consent banner should then update the consent state to "granted" only when the user explicitly accepts.',
+    estimated_effort: 'medium',
+  },
+
+  FRAGILE_CSS_SELECTOR_TRIGGER: {
+    rule_id: 'FRAGILE_CSS_SELECTOR_TRIGGER',
+    business_impact: 'One or more conversion tags fire based on CSS selector or element visibility triggers. These triggers bind conversion tracking to the visual implementation of the page — any front-end refactor, A/B test, or framework upgrade can silently break conversion tracking with no error or alert. CSS selectors are the leading cause of tracking loss during site redesigns.',
+    affected_platforms: ['All'],
+    severity: 'medium',
+    recommended_owner: 'GTM implementer',
+    fix_summary: 'Migrate conversion tags to fire on dataLayer events pushed by the application code (e.g. push({ event: "purchase", ... })). This decouples tracking from UI implementation and is resilient to front-end changes.',
+    estimated_effort: 'high',
+  },
 };
 
 export function interpretResults(results: ValidationResult[]): ReportIssue[] {
