@@ -855,7 +855,7 @@ ihcRulesQueue.process(2, async (job) => {
     rule_id: string;
     validation_layer: string;
     severity: string;
-    test: (auditData: { gtmContainer: typeof containerSnapshot }) => { rule_id: string; status: string; technical_details: { evidence: string[] } };
+    test: (auditData: import('@/types/audit').AuditData) => import('@/types/audit').ValidationResult;
   }>;
 
   try {
@@ -867,7 +867,18 @@ ihcRulesQueue.process(2, async (job) => {
     return;
   }
 
-  const auditInput = { gtmContainer: containerSnapshot };
+  const auditInput: import('@/types/audit').AuditData = {
+    audit_id: data.snapshot_id,
+    website_url: '',
+    funnel_type: 'ecommerce',
+    region: 'us',
+    dataLayer: [],
+    networkRequests: [],
+    cookieSnapshots: [],
+    localStorageSnapshots: [],
+    injected: { gclid: '', fbclid: '' },
+    gtmContainer: containerSnapshot,
+  };
   const passingRuleIds: string[] = [];
   const failingFindings: import('@/services/ihc/findingsWriter').FindingInput[] = [];
 
