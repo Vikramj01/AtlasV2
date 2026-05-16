@@ -6,6 +6,9 @@
  * GET    /api/reconciliation/runs/:id/findings        — findings with optional filters
  * PATCH  /api/reconciliation/findings/:id/resolve     — mark a finding resolved
  * POST   /api/reconciliation/trigger                  — manual run for a client
+ * GET    /api/reconciliation/tolerance?clientId=X     — list tolerance configs
+ * PUT    /api/reconciliation/tolerance                — upsert tolerance config
+ * GET    /api/reconciliation/stats?clientId=X         — daily event stats time-series
  */
 
 import { Router } from 'express';
@@ -222,6 +225,167 @@ reconciliationRouter.post(
       res.json({ data: { runId }, message: 'Reconciliation run enqueued' });
     } catch (err) {
       sendInternalError(res, err, 'POST /api/reconciliation/trigger');
+    }
+  },
+);
+
+// ── GET /api/reconciliation/tolerance ────────────────────────────────────────
+
+reconciliationRouter.get(
+  '/tolerance',
+  planGuard('pro'),
+  async (req: Request, res: Response): Promise<void> => {
+    const clientId = req.query.clientId as string | undefined;
+    if (!clientId) {
+      res.status(400).json({ error: 'clientId query parameter is required' });
+      return;
+    }
+
+    try {
+      const orgId = await resolveOrgId(req.user.id);
+      const { data, error } = await supabaseAdmin
+        .from('reconciliation_tolerance_configs')
+        .select('*')
+        .eq('organization_id', orgId)
+        .eq('client_id', clientId)
+        .order('created_at', { ascending: true }) as unknown as { data: unknown[] | null; error: Error | null };
+
+      if (error) throw error;
+      res.json({ data: data ?? [] });
+    } catch (err) {
+      sendInternalError(res, err, 'GET /api/reconciliation/tolerance');
+    }
+  },
+);
+
+// ── PUT /api/reconciliation/tolerance ────────────────────────────────────────
+
+const ToleranceBody = z.object({
+  clientId: z.string().uuid(),
+  eventName: z.string().optional().nullable(),
+  platform: z.enum(['google_ads', 'meta', 'ga4']).optional().nullable(),
+  volumeTolerancePct: z.number().min(0).max(100).optional(),
+  dedupWarnThreshold: z.number().min(0).max(1).optional(),
+  enabled: z.boolean().optional(),
+});
+
+reconciliationRouter.put(
+  '/tolerance',
+  planGuard('pro'),
+  async (req: Request, res: Response): Promise<void> => {
+    const parsed = ToleranceBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0].message });
+      return;
+    }
+
+    try {
+      const orgId = await resolveOrgId(req.user.id);
+      const { clientId, eventName, platform, volumeTolerancePct, dedupWarnThreshold, enabled } = parsed.data;
+
+      const patch: Record<string, unknown> = {
+        organization_id: orgId,
+        client_id: clientId,
+        event_name: eventName ?? null,
+        platform: platform ?? null,
+        updated_at: new Date().toISOString(),
+      };
+      if (volumeTolerancePct !== undefined) patch.volume_tolerance_pct = volumeTolerancePct;
+      if (dedupWarnThreshold !== undefined) patch.dedup_warn_threshold = dedupWarnThreshold;
+      if (enabled !== undefined) patch.enabled = enabled;
+
+      const { data, error } = await (supabaseAdmin
+        .from('reconciliation_tolerance_configs') as unknown as {
+          upsert: (row: Record<string, unknown>, opts: object) => {
+            select: (cols: string) => { single: () => Promise<{ data: unknown; error: Error | null }> };
+          };
+        })
+        .upsert(patch, { onConflict: 'organization_id,client_id,event_name,platform' })
+        .select('*')
+        .single();
+
+      if (error) throw error;
+      res.json({ data });
+    } catch (err) {
+      sendInternalError(res, err, 'PUT /api/reconciliation/tolerance');
+    }
+  },
+);
+
+// ── GET /api/reconciliation/stats ─────────────────────────────────────────────
+
+const StatsQuerySchema = z.object({
+  clientId: z.string().uuid(),
+  days: z.coerce.number().int().min(1).max(90).optional().default(7),
+  eventName: z.string().optional(),
+  platform: z.enum(['google_ads', 'meta', 'ga4']).optional(),
+});
+
+reconciliationRouter.get(
+  '/stats',
+  planGuard('pro'),
+  async (req: Request, res: Response): Promise<void> => {
+    const parsed = StatsQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0].message });
+      return;
+    }
+
+    try {
+      const orgId = await resolveOrgId(req.user.id);
+      const { clientId, days, eventName, platform } = parsed.data;
+
+      const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+      let connQuery = supabaseAdmin
+        .from('platform_connections')
+        .select('id, platform')
+        .eq('client_id', clientId)
+        .eq('organization_id', orgId)
+        .eq('status', 'active');
+      if (platform) connQuery = connQuery.eq('platform', platform);
+
+      const { data: connections } = await connQuery as unknown as { data: { id: string; platform: string }[] | null };
+      if (!connections?.length) {
+        res.json({ data: [] });
+        return;
+      }
+
+      const connIds = connections.map((c) => c.id);
+      const connPlatform = new Map(connections.map((c) => [c.id, c.platform]));
+
+      let statsQuery = supabaseAdmin
+        .from('platform_event_stats_daily')
+        .select('connection_id, date, event_name, platform_count, atlas_count, delta_pct, quality_signals')
+        .in('connection_id', connIds)
+        .gte('date', since)
+        .order('date', { ascending: false });
+      if (eventName) statsQuery = statsQuery.eq('event_name', eventName);
+
+      const { data: rows, error } = await statsQuery as unknown as {
+        data: { connection_id: string; date: string; event_name: string; platform_count: number; atlas_count: number | null; delta_pct: number | null; quality_signals: unknown }[] | null;
+        error: Error | null;
+      };
+      if (error) throw error;
+
+      // Group by event_name + platform
+      const grouped = new Map<string, unknown[]>();
+      for (const row of rows ?? []) {
+        const plt = connPlatform.get(row.connection_id) ?? 'unknown';
+        const key = `${row.event_name}::${plt}`;
+        const entry = grouped.get(key) ?? [];
+        entry.push({ ...row, platform: plt });
+        grouped.set(key, entry);
+      }
+
+      const result = Array.from(grouped.entries()).map(([key, entries]) => {
+        const [evtName, plt] = key.split('::');
+        return { event_name: evtName, platform: plt, rows: entries };
+      });
+
+      res.json({ data: result });
+    } catch (err) {
+      sendInternalError(res, err, 'GET /api/reconciliation/stats');
     }
   },
 );

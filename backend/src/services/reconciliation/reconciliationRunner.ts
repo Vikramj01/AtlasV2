@@ -1,6 +1,8 @@
 import { supabaseAdmin } from '@/services/database/supabase';
 import { runConfigDiff } from './engine/configDiff';
 import { runAlignmentDiff } from './engine/alignmentDiff';
+import { runDeliveryDiff } from './engine/deliveryDiff';
+import { runVolumeDiff } from './engine/volumeDiff';
 import { finaliseRun } from './engine/findingWriter';
 import logger from '@/utils/logger';
 
@@ -68,6 +70,17 @@ export async function executeRun(job: ReconciliationJobData): Promise<void> {
         logger.error({ runId, err: err.message }, 'Alignment diff failed');
       });
     }
+
+    // Delivery + volume diffs run on all run types (skip gracefully when no stats data exists)
+    await runDeliveryDiff(runId, clientId, briefId ?? null, organizationId).catch((err: Error) => {
+      errors.push(`delivery: ${err.message}`);
+      logger.error({ runId, err: err.message }, 'Delivery diff failed');
+    });
+
+    await runVolumeDiff(runId, clientId, briefId ?? null, organizationId).catch((err: Error) => {
+      errors.push(`volume: ${err.message}`);
+      logger.error({ runId, err: err.message }, 'Volume diff failed');
+    });
 
     const status = errors.length === 0 ? 'succeeded' : 'partial';
     await finaliseRun(runId, status, errors.length > 0 ? errors.join('; ') : undefined);

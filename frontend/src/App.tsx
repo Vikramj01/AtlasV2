@@ -43,6 +43,7 @@ import { CrawlStatusPage } from '@/pages/CrawlStatusPage';
 import { ConnectionsPage } from '@/pages/ConnectionsPage';
 import { ClientConnectionsPage } from '@/pages/ClientConnectionsPage';
 import { ReconciliationPage } from '@/pages/ReconciliationPage';
+import { ReconciliationRunDetailPage } from '@/pages/ReconciliationRunDetailPage';
 
 export default function App() {
   return (
@@ -76,6 +77,8 @@ export default function App() {
               <Route path="/connections" element={<ConnectionsPage />} />
               <Route path="/connections/:clientId" element={<ClientConnectionsPage />} />
               <Route path="/reconciliation" element={<ReconciliationPage />} />
+              <Route path="/reconciliation/:clientId" element={<ReconciliationPage />} />
+              <Route path="/reconciliation/runs/:id" element={<ReconciliationRunDetailPage />} />
               {/* OAuth callback page — reads code+state from URL, calls API */}
               <Route path="/connections/oauth/:platform/callback" element={<ConnectionsPage />} />
               {/* Tag Library */}

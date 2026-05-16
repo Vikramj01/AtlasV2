@@ -1,7 +1,7 @@
-import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue, crawlQueue, reconciliationSyncQueue, reconciliationRunQueue } from './jobQueue';
-import { runConfigSyncForConnection, getConnectionsDueForSync } from '@/services/reconciliation/sync/syncOrchestrator';
+import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue, crawlQueue, reconciliationSyncQueue, reconciliationRunQueue, reconciliationStatsQueue } from './jobQueue';
+import { runConfigSyncForConnection, getConnectionsDueForSync, runStatsSyncForConnection, getConnectionsDueForStatsSync } from '@/services/reconciliation/sync/syncOrchestrator';
 import { executeRun } from '@/services/reconciliation/reconciliationRunner';
-import type { SyncJobData, ReconciliationJobData } from './jobQueue';
+import type { SyncJobData, StatsSyncJobData, ReconciliationJobData } from './jobQueue';
 // Side-effect import: registers the crawl queue processor
 import '@/services/crawl/crawlJob';
 import { env } from '@/config/env';
@@ -621,3 +621,32 @@ reconciliationRunQueue.process(2, async (job) => {
 });
 
 logger.info('Reconciliation run queue worker registered');
+
+// ── Reconciliation Stats Worker ───────────────────────────────────────────────
+// 24-hour cron: pull daily event counts from platform APIs for all active connections.
+
+reconciliationStatsQueue.process(3, async (job) => {
+  await runStatsSyncForConnection(job.data as StatsSyncJobData);
+});
+
+logger.info('Reconciliation stats queue worker registered');
+
+// 24-hourly scheduler: find connections due for stats sync and enqueue them
+reconciliationStatsQueue.add(
+  { connectionId: '__stats_scheduler__', orgId: '__stats_scheduler__', clientId: '__stats_scheduler__', platform: 'google_ads' } as StatsSyncJobData,
+  {
+    repeat: { cron: '30 1 * * *' },  // 01:30 UTC daily
+    jobId: 'recon-stats-scheduler',
+  },
+);
+
+reconciliationStatsQueue.process('__stats_scheduler__', async () => {
+  const due = await getConnectionsDueForStatsSync();
+  for (const job of due) {
+    await reconciliationStatsQueue.add(job, {
+      jobId: `recon-stats-${job.connectionId}`,
+      removeOnComplete: true,
+    });
+  }
+  logger.info({ count: due.length }, 'Reconciliation stats jobs enqueued');
+});

@@ -317,9 +317,9 @@ crawlQueue.on('stalled', (job) => {
 // Two queues: one for periodic config syncs (6h cadence), one for full
 // reconciliation runs (post-brief-lock, manual, or scheduled).
 
-import type { SyncJobData } from '@/services/reconciliation/sync/syncOrchestrator';
+import type { SyncJobData, StatsSyncJobData } from '@/services/reconciliation/sync/syncOrchestrator';
 import type { ReconciliationJobData } from '@/services/reconciliation/reconciliationRunner';
-export type { SyncJobData, ReconciliationJobData };
+export type { SyncJobData, StatsSyncJobData, ReconciliationJobData };
 
 export const reconciliationSyncQueue = new Bull<SyncJobData>('reconciliation-sync', {
   redis: buildRedisOpts(env.REDIS_URL),
@@ -360,5 +360,27 @@ reconciliationRunQueue.on('completed', (job) => {
 
 reconciliationRunQueue.on('failed', (job, err) => {
   logger.error({ jobId: job?.id, runId: job?.data?.runId, err: err.message }, 'Reconciliation run failed');
+});
+
+// ── Reconciliation Stats Queue ────────────────────────────────────────────────
+// Pulls daily event counts from platform APIs (Google Ads, Meta, GA4).
+// 24h cadence; processed by a separate worker to avoid blocking config sync.
+
+export const reconciliationStatsQueue = new Bull<StatsSyncJobData>('reconciliation-stats', {
+  redis: buildRedisOpts(env.REDIS_URL),
+  defaultJobOptions: {
+    attempts: 2,
+    backoff: { type: 'exponential', delay: 15000 },
+    removeOnComplete: 200,
+    removeOnFail: 100,
+  },
+});
+
+reconciliationStatsQueue.on('error', (err) => {
+  logger.error({ err }, 'Reconciliation stats queue error');
+});
+
+reconciliationStatsQueue.on('failed', (job, err) => {
+  logger.error({ jobId: job?.id, connectionId: job?.data?.connectionId, err: err.message }, 'Reconciliation stats job failed');
 });
 

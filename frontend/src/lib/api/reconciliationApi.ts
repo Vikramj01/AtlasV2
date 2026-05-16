@@ -106,4 +106,57 @@ export const reconciliationApi = {
       return run ?? null;
     });
   },
+
+  getTolerance(clientId: string) {
+    return req<{ data: ToleranceConfig[] }>('GET', `${BASE}/tolerance?clientId=${clientId}`);
+  },
+
+  upsertTolerance(body: UpsertToleranceInput) {
+    return req<{ data: ToleranceConfig }>('PUT', `${BASE}/tolerance`, body);
+  },
+
+  getStats(clientId: string, opts: { days?: number; eventName?: string; platform?: string } = {}) {
+    const params = new URLSearchParams({ clientId });
+    if (opts.days) params.set('days', String(opts.days));
+    if (opts.eventName) params.set('eventName', opts.eventName);
+    if (opts.platform) params.set('platform', opts.platform);
+    return req<{ data: EventStatGroup[] }>('GET', `${BASE}/stats?${params}`);
+  },
 };
+
+export interface ToleranceConfig {
+  id: string;
+  client_id: string;
+  event_name: string | null;
+  platform: string | null;
+  volume_tolerance_pct: number;
+  dedup_warn_threshold: number;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UpsertToleranceInput {
+  clientId: string;
+  eventName?: string | null;
+  platform?: string | null;
+  volumeTolerancePct?: number;
+  dedupWarnThreshold?: number;
+  enabled?: boolean;
+}
+
+export interface EventStatRow {
+  date: string;
+  event_name: string;
+  platform: string;
+  platform_count: number;
+  atlas_count: number | null;
+  delta_pct: number | null;
+  quality_signals: Record<string, number> | null;
+}
+
+export interface EventStatGroup {
+  event_name: string;
+  platform: string;
+  rows: EventStatRow[];
+}
