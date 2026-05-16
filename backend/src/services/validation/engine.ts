@@ -7,16 +7,16 @@ import type { AuditData, ValidationResult, ValidationLayer } from '@/types/audit
 import { LAYER_1_RULES } from './signalInitiation';
 import { LAYER_2_RULES } from './parameterCompleteness';
 import { LAYER_3_RULES } from './persistence';
-import { TAG_CONFIGURATION_RULES_PHASE_A } from './tagConfiguration';
+import { TAG_CONFIGURATION_RULES_PHASE_A, TAG_CONFIGURATION_RULES_ALL } from './tagConfiguration';
 import logger from '@/utils/logger';
 
-export { TAG_CONFIGURATION_RULES_PHASE_A };
+export { TAG_CONFIGURATION_RULES_PHASE_A, TAG_CONFIGURATION_RULES_ALL };
 
 export const ALL_RULES = [
   ...LAYER_1_RULES,
   ...LAYER_2_RULES,
   ...LAYER_3_RULES,
-  ...TAG_CONFIGURATION_RULES_PHASE_A,
+  ...TAG_CONFIGURATION_RULES_ALL,
 ];
 
 /**
