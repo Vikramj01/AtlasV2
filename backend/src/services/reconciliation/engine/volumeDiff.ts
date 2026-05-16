@@ -90,7 +90,7 @@ export async function runVolumeDiff(
     const severity = absDelta > tolerance * 2 ? 'error' : 'warning';
 
     await writeFinding({
-      runId, orgId, clientId, briefId, objectiveId: null,
+      runId, organizationId: orgId, clientId, briefId, objectiveId: null,
       platform, dimension: 'volume', severity,
       findingCode: 'VOLUME_DELTA_EXCEEDED',
       expected: { atlas_count: row.atlas_count, tolerance_pct: tolerance },
@@ -138,7 +138,7 @@ export async function runVolumeDiff(
     if (Math.abs(deltaPct) <= GA4_DIVERGENCE_THRESHOLD) continue;
 
     await writeFinding({
-      runId, orgId, clientId, briefId, objectiveId: null,
+      runId, organizationId: orgId, clientId, briefId, objectiveId: null,
       platform: 'ga4', dimension: 'volume', severity: 'info',
       findingCode: 'GA4_VOLUME_DIVERGENCE',
       expected: { platform_count: counts.primary, platform: counts.primaryPlatform },

@@ -192,7 +192,7 @@ export async function runAlignmentDiff(
             },
             narrative: buildNarrative('WRONG_PRIMARY_CONVERSION', {
               campaign_name: campaign.campaign_name,
-              observed_conversion: observedNames || campaign.custom_event_type ?? 'unknown',
+              observed_conversion: (observedNames || campaign.custom_event_type) ?? 'unknown',
               expected_conversion: primaryEventName,
             }),
             remediationHint: buildRemediation('WRONG_PRIMARY_CONVERSION', {
