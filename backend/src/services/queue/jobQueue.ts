@@ -46,18 +46,26 @@ function buildRedisOpts(url: string): RedisOptions {
 // With 16 queues that's 48 connections — well above Render's starter Redis limit.
 // Sharing a single client + subscriber across all queues drops this to
 // 2 + N_queues (one bclient per queue for blocking BRPOPLPUSH).
+//
+// IMPORTANT: if errors appear for EVERY queue simultaneously, the root cause is
+// the shared client or subscriber reconnecting — not 16 independent failures.
+// Monitor sharedClient/sharedSubscriber error events, not per-queue events.
 const redisOpts = buildRedisOpts(env.REDIS_URL);
 const sharedClient = new IORedis(redisOpts);
 const sharedSubscriber = new IORedis(redisOpts);
 
 sharedClient.on('error', (err) => logger.error({ err }, 'Redis shared client error'));
+sharedClient.on('reconnecting', (delay: number) => logger.warn({ delay }, 'Redis shared client reconnecting'));
 sharedSubscriber.on('error', (err) => logger.error({ err }, 'Redis shared subscriber error'));
+sharedSubscriber.on('reconnecting', (delay: number) => logger.warn({ delay }, 'Redis shared subscriber reconnecting'));
 
 function createClient(type: 'client' | 'subscriber' | 'bclient'): IORedis {
   if (type === 'client') return sharedClient;
   if (type === 'subscriber') return sharedSubscriber;
-  // bclient must be a dedicated connection per queue (used for blocking ops)
-  return new IORedis(redisOpts);
+  // bclient must be a dedicated connection per queue (used for blocking BRPOPLPUSH).
+  // lazyConnect: true defers the TCP connection until the first command, so all
+  // 16 bclients don't hammer Redis simultaneously at startup.
+  return new IORedis({ ...redisOpts, lazyConnect: true });
 }
 
 function makeBullOpts(defaultJobOptions?: Bull.JobOptions): Bull.QueueOptions {
@@ -70,10 +78,6 @@ export const auditQueue = new Bull<AuditJobData>('audit', makeBullOpts({
   removeOnComplete: 100,
   removeOnFail: 50,
 }));
-
-auditQueue.on('error', (err) => {
-  logger.error({ err }, 'Audit queue error');
-});
 
 auditQueue.on('completed', (job) => {
   logger.info({ jobId: job.id, auditId: job.data.audit_id }, 'Audit job completed');
@@ -99,10 +103,6 @@ export const planningQueue = new Bull<PlanningJobData>('planning', makeBullOpts(
   removeOnComplete: 100,
   removeOnFail: 50,
 }));
-
-planningQueue.on('error', (err) => {
-  logger.error({ err }, 'Planning queue error');
-});
 
 planningQueue.on('completed', (job) => {
   logger.info({ jobId: job.id, sessionId: job.data.session_id }, 'Planning job completed');
@@ -132,10 +132,6 @@ export const healthQueue = new Bull<HealthJobData>('health', makeBullOpts({
   removeOnFail: 10,
 }));
 
-healthQueue.on('error', (err) => {
-  logger.error({ err }, 'Health queue error');
-});
-
 healthQueue.on('completed', (job) => {
   logger.info({ jobId: job.id, trigger: job.data.trigger }, 'Health job completed');
 });
@@ -160,10 +156,6 @@ export const channelQueue = new Bull<ChannelJobData>('channel', makeBullOpts({
   removeOnFail: 10,
 }));
 
-channelQueue.on('error', (err) => {
-  logger.error({ err }, 'Channel queue error');
-});
-
 channelQueue.on('completed', (job) => {
   logger.info({ jobId: job.id, trigger: job.data.trigger }, 'Channel job completed');
 });
@@ -184,10 +176,6 @@ export const scheduleRunnerQueue = new Bull<ScheduleRunnerJobData>('schedule-run
   removeOnComplete: 10,
   removeOnFail: 10,
 }));
-
-scheduleRunnerQueue.on('error', (err) => {
-  logger.error({ err }, 'Schedule runner queue error');
-});
 
 scheduleRunnerQueue.on('completed', (job) => {
   logger.info({ jobId: job.id }, 'Schedule runner job completed');
@@ -216,10 +204,6 @@ export const offlineConversionQueue = new Bull<OfflineConversionJobData>('offlin
   removeOnFail: 50,
 }));
 
-offlineConversionQueue.on('error', (err) => {
-  logger.error({ err }, 'Offline conversion queue error');
-});
-
 offlineConversionQueue.on('completed', (job) => {
   logger.info({ jobId: job.id, uploadId: job.data.upload_id }, 'Offline conversion upload job completed');
 });
@@ -247,10 +231,6 @@ export const googleOAuthRefreshQueue = new Bull<GoogleOAuthRefreshJobData>('goog
   removeOnFail: 10,
 }));
 
-googleOAuthRefreshQueue.on('error', (err) => {
-  logger.error({ err }, 'Google OAuth refresh queue error');
-});
-
 googleOAuthRefreshQueue.on('completed', (job) => {
   logger.info({ jobId: job.id }, 'Google OAuth refresh job completed');
 });
@@ -271,10 +251,6 @@ export const usageSummaryQueue = new Bull<UsageSummaryJobData>('usage-summary', 
   removeOnComplete: 10,
   removeOnFail: 10,
 }));
-
-usageSummaryQueue.on('error', (err) => {
-  logger.error({ err }, 'Usage summary queue error');
-});
 
 usageSummaryQueue.on('completed', (job) => {
   logger.info({ jobId: job.id }, 'Usage summary refresh completed');
@@ -299,10 +275,6 @@ export const crawlQueue = new Bull<CrawlJobData>('crawl', makeBullOpts({
   removeOnFail:     50,
   timeout:          25 * 60 * 1000, // 25-minute hard cap (12 pages × ~2 min each + headroom)
 }));
-
-crawlQueue.on('error', (err) => {
-  logger.error({ err }, 'Crawl queue error');
-});
 
 crawlQueue.on('completed', (job) => {
   logger.info({ jobId: job.id, org_id: job.data.org_id, crawl_run_id: job.data.crawl_run_id }, 'Crawl job completed');
@@ -331,10 +303,6 @@ export const reconciliationSyncQueue = new Bull<SyncJobData>('reconciliation-syn
   removeOnFail: 100,
 }));
 
-reconciliationSyncQueue.on('error', (err) => {
-  logger.error({ err }, 'Reconciliation sync queue error');
-});
-
 reconciliationSyncQueue.on('failed', (job, err) => {
   logger.error({ jobId: job?.id, connectionId: job?.data?.connectionId, err: err.message }, 'Reconciliation sync job failed');
 });
@@ -346,10 +314,6 @@ export const reconciliationRunQueue = new Bull<ReconciliationJobData>('reconcili
   removeOnComplete: 100,
   removeOnFail: 50,
 }));
-
-reconciliationRunQueue.on('error', (err) => {
-  logger.error({ err }, 'Reconciliation run queue error');
-});
 
 reconciliationRunQueue.on('completed', (job) => {
   logger.info({ jobId: job.id, runId: job.data.runId }, 'Reconciliation run completed');
@@ -370,10 +334,6 @@ export const reconciliationStatsQueue = new Bull<StatsSyncJobData>('reconciliati
   removeOnFail: 100,
 }));
 
-reconciliationStatsQueue.on('error', (err) => {
-  logger.error({ err }, 'Reconciliation stats queue error');
-});
-
 reconciliationStatsQueue.on('failed', (job, err) => {
   logger.error({ jobId: job?.id, connectionId: job?.data?.connectionId, err: err.message }, 'Reconciliation stats job failed');
 });
@@ -388,10 +348,6 @@ export const reconciliationStaleResyncQueue = new Bull<StaleResyncJobData>('reco
   removeOnComplete: 100,
   removeOnFail: 50,
 }));
-
-reconciliationStaleResyncQueue.on('error', (err) => {
-  logger.error({ err }, 'Reconciliation stale resync queue error');
-});
 
 reconciliationStaleResyncQueue.on('failed', (job, err) => {
   logger.error({ jobId: job?.id, connectionId: job?.data?.connectionId, err: err.message }, 'Reconciliation stale resync job failed');
@@ -418,10 +374,6 @@ export const gtmContainerSyncQueue = new Bull<GtmContainerSyncJobData>('gtm-cont
   removeOnComplete: 50,
   removeOnFail: 25,
 }));
-
-gtmContainerSyncQueue.on('error', (err) => {
-  logger.error({ err }, 'GTM container sync queue error');
-});
 
 gtmContainerSyncQueue.on('completed', (job) => {
   logger.info({ jobId: job.id, connectionId: job.data.connection_id }, 'GTM container sync job completed');
@@ -451,10 +403,6 @@ export const ihcRulesQueue = new Bull<IhcRulesJobData>('ihc-rules', makeBullOpts
   removeOnFail: 50,
 }));
 
-ihcRulesQueue.on('error', (err) => {
-  logger.error({ err }, 'IHC rules queue error');
-});
-
 ihcRulesQueue.on('completed', (job) => {
   logger.info({ jobId: job.id, snapshotId: job.data.snapshot_id }, 'IHC rules job completed');
 });
@@ -480,10 +428,6 @@ export const ihcDriftQueue = new Bull<IhcDriftJobData>('ihc-drift', makeBullOpts
   removeOnComplete: 100,
   removeOnFail: 50,
 }));
-
-ihcDriftQueue.on('error', (err) => {
-  logger.error({ err }, 'IHC drift queue error');
-});
 
 ihcDriftQueue.on('completed', (job) => {
   logger.info({ jobId: job.id, crawlRunId: job.data.crawl_run_id }, 'IHC drift job completed');
