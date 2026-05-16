@@ -2,6 +2,10 @@
 -- New tables: gtm_container_connections, gtm_container_snapshots,
 --             ihc_alert_preferences, audit_findings
 -- Extension:  crawl_runs gains is_baseline flag
+--
+-- FK constraints to organizations and clients are applied conditionally so this
+-- migration survives Supabase preview branches and CI environments where those
+-- tables may not exist yet. Pattern matches the is_baseline guard below.
 
 -- ── gtm_container_connections ────────────────────────────────────────────────
 -- One row per GTM container connected to a property.
@@ -9,8 +13,8 @@
 
 create table if not exists gtm_container_connections (
   id                              uuid primary key default gen_random_uuid(),
-  organization_id                 uuid not null references organizations(id) on delete cascade,
-  client_id                       uuid references clients(id) on delete set null,
+  organization_id                 uuid not null,
+  client_id                       uuid,
   property_id                     uuid not null,
   container_id                    text not null,
   account_id                      text,
@@ -21,6 +25,34 @@ create table if not exists gtm_container_connections (
   created_at                      timestamptz not null default now(),
   updated_at                      timestamptz not null default now()
 );
+
+-- Add FK to organizations if the table exists
+do $$
+begin
+  if exists (select 1 from pg_tables where schemaname = 'public' and tablename = 'organizations') then
+    if not exists (
+      select 1 from information_schema.table_constraints
+      where table_name = 'gtm_container_connections'
+        and constraint_name = 'gtm_container_connections_organization_id_fkey'
+    ) then
+      alter table gtm_container_connections
+        add constraint gtm_container_connections_organization_id_fkey
+        foreign key (organization_id) references organizations(id) on delete cascade;
+    end if;
+  end if;
+  if exists (select 1 from pg_tables where schemaname = 'public' and tablename = 'clients') then
+    if not exists (
+      select 1 from information_schema.table_constraints
+      where table_name = 'gtm_container_connections'
+        and constraint_name = 'gtm_container_connections_client_id_fkey'
+    ) then
+      alter table gtm_container_connections
+        add constraint gtm_container_connections_client_id_fkey
+        foreign key (client_id) references clients(id) on delete set null;
+    end if;
+  end if;
+end
+$$;
 
 alter table gtm_container_connections enable row level security;
 
@@ -44,12 +76,28 @@ create index if not exists idx_gtm_connections_property
 create table if not exists gtm_container_snapshots (
   id               uuid primary key default gen_random_uuid(),
   connection_id    uuid not null references gtm_container_connections(id) on delete cascade,
-  organization_id  uuid not null references organizations(id) on delete cascade,
+  organization_id  uuid not null,
   container_json   jsonb not null,
   container_version text,
   snapshot_at      timestamptz not null default now(),
   is_active        boolean not null default true
 );
+
+do $$
+begin
+  if exists (select 1 from pg_tables where schemaname = 'public' and tablename = 'organizations') then
+    if not exists (
+      select 1 from information_schema.table_constraints
+      where table_name = 'gtm_container_snapshots'
+        and constraint_name = 'gtm_container_snapshots_organization_id_fkey'
+    ) then
+      alter table gtm_container_snapshots
+        add constraint gtm_container_snapshots_organization_id_fkey
+        foreign key (organization_id) references organizations(id) on delete cascade;
+    end if;
+  end if;
+end
+$$;
 
 alter table gtm_container_snapshots enable row level security;
 
@@ -72,7 +120,7 @@ create index if not exists idx_gtm_snapshots_org_active
 
 create table if not exists ihc_alert_preferences (
   id                           uuid primary key default gen_random_uuid(),
-  organization_id              uuid not null references organizations(id) on delete cascade unique,
+  organization_id              uuid not null unique,
   email_critical_enabled       boolean not null default true,
   email_high_digest_enabled    boolean not null default true,
   email_medium_digest_enabled  boolean not null default true,
@@ -87,6 +135,22 @@ create table if not exists ihc_alert_preferences (
   created_at                   timestamptz not null default now(),
   updated_at                   timestamptz not null default now()
 );
+
+do $$
+begin
+  if exists (select 1 from pg_tables where schemaname = 'public' and tablename = 'organizations') then
+    if not exists (
+      select 1 from information_schema.table_constraints
+      where table_name = 'ihc_alert_preferences'
+        and constraint_name = 'ihc_alert_preferences_organization_id_fkey'
+    ) then
+      alter table ihc_alert_preferences
+        add constraint ihc_alert_preferences_organization_id_fkey
+        foreign key (organization_id) references organizations(id) on delete cascade;
+    end if;
+  end if;
+end
+$$;
 
 alter table ihc_alert_preferences enable row level security;
 
@@ -104,8 +168,8 @@ create policy "ihc_alert_preferences_org_isolation"
 
 create table if not exists audit_findings (
   id               uuid primary key default gen_random_uuid(),
-  organization_id  uuid not null references organizations(id) on delete cascade,
-  client_id        uuid references clients(id) on delete set null,
+  organization_id  uuid not null,
+  client_id        uuid,
   property_id      uuid not null,
   rule_id          text not null,
   validation_layer text not null,
@@ -121,6 +185,33 @@ create table if not exists audit_findings (
   created_at       timestamptz not null default now(),
   updated_at       timestamptz not null default now()
 );
+
+do $$
+begin
+  if exists (select 1 from pg_tables where schemaname = 'public' and tablename = 'organizations') then
+    if not exists (
+      select 1 from information_schema.table_constraints
+      where table_name = 'audit_findings'
+        and constraint_name = 'audit_findings_organization_id_fkey'
+    ) then
+      alter table audit_findings
+        add constraint audit_findings_organization_id_fkey
+        foreign key (organization_id) references organizations(id) on delete cascade;
+    end if;
+  end if;
+  if exists (select 1 from pg_tables where schemaname = 'public' and tablename = 'clients') then
+    if not exists (
+      select 1 from information_schema.table_constraints
+      where table_name = 'audit_findings'
+        and constraint_name = 'audit_findings_client_id_fkey'
+    ) then
+      alter table audit_findings
+        add constraint audit_findings_client_id_fkey
+        foreign key (client_id) references clients(id) on delete set null;
+    end if;
+  end if;
+end
+$$;
 
 alter table audit_findings enable row level security;
 
@@ -160,8 +251,20 @@ begin
 end
 $$;
 
--- Partial index ensures fast lookup of the single active baseline per property.
--- The application enforces at most one is_baseline = true per (org_id, property_id).
-create index if not exists idx_crawl_runs_baseline
-  on crawl_runs (org_id, is_baseline)
-  where is_baseline = true;
+-- Partial index — only created if crawl_runs exists (guarded by the DO block above).
+-- create index if not exists is safe even if column doesn't exist yet because
+-- Supabase runs the whole file; if the DO block above succeeded the column is present.
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_name = 'crawl_runs' and column_name = 'is_baseline'
+  ) then
+    execute $idx$
+      create index if not exists idx_crawl_runs_baseline
+        on crawl_runs (org_id, is_baseline)
+        where is_baseline = true
+    $idx$;
+  end if;
+end
+$$;
