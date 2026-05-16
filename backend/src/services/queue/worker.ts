@@ -1,4 +1,7 @@
-import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue, crawlQueue } from './jobQueue';
+import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue, crawlQueue, reconciliationSyncQueue, reconciliationRunQueue, reconciliationStatsQueue } from './jobQueue';
+import { runConfigSyncForConnection, getConnectionsDueForSync, runStatsSyncForConnection, getConnectionsDueForStatsSync } from '@/services/reconciliation/sync/syncOrchestrator';
+import { executeRun } from '@/services/reconciliation/reconciliationRunner';
+import type { SyncJobData, StatsSyncJobData, ReconciliationJobData } from './jobQueue';
 // Side-effect import: registers the crawl queue processor
 import '@/services/crawl/crawlJob';
 import { env } from '@/config/env';
@@ -581,3 +584,69 @@ async function isCrawlDue(org_id: string, scans_per_month: number): Promise<bool
 
   return daysSinceLastRun >= daysBetweenScans;
 }
+
+// ── Reconciliation Sync Worker ────────────────────────────────────────────────
+
+reconciliationSyncQueue.process(3, async (job) => {
+  await runConfigSyncForConnection(job.data as SyncJobData);
+});
+
+logger.info('Reconciliation sync queue worker registered');
+
+// 6-hourly repeatable job: find connections due for sync and enqueue them
+reconciliationSyncQueue.add(
+  { connectionId: '__scheduler__', orgId: '__scheduler__', platform: 'google_ads' } as SyncJobData,
+  {
+    repeat: { cron: '0 */6 * * *' },
+    jobId: 'recon-sync-scheduler',
+  },
+);
+
+// Override: when the scheduler job runs, find and enqueue real connection jobs
+reconciliationSyncQueue.process('__scheduler__', async () => {
+  const due = await getConnectionsDueForSync();
+  for (const job of due) {
+    await reconciliationSyncQueue.add(job, {
+      jobId: `recon-sync-${job.connectionId}`,
+      removeOnComplete: true,
+    });
+  }
+  logger.info({ count: due.length }, 'Reconciliation sync jobs enqueued');
+});
+
+// ── Reconciliation Run Worker ─────────────────────────────────────────────────
+
+reconciliationRunQueue.process(2, async (job) => {
+  await executeRun(job.data as ReconciliationJobData);
+});
+
+logger.info('Reconciliation run queue worker registered');
+
+// ── Reconciliation Stats Worker ───────────────────────────────────────────────
+// 24-hour cron: pull daily event counts from platform APIs for all active connections.
+
+reconciliationStatsQueue.process(3, async (job) => {
+  await runStatsSyncForConnection(job.data as StatsSyncJobData);
+});
+
+logger.info('Reconciliation stats queue worker registered');
+
+// 24-hourly scheduler: find connections due for stats sync and enqueue them
+reconciliationStatsQueue.add(
+  { connectionId: '__stats_scheduler__', orgId: '__stats_scheduler__', clientId: '__stats_scheduler__', platform: 'google_ads' } as StatsSyncJobData,
+  {
+    repeat: { cron: '30 1 * * *' },  // 01:30 UTC daily
+    jobId: 'recon-stats-scheduler',
+  },
+);
+
+reconciliationStatsQueue.process('__stats_scheduler__', async () => {
+  const due = await getConnectionsDueForStatsSync();
+  for (const job of due) {
+    await reconciliationStatsQueue.add(job, {
+      jobId: `recon-stats-${job.connectionId}`,
+      removeOnComplete: true,
+    });
+  }
+  logger.info({ count: due.length }, 'Reconciliation stats jobs enqueued');
+});

@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useBillingStore } from '@/store/billingStore';
+import { useConnectionStore } from '@/store/connectionStore';
 import { strategyApi } from '@/lib/api/strategyApi';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { Lock, Plus, ExternalLink } from 'lucide-react';
+import { Lock, Plus, ExternalLink, Link2, AlertTriangle } from 'lucide-react';
 import type { StrategyBriefRecord } from '@/types/strategy';
+import type { PlatformConnectionPublic, ConnectionGroup } from '@/types/connections';
 
 const PLAN_CONFIG = {
   free: {
@@ -46,6 +48,8 @@ export function SettingsPage() {
     openPortal,
   } = useBillingStore();
 
+  const { connections, fetchConnections } = useConnectionStore();
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session?.user) {
@@ -58,8 +62,11 @@ export function SettingsPage() {
   }, [navigate]);
 
   useEffect(() => {
-    if (!isAuthLoading) fetchStatus();
-  }, [isAuthLoading, fetchStatus]);
+    if (!isAuthLoading) {
+      fetchStatus();
+      fetchConnections();
+    }
+  }, [isAuthLoading, fetchStatus, fetchConnections]);
 
   async function handleSignOut() {
     setIsSigningOut(true);
@@ -71,6 +78,21 @@ export function SettingsPage() {
   const isSuperAdmin = status?.isSuperAdmin ?? false;
   const plan: Plan = (status?.plan ?? 'free') as Plan;
   const planInfo = PLAN_CONFIG[plan];
+
+  const connectionStats = (() => {
+    if (!connections) return null;
+    const all: PlatformConnectionPublic[] = [
+      ...connections.google_ads.flatMap((g: ConnectionGroup) => [g.manager, ...g.children]),
+      ...connections.meta.flatMap((g: ConnectionGroup) => [g.manager, ...g.children]),
+      ...connections.ga4,
+      ...connections.standalone,
+    ];
+    return {
+      total: all.length,
+      active: all.filter((c) => c.status === 'active').length,
+      expired: all.filter((c) => c.status === 'expired').length,
+    };
+  })();
 
   if (isLoading) {
     return (
@@ -192,6 +214,74 @@ export function SettingsPage() {
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Platform Connections */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm font-semibold">Platform Connections</CardTitle>
+            <Link
+              to="/connections"
+              className="flex items-center gap-1 text-xs text-primary hover:underline"
+            >
+              Manage <ExternalLink className="size-3" />
+            </Link>
+          </div>
+        </CardHeader>
+        <Separator />
+        <CardContent className="pt-4">
+          {!connectionStats ? (
+            <div className="py-3 text-center">
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#1B2A4A]/20 border-t-[#1B2A4A] mx-auto" />
+            </div>
+          ) : connectionStats.total === 0 ? (
+            <div className="py-4 text-center">
+              <p className="text-xs text-muted-foreground mb-3">
+                No ad platform connections yet. Connect Google Ads, Meta, or GA4 to enable signal reconciliation.
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-xs gap-1.5"
+                onClick={() => navigate('/connections')}
+              >
+                <Link2 className="h-3 w-3" />
+                Connect a platform
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center gap-6">
+                <div className="text-center">
+                  <p className="text-xl font-bold text-[#1B2A4A]">{connectionStats.active}</p>
+                  <p className="text-xs text-muted-foreground">Active</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xl font-bold text-[#1B2A4A]">{connectionStats.total}</p>
+                  <p className="text-xs text-muted-foreground">Total</p>
+                </div>
+                {connectionStats.expired > 0 && (
+                  <div className="flex items-center gap-1.5 rounded-md bg-amber-50 border border-amber-200 px-3 py-1.5">
+                    <AlertTriangle className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                    <p className="text-xs text-amber-800">
+                      {connectionStats.expired} connection{connectionStats.expired !== 1 ? 's' : ''} need re-authorisation
+                    </p>
+                  </div>
+                )}
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-xs gap-1.5"
+                onClick={() => navigate('/connections')}
+              >
+                <Link2 className="h-3 w-3" />
+                Manage connections
+              </Button>
             </div>
           )}
         </CardContent>

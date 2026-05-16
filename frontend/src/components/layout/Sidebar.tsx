@@ -5,6 +5,7 @@ import {
   Home, MapPin, CheckCircle, Clock, Settings,
   Building2, LayoutGrid, ShieldCheck, Activity,
   HeartPulse, ShieldAlert, GitBranch, Tag,
+  Link2, ArrowLeftRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { OrgSwitcher } from '@/components/organisation/OrgSwitcher';
@@ -29,16 +30,18 @@ const PERSONAL_NAV_GROUPS: { label: string; items: NavItemDef[] }[] = [
       { label: SECTION_LABELS.planningMode.primary,   technicalLabel: SECTION_LABELS.planningMode.technical,   to: '/planning',          Icon: MapPin },
       { label: SECTION_LABELS.journeyBuilder.primary, technicalLabel: SECTION_LABELS.journeyBuilder.technical, to: '/journey/new',       Icon: CheckCircle },
       { label: SECTION_LABELS.tagLibrary.primary,    technicalLabel: SECTION_LABELS.tagLibrary.technical,    to: '/signals',           Icon: Tag },
-      { label: SECTION_LABELS.consentHub.primary,     technicalLabel: SECTION_LABELS.consentHub.technical,     to: '/consent',           Icon: ShieldCheck },
-      { label: SECTION_LABELS.capi.primary,           technicalLabel: SECTION_LABELS.capi.technical,           to: '/integrations/capi', Icon: Activity },
+      { label: SECTION_LABELS.consentHub.primary,          technicalLabel: SECTION_LABELS.consentHub.technical,          to: '/consent',           Icon: ShieldCheck },
+      { label: SECTION_LABELS.capi.primary,                technicalLabel: SECTION_LABELS.capi.technical,                to: '/integrations/capi', Icon: Activity },
+      { label: SECTION_LABELS.platformConnections.primary, technicalLabel: SECTION_LABELS.platformConnections.technical, to: '/connections',       Icon: Link2 },
     ],
   },
   {
     label: 'MONITOR',
     items: [
-      { label: SECTION_LABELS.signalHealth.primary,     technicalLabel: SECTION_LABELS.signalHealth.technical,     to: '/health',    Icon: HeartPulse },
-      { label: SECTION_LABELS.auditEngine.primary,      technicalLabel: SECTION_LABELS.auditEngine.technical,      to: '/dashboard', Icon: Clock },
-      { label: SECTION_LABELS.channelInsights.primary,  technicalLabel: SECTION_LABELS.channelInsights.technical,  to: '/channels',  Icon: GitBranch },
+      { label: SECTION_LABELS.signalHealth.primary,     technicalLabel: SECTION_LABELS.signalHealth.technical,     to: '/health',         Icon: HeartPulse },
+      { label: SECTION_LABELS.auditEngine.primary,      technicalLabel: SECTION_LABELS.auditEngine.technical,      to: '/dashboard',      Icon: Clock },
+      { label: SECTION_LABELS.channelInsights.primary,  technicalLabel: SECTION_LABELS.channelInsights.technical,  to: '/channels',       Icon: GitBranch },
+      { label: SECTION_LABELS.reconciliation.primary,   technicalLabel: SECTION_LABELS.reconciliation.technical,   to: '/reconciliation', Icon: ArrowLeftRight },
     ],
   },
 ];

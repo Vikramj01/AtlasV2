@@ -320,12 +320,38 @@ connectionsRouter.post(
 );
 
 // ── POST /api/connections/:id/sync ────────────────────────────────────────────
-// Phase 2 placeholder — sync workers not yet implemented
 
 connectionsRouter.post(
   '/:id/sync',
   planGuard('pro'),
-  async (_req: Request, res: Response): Promise<void> => {
-    res.status(501).json({ message: 'Sync available in Phase 2' });
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const orgId = await resolveOrgId(req.user.id);
+      const { data: conn } = await supabaseAdmin
+        .from('platform_connections')
+        .select('platform, organization_id')
+        .eq('id', req.params.id)
+        .eq('organization_id', orgId)
+        .single();
+
+      if (!conn) {
+        res.status(404).json({ error: 'Connection not found' });
+        return;
+      }
+
+      const { reconciliationSyncQueue } = await import('@/services/queue/jobQueue');
+      await reconciliationSyncQueue.add(
+        {
+          connectionId: req.params.id,
+          orgId,
+          platform: (conn as { platform: string }).platform as import('@/types/connections').Platform,
+        },
+        { jobId: `manual-sync-${req.params.id}`, removeOnComplete: true },
+      );
+
+      res.json({ message: 'Sync job enqueued' });
+    } catch (err) {
+      sendInternalError(res, err, 'POST /api/connections/:id/sync');
+    }
   },
 );

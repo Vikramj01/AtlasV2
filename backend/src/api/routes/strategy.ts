@@ -2,6 +2,8 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/authMiddleware';
+import { reconciliationRunQueue } from '@/services/queue/jobQueue';
+import { createRun } from '@/services/reconciliation/reconciliationRunner';
 import { sendInternalError } from '@/utils/apiError';
 import logger from '@/utils/logger';
 import { callClaude } from '@/services/usage/claudeClient';
@@ -255,6 +257,24 @@ router.post('/briefs/:id/lock', async (req: Request, res: Response): Promise<voi
   try {
     const data = await lockBrief(req.params.id, req.user.id);
     res.json({ data, error: null, message: 'Brief locked.' });
+
+    // Fire-and-forget: enqueue a post-lock reconciliation run if client_id exists
+    const briefRecord = data as unknown as { client_id?: string; id: string };
+    if (briefRecord.client_id) {
+      createRun(req.user.id, briefRecord.client_id, 'post_brief_lock', briefRecord.id)
+        .then((runId) =>
+          reconciliationRunQueue.add({
+            runId,
+            organizationId: req.user.id,
+            clientId: briefRecord.client_id!,
+            briefId: briefRecord.id,
+            runType: 'post_brief_lock',
+          }),
+        )
+        .catch((err: Error) =>
+          logger.error({ briefId: briefRecord.id, err: err.message }, 'Failed to enqueue post-lock reconciliation run'),
+        );
+    }
   } catch (err) {
     if (handleKnownError(res, err)) return;
     sendInternalError(res, err);

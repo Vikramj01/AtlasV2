@@ -63,6 +63,14 @@ export const SECTION_LABELS = {
     primary: 'Tracking Audit',
     technical: 'Audit Engine',
   },
+  platformConnections: {
+    primary: 'Platform Connections',
+    technical: 'Ad Account Sync',
+  },
+  reconciliation: {
+    primary: 'Signal Reconciliation',
+    technical: 'Platform Reconciliation',
+  },
 } satisfies Record<string, { primary: string; technical: string }>;
 
 export const TOOLTIPS = {

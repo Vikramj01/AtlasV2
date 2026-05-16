@@ -27,6 +27,7 @@ import { namingConventionsRouter } from '@/api/routes/namingConventions';
 import { strategyRouter } from '@/api/routes/strategy';
 import { crawlRouter } from '@/api/routes/crawl';
 import { connectionsRouter } from '@/api/routes/connections';
+import { reconciliationRouter } from '@/api/routes/reconciliation';
 import logger from '@/utils/logger';
 import { env } from '@/config/env';
 
@@ -143,6 +144,7 @@ app.use('/api/naming-convention', namingConventionsRouter);
 app.use('/api/strategy', strategyRouter);
 app.use('/api/crawl', crawlRouter);
 app.use('/api/connections', connectionsRouter);
+app.use('/api/reconciliation', reconciliationRouter);
 
 // ─── 404 handler ─────────────────────────────────────────────────────────────
 
