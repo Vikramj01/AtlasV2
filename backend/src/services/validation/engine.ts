@@ -7,9 +7,17 @@ import type { AuditData, ValidationResult, ValidationLayer } from '@/types/audit
 import { LAYER_1_RULES } from './signalInitiation';
 import { LAYER_2_RULES } from './parameterCompleteness';
 import { LAYER_3_RULES } from './persistence';
+import { TAG_CONFIGURATION_RULES_PHASE_A } from './tagConfiguration';
 import logger from '@/utils/logger';
 
-export const ALL_RULES = [...LAYER_1_RULES, ...LAYER_2_RULES, ...LAYER_3_RULES];
+export { TAG_CONFIGURATION_RULES_PHASE_A };
+
+export const ALL_RULES = [
+  ...LAYER_1_RULES,
+  ...LAYER_2_RULES,
+  ...LAYER_3_RULES,
+  ...TAG_CONFIGURATION_RULES_PHASE_A,
+];
 
 /**
  * Returns true if a rule applies to the given active platforms.
@@ -102,17 +110,22 @@ export function runLayer(layer: ValidationLayer, auditData: AuditData): Validati
 
 /**
  * Returns summary counts by status.
+ * Skipped rules are counted separately and excluded from fail/warning totals.
  */
 export function summarizeResults(results: ValidationResult[]) {
+  const active = results.filter((r) => r.status !== 'skipped');
   return {
-    total: results.length,
-    pass: results.filter((r) => r.status === 'pass').length,
-    fail: results.filter((r) => r.status === 'fail').length,
-    warning: results.filter((r) => r.status === 'warning').length,
+    total: active.length,
+    pass: active.filter((r) => r.status === 'pass').length,
+    fail: active.filter((r) => r.status === 'fail').length,
+    warning: active.filter((r) => r.status === 'warning').length,
+    skipped: results.filter((r) => r.status === 'skipped').length,
     by_layer: {
-      signal_initiation: results.filter((r) => r.validation_layer === 'signal_initiation').length,
-      parameter_completeness: results.filter((r) => r.validation_layer === 'parameter_completeness').length,
-      persistence: results.filter((r) => r.validation_layer === 'persistence').length,
+      signal_initiation: active.filter((r) => r.validation_layer === 'signal_initiation').length,
+      parameter_completeness: active.filter((r) => r.validation_layer === 'parameter_completeness').length,
+      persistence: active.filter((r) => r.validation_layer === 'persistence').length,
+      tag_configuration: active.filter((r) => r.validation_layer === 'tag_configuration').length,
+      implementation_drift: active.filter((r) => r.validation_layer === 'implementation_drift').length,
     },
   };
 }
