@@ -367,6 +367,39 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
     fix_summary: 'Migrate conversion tags to fire on dataLayer events pushed by the application code (e.g. push({ event: "purchase", ... })). This decouples tracking from UI implementation and is resilient to front-end changes.',
     estimated_effort: 'high',
   },
+
+  // LAYER 5: IMPLEMENTATION DRIFT (Sprint C — 3 rules)
+  // ============================================================================
+
+  SELECTOR_NOT_FOUND_ON_LIVE_SITE: {
+    rule_id: 'SELECTOR_NOT_FOUND_ON_LIVE_SITE',
+    business_impact: 'A CSS selector trigger that controls a conversion tag is no longer matching elements on the live site. The trigger is dead — conversions dependent on it have stopped firing. This is the most common failure mode after a front-end redesign, framework upgrade, or A/B test that renames classes. Loss is usually silent and discovered only through revenue decline.',
+    affected_platforms: ['All'],
+    severity: 'critical',
+    recommended_owner: 'Frontend Developer',
+    fix_summary: 'Inspect the page for the expected element — it likely changed class name or was removed. Either update the CSS selector in GTM, or migrate the conversion tag to fire from a dataLayer event pushed by the application instead of a DOM click.',
+    estimated_effort: 'medium',
+  },
+
+  TAG_FIRING_REGRESSION_VS_BASELINE: {
+    rule_id: 'TAG_FIRING_REGRESSION_VS_BASELINE',
+    business_impact: 'A signal that fired successfully in the baseline crawl is now missing or degraded. This indicates a tracking regression — the tag may have been paused, its trigger broke, or a page change prevented it from firing. Missed conversions mean Smart Bidding trains on incomplete data, platform algorithms underallocate budget, and attribution shows a false drop.',
+    affected_platforms: ['All'],
+    severity: 'critical',
+    recommended_owner: 'Frontend Developer',
+    fix_summary: 'Compare the current GTM container and page implementation against the baseline. Check whether the tag is paused, the trigger was removed, or the page structure changed. Restore the firing condition and validate with a new crawl.',
+    estimated_effort: 'medium',
+  },
+
+  TAG_PAYLOAD_REGRESSION_VS_BASELINE: {
+    rule_id: 'TAG_PAYLOAD_REGRESSION_VS_BASELINE',
+    business_impact: "A signal is still firing but key payload fields — conversion value, currency, transaction ID, event ID, or user data — have changed from populated to missing. The tag is technically live but the data reaching the platform is degraded. Value-based bidding will receive incorrect signals, deduplication may break, and Enhanced Conversions will lose the user data needed to improve match rates.",
+    affected_platforms: ['All'],
+    severity: 'high',
+    recommended_owner: 'Frontend Developer',
+    fix_summary: 'Identify which dataLayer variables stopped being populated and trace back to the source code change. Check ecommerce push implementations, CRM field mappings, and user_data collection. Restore the fields and validate with a new crawl vs baseline.',
+    estimated_effort: 'medium',
+  },
 };
 
 export function interpretResults(results: ValidationResult[]): ReportIssue[] {

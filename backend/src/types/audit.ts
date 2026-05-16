@@ -116,6 +116,21 @@ export interface GTMContainerSnapshot {
   consent_default_tag: GTMTag | null;
 }
 
+// ─── CSE signal snapshot (for implementation_drift layer) ────────────────────
+
+/**
+ * One detected signal on one page, reconstructed from detected_signals + crawl_pages.
+ * Attached to AuditData.crawlSignals by the drift job worker before rules run.
+ */
+export interface CrawlSignalSnapshot {
+  page_url: string;
+  signal_type: string;
+  signal_name: string | null;
+  signal_id: string | null;
+  health_status: 'healthy' | 'degraded' | 'missing' | 'duplicate' | 'misconfigured';
+  parameters: Record<string, unknown> | null;
+}
+
 // ─── AuditData passed to validation engine ───────────────────────────────────
 
 export interface AuditData {
@@ -140,7 +155,8 @@ export interface AuditData {
   pageMetadata?: Record<string, unknown>;  // Misc page metadata
   // IHC extensions — absent when the respective data source is not connected
   gtmContainer?: GTMContainerSnapshot;     // tag_configuration layer input
-  baselineAuditData?: AuditData;           // implementation_drift layer input
+  crawlSignals?: CrawlSignalSnapshot[];    // implementation_drift layer input (current run)
+  baselineAuditData?: AuditData;           // implementation_drift layer input (baseline run)
 }
 
 // ─── API inputs ───────────────────────────────────────────────────────────────

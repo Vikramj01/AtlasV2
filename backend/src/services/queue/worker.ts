@@ -1,5 +1,5 @@
-import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue, crawlQueue, reconciliationSyncQueue, reconciliationRunQueue, reconciliationStatsQueue, reconciliationStaleResyncQueue, gtmContainerSyncQueue, ihcRulesQueue } from './jobQueue';
-import type { GtmContainerSyncJobData, IhcRulesJobData } from './jobQueue';
+import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue, crawlQueue, reconciliationSyncQueue, reconciliationRunQueue, reconciliationStatsQueue, reconciliationStaleResyncQueue, gtmContainerSyncQueue, ihcRulesQueue, ihcDriftQueue } from './jobQueue';
+import type { GtmContainerSyncJobData, IhcRulesJobData, IhcDriftJobData } from './jobQueue';
 import { runConfigSyncForConnection, getConnectionsDueForSync, runStatsSyncForConnection, getConnectionsDueForStatsSync, runStaleResyncForConnection, getConnectionsForStaleResync } from '@/services/reconciliation/sync/syncOrchestrator';
 import { executeRun } from '@/services/reconciliation/reconciliationRunner';
 import type { SyncJobData, StatsSyncJobData, StaleResyncJobData, ReconciliationJobData } from './jobQueue';
@@ -926,3 +926,182 @@ ihcRulesQueue.process(2, async (job) => {
 });
 
 logger.info('IHC rules worker registered');
+
+// ── IHC Drift Worker ──────────────────────────────────────────────────────────
+// Loads the current crawl run and baseline, reconstructs AuditData, runs the
+// three implementation_drift rules, and upserts findings with 2-run suppression.
+
+ihcDriftQueue.process(2, async (job) => {
+  const data = job.data as IhcDriftJobData;
+  logger.info({ crawlRunId: data.crawl_run_id, jobId: job.id }, 'IHC drift job received');
+
+  const { supabaseAdmin } = await import('@/services/database/supabase');
+  const { reconstructCrawlSignals, getBaselineForOrg, autoPromoteIfNone } =
+    await import('@/services/ihc/baselineManager');
+  const { upsertDriftFindings } = await import('@/services/ihc/findingsWriter');
+
+  // Verify the crawl run exists and is completed
+  const { data: crawlRun, error: runErr } = await supabaseAdmin
+    .from('crawl_runs')
+    .select('id, org_id, status')
+    .eq('id', data.crawl_run_id)
+    .eq('org_id', data.organization_id)
+    .single();
+
+  if (runErr || !crawlRun) {
+    throw new Error(`Crawl run not found: ${data.crawl_run_id}`);
+  }
+
+  if (crawlRun.status !== 'completed' && crawlRun.status !== 'partial') {
+    logger.info({ crawlRunId: data.crawl_run_id }, 'IHC drift: crawl not completed — skipping');
+    return;
+  }
+
+  // Auto-promote first baseline if none exists
+  await autoPromoteIfNone(data.organization_id, data.crawl_run_id);
+
+  const baseline = await getBaselineForOrg(data.organization_id);
+
+  if (!baseline) {
+    logger.info({ orgId: data.organization_id }, 'IHC drift: no baseline available — skipping rules');
+    return;
+  }
+
+  // If this run IS the baseline (just auto-promoted), there's nothing to diff
+  if (baseline.crawl_run_id === data.crawl_run_id) {
+    logger.info({ orgId: data.organization_id }, 'IHC drift: current run is baseline — skipping diff');
+    return;
+  }
+
+  // Reconstruct current and baseline crawl signals
+  const [currentSignals, baselineSignals] = await Promise.all([
+    reconstructCrawlSignals(data.crawl_run_id),
+    reconstructCrawlSignals(baseline.crawl_run_id),
+  ]);
+
+  // Build the AuditData for drift rules
+  const auditInput: import('@/types/audit').AuditData = {
+    audit_id: data.crawl_run_id,
+    website_url: '',
+    funnel_type: 'ecommerce',
+    region: 'us',
+    dataLayer: [],
+    networkRequests: [],
+    cookieSnapshots: [],
+    localStorageSnapshots: [],
+    injected: { gclid: '', fbclid: '' },
+    crawlSignals: currentSignals,
+    baselineAuditData: {
+      audit_id: baseline.crawl_run_id,
+      website_url: '',
+      funnel_type: 'ecommerce',
+      region: 'us',
+      dataLayer: [],
+      networkRequests: [],
+      cookieSnapshots: [],
+      localStorageSnapshots: [],
+      injected: { gclid: '', fbclid: '' },
+      crawlSignals: baselineSignals,
+    },
+  };
+
+  // Dynamically import drift rules
+  let driftRules: Array<{
+    rule_id: string;
+    validation_layer: string;
+    severity: string;
+    test: (auditData: import('@/types/audit').AuditData) => import('@/types/audit').ValidationResult;
+  }>;
+
+  try {
+    const { IMPLEMENTATION_DRIFT_RULES } = await import('@/services/validation/implementationDrift');
+    driftRules = IMPLEMENTATION_DRIFT_RULES;
+  } catch {
+    logger.info({ crawlRunId: data.crawl_run_id }, 'IHC drift: drift rules module not available');
+    return;
+  }
+
+  const passingRuleIds: string[] = [];
+  const failingFindings: import('@/services/ihc/findingsWriter').FindingInput[] = [];
+
+  for (const rule of driftRules) {
+    const result = rule.test(auditInput);
+    if (result.status === 'skipped') continue;
+
+    if (result.status === 'pass') {
+      passingRuleIds.push(rule.rule_id);
+    } else {
+      failingFindings.push({
+        organization_id: data.organization_id,
+        property_id: data.organization_id, // crawl runs are org-scoped; use org_id as property
+        rule_id: rule.rule_id,
+        validation_layer: rule.validation_layer as import('@/types/audit').ValidationLayer,
+        severity: rule.severity as import('@/types/audit').Severity,
+        evidence: {
+          crawl_run_id: data.crawl_run_id,
+          baseline_crawl_run_id: baseline.crawl_run_id,
+          details: result.technical_details.evidence,
+          status: result.status,
+        },
+      });
+    }
+  }
+
+  await upsertDriftFindings(passingRuleIds, failingFindings);
+
+  logger.info(
+    { crawlRunId: data.crawl_run_id, passing: passingRuleIds.length, failing: failingFindings.length },
+    'IHC drift run complete',
+  );
+});
+
+logger.info('IHC drift worker registered');
+
+// Daily cron: trigger drift check for all pro/agency orgs at 02:00 UTC.
+// Uses the '__scheduler__' named-job pattern to avoid the catch-all worker.
+ihcDriftQueue.add(
+  '__scheduler__',
+  { organization_id: '__scheduler__', crawl_run_id: '__scheduler__' },
+  { repeat: { cron: '0 2 * * *' }, jobId: 'ihc-drift-daily' },
+).catch((err) => logger.error({ err }, 'Failed to schedule IHC drift daily job'));
+
+ihcDriftQueue.process('__scheduler__', async () => {
+  const { supabaseAdmin } = await import('@/services/database/supabase');
+
+  // Find orgs on pro or agency plan with a completed crawl run
+  const { data: orgs, error } = await supabaseAdmin
+    .from('org_subscriptions')
+    .select('organization_id, plan')
+    .in('plan', ['pro', 'agency'])
+    .eq('status', 'active');
+
+  if (error) {
+    logger.error({ err: error.message }, 'IHC drift scheduler: failed to list orgs');
+    return;
+  }
+
+  if (!orgs?.length) return;
+
+  let enqueued = 0;
+  for (const org of orgs) {
+    // Find the most recent completed crawl run for this org
+    const { data: latestRun } = await supabaseAdmin
+      .from('crawl_runs')
+      .select('id')
+      .eq('org_id', org.organization_id)
+      .in('status', ['completed', 'partial'])
+      .order('completed_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!latestRun) continue;
+
+    await ihcDriftQueue.add(
+      { organization_id: org.organization_id, crawl_run_id: latestRun.id },
+      { jobId: `ihc-drift-${org.organization_id}`, removeOnComplete: true },
+    );
+    enqueued++;
+  }
+
+  logger.info({ enqueued }, 'IHC drift scheduler: jobs enqueued');
+});
