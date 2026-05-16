@@ -689,6 +689,14 @@ reconciliationStaleResyncQueue.process('__stale_scheduler__', async () => {
 
 gtmContainerSyncQueue.process(2, async (job) => {
   const data = job.data as GtmContainerSyncJobData;
+
+  // Scheduler sentinel jobs must be routed via process('__scheduler__', ...) below.
+  // Belt-and-suspenders: discard them if they ever reach this handler.
+  if (data.connection_id === '__scheduler__') {
+    logger.warn({ jobId: job.id }, 'GTM sync catch-all received __scheduler__ job — discarding');
+    return;
+  }
+
   logger.info({ connectionId: data.connection_id, jobId: job.id }, 'GTM container sync job received');
 
   const { supabaseAdmin } = await import('@/services/database/supabase');
@@ -792,8 +800,12 @@ gtmContainerSyncQueue.process(2, async (job) => {
 
 logger.info('GTM container sync worker registered');
 
-// Hourly cron: re-sync all OAuth-connected containers
+// Hourly cron: re-sync all OAuth-connected containers.
+// Must be added as a NAMED job ('__scheduler__') so Bull routes it to
+// the process('__scheduler__', ...) handler below and not the catch-all
+// process(2, ...) handler that expects a real connection_id.
 gtmContainerSyncQueue.add(
+  '__scheduler__',
   { connection_id: '__scheduler__', organization_id: '__scheduler__' },
   { repeat: { cron: '0 * * * *' }, jobId: 'gtm-sync-hourly' },
 ).catch((err) => logger.error({ err }, 'Failed to schedule GTM container sync'));
