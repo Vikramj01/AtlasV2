@@ -351,25 +351,102 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
     // PAGE 4 — Issues & Fixes
     // ══════════════════════════════════════════════════════════════════════
 
+    // \u2500\u2500 Configuration Health section (tag_configuration + implementation_drift) \u2500
+
+    const configIssues = report.issues.filter(
+      (iss) => iss.validation_layer === 'tag_configuration' || iss.validation_layer === 'implementation_drift',
+    );
+
+    if (configIssues.length > 0) {
+      doc.addPage();
+      pageHeader('Configuration Health', 'IHC');
+
+      const tagConfigIssues = configIssues.filter((iss) => iss.validation_layer === 'tag_configuration');
+      const driftIssues     = configIssues.filter((iss) => iss.validation_layer === 'implementation_drift');
+
+      const critCount = configIssues.filter((i) => i.severity === 'critical').length;
+      const highCount  = configIssues.filter((i) => i.severity === 'high').length;
+      const medCount   = configIssues.filter((i) => i.severity === 'medium').length;
+
+      sectionHeading(`Configuration Health \u2014 ${configIssues.length} finding${configIssues.length !== 1 ? 's' : ''}`);
+
+      const summaryY = doc.y;
+      const barW = CONTENT_W / 3 - 6;
+      const summaryCells = [
+        { label: 'Critical', count: critCount, color: SEVERITY_COLORS['critical'] },
+        { label: 'High',     count: highCount,  color: SEVERITY_COLORS['high'] },
+        { label: 'Medium',   count: medCount,   color: SEVERITY_COLORS['medium'] },
+      ];
+      summaryCells.forEach((cell, i) => {
+        const cx = LEFT + i * (barW + 9);
+        doc.fillColor(C.bgLight).rect(cx, summaryY, barW, 40).fill();
+        doc.fillColor(cell.color).rect(cx, summaryY, 3, 40).fill();
+        doc.fillColor(cell.color).fontSize(18).font('Helvetica-Bold').text(String(cell.count), cx + 12, summaryY + 5);
+        doc.fillColor(C.lightText).fontSize(8.5).font('Helvetica').text(cell.label, cx + 12, summaryY + 27);
+      });
+      doc.y = summaryY + 52;
+
+      const renderConfigSection = (issues: typeof configIssues, sectionTitle: string) => {
+        if (issues.length === 0) return;
+        sectionHeading(sectionTitle);
+        issues.forEach((issue) => {
+          const sevColor = SEVERITY_COLORS[issue.severity] ?? C.lightText;
+          const CARD_H = 88;
+          if (needsNewPage(CARD_H + 14)) {
+            doc.addPage();
+            pageHeader('Configuration Health', 'IHC');
+            sectionHeading(`${sectionTitle} (continued)`);
+          }
+          const issY = doc.y;
+          doc.strokeColor(C.bgLight).lineWidth(1).rect(LEFT, issY, CONTENT_W, CARD_H).stroke();
+          doc.fillColor(sevColor).rect(LEFT, issY, 4, CARD_H).fill();
+          doc.fillColor(C.mutedText).fontSize(8).font('Helvetica')
+            .text(issue.rule_id.replace(/_/g, ' '), LEFT + 14, issY + 8, { width: CONTENT_W - 20 });
+          let pillX = LEFT + 14;
+          const pillY = issY + 21;
+          pillX += pill(issue.severity.toUpperCase(), sevColor, pillX, pillY);
+          pillX += pill(issue.recommended_owner, C.lightText, pillX, pillY);
+          const effortColor = issue.estimated_effort === 'low' ? C.healthy
+            : issue.estimated_effort === 'medium' ? C.atRisk : C.broken;
+          pill(`Effort: ${issue.estimated_effort}`, effortColor, pillX, pillY);
+          const problem = issue.problem.length > 110 ? issue.problem.slice(0, 107) + '\u2026' : issue.problem;
+          doc.fillColor(C.darkText).fontSize(9.5).font('Helvetica-Bold')
+            .text(problem, LEFT + 14, issY + 41, { width: CONTENT_W - 28 });
+          const fix = issue.fix_summary.length > 120 ? issue.fix_summary.slice(0, 117) + '\u2026' : issue.fix_summary;
+          doc.fillColor(C.midText).fontSize(9).font('Helvetica')
+            .text(`Fix: ${fix}`, LEFT + 14, issY + 62, { width: CONTENT_W - 28 });
+          doc.y = issY + CARD_H + 10;
+        });
+      };
+
+      renderConfigSection(tagConfigIssues, 'GTM Configuration Issues');
+      renderConfigSection(driftIssues, 'Drift Detection Issues');
+    }
+
+    // \u2500\u2500 Runtime issues (signal_initiation, parameter_completeness, persistence) \u2500
+
     doc.addPage();
     pageHeader('Issues & Fixes', 'Page 4 / 5');
-    const issueCount = report.issues.length;
-    sectionHeading(`Action Items \u2014 ${issueCount} issue${issueCount === 1 ? '' : 's'} found`);
+    const runtimeIssues = report.issues.filter(
+      (iss) => iss.validation_layer !== 'tag_configuration' && iss.validation_layer !== 'implementation_drift',
+    );
+    const issueCount = runtimeIssues.length;
+    sectionHeading(`Runtime Action Items \u2014 ${issueCount} issue${issueCount === 1 ? '' : 's'} found`);
 
     if (issueCount === 0) {
       doc.fillColor(C.healthy).fontSize(11).font('Helvetica')
-        .text('No issues found \u2014 all 26 checks passed.', LEFT, doc.y);
+        .text('No runtime issues found \u2014 all checks passed.', LEFT, doc.y);
     }
 
-    for (let i = 0; i < report.issues.length; i++) {
-      const issue = report.issues[i];
+    for (let i = 0; i < runtimeIssues.length; i++) {
+      const issue = runtimeIssues[i];
       const sevColor = SEVERITY_COLORS[issue.severity] ?? C.lightText;
       const CARD_H = 94;
 
       if (needsNewPage(CARD_H + 14)) {
         doc.addPage();
         pageHeader('Issues & Fixes', 'Page 4 / 5');
-        sectionHeading('Action Items (continued)');
+        sectionHeading('Runtime Action Items (continued)');
       }
 
       const issY = doc.y;
@@ -434,7 +511,8 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
 
     drawTableHeader();
 
-    allResults.forEach((result, i) => {
+    const activeResults = allResults.filter((r) => r.status !== 'skipped');
+    activeResults.forEach((result, i) => {
       if (needsNewPage(ROW_H + 10)) {
         doc.addPage();
         pageHeader('Technical Appendix', 'Page 5 / 5');

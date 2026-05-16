@@ -196,6 +196,7 @@ export interface AuditScores {
 
 export interface ReportIssue {
   rule_id: string;
+  validation_layer: ValidationLayer;
   severity: Severity;
   problem: string;
   why_it_matters: string;

@@ -250,16 +250,91 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
     fix_summary: 'Hash PII with SHA256: crypto.createHash("sha256").update(email).digest("hex")',
     estimated_effort: 'low',
   },
+
+  // ============================================================================
+  // LAYER 4: TAG CONFIGURATION (Phase A — 7 rules)
+  // ============================================================================
+
+  CUSTOM_HTML_TAG_DETECTED: {
+    rule_id: 'CUSTOM_HTML_TAG_DETECTED',
+    business_impact: 'Custom HTML tags bypass GTM template safety, cannot be governed centrally, and frequently contain copy-pasted legacy code. Each one is a future maintenance and audit liability — they break silently, resist version control, and make consent enforcement harder.',
+    affected_platforms: ['All'],
+    severity: 'medium',
+    recommended_owner: 'GTM implementer',
+    fix_summary: 'Replace with a built-in tag template wherever possible. If no template exists, document the reason in the tag note.',
+    estimated_effort: 'medium',
+  },
+
+  CUSTOM_HTML_TAG_BYPASSES_CONSENT: {
+    rule_id: 'CUSTOM_HTML_TAG_BYPASSES_CONSENT',
+    business_impact: 'A custom HTML tag is sending tracking events without consent gating. This is a compliance violation under GDPR, ePrivacy, UAE PDPL, and similar regulations. Your ad accounts and customer trust are at direct risk. Regulators treat ungated marketing pixels as evidence of willful non-compliance.',
+    affected_platforms: ['All'],
+    severity: 'critical',
+    recommended_owner: 'GTM implementer',
+    fix_summary: 'Add consentSettings to the tag requiring ad_storage and ad_user_data for marketing pixels, analytics_storage for analytics tags.',
+    estimated_effort: 'low',
+  },
+
+  CUSTOM_HTML_TAG_HARDCODES_CONVERSION_DATA: {
+    rule_id: 'CUSTOM_HTML_TAG_HARDCODES_CONVERSION_DATA',
+    business_impact: 'A custom HTML tag contains hardcoded conversion IDs, pixel IDs, or value/currency literals. These never adapt to runtime context — every conversion gets the same hardcoded value, distorting Smart Bidding and ROAS reporting. Hardcoded IDs also create maintenance debt when account structures change.',
+    affected_platforms: ['Google Ads', 'Meta Ads', 'GA4'],
+    severity: 'high',
+    recommended_owner: 'GTM implementer',
+    fix_summary: 'Move conversion IDs and pixel IDs to GTM variables. Move value, currency, and transaction_id to dataLayer-sourced variables.',
+    estimated_effort: 'medium',
+  },
+
+  HARDCODED_VALUE_IN_TAG_CONFIG: {
+    rule_id: 'HARDCODED_VALUE_IN_TAG_CONFIG',
+    business_impact: 'A conversion tag has the value parameter set as a literal number rather than a dataLayer variable. Smart Bidding and tROAS will train on this flat value, distorting bids and ROAS reporting across every campaign. Most common cause: a test value left in production after development.',
+    affected_platforms: ['Google Ads', 'Meta Ads', 'GA4', 'sGTM'],
+    severity: 'critical',
+    recommended_owner: 'GTM implementer',
+    fix_summary: 'Replace the literal value with {{ecommerce.value}} or the equivalent dataLayer variable reference.',
+    estimated_effort: 'low',
+  },
+
+  HARDCODED_CURRENCY_IN_TAG_CONFIG: {
+    rule_id: 'HARDCODED_CURRENCY_IN_TAG_CONFIG',
+    business_impact: "A conversion tag has currency set as a literal string. If this doesn't match the site's actual transaction currency, ad platforms will misvalue conversions (e.g. 100 SGD treated as 100 AED). Even if currently correct, this is fragile to future expansion or currency changes.",
+    affected_platforms: ['Google Ads', 'Meta Ads', 'GA4'],
+    severity: 'high',
+    recommended_owner: 'GTM implementer',
+    fix_summary: 'Use a dataLayer variable for currency. If the site is genuinely single-currency, document that decision in the tag note.',
+    estimated_effort: 'low',
+  },
+
+  HARDCODED_TRANSACTION_ID_IN_TAG_CONFIG: {
+    rule_id: 'HARDCODED_TRANSACTION_ID_IN_TAG_CONFIG',
+    business_impact: 'Transaction ID is hardcoded. This collapses deduplication completely — every purchase carries the same ID, causing all but one to be discarded by GA4 and ad platforms with dedup logic. Conversions silently drop to approximately one per day regardless of real purchase volume.',
+    affected_platforms: ['All'],
+    severity: 'critical',
+    recommended_owner: 'GTM implementer',
+    fix_summary: 'Replace with {{ecommerce.transaction_id}} dataLayer variable.',
+    estimated_effort: 'low',
+  },
+
+  DUPLICATE_TAG_CONFIGURATION: {
+    rule_id: 'DUPLICATE_TAG_CONFIGURATION',
+    business_impact: 'Multiple tags are firing the same conversion event for the same destination. Conversions are being counted multiple times. ROAS appears inflated, and algorithms are training on phantom volume. This is one of the most common causes of over-reporting in Google Ads and Meta Ads.',
+    affected_platforms: ['Google Ads', 'Meta Ads', 'GA4'],
+    severity: 'critical',
+    recommended_owner: 'GTM implementer',
+    fix_summary: 'Identify the canonical tag and pause or delete duplicates. If sGTM and client-side both legitimately fire for the same event, set event_id on both for deduplication.',
+    estimated_effort: 'medium',
+  },
 };
 
 export function interpretResults(results: ValidationResult[]): ReportIssue[] {
   return results
-    .filter((r) => r.status === 'fail' || r.status === 'warning')
+    .filter((r) => r.status === 'fail' || r.status === 'warning')  // 'skipped' excluded
     .map((r) => {
       const interp = RULE_INTERPRETATIONS[r.rule_id];
       if (!interp) {
         return {
           rule_id: r.rule_id,
+          validation_layer: r.validation_layer,
           severity: r.severity,
           problem: `Validation failed: ${r.rule_id}`,
           why_it_matters: r.technical_details.found,
@@ -270,6 +345,7 @@ export function interpretResults(results: ValidationResult[]): ReportIssue[] {
       }
       return {
         rule_id: r.rule_id,
+        validation_layer: r.validation_layer,
         severity: r.severity,
         problem: interp.business_impact.split('.')[0] + '.',  // First sentence as problem
         why_it_matters: interp.business_impact,
