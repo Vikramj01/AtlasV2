@@ -478,3 +478,36 @@ ihcRulesQueue.on('failed', (job, err) => {
   logger.error({ jobId: job?.id, snapshotId: job?.data?.snapshot_id, err: err.message }, 'IHC rules job failed');
 });
 
+// ── IHC Drift Queue ───────────────────────────────────────────────────────────
+// Runs implementation_drift rules for a completed CSE crawl run.
+// Triggered: daily cron at 02:00 UTC (pro) or after each new crawl (if cadence configured).
+// Job payload contains only IDs — signals are loaded from DB inside the worker.
+
+export interface IhcDriftJobData {
+  organization_id: string;
+  crawl_run_id: string;    // the *current* (new) crawl run to compare against baseline
+}
+
+export const ihcDriftQueue = new Bull<IhcDriftJobData>('ihc-drift', {
+  redis: buildRedisOpts(env.REDIS_URL),
+  defaultJobOptions: {
+    attempts: 2,
+    backoff: { type: 'fixed', delay: 10_000 },
+    timeout: 5 * 60 * 1000,
+    removeOnComplete: 100,
+    removeOnFail: 50,
+  },
+});
+
+ihcDriftQueue.on('error', (err) => {
+  logger.error({ err }, 'IHC drift queue error');
+});
+
+ihcDriftQueue.on('completed', (job) => {
+  logger.info({ jobId: job.id, crawlRunId: job.data.crawl_run_id }, 'IHC drift job completed');
+});
+
+ihcDriftQueue.on('failed', (job, err) => {
+  logger.error({ jobId: job?.id, crawlRunId: job?.data?.crawl_run_id, err: err.message }, 'IHC drift job failed');
+});
+
