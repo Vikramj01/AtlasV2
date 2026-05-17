@@ -98,10 +98,10 @@ readinessRouter.get('/', async (req: Request, res: Response): Promise<void> => {
     const activeProviders = capiProviders.filter(
       (p: { status: string }) => p.status === 'active'
     );
+    // server_side_enabled: org has set up at least one CAPI provider (any status)
+    const serverSideEnabled = capiProviders.length > 0;
+    // capi_connected: at least one provider is fully active and delivering events
     const capiConnected = activeProviders.length > 0;
-
-    // Server-side tracking: any active CAPI provider counts, OR a server-side GTM
-    const serverSideEnabled = capiConnected;
 
     // Click ID capture: user has generated a GTM container (which includes our click ID tags)
     const clickIdCapture = (outputsResult.data?.length ?? 0) > 0;
@@ -130,16 +130,16 @@ readinessRouter.get('/', async (req: Request, res: Response): Promise<void> => {
       },
       {
         key: 'server_side_enabled',
-        label: 'Server-side tracking enabled',
-        description: 'Events are sent via a server-side connection, bypassing ad blockers',
+        label: 'Server-side tracking configured',
+        description: 'A Conversion API integration has been set up (may still need activation)',
         points: 20,
         earned: serverSideEnabled,
         link: '/integrations/capi',
       },
       {
         key: 'capi_connected',
-        label: 'Ad platform connected via CAPI',
-        description: 'At least one active Conversion API provider is delivering events',
+        label: 'CAPI active and delivering events',
+        description: 'At least one Conversion API provider is active and sending events to an ad platform',
         points: 20,
         earned: capiConnected,
         link: '/integrations/capi',

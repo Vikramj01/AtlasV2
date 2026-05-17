@@ -154,6 +154,20 @@ router.post('/save-brief', async (req: Request, res: Response): Promise<void> =>
   const userId = req.user.id;
   const { business_outcome, outcome_timing_days, current_event, verdict, proxy_event, rationale, client_id, project_id } = parse.data;
   try {
+    // Verify client_id belongs to this org before linking it to the brief
+    if (client_id) {
+      const { data: clientRow } = await supabaseAdmin
+        .from('clients')
+        .select('id')
+        .eq('id', client_id)
+        .eq('organization_id', userId)
+        .single();
+      if (!clientRow) {
+        res.status(403).json({ error: 'Client not found or does not belong to your organisation.' });
+        return;
+      }
+    }
+
     const { data, error } = await supabaseAdmin
       .from('strategy_briefs')
       .insert({

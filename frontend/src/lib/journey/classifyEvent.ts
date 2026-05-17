@@ -100,11 +100,11 @@ export function getMetaAssessment(lagClass: LagClass): PlatformAssessment {
     case 'immediate':
       return { icon: '✅', copy: 'Within real-time window. Event will be used for optimisation.' };
     case 'short_lag':
-      return { icon: '⚠️', copy: 'Borderline. Events arriving beyond 2h will degrade Meta performance.' };
+      return { icon: '⚠️', copy: 'Within Meta\'s 7-day click window, but CAPI upload latency at this lag degrades signal quality and match rates.' };
     case 'long_lag':
-      return { icon: '❌', copy: 'Beyond 24h attribution window. Meta cannot optimise on this event.' };
+      return { icon: '❌', copy: 'Beyond Meta\'s 7-day click attribution window. Meta cannot attribute or optimise on this event.' };
     case 'deep_lag':
-      return { icon: '❌', copy: 'Beyond 24h attribution window. Cannot optimise on this event.' };
+      return { icon: '❌', copy: 'Well beyond Meta\'s 7-day click attribution window. Cannot attribute or optimise on this event.' };
   }
 }
 
