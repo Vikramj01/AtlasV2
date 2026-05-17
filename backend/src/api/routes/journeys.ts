@@ -210,7 +210,7 @@ router.put('/:id/stages/:stageId', async (req: Request, res: Response) => {
     const journey = await getJourney(req.params.id, req.user!.id);
     if (!journey) return res.status(404).json({ error: 'Journey not found' });
 
-    const stage = await updateStage(req.params.stageId, req.body);
+    const stage = await updateStage(req.params.stageId, req.params.id, req.body);
     res.json(stage);
   } catch (err) {
     sendInternalError(res, err);

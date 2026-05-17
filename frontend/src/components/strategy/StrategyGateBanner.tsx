@@ -26,11 +26,11 @@ export function StrategyGateBanner() {
 
   if (brief) {
     const verdictLabel =
-      brief.verdict === 'keep'
+      brief.verdict === 'CONFIRM'
         ? 'Keep current event'
-        : brief.verdict === 'add_proxy'
+        : brief.verdict === 'AUGMENT'
           ? 'Add proxy event'
-          : brief.verdict === 'switch'
+          : brief.verdict === 'REPLACE'
             ? 'Switch conversion event'
             : 'Strategy defined';
 

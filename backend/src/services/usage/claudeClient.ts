@@ -34,7 +34,7 @@ export async function callClaude(options: ClaudeCallOptions): Promise<Anthropic.
   const response = await getClient().messages.create({
     model,
     max_tokens: options.max_tokens ?? 4096,
-    system:     options.system,
+    system: [{ type: 'text', text: options.system, cache_control: { type: 'ephemeral' } }],
     messages:   options.messages,
   });
 
