@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { usePlanningStore } from '@/store/planningStore';
+import { useShallow } from 'zustand/react/shallow';
 import { planningApi } from '@/lib/api/planningApi';
 import type { OutputType } from '@/types/planning';
 
@@ -107,7 +108,11 @@ const OUTPUT_EXT: Record<OutputType, string> = {
 
 export function Step7DownloadAndHandoff() {
   const navigate = useNavigate();
-  const { currentSession, outputs, reset } = usePlanningStore();
+  const { currentSession, outputs, reset } = usePlanningStore(useShallow((s) => ({
+    currentSession: s.currentSession,
+    outputs: s.outputs,
+    reset: s.reset,
+  })));
 
   const sessionId = currentSession?.id ?? '';
   const [isHandingOff, setIsHandingOff] = useState(false);

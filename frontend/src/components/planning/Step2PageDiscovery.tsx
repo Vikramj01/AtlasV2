@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { usePlanningStore } from '@/store/planningStore';
+import { useShallow } from 'zustand/react/shallow';
 import { planningApi } from '@/lib/api/planningApi';
 
 const MAX_PAGES = 10;
@@ -37,7 +38,17 @@ function isValidUrl(s: string): boolean {
 
 export function Step2PageDiscovery() {
   const navigate = useNavigate();
-  const { draftSetup, prevStep, nextStep, setCurrentSession, setPages, setLoading, setError, isLoading, error } = usePlanningStore();
+  const { draftSetup, prevStep, nextStep, setCurrentSession, setPages, setLoading, setError, isLoading, error } = usePlanningStore(useShallow((s) => ({
+    draftSetup: s.draftSetup,
+    prevStep: s.prevStep,
+    nextStep: s.nextStep,
+    setCurrentSession: s.setCurrentSession,
+    setPages: s.setPages,
+    setLoading: s.setLoading,
+    setError: s.setError,
+    isLoading: s.isLoading,
+    error: s.error,
+  })));
 
   const baseUrl = draftSetup.website_url ?? '';
 

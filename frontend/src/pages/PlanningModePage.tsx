@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { SECTION_LABELS } from '@/lib/ui-copy';
 import { Check, X } from 'lucide-react';
 import { usePlanningStore } from '@/store/planningStore';
+import { useShallow } from 'zustand/react/shallow';
 import { planningApi } from '@/lib/api/planningApi';
 import { Step1PlanningSetup } from '@/components/planning/Step1PlanningSetup';
 import { Step2PageDiscovery } from '@/components/planning/Step2PageDiscovery';
@@ -93,7 +94,19 @@ export function PlanningModePage() {
     setLoading,
     setError,
     reset,
-  } = usePlanningStore();
+  } = usePlanningStore(useShallow((s) => ({
+    currentStep: s.currentStep,
+    currentSession: s.currentSession,
+    isLoading: s.isLoading,
+    setCurrentSession: s.setCurrentSession,
+    setPages: s.setPages,
+    setRecommendations: s.setRecommendations,
+    setOutputs: s.setOutputs,
+    setStep: s.setStep,
+    setLoading: s.setLoading,
+    setError: s.setError,
+    reset: s.reset,
+  })));
 
   const [loadError, setLoadError] = useState<string | null>(null);
 

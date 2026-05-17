@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { usePlanningStore } from '@/store/planningStore';
+import { useShallow } from 'zustand/react/shallow';
 import { planningApi } from '@/lib/api/planningApi';
 import { supabase } from '@/lib/supabase';
 import { clientApi } from '@/lib/api/organisationApi';
@@ -16,7 +17,18 @@ export function Step4ReviewRecommendations() {
   const {
     currentSession, draftSetup, pages, recommendations, setRecommendations,
     nextStep, setLoading, isLoading, error, setError,
-  } = usePlanningStore();
+  } = usePlanningStore(useShallow((s) => ({
+    currentSession: s.currentSession,
+    draftSetup: s.draftSetup,
+    pages: s.pages,
+    recommendations: s.recommendations,
+    setRecommendations: s.setRecommendations,
+    nextStep: s.nextStep,
+    setLoading: s.setLoading,
+    isLoading: s.isLoading,
+    error: s.error,
+    setError: s.setError,
+  })));
 
   const { organisations, currentOrg } = useOrganisationStore();
 
