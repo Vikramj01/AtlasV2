@@ -22,12 +22,17 @@
  *         is expected to be called upstream. This is documented below.
  */
 
-import { describe, it, expect, vi, beforeEach, type MockedFunction } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ── Mock ioredis before importing dedupStore ──────────────────────────────────
+// vi.mock is hoisted to the top of the file by Vitest. Variables captured in
+// the factory must be defined inside the factory itself, not in the outer scope.
 
-const mockGet = vi.fn<[string], Promise<string | null>>();
-const mockSet = vi.fn<[string, string, string, number], Promise<'OK'>>();
+const { mockGet, mockSet } = vi.hoisted(() => {
+  const mockGet = vi.fn<[string], Promise<string | null>>();
+  const mockSet = vi.fn<[string, string, string, number], Promise<'OK'>>();
+  return { mockGet, mockSet };
+});
 
 vi.mock('ioredis', () => {
   return {
@@ -77,7 +82,7 @@ beforeEach(() => {
 
 describe('getMetaDedupEntry — cache hit', () => {
   it('returns the stored DedupEntry when Redis has the key', async () => {
-    (mockGet as MockedFunction<typeof mockGet>).mockResolvedValueOnce(JSON.stringify(STORED_ENTRY));
+    mockGet.mockResolvedValueOnce(JSON.stringify(STORED_ENTRY));
 
     const result = await getMetaDedupEntry(PROVIDER_ID, FBCLID, EVENT_NAME);
 
@@ -93,7 +98,7 @@ describe('getMetaDedupEntry — cache hit', () => {
 
 describe('getMetaDedupEntry — cache miss', () => {
   it('returns null when Redis has no entry for the key', async () => {
-    (mockGet as MockedFunction<typeof mockGet>).mockResolvedValueOnce(null);
+    mockGet.mockResolvedValueOnce(null);
 
     const result = await getMetaDedupEntry(PROVIDER_ID, FBCLID, EVENT_NAME);
 
@@ -121,7 +126,7 @@ describe('getMetaDedupEntry — null fbclid', () => {
 
 describe('setDedupEntry — Meta TTL', () => {
   it('stores entry with 48-hour TTL for provider meta', async () => {
-    (mockSet as MockedFunction<typeof mockSet>).mockResolvedValueOnce('OK');
+    mockSet.mockResolvedValueOnce('OK');
 
     await setDedupEntry('meta', PROVIDER_ID, FBCLID, EVENT_NAME, STORED_ENTRY);
 
@@ -138,7 +143,7 @@ describe('setDedupEntry — Meta TTL', () => {
 
 describe('setDedupEntry — Google TTL', () => {
   it('stores entry with 90-day TTL for provider google', async () => {
-    (mockSet as MockedFunction<typeof mockSet>).mockResolvedValueOnce('OK');
+    mockSet.mockResolvedValueOnce('OK');
 
     const googleIdentifier = 'gclid_test_abc';
     await setDedupEntry('google', PROVIDER_ID, googleIdentifier, 'Purchase', STORED_ENTRY);
@@ -167,7 +172,7 @@ describe('Expired TTL behaviour (simulated)', () => {
      * From dedupStore's perspective this is identical to a cache miss.
      * We simulate this by having the mock return null.
      */
-    (mockGet as MockedFunction<typeof mockGet>).mockResolvedValueOnce(null);
+    mockGet.mockResolvedValueOnce(null);
 
     const result = await getMetaDedupEntry(PROVIDER_ID, FBCLID, EVENT_NAME);
     expect(result).toBeNull();
@@ -184,7 +189,7 @@ describe('metaDelivery.ts dedup integration behaviour (documented)', () => {
      * When entry is non-null, eventId = entry.event_id (the original stored UUID).
      * This is the mechanism that prevents duplicate events at the Meta platform.
      */
-    (mockGet as MockedFunction<typeof mockGet>).mockResolvedValueOnce(JSON.stringify(STORED_ENTRY));
+    mockGet.mockResolvedValueOnce(JSON.stringify(STORED_ENTRY));
     const entry = await getMetaDedupEntry(PROVIDER_ID, FBCLID, EVENT_NAME);
 
     const eventId = entry?.event_id ?? 'would-be-new-uuid';
@@ -192,7 +197,7 @@ describe('metaDelivery.ts dedup integration behaviour (documented)', () => {
   });
 
   it('cache miss causes metaDelivery to generate a new UUID', async () => {
-    (mockGet as MockedFunction<typeof mockGet>).mockResolvedValueOnce(null);
+    mockGet.mockResolvedValueOnce(null);
     const entry = await getMetaDedupEntry(PROVIDER_ID, FBCLID, EVENT_NAME);
 
     // entry is null → eventId would be a new randomUUID() in actual delivery code

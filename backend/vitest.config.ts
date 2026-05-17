@@ -4,6 +4,10 @@ import path from 'path';
 export default defineConfig({
   test: {
     globals: true,
+    include: [
+      'src/**/*.{test,spec}.?(c|m)[jt]s?(x)',
+      '../audit/tests/**/*.{test,spec}.?(c|m)[jt]s?(x)',
+    ],
     env: {
       SUPABASE_URL: 'https://test.supabase.co',
       SUPABASE_ANON_KEY: 'test-anon-key',
