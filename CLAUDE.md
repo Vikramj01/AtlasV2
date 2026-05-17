@@ -36,7 +36,7 @@ Atlas is a marketing signal optimisation and tracking infrastructure platform fo
 | **Backend** | Express.js (Node.js), TypeScript |
 | **Database** | Supabase (PostgreSQL) |
 | **Auth** | Supabase Auth (email + OAuth) |
-| **Queue** | Bull + Redis |
+| **Queue** | Bull + Upstash Redis (TLS, `rediss://`) |
 | **Browser Automation** | Browserbase + Playwright Core |
 | **AI** | Anthropic Claude API (`@anthropic-ai/sdk`) — model: `claude-sonnet-4-6` |
 | **Hosting** | Vercel (frontend), Node.js host (backend) |
@@ -243,7 +243,7 @@ crawl_runs, crawl_pages, detected_signals, org_page_scope
 
 ## Active Development Branch
 
-`claude/map-b2b-advertiser-journey-UEDDw`
+`claude/atlas-v2-test-plan-6eb1g`
 
 ---
 
