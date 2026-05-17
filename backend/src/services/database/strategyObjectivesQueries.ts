@@ -38,24 +38,20 @@ export async function getBriefWithObjectives(
   briefId: string,
   orgId: string,
 ): Promise<(DbStrategyBrief & { objectives: DbStrategyObjective[] }) | null> {
-  const { data: brief, error: bErr } = await supabase
+  const { data, error } = await supabase
     .from('strategy_briefs')
-    .select('*')
+    .select('*, strategy_objectives(*)')
     .eq('id', briefId)
     .eq('organization_id', orgId)
     .single();
-  if (bErr) throw bErr;
-  if (!brief) return null;
+  if (error?.code === 'PGRST116') return null;
+  if (error) throw error;
+  if (!data) return null;
 
-  const { data: objectives, error: oErr } = await supabase
-    .from('strategy_objectives')
-    .select('*')
-    .eq('brief_id', briefId)
-    .eq('organization_id', orgId)
-    .order('created_at', { ascending: true });
-  if (oErr) throw oErr;
-
-  return { ...(brief as DbStrategyBrief), objectives: (objectives ?? []) as DbStrategyObjective[] };
+  const { strategy_objectives: objectives, ...brief } = data as DbStrategyBrief & {
+    strategy_objectives: DbStrategyObjective[];
+  };
+  return { ...brief, objectives: objectives ?? [] };
 }
 
 export async function listBriefs(orgId: string): Promise<DbStrategyBrief[]> {
