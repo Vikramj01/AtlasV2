@@ -202,10 +202,13 @@ describe('Scenario 6 — Empty CSV produces no valid rows', () => {
     expect(result.rows).toHaveLength(0);
   });
 
-  it('throws on a completely empty buffer (csv-parse error)', () => {
+  it('returns zero rows for a completely empty buffer (no header, no data)', () => {
+    // csv-parse with columns:true on an empty buffer returns [] rather than throwing.
+    // validateCsvBuffer therefore returns validCount=0 with an empty rows array.
     const empty = Buffer.from('', 'utf-8');
-    // validateCsvBuffer throws when csv-parse cannot identify any columns
-    expect(() => validateCsvBuffer(empty, MAPPING, DEFAULT_CURRENCY, DEFAULT_VALUE)).toThrow();
+    const result = validateCsvBuffer(empty, MAPPING, DEFAULT_CURRENCY, DEFAULT_VALUE);
+    expect(result.validCount).toBe(0);
+    expect(result.rows).toHaveLength(0);
   });
 });
 
