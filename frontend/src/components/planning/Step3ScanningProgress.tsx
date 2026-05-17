@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { usePlanningStore } from '@/store/planningStore';
-import { useShallow } from 'zustand/shallow';
+import { useShallow } from 'zustand/react/shallow';
 import { planningApi } from '@/lib/api/planningApi';
 import type { PlanningPage } from '@/types/planning';
 

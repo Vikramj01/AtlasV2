@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { usePlanningStore } from '@/store/planningStore';
-import { useShallow } from 'zustand/shallow';
+import { useShallow } from 'zustand/react/shallow';
 import { planningApi } from '@/lib/api/planningApi';
 import type { Platform } from '@/types/planning';
 

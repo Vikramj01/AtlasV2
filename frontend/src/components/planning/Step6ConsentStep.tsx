@@ -22,7 +22,7 @@ import { Shield, ExternalLink, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { InfoTooltip } from '@/components/common/EducationTooltip';
 import { Button } from '@/components/ui/button';
 import { usePlanningStore } from '@/store/planningStore';
-import { useShallow } from 'zustand/shallow';
+import { useShallow } from 'zustand/react/shallow';
 import { planningApi } from '@/lib/api/planningApi';
 
 type ConsentChoice = 'configured' | 'setup_later' | 'not_required' | null;

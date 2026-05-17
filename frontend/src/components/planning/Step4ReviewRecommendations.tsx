@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { usePlanningStore } from '@/store/planningStore';
-import { useShallow } from 'zustand/shallow';
+import { useShallow } from 'zustand/react/shallow';
 import { planningApi } from '@/lib/api/planningApi';
 import { supabase } from '@/lib/supabase';
 import { clientApi } from '@/lib/api/organisationApi';

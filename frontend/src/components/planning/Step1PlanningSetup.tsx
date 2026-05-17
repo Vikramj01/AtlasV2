@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { usePlanningStore } from '@/store/planningStore';
-import { useShallow } from 'zustand/shallow';
+import { useShallow } from 'zustand/react/shallow';
 import { useOrganisationStore } from '@/store/organisationStore';
 import { clientApi } from '@/lib/api/organisationApi';
 import type { BusinessType, Platform, SiteDetection } from '@/types/planning';
