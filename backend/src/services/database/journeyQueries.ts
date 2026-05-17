@@ -128,11 +128,12 @@ export async function upsertStage(journeyId: string, data: UpsertStageRequest): 
   return stage as JourneyStage;
 }
 
-export async function updateStage(stageId: string, data: Partial<UpsertStageRequest>): Promise<JourneyStage> {
+export async function updateStage(stageId: string, journeyId: string, data: Partial<UpsertStageRequest>): Promise<JourneyStage> {
   const { data: stage, error } = await supabase
     .from('journey_stages')
     .update({ ...data, updated_at: new Date().toISOString() })
     .eq('id', stageId)
+    .eq('journey_id', journeyId)
     .select('*')
     .single();
 
