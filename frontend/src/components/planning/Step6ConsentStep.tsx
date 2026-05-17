@@ -22,13 +22,20 @@ import { Shield, ExternalLink, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { InfoTooltip } from '@/components/common/EducationTooltip';
 import { Button } from '@/components/ui/button';
 import { usePlanningStore } from '@/store/planningStore';
+import { useShallow } from 'zustand/shallow';
 import { planningApi } from '@/lib/api/planningApi';
 
 type ConsentChoice = 'configured' | 'setup_later' | 'not_required' | null;
 
 export function Step6ConsentStep() {
   const navigate = useNavigate();
-  const { currentSession, consentConfigId, setConsentConfigId, nextStep, prevStep } = usePlanningStore();
+  const { currentSession, consentConfigId, setConsentConfigId, nextStep, prevStep } = usePlanningStore(useShallow((s) => ({
+    currentSession: s.currentSession,
+    consentConfigId: s.consentConfigId,
+    setConsentConfigId: s.setConsentConfigId,
+    nextStep: s.nextStep,
+    prevStep: s.prevStep,
+  })));
 
   const [choice, setChoice] = useState<ConsentChoice>(
     consentConfigId ? 'configured' : null

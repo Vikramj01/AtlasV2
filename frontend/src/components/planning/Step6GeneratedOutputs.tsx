@@ -4,6 +4,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { usePlanningStore } from '@/store/planningStore';
+import { useShallow } from 'zustand/shallow';
 import { planningApi } from '@/lib/api/planningApi';
 import { GTMContainerPreview } from './GTMContainerPreview';
 import { SignalComparison } from './SignalComparison';
@@ -494,7 +495,15 @@ function OutputCard({ output, sessionId }: { output: PlanningOutput; sessionId: 
 // ── Main step component ───────────────────────────────────────────────────────
 
 export function Step6GeneratedOutputs() {
-  const { currentSession, outputs, setOutputs, recommendations, nextStep, prevStep, siteDetection } = usePlanningStore();
+  const { currentSession, outputs, setOutputs, recommendations, nextStep, prevStep, siteDetection } = usePlanningStore(useShallow((s) => ({
+    currentSession: s.currentSession,
+    outputs: s.outputs,
+    setOutputs: s.setOutputs,
+    recommendations: s.recommendations,
+    nextStep: s.nextStep,
+    prevStep: s.prevStep,
+    siteDetection: s.siteDetection,
+  })));
   const sessionId = currentSession?.id ?? '';
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<'outputs' | 'signal_map'>('outputs');

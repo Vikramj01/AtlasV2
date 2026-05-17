@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { usePlanningStore } from '@/store/planningStore';
+import { useShallow } from 'zustand/shallow';
 import { useOrganisationStore } from '@/store/organisationStore';
 import { clientApi } from '@/lib/api/organisationApi';
 import type { BusinessType, Platform, SiteDetection } from '@/types/planning';
@@ -65,7 +66,16 @@ export function Step1PlanningSetup() {
     detectionError,
     runDetection,
     clearDetection,
-  } = usePlanningStore();
+  } = usePlanningStore(useShallow((s) => ({
+    draftSetup: s.draftSetup,
+    updateDraftSetup: s.updateDraftSetup,
+    nextStep: s.nextStep,
+    siteDetection: s.siteDetection,
+    detectionLoading: s.detectionLoading,
+    detectionError: s.detectionError,
+    runDetection: s.runDetection,
+    clearDetection: s.clearDetection,
+  })));
 
   // Phase: 'url-entry' | 'detected' | 'manual-fallback'
   type Phase = 'url-entry' | 'detected' | 'manual-fallback';

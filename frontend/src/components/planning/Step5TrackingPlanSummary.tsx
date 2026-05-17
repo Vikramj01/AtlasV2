@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { usePlanningStore } from '@/store/planningStore';
+import { useShallow } from 'zustand/shallow';
 import { planningApi } from '@/lib/api/planningApi';
 import type { Platform } from '@/types/planning';
 
@@ -23,7 +24,13 @@ const PLATFORM_ICONS: Record<Platform, string> = {
 };
 
 export function Step5TrackingPlanSummary() {
-  const { currentSession, recommendations, pages, nextStep, prevStep } = usePlanningStore();
+  const { currentSession, recommendations, pages, nextStep, prevStep } = usePlanningStore(useShallow((s) => ({
+    currentSession: s.currentSession,
+    recommendations: s.recommendations,
+    pages: s.pages,
+    nextStep: s.nextStep,
+    prevStep: s.prevStep,
+  })));
 
   const sessionId = currentSession?.id ?? '';
   const platforms = currentSession?.selected_platforms ?? [];

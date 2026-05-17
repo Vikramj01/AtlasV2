@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { usePlanningStore } from '@/store/planningStore';
+import { useShallow } from 'zustand/shallow';
 import { planningApi } from '@/lib/api/planningApi';
 import type { PlanningPage } from '@/types/planning';
 
@@ -25,7 +26,16 @@ function PageStatusIcon({ status }: { status: PlanningPage['status'] }) {
 
 export function Step3ScanningProgress() {
   const navigate = useNavigate();
-  const { currentSession, pages, setPages, updateSessionStatus, setStep, setError, reset, error } = usePlanningStore();
+  const { currentSession, pages, setPages, updateSessionStatus, setStep, setError, reset, error } = usePlanningStore(useShallow((s) => ({
+    currentSession: s.currentSession,
+    pages: s.pages,
+    setPages: s.setPages,
+    updateSessionStatus: s.updateSessionStatus,
+    setStep: s.setStep,
+    setError: s.setError,
+    reset: s.reset,
+    error: s.error,
+  })));
 
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const consecutiveFailuresRef = useRef(0);
