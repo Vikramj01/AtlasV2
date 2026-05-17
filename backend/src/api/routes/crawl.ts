@@ -11,6 +11,7 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/authMiddleware';
+import { planGuard } from '../middleware/planGuard';
 import { sendInternalError } from '@/utils/apiError';
 import { supabaseAdmin } from '@/services/database/supabase';
 import { crawlQueue } from '@/services/queue/jobQueue';
@@ -36,7 +37,7 @@ const seedPagesSchema = z.object({
 // ── POST /api/crawl/trigger ───────────────────────────────────────────────────
 // Queues a crawl run for the authenticated org.
 
-crawlRouter.post('/trigger', async (req: Request, res: Response): Promise<void> => {
+crawlRouter.post('/trigger', planGuard('pro'), async (req: Request, res: Response): Promise<void> => {
   const parse = triggerSchema.safeParse(req.body);
   if (!parse.success) {
     res.status(400).json({ error: 'Invalid request body', details: parse.error.flatten() });
