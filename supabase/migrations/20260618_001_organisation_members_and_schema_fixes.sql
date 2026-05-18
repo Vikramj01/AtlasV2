@@ -51,10 +51,10 @@ CREATE POLICY "org_members_delete" ON public.organisation_members
 
 -- ── 4. Seed memberships for existing profiles ──────────────────────────────────
 INSERT INTO public.organisation_members (organisation_id, user_id, role, accepted_at)
-SELECT p.org_id, p.id, 'owner', now()
+SELECT p.organization_id, p.id, 'owner', now()
 FROM   public.profiles p
-WHERE  p.org_id IS NOT NULL
-  AND  EXISTS (SELECT 1 FROM public.organisations o WHERE o.id = p.org_id)
+WHERE  p.organization_id IS NOT NULL
+  AND  EXISTS (SELECT 1 FROM public.organisations o WHERE o.id = p.organization_id)
 ON CONFLICT (organisation_id, user_id) DO NOTHING;
 
 -- ── 5. Auto-create org + membership on signup ──────────────────────────────────
@@ -85,19 +85,18 @@ BEGIN
   v_slug := lower(regexp_replace(split_part(NEW.email, '@', 1), '[^a-z0-9]', '-', 'g'))
     || '-' || substring(replace(NEW.id::text, '-', ''), 1, 8);
 
-  INSERT INTO public.organisations (name, slug, owner_id, plan, org_type)
+  INSERT INTO public.organisations (name, slug, owner_id, plan)
   VALUES (
     v_basename || '''s Workspace',
     v_slug,
     NEW.id,
-    'free',
-    'agency'
+    'free'
   )
   RETURNING id INTO v_org_id;
 
   UPDATE public.profiles
-  SET    org_id = v_org_id,
-         plan   = 'free'
+  SET    organization_id = v_org_id,
+         plan            = 'free'
   WHERE  id = NEW.id;
 
   INSERT INTO public.organisation_members (organisation_id, user_id, role, accepted_at)
