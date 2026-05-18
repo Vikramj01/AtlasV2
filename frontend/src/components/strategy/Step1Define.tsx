@@ -61,6 +61,7 @@ export function Step1Define({ briefId, mode, objectiveId, onEvaluated, onBack }:
   const [platforms, setPlatforms] = useState<string[]>([]);
   const [showExamples, setShowExamples] = useState(false);
   const [outcomeError, setOutcomeError] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -96,6 +97,7 @@ export function Step1Define({ briefId, mode, objectiveId, onEvaluated, onBack }:
     if (!isValid) return;
     setLoading(true);
     setError(null);
+    setNameError(null);
     try {
       const objectiveName = mode === 'single'
         ? outcome.trim().slice(0, 80)
@@ -126,7 +128,13 @@ export function Step1Define({ briefId, mode, objectiveId, onEvaluated, onBack }:
       await evaluateObjective(objId);
       onEvaluated(objId);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
+      const msg = err instanceof Error ? err.message : 'Something went wrong. Please try again.';
+      if (msg.includes('already exists in this brief')) {
+        setNameError('This name is already used in this brief — please choose a different one.');
+        document.getElementById('obj-name')?.focus();
+      } else {
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }
@@ -149,13 +157,18 @@ export function Step1Define({ briefId, mode, objectiveId, onEvaluated, onBack }:
             <Input
               id="obj-name"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => { setName(e.target.value); if (nameError) setNameError(null); }}
               placeholder="e.g. New customer acquisition"
               maxLength={50}
+              className={cn(nameError && 'border-destructive ring-1 ring-destructive focus-visible:ring-destructive')}
             />
-            <p className="text-xs text-muted-foreground">
-              A short label to tell this objective apart from others. {name.trim().length}/50
-            </p>
+            {nameError ? (
+              <p className="text-xs text-destructive">{nameError}</p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                A short label to tell this objective apart from others. {name.trim().length}/50
+              </p>
+            )}
           </div>
         )}
 
