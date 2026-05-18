@@ -1,29 +1,14 @@
--- ── Organisation members table + schema alignment ─────────────────────────────
+-- ── Organisation members table + signup trigger fix ────────────────────────────
 --
--- Root cause: organisation_members table was missing, breaking:
---   • orgMiddleware (403 on all /api/organisations/:orgId/* routes)
---   • listOrganisations (empty result → no org in sidebar)
---   • org/client creation
+-- organisations already has: id, name, slug, owner_id, plan, created_at, updated_at
+-- profiles already has: id, plan (no org reference column)
 --
--- Also adds missing columns to organisations (owner_id, slug, plan)
--- and plan to profiles so authMiddleware can read it correctly.
--- Updates handle_new_user trigger to auto-create an org + membership on signup.
+-- What was missing:
+--   • organisation_members table → orgMiddleware returned 403 on all client routes
+--                                  and listOrganisations returned empty
+--   • handle_new_user trigger did not create an org or membership on signup
 
--- ── 1. Add missing columns to organisations ────────────────────────────────────
-ALTER TABLE public.organisations
-  ADD COLUMN IF NOT EXISTS owner_id   UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-  ADD COLUMN IF NOT EXISTS slug       TEXT,
-  ADD COLUMN IF NOT EXISTS plan       TEXT NOT NULL DEFAULT 'free';
-
-CREATE UNIQUE INDEX IF NOT EXISTS organisations_slug_key
-  ON public.organisations (slug)
-  WHERE slug IS NOT NULL;
-
--- ── 2. Add plan column to profiles ────────────────────────────────────────────
-ALTER TABLE public.profiles
-  ADD COLUMN IF NOT EXISTS plan TEXT NOT NULL DEFAULT 'free';
-
--- ── 3. Create organisation_members table ───────────────────────────────────────
+-- ── 1. Create organisation_members ────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.organisation_members (
   id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   organisation_id UUID        NOT NULL REFERENCES public.organisations(id) ON DELETE CASCADE,
@@ -49,33 +34,18 @@ CREATE POLICY "org_members_update" ON public.organisation_members
 CREATE POLICY "org_members_delete" ON public.organisation_members
   FOR DELETE USING (auth.uid() IS NOT NULL);
 
--- ── 4. Seed memberships for existing profiles ──────────────────────────────────
-INSERT INTO public.organisation_members (organisation_id, user_id, role, accepted_at)
-SELECT p.organization_id, p.id, 'owner', now()
-FROM   public.profiles p
-WHERE  p.organization_id IS NOT NULL
-  AND  EXISTS (SELECT 1 FROM public.organisations o WHERE o.id = p.organization_id)
-ON CONFLICT (organisation_id, user_id) DO NOTHING;
-
--- ── 5. Auto-create org + membership on signup ──────────────────────────────────
+-- ── 2. Update signup trigger ───────────────────────────────────────────────────
+-- Auto-creates an organisation and owner membership for every new user.
 CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE
   v_org_id   UUID;
   v_basename TEXT;
   v_slug     TEXT;
 BEGIN
-  INSERT INTO public.profiles (id, email, full_name, avatar_url)
-  VALUES (
-    NEW.id,
-    NEW.email,
-    NEW.raw_user_meta_data->>'full_name',
-    NEW.raw_user_meta_data->>'avatar_url'
-  );
+  INSERT INTO public.profiles (id, plan)
+  VALUES (NEW.id, 'free')
+  ON CONFLICT (id) DO NOTHING;
 
   v_basename := COALESCE(
     NULLIF(TRIM(NEW.raw_user_meta_data->>'full_name'), ''),
@@ -86,18 +56,8 @@ BEGIN
     || '-' || substring(replace(NEW.id::text, '-', ''), 1, 8);
 
   INSERT INTO public.organisations (name, slug, owner_id, plan)
-  VALUES (
-    v_basename || '''s Workspace',
-    v_slug,
-    NEW.id,
-    'free'
-  )
+  VALUES (v_basename || '''s Workspace', v_slug, NEW.id, 'free')
   RETURNING id INTO v_org_id;
-
-  UPDATE public.profiles
-  SET    organization_id = v_org_id,
-         plan            = 'free'
-  WHERE  id = NEW.id;
 
   INSERT INTO public.organisation_members (organisation_id, user_id, role, accepted_at)
   VALUES (v_org_id, NEW.id, 'owner', now());
