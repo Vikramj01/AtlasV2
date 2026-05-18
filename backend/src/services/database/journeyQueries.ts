@@ -107,25 +107,23 @@ export async function getJourneyStages(journeyId: string): Promise<JourneyStage[
 }
 
 export async function upsertStage(journeyId: string, data: UpsertStageRequest): Promise<JourneyStage> {
-  const { data: stage, error } = await supabase
-    .from('journey_stages')
-    .upsert({
-      journey_id: journeyId,
-      stage_order: data.stage_order,
-      label: data.label,
-      page_type: data.page_type,
-      sample_url: data.sample_url ?? null,
-      actions: data.actions,
-      conversion_event_metadata: data.conversion_event_metadata ?? {},
-      proxy_value_gbp:           data.proxy_value_gbp ?? null,
-      buyer_intent_level:        data.buyer_intent_level ?? null,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'journey_id,stage_order' })
-    .select('*')
-    .single();
+  // Uses RPC to bypass PostgREST schema cache for proxy_value_gbp / buyer_intent_level.
+  const { data: rows, error } = await supabase.rpc('upsert_journey_stage', {
+    p_journey_id:                journeyId,
+    p_stage_order:               data.stage_order,
+    p_label:                     data.label,
+    p_page_type:                 data.page_type,
+    p_sample_url:                data.sample_url ?? null,
+    p_actions:                   data.actions,
+    p_conversion_event_metadata: data.conversion_event_metadata ?? {},
+    p_proxy_value_gbp:           data.proxy_value_gbp ?? null,
+    p_buyer_intent_level:        data.buyer_intent_level ?? null,
+  });
 
   if (error) throw new Error(`Failed to upsert stage: ${error.message}`);
-  return stage as JourneyStage;
+  const stages = rows as JourneyStage[];
+  if (!stages || stages.length === 0) throw new Error('Failed to upsert stage: no row returned.');
+  return stages[0];
 }
 
 export async function updateStage(stageId: string, journeyId: string, data: Partial<UpsertStageRequest>): Promise<JourneyStage> {
