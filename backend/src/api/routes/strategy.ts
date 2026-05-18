@@ -135,7 +135,7 @@ Always respond with valid JSON only. No markdown, no preamble, no explanation ou
 
 const saveBriefSchema = z.object({
   business_outcome: z.string().min(1),
-  outcome_timing_days: z.number().int().positive(),
+  outcome_timing_days: z.number().int().min(0),
   current_event: z.string().optional(),
   verdict: z.enum(['keep', 'add_proxy', 'switch']),
   proxy_event: z.string().optional(),
@@ -303,7 +303,7 @@ const createObjectiveSchema = z.object({
   description: z.string().max(500).optional(),
   platforms: z.array(z.string()).max(10).optional(),
   current_event: z.string().max(120).optional(),
-  outcome_timing_days: z.number().int().positive().optional(),
+  outcome_timing_days: z.number().int().min(0).optional(),
 });
 
 // POST /api/strategy/objectives
@@ -342,7 +342,7 @@ const updateObjectiveSchema = z.object({
   description: z.string().max(500).optional(),
   platforms: z.array(z.string()).max(10).optional(),
   current_event: z.string().max(120).optional(),
-  outcome_timing_days: z.number().int().positive().optional(),
+  outcome_timing_days: z.number().int().min(0).optional(),
 });
 
 // PUT /api/strategy/objectives/:id
