@@ -27,11 +27,16 @@ CREATE TABLE IF NOT EXISTS public.ihc_alert_log (
 DO $$
 BEGIN
   IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'audit_findings') THEN
-    ALTER TABLE public.ihc_alert_log
-      ADD CONSTRAINT IF NOT EXISTS ihc_alert_log_finding_fk
-        FOREIGN KEY (finding_id) REFERENCES public.audit_findings(id) ON DELETE CASCADE;
+    IF NOT EXISTS (
+      SELECT 1 FROM information_schema.table_constraints
+      WHERE table_name = 'ihc_alert_log'
+        AND constraint_name = 'ihc_alert_log_finding_fk'
+    ) THEN
+      ALTER TABLE public.ihc_alert_log
+        ADD CONSTRAINT ihc_alert_log_finding_fk
+          FOREIGN KEY (finding_id) REFERENCES public.audit_findings(id) ON DELETE CASCADE;
+    END IF;
   END IF;
-EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
 CREATE INDEX IF NOT EXISTS idx_ihc_alert_log_org     ON public.ihc_alert_log(organization_id);
