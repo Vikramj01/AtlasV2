@@ -233,26 +233,26 @@ export async function setObjectiveEvaluation(
   orgId: string,
   eval_: SetObjectiveEvalInput,
 ): Promise<DbStrategyObjective> {
-  const { data, error } = await supabase
-    .from('strategy_objectives')
-    .update({
-      verdict: eval_.verdict,
-      outcome_category: eval_.outcome_category,
-      recommended_primary_event: eval_.recommended_primary_event ?? null,
-      recommended_proxy_event: eval_.recommended_proxy_event ?? null,
-      proxy_event_required: eval_.proxy_event_required,
-      rationale: eval_.rationale,
-      summary_markdown: eval_.summary_markdown,
-      conversion_tier: eval_.conversion_tier ?? null,
-      platform_action_types: eval_.platform_action_types ?? null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', objectiveId)
-    .eq('organization_id', orgId)
-    .select('*')
-    .single();
+  // Uses RPC to bypass PostgREST schema cache — conversion_tier and
+  // platform_action_types were added via migration and PostgREST may not
+  // have refreshed its column cache yet.
+  const { data, error } = await supabase.rpc('set_objective_evaluation', {
+    p_objective_id:               objectiveId,
+    p_org_id:                     orgId,
+    p_verdict:                    eval_.verdict,
+    p_outcome_category:           eval_.outcome_category ?? null,
+    p_recommended_primary_event:  eval_.recommended_primary_event ?? null,
+    p_recommended_proxy_event:    eval_.recommended_proxy_event ?? null,
+    p_proxy_event_required:       eval_.proxy_event_required,
+    p_rationale:                  eval_.rationale ?? null,
+    p_summary_markdown:           eval_.summary_markdown ?? null,
+    p_conversion_tier:            eval_.conversion_tier ?? null,
+    p_platform_action_types:      eval_.platform_action_types ?? null,
+  });
   if (error) throw error;
-  return data as DbStrategyObjective;
+  const rows = data as DbStrategyObjective[];
+  if (!rows || rows.length === 0) throw new Error('Objective not found or update failed.');
+  return rows[0];
 }
 
 export async function lockObjective(
