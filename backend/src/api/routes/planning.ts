@@ -725,8 +725,17 @@ router.post('/sessions/:id/save-to-library', async (req: Request, res: Response)
 
     const existingKeys = new Set(existingSignals.map((s) => s.key));
 
-    const toCreate = approvedRecs.filter((r) => !existingKeys.has(r.event_name));
-    const skipped  = approvedRecs.filter((r) => existingKeys.has(r.event_name)).map((r) => r.event_name);
+    // Deduplicate by event_name within the batch too (same event can appear on multiple pages)
+    const seenInBatch = new Set<string>();
+    const toCreate = approvedRecs.filter((r) => {
+      if (existingKeys.has(r.event_name) || seenInBatch.has(r.event_name)) return false;
+      seenInBatch.add(r.event_name);
+      return true;
+    });
+    const skipped = approvedRecs
+      .filter((r) => existingKeys.has(r.event_name))
+      .map((r) => r.event_name)
+      .filter((key, i, arr) => arr.indexOf(key) === i);
 
     const created = await Promise.all(
       toCreate.map((rec) => {
