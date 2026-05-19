@@ -14,7 +14,7 @@
 import { useState } from 'react';
 import type * as React from 'react';
 
-import { CheckCircle2, AlertTriangle, XCircle, X } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, XCircle, X, MinusCircle } from 'lucide-react';
 import type { ReportJSON, JourneyStage, RuleStatus } from '@/types/audit';
 
 // ── Status config — aligned to design system palette ──────────────────────────
@@ -54,6 +54,24 @@ const STATUS_CONFIG: Record<RuleStatus, {
     Icon:       XCircle,
     iconColor:  '#DC2626',
     panelBg:    '#FEF2F2',
+  },
+  not_run: {
+    label:      'Not Tested',
+    bg:         '#F9FAFB',
+    border:     '#D1D5DB',
+    labelColor: '#9CA3AF',
+    Icon:       MinusCircle,
+    iconColor:  '#9CA3AF',
+    panelBg:    '#F9FAFB',
+  },
+  skipped: {
+    label:      'Skipped',
+    bg:         '#F9FAFB',
+    border:     '#D1D5DB',
+    labelColor: '#9CA3AF',
+    Icon:       MinusCircle,
+    iconColor:  '#9CA3AF',
+    panelBg:    '#F9FAFB',
   },
 };
 
@@ -157,7 +175,11 @@ function StagePanel({ stage, onClose }: { stage: JourneyStage; onClose: () => vo
         </button>
       </div>
 
-      {stage.issues.length === 0 ? (
+      {stage.status === 'not_run' ? (
+        <p className="text-sm" style={{ color: '#9CA3AF' }}>
+          Not tested — scan was not run for this stage.
+        </p>
+      ) : stage.issues.length === 0 ? (
         <p className="text-sm" style={{ color: '#059669' }}>
           No issues detected at this stage.
         </p>
