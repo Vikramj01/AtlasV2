@@ -10,7 +10,7 @@ export type ValidationLayer =
   | 'tag_configuration'
   | 'implementation_drift';
 export type Severity = 'critical' | 'high' | 'medium' | 'low';
-export type RuleStatus = 'pass' | 'fail' | 'warning' | 'skipped';
+export type RuleStatus = 'pass' | 'fail' | 'warning' | 'skipped' | 'not_run';
 
 // ─── Captured data (from Browserbase) ────────────────────────────────────────
 

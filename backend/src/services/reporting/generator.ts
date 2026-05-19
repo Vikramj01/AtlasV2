@@ -69,6 +69,9 @@ function buildJourneyStages(funnelType: string, resultMap: Map<string, Validatio
     const stageResults = ruleIds
       .map((id) => resultMap.get(id))
       .filter((r): r is ValidationResult => !!r);
+    if (stageResults.length === 0) {
+      return { stage, status: 'not_run' as RuleStatus, issues: [] };
+    }
     const failedRules = stageResults.filter((r) => r.status === 'fail' || r.status === 'warning');
     const status = worstStatus(stageResults.map((r) => r.status));
     const issues = failedRules.map(

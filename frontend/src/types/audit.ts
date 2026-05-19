@@ -4,7 +4,7 @@ export type FunnelType = 'ecommerce' | 'saas' | 'lead_gen';
 export type Region = 'us' | 'eu' | 'global';
 export type AuditStatus = 'queued' | 'running' | 'completed' | 'failed';
 export type Severity = 'critical' | 'high' | 'medium' | 'low';
-export type RuleStatus = 'pass' | 'fail' | 'warning';
+export type RuleStatus = 'pass' | 'fail' | 'warning' | 'skipped' | 'not_run';
 
 export interface AuditScores {
   conversion_signal_health: number;

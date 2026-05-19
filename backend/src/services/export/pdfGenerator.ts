@@ -40,6 +40,7 @@ const PLATFORM_LABELS: Record<string, string> = {
 function statusColor(status: string): string {
   if (status === 'healthy' || status === 'pass') return C.healthy;
   if (status === 'at_risk' || status === 'warning' || status === 'partially_broken') return C.atRisk;
+  if (status === 'not_run' || status === 'skipped') return '#9CA3AF';
   return C.broken;
 }
 
@@ -293,7 +294,10 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
         .text(formatLabel(stage.status), LEFT, stageY + 9, { align: 'right', width: CONTENT_W });
       doc.y = Math.max(savedY, stageY + 32);
 
-      if (stage.issues.length === 0) {
+      if (stage.status === 'not_run') {
+        doc.fillColor('#9CA3AF').fontSize(9).font('Helvetica')
+          .text('Not tested — scan was not run for this stage', LEFT + 26, doc.y);
+      } else if (stage.issues.length === 0) {
         doc.fillColor(C.healthy).fontSize(9).font('Helvetica')
           .text('All checks passed for this stage', LEFT + 26, doc.y);
       } else {
