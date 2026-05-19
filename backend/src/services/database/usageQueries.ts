@@ -98,7 +98,7 @@ export async function getUsagePortfolio(monthIso?: string): Promise<UsagePortfol
       .gte('month', monthStart.toISOString())
       .lt('month', monthEnd.toISOString()),
     supabaseAdmin.from('organisations').select('id, name'),
-    supabaseAdmin.from('profiles').select('organization_id, plan'),
+    supabaseAdmin.from('profiles').select('organisation_id, plan'),
     supabaseAdmin.from('org_active_subscriptions').select('org_id, mrr_usd, tier'),
     supabaseAdmin.from('cap_violations').select('org_id').eq('resolved', false),
   ]);
@@ -114,10 +114,10 @@ export async function getUsagePortfolio(monthIso?: string): Promise<UsagePortfol
   const planRank = (p: string) => p === 'agency' ? 3 : p === 'pro' ? 2 : 1;
   const orgPlanMap = new Map<string, string>();
   for (const row of profileRows ?? []) {
-    const r = row as { organization_id: string; plan: string };
-    const existing = orgPlanMap.get(r.organization_id);
+    const r = row as { organisation_id: string; plan: string };
+    const existing = orgPlanMap.get(r.organisation_id);
     if (!existing || planRank(r.plan) > planRank(existing)) {
-      orgPlanMap.set(r.organization_id, r.plan);
+      orgPlanMap.set(r.organisation_id, r.plan);
     }
   }
 
