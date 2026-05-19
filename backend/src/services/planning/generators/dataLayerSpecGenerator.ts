@@ -664,7 +664,11 @@ export function generateDataLayerSpec(
       return {
         event_name:           rec.event_name,
         action_type:          rec.action_type,
-        element_selector:     rec.element_selector ?? undefined,
+        element_selector:     (() => {
+          const s = sanitizeSelector(rec.element_selector);
+          if (!s || 'textFallback' in s) return undefined;
+          return s.selector;
+        })(),
         element_text:         rec.element_text ?? undefined,
         trigger_type:         recToIREventForSpec(rec).trigger.trigger_type,
         business_justification: rec.business_justification,

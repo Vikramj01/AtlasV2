@@ -42,6 +42,8 @@ function buildTrackingPlan(
   session: PlanningSession,
 ): TrackingPlan {
   const pageMap = new Map(pages.map((p) => [p.id, p]));
+  // Match conversion detection against both action_type and event_name so the count
+  // in the guide header agrees with the validator's METADATA_ACCURACY rule.
   const conversionActions = new Set(['purchase', 'generate_lead', 'sign_up', 'begin_checkout']);
 
   const events: TrackingPlanEvent[] = recommendations.map((rec) => {
@@ -59,9 +61,11 @@ function buildTrackingPlan(
   });
 
   const allPlatforms = new Set(events.flatMap((e) => e.platforms));
-  // Count by trigger (= action_type), not event_name — custom event names like
-  // "contact_form_submit" have action_type "generate_lead" which IS a conversion.
-  const conversionCount = events.filter((e) => conversionActions.has(e.trigger)).length;
+  // Count by action_type OR event_name so custom names like "contact_form_submit"
+  // (action_type "generate_lead") and standard names both register as conversions.
+  const conversionCount = events.filter(
+    (e) => conversionActions.has(e.trigger) || conversionActions.has(e.event_name),
+  ).length;
 
   return {
     session_id:      session.id,

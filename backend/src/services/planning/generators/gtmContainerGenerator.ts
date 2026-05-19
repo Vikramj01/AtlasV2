@@ -1052,13 +1052,27 @@ src="https://px.ads.linkedin.com/collect/?pid={{CONST - LinkedIn Partner ID}}&fm
     return tid;
   }
 
+  // Pre-merge parameters across all recommendations with the same event_name.
+  // When two recommendations share an event_name (e.g., view_promotion on two pages),
+  // the single deduplicated tag must map the union of all their parameters so the
+  // EVENT_PARAMETERS_COMPLETENESS validator rule doesn't flag missing keys.
+  const mergedParamsByEvent = new Map<string, IREvent['parameters']>();
+  for (const rec of recommendations) {
+    const irEvent = recToIREvent(rec, session.selected_platforms as Platform[]);
+    const existing = mergedParamsByEvent.get(irEvent.event_name) ?? [];
+    for (const param of irEvent.parameters) {
+      if (!existing.some(p => p.key === param.key)) existing.push(param);
+    }
+    mergedParamsByEvent.set(irEvent.event_name, existing);
+  }
+
   for (const rec of recommendations) {
     const irEvent = recToIREvent(rec, session.selected_platforms as Platform[]);
     const isConversion = irEvent.is_conversion;
     const folderId = isConversion ? FOLDER.CONVERSION : FOLDER.ENGAGEMENT;
     const trigId = ensureEventTrigger(irEvent);
 
-    // Ensure DLVs for all IR event parameters
+    // Ensure DLVs for all IR event parameters (all recs, before dedup check)
     const isEcommerce = ECOMMERCE_SNIPPET_ACTIONS.has(irEvent.action_type);
     for (const param of irEvent.parameters) {
       ensureDlv(dlvPathForParam(param.key, isEcommerce));
@@ -1069,15 +1083,18 @@ src="https://px.ads.linkedin.com/collect/?pid={{CONST - LinkedIn Partner ID}}&fm
     if (eventTagsSeen.has(irEvent.event_name)) continue;
     eventTagsSeen.add(irEvent.event_name);
 
+    // Use the merged parameter set so the single tag covers all pages' parameters
+    const mergedIREvent: IREvent = { ...irEvent, parameters: mergedParamsByEvent.get(irEvent.event_name) ?? irEvent.parameters };
+
     // ── GA4 Event Tag ───────────────────────────────────────────────────────
     if (hasGA4) {
-      const ga4EventParams = renderGA4EventParameters(irEvent);
+      const ga4EventParams = renderGA4EventParameters(mergedIREvent);
       tags.push({
         ...stub(),
         tagId: tagIds.next(),
-        name: `GA4 - ${irEvent.event_name}`,
+        name: `GA4 - ${mergedIREvent.event_name}`,
         type: 'gaawe',
-        parameter: [tmpl('eventName', irEvent.event_name), ...ga4EventParams],
+        parameter: [tmpl('eventName', mergedIREvent.event_name), ...ga4EventParams],
         firingTriggerId: [trigId],
         tagFiringOption: 'oncePerEvent',
         folderId,
@@ -1090,14 +1107,14 @@ src="https://px.ads.linkedin.com/collect/?pid={{CONST - LinkedIn Partner ID}}&fm
       // Fires a second GA4 tag with the standard event name so Smart Bidding
       // can recognise the conversion without renaming the primary event.
       // e.g. GA4 - contact_form_submit (generate_lead alias)
-      const aliasTag = renderStandardEventAliasTag(irEvent, trigId, tagIds.next(), folderId);
+      const aliasTag = renderStandardEventAliasTag(mergedIREvent, trigId, tagIds.next(), folderId);
       if (aliasTag) tags.push(aliasTag);
     }
 
     // ── Google Ads Conversion Tag (per-event label variable) ────────────────
     if (hasGoogleAds && isConversion) {
       const { tag: gadsTag, labelVar } = renderGoogleAdsConversionTag(
-        irEvent,
+        mergedIREvent,
         trigId,
         tagIds.next(),
         varIds.next(),
@@ -1111,18 +1128,18 @@ src="https://px.ads.linkedin.com/collect/?pid={{CONST - LinkedIn Partner ID}}&fm
 
     // ── Meta Event Tag ──────────────────────────────────────────────────────
     if (hasMeta) {
-      tags.push(renderMetaEventTag(irEvent, trigId, tagIds.next(), folderId));
+      tags.push(renderMetaEventTag(mergedIREvent, trigId, tagIds.next(), folderId));
     }
 
     // ── TikTok Event Tag ────────────────────────────────────────────────────
     if (hasTikTok) {
-      tags.push(renderTikTokEventTag(irEvent, trigId, tagIds.next(), folderId));
+      tags.push(renderTikTokEventTag(mergedIREvent, trigId, tagIds.next(), folderId));
     }
 
     // ── LinkedIn Conversion Tag ─────────────────────────────────────────────
     if (hasLinkedIn && isConversion) {
       tags.push(renderLinkedInConversionTag(
-        irEvent,
+        mergedIREvent,
         trigId,
         tagIds.next(),
         folderId,
