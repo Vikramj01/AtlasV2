@@ -1,13 +1,17 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useBillingStore } from '@/store/billingStore';
 import { useConnectionStore } from '@/store/connectionStore';
 import { strategyApi } from '@/lib/api/strategyApi';
+import { organisationApi } from '@/lib/api/organisationApi';
+import { useOrganisationStore } from '@/store/organisationStore';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { Lock, Plus, ExternalLink, Link2, AlertTriangle, ShieldAlert, Trash2 } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Lock, Plus, ExternalLink, Link2, AlertTriangle, ShieldAlert, Trash2, Building2 } from 'lucide-react';
 import type { StrategyBriefRecord } from '@/types/strategy';
 import type { PlatformConnectionPublic, ConnectionGroup } from '@/types/connections';
 
@@ -33,9 +37,46 @@ type Plan = keyof typeof PLAN_CONFIG;
 
 export function SettingsPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [email, setEmail] = useState<string>('');
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [isSigningOut, setIsSigningOut] = useState(false);
+
+  const { organisations, setOrganisations, setCurrentOrg } = useOrganisationStore();
+  const [orgName, setOrgName] = useState('');
+  const [orgSlug, setOrgSlug] = useState('');
+  const [orgSlugTouched, setOrgSlugTouched] = useState(false);
+  const [orgSaving, setOrgSaving] = useState(false);
+  const [orgError, setOrgError] = useState<string | null>(null);
+
+  const showOrgSection = searchParams.get('tab') === 'org' || organisations.length === 0;
+
+  function toSlug(s: string) {
+    return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  }
+
+  function handleOrgNameChange(v: string) {
+    setOrgName(v);
+    if (!orgSlugTouched) setOrgSlug(toSlug(v));
+  }
+
+  async function handleCreateOrg(e: { preventDefault: () => void }) {
+    e.preventDefault();
+    if (!orgName.trim() || !orgSlug.trim()) return;
+    setOrgSaving(true);
+    setOrgError(null);
+    try {
+      const org = await organisationApi.create({ name: orgName.trim(), slug: orgSlug.trim() });
+      const updated = await organisationApi.list();
+      setOrganisations(updated);
+      setCurrentOrg(org);
+      navigate(`/org/${org.id}/clients`);
+    } catch (err) {
+      setOrgError(err instanceof Error ? err.message : 'Failed to create workspace');
+    } finally {
+      setOrgSaving(false);
+    }
+  }
 
   const {
     status,
@@ -83,8 +124,9 @@ export function SettingsPage() {
     if (!isAuthLoading) {
       fetchStatus();
       fetchConnections();
+      organisationApi.list().then(setOrganisations).catch(() => {});
     }
-  }, [isAuthLoading, fetchStatus, fetchConnections]);
+  }, [isAuthLoading, fetchStatus, fetchConnections, setOrganisations]);
 
   async function handleSignOut() {
     setIsSigningOut(true);
@@ -147,6 +189,69 @@ export function SettingsPage() {
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
         </div>
+      )}
+
+      {/* Organisation / Workspace */}
+      {showOrgSection && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold">Workspace</CardTitle>
+          </CardHeader>
+          <Separator />
+          <CardContent className="pt-5">
+            {organisations.length > 0 ? (
+              <div className="space-y-2">
+                {organisations.map((org) => (
+                  <div key={org.id} className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5">
+                    <div className="flex items-center gap-2.5">
+                      <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <div>
+                        <p className="text-sm font-medium">{org.name}</p>
+                        <p className="text-xs text-muted-foreground">{org.slug}</p>
+                      </div>
+                    </div>
+                    <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => navigate(`/org/${org.id}/clients`)}>
+                      Open
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <form onSubmit={handleCreateOrg} className="space-y-4">
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  You don't have a workspace yet. Create one to manage clients and link their tracking work.
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="settings-org-name">Workspace name</Label>
+                  <Input
+                    id="settings-org-name"
+                    placeholder="e.g. Spi3l Agency"
+                    value={orgName}
+                    onChange={(e) => handleOrgNameChange(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="settings-org-slug">URL slug</Label>
+                  <Input
+                    id="settings-org-slug"
+                    placeholder="e.g. spi3l-agency"
+                    value={orgSlug}
+                    onChange={(e) => { setOrgSlugTouched(true); setOrgSlug(toSlug(e.target.value)); }}
+                  />
+                  <p className="text-xs text-muted-foreground">Lowercase letters, numbers and hyphens only.</p>
+                </div>
+                {orgError && <p className="text-xs text-red-600">{orgError}</p>}
+                <Button
+                  type="submit"
+                  disabled={orgSaving || !orgName.trim() || !orgSlug.trim()}
+                  className="bg-[#1B2A4A] text-white hover:bg-[#1B2A4A]/90"
+                >
+                  {orgSaving ? 'Creating…' : 'Create workspace'}
+                </Button>
+              </form>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       {/* Account */}

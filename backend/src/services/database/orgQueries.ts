@@ -22,13 +22,18 @@ export async function createOrganisation(
 
   if (error) throw new Error(`Failed to create organisation: ${error.message}`);
 
-  // Auto-add owner as a member
-  await supabase.from('organisation_members').insert({
-    organisation_id: (org as Organisation).id,
-    user_id: ownerId,
-    role: 'owner',
-    accepted_at: new Date().toISOString(),
-  });
+  const orgId = (org as Organisation).id;
+
+  // Auto-add owner as a member and link profile to this org
+  await Promise.all([
+    supabase.from('organisation_members').insert({
+      organisation_id: orgId,
+      user_id: ownerId,
+      role: 'owner',
+      accepted_at: new Date().toISOString(),
+    }),
+    supabase.from('profiles').update({ organisation_id: orgId }).eq('id', ownerId),
+  ]);
 
   return org as Organisation;
 }
