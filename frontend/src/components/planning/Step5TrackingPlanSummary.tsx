@@ -51,15 +51,18 @@ export function Step5TrackingPlanSummary() {
   type SaveStatus = 'idle' | 'saving' | 'done' | 'error';
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [saveResult, setSaveResult] = useState<{ created: number; skipped: number } | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   async function handleSaveToLibrary() {
     if (!sessionId) return;
     setSaveStatus('saving');
+    setSaveError(null);
     try {
       const result = await planningApi.saveToLibrary(sessionId);
       setSaveResult({ created: result.created.length, skipped: result.skipped.length });
       setSaveStatus('done');
-    } catch {
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Unknown error');
       setSaveStatus('error');
     }
   }
@@ -182,7 +185,7 @@ export function Step5TrackingPlanSummary() {
                 <div>
                   <p className="text-sm font-medium text-red-800">Failed to save</p>
                   <p className="text-xs text-red-700">
-                    Could not save signals to library. You can try again or continue.
+                    {saveError ?? 'Could not save signals to library. You can try again or continue.'}
                   </p>
                   <Button
                     size="sm"
