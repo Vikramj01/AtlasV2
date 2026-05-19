@@ -11,6 +11,7 @@
 import type { PlanningRecommendation, PlanningPage, PlanningSession, SuggestedParam } from '@/types/planning';
 import type { IREvent, IRParameter, IRTrigger, ActionType, Platform } from './ir.types';
 import { renderCodeSnippet as renderIRCodeSnippet } from './renderer/spec.renderer';
+import { sanitizeSelector } from './selectorUtils';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -231,17 +232,19 @@ const SPEC_CONVERSION_ACTIONS = new Set([
 ]);
 
 function recToIREventForSpec(rec: PlanningRecommendation): IREvent {
-  const sel = rec.element_selector;
+  const sanitized = sanitizeSelector(rec.element_selector);
   let trigger: IRTrigger;
-  if (!sel) {
+  if (!sanitized) {
     trigger = { trigger_type: 'page_load' };
-  } else if (sel.includes(':contains(')) {
-    const textMatch = sel.match(/:contains\(['"]([^'"]+)['"]\)/);
-    trigger = { trigger_type: 'click_text', click_text: textMatch?.[1] ?? rec.element_text ?? sel };
+  } else if (sanitized.textFallback !== undefined) {
+    trigger = {
+      trigger_type: 'click_text',
+      click_text: sanitized.textFallback ?? rec.element_text ?? rec.element_selector ?? '',
+    };
   } else if (rec.action_type === 'form_submit') {
-    trigger = { trigger_type: 'form_submit', selector: sel };
+    trigger = { trigger_type: 'form_submit', selector: sanitized.selector };
   } else {
-    trigger = { trigger_type: 'click_css', selector: sel };
+    trigger = { trigger_type: 'click_css', selector: sanitized.selector };
   }
 
   const parameters: IRParameter[] = (rec.required_params ?? []).map(p => ({
