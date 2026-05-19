@@ -6,6 +6,7 @@ import type {
   GetRecommendationsResponse,
   UpdateDecisionInput,
   GenerateOutputsResponse,
+  GenerationValidationError,
   ListSessionsResponse,
   HandoffResponse,
   UserDecision,
@@ -17,6 +18,15 @@ import type {
   ChangeDetectionResult,
   PiiWarning,
 } from '@/types/planning';
+
+export class GenerationBlockedError extends Error {
+  readonly validationErrors: GenerationValidationError[];
+  constructor(validationErrors: GenerationValidationError[]) {
+    super('Output generation blocked');
+    this.name = 'GenerationBlockedError';
+    this.validationErrors = validationErrors;
+  }
+}
 import type { Signal } from '@/types/signal';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
@@ -114,10 +124,20 @@ export const planningApi = {
 
   // ── Outputs ─────────────────────────────────────────────────────────────────
 
-  generateOutputs(sessionId: string): Promise<GenerateOutputsResponse> {
-    return apiFetch(`/api/planning/sessions/${sessionId}/generate`, {
+  async generateOutputs(sessionId: string): Promise<GenerateOutputsResponse> {
+    const authHeader = await getAuthHeader();
+    const res = await fetch(`${API_BASE}/api/planning/sessions/${sessionId}/generate`, {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: authHeader },
     });
+    const body = await res.json().catch(() => ({})) as Record<string, unknown>;
+    if (res.status === 422 && Array.isArray(body.validation_errors)) {
+      throw new GenerationBlockedError(body.validation_errors as GenerationValidationError[]);
+    }
+    if (!res.ok) {
+      throw new Error((body as { error?: string }).error ?? `Request failed: ${res.status}`);
+    }
+    return body as unknown as GenerateOutputsResponse;
   },
 
   listOutputs(sessionId: string): Promise<{ outputs: PlanningOutput[] }> {

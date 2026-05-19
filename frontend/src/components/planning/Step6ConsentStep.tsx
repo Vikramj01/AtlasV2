@@ -18,12 +18,13 @@
 
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Shield, ExternalLink, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Shield, ExternalLink, AlertTriangle, CheckCircle2, XCircle } from 'lucide-react';
 import { InfoTooltip } from '@/components/common/EducationTooltip';
 import { Button } from '@/components/ui/button';
 import { usePlanningStore } from '@/store/planningStore';
 import { useShallow } from 'zustand/react/shallow';
-import { planningApi } from '@/lib/api/planningApi';
+import { planningApi, GenerationBlockedError } from '@/lib/api/planningApi';
+import type { GenerationValidationError } from '@/types/planning';
 
 type ConsentChoice = 'configured' | 'setup_later' | 'not_required' | null;
 
@@ -42,6 +43,7 @@ export function Step6ConsentStep() {
   );
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [validationErrors, setValidationErrors] = useState<GenerationValidationError[]>([]);
   const [savedConfig, setSavedConfig] = useState<boolean>(consentConfigId !== null);
 
   // If a consent config was previously linked, mark as "configured"
@@ -56,6 +58,7 @@ export function Step6ConsentStep() {
     if (!currentSession) return;
     setIsSaving(true);
     setError(null);
+    setValidationErrors([]);
 
     try {
       if (choice === 'configured' && consentConfigId) {
@@ -70,7 +73,11 @@ export function Step6ConsentStep() {
 
       nextStep();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save consent config');
+      if (err instanceof GenerationBlockedError) {
+        setValidationErrors(err.validationErrors);
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to save consent config');
+      }
     } finally {
       setIsSaving(false);
     }
@@ -242,6 +249,26 @@ export function Step6ConsentStep() {
               ? 'Without consent management, your tracking may not comply with GDPR or CCPA. You can configure this at any time in Settings → Consent Hub.'
               : 'Please confirm your legal team has reviewed that consent collection is not required for your site\'s audience and jurisdiction.'}
           </p>
+        </div>
+      )}
+
+      {validationErrors.length > 0 && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 space-y-3">
+          <div className="flex items-center gap-2">
+            <XCircle className="h-4 w-4 text-red-600 shrink-0" />
+            <p className="text-sm font-semibold text-red-800">
+              Output generation blocked — {validationErrors.length} issue{validationErrors.length > 1 ? 's' : ''} must be resolved
+            </p>
+          </div>
+          <ul className="space-y-3">
+            {validationErrors.map((ve, i) => (
+              <li key={i} className="border-t border-red-200 pt-3 text-xs text-red-900 space-y-1">
+                <p className="font-medium">{ve.location}</p>
+                <p>{ve.message}</p>
+                <p className="text-red-700"><span className="font-medium">Fix: </span>{ve.fix_hint}</p>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

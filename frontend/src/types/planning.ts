@@ -237,6 +237,14 @@ export interface UpdateDecisionInput {
   modified_config?: Record<string, unknown>;
 }
 
+export interface GenerationValidationError {
+  rule: string;
+  severity: 'CRITICAL' | 'HIGH';
+  location: string;
+  message: string;
+  fix_hint: string;
+}
+
 export interface GenerateOutputsResponse {
   session_id: string;
   status: PlanningSessionStatus;
@@ -248,6 +256,7 @@ export interface GenerateOutputsResponse {
     generated_at: string;
     download_url: string | null;
   }>;
+  validation_warnings?: GenerationValidationError[];
 }
 
 export interface ListSessionsResponse {
