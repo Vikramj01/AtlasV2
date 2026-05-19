@@ -50,6 +50,12 @@ export function SettingsPage() {
 
   const { connections, fetchConnections } = useConnectionStore();
 
+  const [briefs, setBriefs] = useState<StrategyBriefRecord[]>([]);
+
+  useEffect(() => {
+    strategyApi.listBriefs().then((res) => setBriefs(res.data ?? [])).catch(() => {});
+  }, []);
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session?.user) {
@@ -101,12 +107,6 @@ export function SettingsPage() {
       </div>
     );
   }
-
-  const [briefs, setBriefs] = useState<StrategyBriefRecord[]>([]);
-
-  useEffect(() => {
-    strategyApi.listBriefs().then((res) => setBriefs(res.data ?? [])).catch(() => {});
-  }, []);
 
   return (
     <div className="mx-auto max-w-2xl px-6 py-8 space-y-6">
