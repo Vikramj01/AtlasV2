@@ -18,6 +18,7 @@
  */
 import type { PlanningRecommendation, PlanningSession } from '@/types/planning';
 import type { IREvent, IRParameter, IRTrigger, ActionType, BusinessType, Platform } from './ir.types';
+import { sanitizeSelector } from './selectorUtils';
 import { ECOMMERCE_SNIPPET_ACTIONS } from './ir.types';
 import { renderGTMTrigger } from './renderer/trigger.renderer';
 import { consentSettingsForTag } from './renderer/consent.renderer';
@@ -202,27 +203,25 @@ function recToIREvent(
   selectedPlatforms: Platform[],
 ): IREvent {
   let trigger: IRTrigger;
-  const sel = rec.element_selector;
+  const sanitized = sanitizeSelector(rec.element_selector);
 
-  if (!sel) {
-    // Sprint 2.5-C: click_text triggers store no CSS selector; element_text carries the
-    // text value. Detect by element_type = 'track_click' + element_text presence.
+  if (!sanitized) {
+    // No selector — fall back to click_text (if element_text present) or page_load
     if (rec.element_type === 'track_click' && rec.element_text) {
       trigger = { trigger_type: 'click_text', click_text: rec.element_text };
     } else {
       trigger = { trigger_type: 'page_load' };
     }
-  } else if (sel.includes(':contains(')) {
-    // Backward compat: legacy :contains() selectors — convert to click_text
-    const textMatch = sel.match(/:contains\(['"]([^'"]+)['"]\)/);
+  } else if (sanitized.textFallback !== undefined) {
+    // Selector contained only invalid pseudo-selectors; use extracted text instead
     trigger = {
       trigger_type: 'click_text',
-      click_text: textMatch?.[1] ?? rec.element_text ?? sel,
+      click_text: sanitized.textFallback ?? rec.element_text ?? rec.element_selector ?? '',
     };
   } else if (rec.action_type === 'form_submit' || rec.element_type === 'track_form_submit') {
-    trigger = { trigger_type: 'form_submit', selector: sel };
+    trigger = { trigger_type: 'form_submit', selector: sanitized.selector };
   } else {
-    trigger = { trigger_type: 'click_css', selector: sel };
+    trigger = { trigger_type: 'click_css', selector: sanitized.selector };
   }
 
   const parameters: IRParameter[] = (rec.required_params ?? []).map(p => ({
