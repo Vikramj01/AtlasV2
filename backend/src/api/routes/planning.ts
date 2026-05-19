@@ -706,13 +706,30 @@ router.post('/sessions/:id/save-to-library', async (req: Request, res: Response)
     const session = await getSession(req.params.id, req.user!.id);
     if (!session) return res.status(404).json({ error: 'Session not found' });
 
-    const { data: profileRow } = await supabaseAdmin
-      .from('profiles')
-      .select('organisation_id')
-      .eq('id', req.user!.id)
-      .single();
-    const orgId = (profileRow as { organisation_id: string } | null)?.organisation_id ?? '';
-    if (!orgId) return res.status(403).json({ error: 'No organisation associated with your account' });
+    // Resolve org: prefer the session's linked client org, fall back to user's own profile org
+    let orgId = '';
+
+    if (session.client_id) {
+      const { data: clientRow } = await supabaseAdmin
+        .from('clients')
+        .select('organisation_id')
+        .eq('id', session.client_id)
+        .single();
+      orgId = (clientRow as { organisation_id: string } | null)?.organisation_id ?? '';
+    }
+
+    if (!orgId) {
+      const { data: profileRow } = await supabaseAdmin
+        .from('profiles')
+        .select('organisation_id')
+        .eq('id', req.user!.id)
+        .single();
+      orgId = (profileRow as { organisation_id: string } | null)?.organisation_id ?? '';
+    }
+
+    if (!orgId) return res.status(403).json({
+      error: 'No organisation found. Link this session to a client or ensure your account has an organisation.',
+    });
 
     const [approvedRecs, existingSignals] = await Promise.all([
       getApprovedRecommendations(session.id),
