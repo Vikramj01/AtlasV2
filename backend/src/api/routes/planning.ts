@@ -765,6 +765,7 @@ router.post('/sessions/:id/save-to-library', async (req: Request, res: Response)
 
     res.json({ created, skipped });
   } catch (err) {
+    logger.error({ err }, 'save-to-library failed');
     sendInternalError(res, err);
   }
 });
