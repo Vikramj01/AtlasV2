@@ -73,10 +73,10 @@ export async function runPlanningOrchestrator(input: OrchestratorInput): Promise
   try {
     const { data: profile } = await supabase
       .from('profiles')
-      .select('organization_id')
+      .select('organisation_id')
       .eq('id', session.user_id)
       .single();
-    orgId = (profile as { organization_id: string } | null)?.organization_id ?? undefined;
+    orgId = (profile as { organisation_id: string } | null)?.organisation_id ?? undefined;
     if (orgId) {
       const flat = await fetchTaxonomyFlat(orgId);
       taxonomyContext = renderTaxonomyForPrompt(buildTree(flat));
@@ -338,10 +338,10 @@ export async function runRescanOrchestrator(input: RescanInput): Promise<void> {
   try {
     const { data: profile } = await supabase
       .from('profiles')
-      .select('organization_id')
+      .select('organisation_id')
       .eq('id', session.user_id)
       .single();
-    rescanOrgId = (profile as { organization_id: string } | null)?.organization_id ?? undefined;
+    rescanOrgId = (profile as { organisation_id: string } | null)?.organisation_id ?? undefined;
   } catch {
     // Non-fatal — usage logging degrades gracefully
   }

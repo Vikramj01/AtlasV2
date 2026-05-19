@@ -38,10 +38,10 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
       try {
         const { data: profile } = await supabase
           .from('profiles')
-          .select('organization_id')
+          .select('organisation_id')
           .eq('id', auditRow.user_id)
           .single();
-        orgId = (profile as { organization_id: string } | null)?.organization_id ?? undefined;
+        orgId = (profile as { organisation_id: string } | null)?.organisation_id ?? undefined;
       } catch {
         // Non-fatal — usage logging degrades gracefully without org_id
       }

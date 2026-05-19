@@ -708,10 +708,10 @@ router.post('/sessions/:id/save-to-library', async (req: Request, res: Response)
 
     const { data: profileRow } = await supabaseAdmin
       .from('profiles')
-      .select('organization_id')
+      .select('organisation_id')
       .eq('id', req.user!.id)
       .single();
-    const orgId = (profileRow as { organization_id: string } | null)?.organization_id ?? '';
+    const orgId = (profileRow as { organisation_id: string } | null)?.organisation_id ?? '';
     if (!orgId) return res.status(403).json({ error: 'No organisation associated with your account' });
 
     const [approvedRecs, existingSignals] = await Promise.all([
