@@ -193,7 +193,7 @@ CREATE POLICY "deployments: read own org"
     EXISTS (
       SELECT 1 FROM clients c
       WHERE c.id = client_id
-        AND c.organization_id = (
+        AND c.organisation_id = (
           SELECT organization_id FROM profiles WHERE id = auth.uid() LIMIT 1
         )
     )
@@ -205,7 +205,7 @@ CREATE POLICY "deployments: write own org"
     EXISTS (
       SELECT 1 FROM clients c
       WHERE c.id = client_id
-        AND c.organization_id = (
+        AND c.organisation_id = (
           SELECT organization_id FROM profiles WHERE id = auth.uid() LIMIT 1
         )
     )
