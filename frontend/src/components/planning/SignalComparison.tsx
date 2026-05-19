@@ -8,6 +8,8 @@
  * Rows:    Each unique event from approved recommendations
  */
 
+import { Download } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import type { PlanningRecommendation } from '@/types/planning';
 
 interface SignalComparisonProps {
@@ -151,6 +153,42 @@ function StatusBadge({ status, param }: { status: ParamStatus; param: string }) 
   );
 }
 
+// ── CSV export ────────────────────────────────────────────────────────────────
+
+function exportCSV(
+  events: Array<{ eventName: string; actionType: string }>,
+  activePlatforms: PlatformDef[],
+) {
+  const rows: string[][] = [['Event', 'Action Type', 'Platform', 'Parameter', 'Status']];
+
+  for (const { eventName, actionType } of events) {
+    for (const platform of activePlatforms) {
+      const params = getParamsForPlatform(platform.key, actionType);
+      for (const [param, status] of Object.entries(params)) {
+        const statusLabel =
+          status === 'present' ? 'Present & configured' :
+          status === 'recommended' ? 'Recommended (not yet configured)' :
+          'Not applicable';
+        rows.push([eventName, actionType, platform.label, param, statusLabel]);
+      }
+    }
+  }
+
+  const csv = rows
+    .map(r => r.map(cell => `"${cell.replace(/"/g, '""')}"`).join(','))
+    .join('\n');
+
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'atlas-signal-map.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function SignalComparison({ recommendations, selectedPlatforms }: SignalComparisonProps) {
@@ -186,7 +224,7 @@ export function SignalComparison({ recommendations, selectedPlatforms }: SignalC
   return (
     <div className="space-y-4">
       {/* Summary row */}
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-wrap items-start gap-3">
         <div className="rounded-lg border bg-background px-4 py-2.5">
           <p className="text-xs text-muted-foreground">Platforms</p>
           <p className="text-lg font-bold">{platformsConnected}<span className="text-sm text-muted-foreground font-normal">/{ALL_PLATFORMS.length - 1}</span></p>
@@ -198,6 +236,17 @@ export function SignalComparison({ recommendations, selectedPlatforms }: SignalC
         <div className="rounded-lg border bg-background px-4 py-2.5">
           <p className="text-xs text-muted-foreground">Click ID capture</p>
           <p className="text-sm font-semibold text-green-600 mt-0.5">Active (GCLID + FBCLID)</p>
+        </div>
+        <div className="ml-auto">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => exportCSV(events, activePlatforms)}
+            className="flex items-center gap-1.5 text-xs"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Export CSV
+          </Button>
         </div>
       </div>
 
