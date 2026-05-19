@@ -7,7 +7,7 @@ import { strategyApi } from '@/lib/api/strategyApi';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { Lock, Plus, ExternalLink, Link2, AlertTriangle, ShieldAlert } from 'lucide-react';
+import { Lock, Plus, ExternalLink, Link2, AlertTriangle, ShieldAlert, Trash2 } from 'lucide-react';
 import type { StrategyBriefRecord } from '@/types/strategy';
 import type { PlatformConnectionPublic, ConnectionGroup } from '@/types/connections';
 
@@ -51,10 +51,22 @@ export function SettingsPage() {
   const { connections, fetchConnections } = useConnectionStore();
 
   const [briefs, setBriefs] = useState<StrategyBriefRecord[]>([]);
+  const [deletingBriefId, setDeletingBriefId] = useState<string | null>(null);
 
   useEffect(() => {
     strategyApi.listBriefs().then((res) => setBriefs(res.data ?? [])).catch(() => {});
   }, []);
+
+  async function handleDeleteBrief(id: string) {
+    if (!confirm('Delete this brief? This cannot be undone.')) return;
+    setDeletingBriefId(id);
+    try {
+      await strategyApi.deleteBrief(id);
+      setBriefs((prev) => prev.filter((b) => b.id !== id));
+    } finally {
+      setDeletingBriefId(null);
+    }
+  }
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -211,6 +223,14 @@ export function SettingsPage() {
                         Continue
                       </Button>
                     )}
+                    <button
+                      onClick={() => handleDeleteBrief(brief.id)}
+                      disabled={deletingBriefId === brief.id}
+                      className="p-1 rounded text-muted-foreground hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-40"
+                      title="Delete brief"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
                   </div>
                 </div>
               ))}
