@@ -1039,8 +1039,9 @@ src="https://px.ads.linkedin.com/collect/?pid={{CONST - LinkedIn Partner ID}}&fm
 
   // ── Per-recommendation: triggers + event tags ─────────────────────────────
 
-  // Deduplicate by event_name — one trigger per unique event name
+  // Deduplicate by event_name — one trigger and one set of platform tags per unique event name
   const eventTriggerMap = new Map<string, string>(); // event_name → triggerId
+  const eventTagsSeen = new Set<string>(); // event_name → tags already emitted
 
   function ensureEventTrigger(irEvent: IREvent): string {
     if (eventTriggerMap.has(irEvent.event_name)) return eventTriggerMap.get(irEvent.event_name)!;
@@ -1062,6 +1063,11 @@ src="https://px.ads.linkedin.com/collect/?pid={{CONST - LinkedIn Partner ID}}&fm
     for (const param of irEvent.parameters) {
       ensureDlv(dlvPathForParam(param.key, isEcommerce));
     }
+
+    // Skip emitting platform tags for duplicate event names — triggers are already
+    // deduplicated above; emitting another set of tags would create duplicate tag names.
+    if (eventTagsSeen.has(irEvent.event_name)) continue;
+    eventTagsSeen.add(irEvent.event_name);
 
     // ── GA4 Event Tag ───────────────────────────────────────────────────────
     if (hasGA4) {
