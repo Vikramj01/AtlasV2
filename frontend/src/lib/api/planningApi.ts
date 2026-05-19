@@ -137,7 +137,7 @@ export const planningApi = {
     if (!res.ok) {
       throw new Error((body as { error?: string }).error ?? `Request failed: ${res.status}`);
     }
-    return body as GenerateOutputsResponse;
+    return body as unknown as GenerateOutputsResponse;
   },
 
   listOutputs(sessionId: string): Promise<{ outputs: PlanningOutput[] }> {
