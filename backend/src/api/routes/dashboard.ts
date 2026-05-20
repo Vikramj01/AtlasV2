@@ -4,6 +4,7 @@
  * GET /api/dashboard           — returns DashboardResponse with summary metrics and prioritised action cards
  * GET /api/dashboard/atlas-score — composite AtlasScore (overall + three sub-scores)
  * GET /api/dashboard/next-action — single highest-priority next action for the user
+ * GET /api/dashboard/setup-progress — which SET UP sidebar steps are complete
  */
 
 import { Router } from 'express';
@@ -14,6 +15,7 @@ import { buildDashboard } from '@/services/dashboard/dashboardService';
 import { buildAtlasScore } from '@/services/dashboard/atlasScoreService';
 import { buildNextAction } from '@/services/dashboard/nextActionService';
 import { getRecentActivity } from '@/services/dashboard/activityService';
+import { getSetupProgress } from '@/services/dashboard/setupProgressService';
 
 export const dashboardRouter = Router();
 dashboardRouter.use(authMiddleware);
@@ -61,6 +63,18 @@ dashboardRouter.get('/activity', async (req: Request, res: Response): Promise<vo
   try {
     const activity = await getRecentActivity(userId);
     res.json({ data: activity, error: null, message: null });
+  } catch (err) {
+    sendInternalError(res, err);
+  }
+});
+
+// ── GET /api/dashboard/setup-progress ────────────────────────────────────────
+
+dashboardRouter.get('/setup-progress', async (req: Request, res: Response): Promise<void> => {
+  const userId = req.user.id;
+  try {
+    const progress = await getSetupProgress(userId);
+    res.json({ data: progress, error: null, message: null });
   } catch (err) {
     sendInternalError(res, err);
   }

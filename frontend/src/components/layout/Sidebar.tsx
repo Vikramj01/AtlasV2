@@ -12,6 +12,7 @@ import { OrgSwitcher } from '@/components/organisation/OrgSwitcher';
 import { useOrganisationStore } from '@/store/organisationStore';
 import { organisationApi } from '@/lib/api/organisationApi';
 import { SECTION_LABELS } from '@/lib/ui-copy';
+import { dashboardApi } from '@/lib/api/dashboardApi';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,7 +20,7 @@ import { Label } from '@/components/ui/label';
 
 // ── Nav data ──────────────────────────────────────────────────────────────────
 
-type NavItemDef = { label: string; technicalLabel?: string; to: string; Icon: LucideIcon; end?: boolean; step?: number };
+type NavItemDef = { label: string; technicalLabel?: string; to: string; Icon: LucideIcon; end?: boolean; step?: number; stepKey?: string };
 
 const PERSONAL_NAV_GROUPS: { label: string; items: NavItemDef[] }[] = [
   {
@@ -31,13 +32,13 @@ const PERSONAL_NAV_GROUPS: { label: string; items: NavItemDef[] }[] = [
   {
     label: 'SET UP',
     items: [
-      { label: SECTION_LABELS.conversionStrategyGate.primary, technicalLabel: SECTION_LABELS.conversionStrategyGate.technical, to: '/planning/strategy', Icon: Target,      step: 1 },
-      { label: SECTION_LABELS.planningMode.primary,            technicalLabel: SECTION_LABELS.planningMode.technical,            to: '/planning',          Icon: MapPin,      step: 2 },
-      { label: SECTION_LABELS.journeyBuilder.primary,          technicalLabel: SECTION_LABELS.journeyBuilder.technical,          to: '/journey/new',       Icon: CheckCircle, step: 3 },
-      { label: SECTION_LABELS.tagLibrary.primary,              technicalLabel: SECTION_LABELS.tagLibrary.technical,              to: '/signals',           Icon: Tag,         step: 4 },
-      { label: SECTION_LABELS.consentHub.primary,              technicalLabel: SECTION_LABELS.consentHub.technical,              to: '/consent',           Icon: ShieldCheck, step: 5 },
-      { label: SECTION_LABELS.capi.primary,                    technicalLabel: SECTION_LABELS.capi.technical,                    to: '/integrations/capi', Icon: Activity,    step: 6 },
-      { label: SECTION_LABELS.platformConnections.primary,     technicalLabel: SECTION_LABELS.platformConnections.technical,     to: '/connections',       Icon: Link2,       step: 7 },
+      { label: SECTION_LABELS.conversionStrategyGate.primary, technicalLabel: SECTION_LABELS.conversionStrategyGate.technical, to: '/planning/strategy', Icon: Target,      step: 1, stepKey: 'strategy'      },
+      { label: SECTION_LABELS.planningMode.primary,            technicalLabel: SECTION_LABELS.planningMode.technical,            to: '/planning',          Icon: MapPin,      step: 2, stepKey: 'site-scan'     },
+      { label: SECTION_LABELS.journeyBuilder.primary,          technicalLabel: SECTION_LABELS.journeyBuilder.technical,          to: '/journey/new',       Icon: CheckCircle, step: 3, stepKey: 'tracking-plan' },
+      { label: SECTION_LABELS.tagLibrary.primary,              technicalLabel: SECTION_LABELS.tagLibrary.technical,              to: '/signals',           Icon: Tag,         step: 4, stepKey: 'tag-library'   },
+      { label: SECTION_LABELS.consentHub.primary,              technicalLabel: SECTION_LABELS.consentHub.technical,              to: '/consent',           Icon: ShieldCheck, step: 5, stepKey: 'consent'       },
+      { label: SECTION_LABELS.capi.primary,                    technicalLabel: SECTION_LABELS.capi.technical,                    to: '/integrations/capi', Icon: Activity,    step: 6, stepKey: 'capi'          },
+      { label: SECTION_LABELS.platformConnections.primary,     technicalLabel: SECTION_LABELS.platformConnections.technical,     to: '/connections',       Icon: Link2,       step: 7, stepKey: 'connections'   },
     ],
   },
   {
@@ -80,7 +81,7 @@ const NAV_INACTIVE =
 
 // ── Nav item component ────────────────────────────────────────────────────────
 
-function SidebarNavItem({ label, technicalLabel, to, Icon, end = false, step }: NavItemDef) {
+function SidebarNavItem({ label, technicalLabel, to, Icon, end = false, step, done = false }: NavItemDef & { done?: boolean }) {
   return (
     <NavLink
       to={to}
@@ -91,12 +92,14 @@ function SidebarNavItem({ label, technicalLabel, to, Icon, end = false, step }: 
         <>
           {step !== undefined ? (
             <span className={cn(
-              'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-bold mt-0.5',
+              'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-bold mt-0.5 transition-colors',
               isActive
-                ? 'border-white text-white'
-                : 'border-[#9CA3AF] text-[#9CA3AF] group-hover:border-[#1A1A1A] group-hover:text-[#1A1A1A]',
+                ? 'border-white text-white bg-transparent'
+                : done
+                  ? 'border-emerald-500 bg-emerald-500 text-white'
+                  : 'border-[#9CA3AF] text-[#9CA3AF] group-hover:border-[#1A1A1A] group-hover:text-[#1A1A1A]',
             )}>
-              {step}
+              {done && !isActive ? '✓' : step}
             </span>
           ) : (
             <Icon
@@ -218,12 +221,19 @@ export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
   const { currentOrg, organisations, setOrganisations } = useOrganisationStore();
   const params = useParams<{ orgId?: string }>();
   const [createOrgOpen, setCreateOrgOpen] = useState(false);
+  const [completedSteps, setCompletedSteps] = useState<string[]>([]);
 
   useEffect(() => {
     organisationApi.list()
       .then(setOrganisations)
       .catch(() => { /* non-blocking */ });
   }, [setOrganisations]);
+
+  useEffect(() => {
+    dashboardApi.getSetupProgress()
+      .then(({ data }) => setCompletedSteps(data.completedSteps))
+      .catch(() => { /* non-blocking — sidebar degrades gracefully without ticks */ });
+  }, []);
 
   const activeOrgId = params.orgId ?? currentOrg?.id;
 
@@ -285,7 +295,11 @@ export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
                 </p>
                 <div className="space-y-0.5">
                   {items.map((item) => (
-                    <SidebarNavItem key={item.to} {...item} />
+                    <SidebarNavItem
+                      key={item.to}
+                      {...item}
+                      done={item.stepKey ? completedSteps.includes(item.stepKey) : false}
+                    />
                   ))}
                 </div>
               </div>

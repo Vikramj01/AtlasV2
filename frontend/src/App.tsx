@@ -66,7 +66,7 @@ export default function App() {
                 <Route path="/journey/:id/spec" element={<SectionErrorBoundary label="Journey spec"><JourneySpecPage /></SectionErrorBoundary>} />
                 <Route path="/journey/:id/audit/:auditId" element={<SectionErrorBoundary label="Gap report"><GapReportPage /></SectionErrorBoundary>} />
                 {/* Planning Mode — Pro+ */}
-                <Route path="/planning" element={<SectionErrorBoundary label="Planning sessions"><PlanGate minPlan="pro" featureName="Site scan"><StrategyGateGuard><PlanningDashboard /></StrategyGateGuard></PlanGate></SectionErrorBoundary>} />
+                <Route path="/planning" element={<SectionErrorBoundary label="Planning sessions"><PlanGate minPlan="pro" featureName="Site scan"><PlanningDashboard /></PlanGate></SectionErrorBoundary>} />
                 {/* Conversion Strategy Gate — all plans */}
                 <Route path="/planning/strategy" element={<SectionErrorBoundary label="Strategy planner"><StrategyPage /></SectionErrorBoundary>} />
                 <Route path="/strategy/briefs/:id" element={<SectionErrorBoundary label="Strategy brief"><StrategyBriefPage /></SectionErrorBoundary>} />

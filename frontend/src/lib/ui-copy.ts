@@ -24,12 +24,12 @@ export const SECTION_LABELS = {
     technical: 'Deduplication',
   },
   journeyBuilder: {
-    primary: 'Tracking Plan Builder',
-    technical: 'Journey Builder',
+    primary: 'Manual Plan Builder',
+    technical: 'Build & export GTM manually',
   },
   planningMode: {
-    primary: 'Site Scan & Recommendations',
-    technical: 'AI Planning Mode',
+    primary: 'AI Site Scan',
+    technical: 'Auto-detect & generate GTM',
   },
   conversionStrategyGate: {
     primary: 'Campaign Setup Review',
