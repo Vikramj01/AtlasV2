@@ -23,6 +23,7 @@ interface OrganisationState {
   setMembers: (members: OrganisationMember[]) => void;
   addClient: (client: ClientWithDetails) => void;
   removeClient: (clientId: string) => void;
+  removeOrganisation: (orgId: string) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   reset: () => void;
@@ -50,6 +51,12 @@ export const useOrganisationStore = create<OrganisationState>((set) => ({
 
   removeClient: (clientId) =>
     set((state) => ({ clients: state.clients.filter((c) => c.id !== clientId) })),
+
+  removeOrganisation: (orgId) =>
+    set((state) => ({
+      organisations: state.organisations.filter((o) => o.id !== orgId),
+      currentOrg: state.currentOrg?.id === orgId ? null : state.currentOrg,
+    })),
 
   setLoading: (isLoading) => set({ isLoading }),
   setError: (error) => set({ error }),
