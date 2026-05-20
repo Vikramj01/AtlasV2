@@ -11,6 +11,7 @@ import { ProgressBar } from '@/components/developer/ProgressBar';
 import { ChangeDetectionResults } from '@/components/planning/ChangeDetectionResults';
 import { SkeletonCard } from '@/components/common/SkeletonCard';
 import { StrategyGateBanner } from '@/components/strategy/StrategyGateBanner';
+import { SECTION_LABELS } from '@/lib/ui-copy';
 
 const STATUS_LABELS: Record<PlanningSession['status'], string> = {
   setup:         'Setup',
@@ -259,9 +260,13 @@ export function PlanningDashboard() {
       {/* Header */}
       <div className="mb-8 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Site scan</h1>
+          <h1 className="text-2xl font-bold text-foreground">
+            {SECTION_LABELS.planningMode.primary}
+            <span className="ml-2 text-sm font-normal text-muted-foreground">{SECTION_LABELS.planningMode.technical}</span>
+          </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Scan your website and get a ready-to-import Google Tag Manager setup file with recommended tracking.
+            Atlas scans your site and generates a ready-to-import GTM container automatically.
+            For a hand-built plan, use the <span className="font-medium text-foreground">Manual Plan Builder</span>.
           </p>
         </div>
         <Button onClick={handleNew}>
