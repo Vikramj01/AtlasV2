@@ -30,4 +30,6 @@ export const dashboardApi = {
     apiFetch<{ data: NextAction }>('/api/dashboard/next-action'),
   getActivity: () =>
     apiFetch<ActivityResponse>('/api/dashboard/activity'),
+  getSetupProgress: () =>
+    apiFetch<{ data: { completedSteps: string[] } }>('/api/dashboard/setup-progress'),
 };
