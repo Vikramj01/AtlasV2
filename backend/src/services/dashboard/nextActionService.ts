@@ -6,11 +6,11 @@ export interface NextAction {
   cta_route: string;
   eta_minutes: number;
   priority: number;
+  is_skippable?: boolean;
 }
 
-export async function buildNextAction(userId: string): Promise<NextAction> {
-  const [briefResult, sessionResult, healthResult, capiResult, consentResult, outputResult] =
-    await Promise.all([
+export async function buildNextAction(userId: string, skipStrategy = false): Promise<NextAction> {
+  const [briefResult, sessionResult, anySessionResult, healthResult, capiResult, consentResult, outputResult] = await Promise.all([
       supabase
         .from('strategy_briefs')
         .select('id')
@@ -23,6 +23,12 @@ export async function buildNextAction(userId: string): Promise<NextAction> {
         .eq('user_id', userId)
         .in('status', ['outputs_ready', 'review_ready'])
         .order('created_at', { ascending: false })
+        .limit(1),
+
+      supabase
+        .from('planning_sessions')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId)
         .limit(1),
 
       supabase
@@ -51,15 +57,18 @@ export async function buildNextAction(userId: string): Promise<NextAction> {
         .limit(1),
     ]);
 
-  // Priority 1 — No strategy brief
+  // Priority 1 — Brand-new user with no brief and no sessions yet
+  // (users who already have sessions are past onboarding; skip this nudge for them)
   const hasBrief = (briefResult.data?.length ?? 0) > 0;
-  if (!hasBrief) {
+  const hasAnySession = (anySessionResult.count ?? 0) > 0;
+  if (!hasBrief && !hasAnySession && !skipStrategy) {
     return {
       action_id: 'no_strategy_brief',
-      copy: 'Lock your conversion event',
+      copy: 'Define your conversion strategy',
       cta_route: '/planning/strategy',
       eta_minutes: 3,
       priority: 1,
+      is_skippable: true,
     };
   }
 

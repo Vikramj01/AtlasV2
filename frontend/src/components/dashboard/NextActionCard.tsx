@@ -7,19 +7,42 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 
 const NAVY = '#1B2A4A';
+const SKIP_KEY = 'atlas_strategy_action_skipped_until';
+const SKIP_DAYS = 7;
+
+function isStrategySkipped(): boolean {
+  const raw = localStorage.getItem(SKIP_KEY);
+  if (!raw) return false;
+  return Date.now() < Number(raw);
+}
+
+function setStrategySkipped() {
+  const until = Date.now() + SKIP_DAYS * 24 * 60 * 60 * 1000;
+  localStorage.setItem(SKIP_KEY, String(until));
+}
 
 export function NextActionCard() {
   const navigate = useNavigate();
   const [action, setAction] = useState<NextAction | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  function fetchAction(skipStrategy: boolean) {
+    setLoading(true);
     dashboardApi
-      .getNextAction()
+      .getNextAction(skipStrategy ? { skipStrategy: true } : undefined)
       .then((res) => setAction(res.data))
       .catch(() => setAction(null))
       .finally(() => setLoading(false));
+  }
+
+  useEffect(() => {
+    fetchAction(isStrategySkipped());
   }, []);
+
+  function handleSkip() {
+    setStrategySkipped();
+    fetchAction(true);
+  }
 
   if (loading) {
     return (
@@ -52,20 +75,34 @@ export function NextActionCard() {
               Next action
             </p>
             <p className="text-base font-semibold text-[#1A1A1A]">{action.copy}</p>
-            <div className="flex items-center gap-1 text-xs text-[#6B7280]">
+            <div className="flex items-center gap-1.5 text-xs text-[#6B7280]">
               <Clock className="h-3 w-3 shrink-0" />
               {etaLabel}
+              {action.is_skippable && (
+                <span className="text-[#9CA3AF]">· optional</span>
+              )}
             </div>
           </div>
-          <Button
-            size="sm"
-            className="shrink-0 gap-1.5"
-            style={{ backgroundColor: NAVY }}
-            onClick={() => navigate(action.cta_route)}
-          >
-            Go
-            <ArrowRight className="h-3.5 w-3.5" />
-          </Button>
+          <div className="flex shrink-0 items-center gap-2">
+            {action.is_skippable && (
+              <button
+                type="button"
+                onClick={handleSkip}
+                className="text-xs text-[#9CA3AF] hover:text-[#6B7280] transition-colors"
+              >
+                Skip for now
+              </button>
+            )}
+            <Button
+              size="sm"
+              className="gap-1.5"
+              style={{ backgroundColor: NAVY }}
+              onClick={() => navigate(action.cta_route)}
+            >
+              Go
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Button>
+          </div>
         </div>
       </CardContent>
     </Card>
