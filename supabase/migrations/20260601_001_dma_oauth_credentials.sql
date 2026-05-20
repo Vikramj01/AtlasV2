@@ -32,7 +32,7 @@ CREATE POLICY "org_members_only" ON google_dma_credentials
   FOR ALL
   USING (
     org_id IN (
-      SELECT organization_id FROM profiles WHERE id = auth.uid()
+      SELECT organisation_id FROM profiles WHERE id = auth.uid()
     )
   );
 
