@@ -11,6 +11,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Lock, Plus, ExternalLink, Link2, AlertTriangle, ShieldAlert, Trash2, Building2 } from 'lucide-react';
 import type { StrategyBriefRecord } from '@/types/strategy';
 import type { PlatformConnectionPublic, ConnectionGroup } from '@/types/connections';
@@ -42,12 +50,17 @@ export function SettingsPage() {
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [isSigningOut, setIsSigningOut] = useState(false);
 
-  const { organisations, setOrganisations, setCurrentOrg } = useOrganisationStore();
+  const { organisations, setOrganisations, setCurrentOrg, removeOrganisation, reset: resetOrgStore } = useOrganisationStore();
   const [orgName, setOrgName] = useState('');
   const [orgSlug, setOrgSlug] = useState('');
   const [orgSlugTouched, setOrgSlugTouched] = useState(false);
   const [orgSaving, setOrgSaving] = useState(false);
   const [orgError, setOrgError] = useState<string | null>(null);
+
+  const [deleteOrgTarget, setDeleteOrgTarget] = useState<{ id: string; name: string } | null>(null);
+  const [deleteConfirmInput, setDeleteConfirmInput] = useState('');
+  const [isDeletingOrg, setIsDeletingOrg] = useState(false);
+  const [deleteOrgError, setDeleteOrgError] = useState<string | null>(null);
 
   const showOrgSection = searchParams.get('tab') === 'org' || organisations.length === 0;
 
@@ -75,6 +88,24 @@ export function SettingsPage() {
       setOrgError(err instanceof Error ? err.message : 'Failed to create workspace');
     } finally {
       setOrgSaving(false);
+    }
+  }
+
+  async function handleConfirmDeleteOrg() {
+    if (!deleteOrgTarget) return;
+    setIsDeletingOrg(true);
+    setDeleteOrgError(null);
+    try {
+      await organisationApi.delete(deleteOrgTarget.id);
+      removeOrganisation(deleteOrgTarget.id);
+      setDeleteOrgTarget(null);
+      setDeleteConfirmInput('');
+      resetOrgStore();
+      navigate('/settings');
+    } catch (err) {
+      setDeleteOrgError(err instanceof Error ? err.message : 'Failed to delete workspace');
+    } finally {
+      setIsDeletingOrg(false);
     }
   }
 
@@ -210,9 +241,18 @@ export function SettingsPage() {
                         <p className="text-xs text-muted-foreground">{org.slug}</p>
                       </div>
                     </div>
-                    <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => navigate(`/org/${org.id}/clients`)}>
-                      Open
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => navigate(`/org/${org.id}/clients`)}>
+                        Open
+                      </Button>
+                      <button
+                        onClick={() => { setDeleteOrgTarget({ id: org.id, name: org.name }); setDeleteConfirmInput(''); setDeleteOrgError(null); }}
+                        className="p-1 rounded text-muted-foreground hover:text-red-600 hover:bg-red-50 transition-colors"
+                        title="Delete workspace"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -552,6 +592,93 @@ export function SettingsPage() {
           )}
         </CardContent>
       </Card>
+      {/* Danger Zone */}
+      {organisations.length > 0 && (
+        <Card className="border-red-200">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold text-red-700">Danger Zone</CardTitle>
+          </CardHeader>
+          <Separator className="bg-red-100" />
+          <CardContent className="pt-5 space-y-3">
+            <div>
+              <p className="text-sm font-medium">Delete workspace</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Permanently delete this workspace and all associated data — clients, audits, planning sessions, signals, and billing records. This action cannot be undone.
+              </p>
+            </div>
+            {organisations.map((org) => (
+              <div key={org.id} className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50 px-3 py-2.5">
+                <div className="flex items-center gap-2">
+                  <Building2 className="h-4 w-4 text-red-400 shrink-0" />
+                  <p className="text-sm font-medium text-red-900">{org.name}</p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-xs h-7 border-red-300 text-red-700 hover:bg-red-100 hover:border-red-400"
+                  onClick={() => { setDeleteOrgTarget({ id: org.id, name: org.name }); setDeleteConfirmInput(''); setDeleteOrgError(null); }}
+                >
+                  Delete workspace
+                </Button>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Delete workspace confirmation dialog */}
+      <Dialog
+        open={!!deleteOrgTarget}
+        onOpenChange={(open) => { if (!open && !isDeletingOrg) { setDeleteOrgTarget(null); setDeleteConfirmInput(''); setDeleteOrgError(null); } }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-red-700">Delete workspace</DialogTitle>
+            <DialogDescription asChild>
+              <div className="space-y-3 pt-1">
+                <p>
+                  This will permanently delete <span className="font-semibold text-foreground">{deleteOrgTarget?.name}</span> and all its data — clients, audits, planning sessions, strategy briefs, signals, and billing records.
+                </p>
+                <p className="font-medium text-foreground">This cannot be undone.</p>
+                <div className="space-y-1.5 pt-1">
+                  <Label htmlFor="delete-confirm-input" className="text-xs">
+                    Type <span className="font-semibold">{deleteOrgTarget?.name}</span> to confirm
+                  </Label>
+                  <Input
+                    id="delete-confirm-input"
+                    value={deleteConfirmInput}
+                    onChange={(e) => setDeleteConfirmInput(e.target.value)}
+                    placeholder={deleteOrgTarget?.name ?? ''}
+                    className="text-sm"
+                    autoComplete="off"
+                  />
+                </div>
+                {deleteOrgError && (
+                  <p className="text-xs text-red-600">{deleteOrgError}</p>
+                )}
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => { setDeleteOrgTarget(null); setDeleteConfirmInput(''); setDeleteOrgError(null); }}
+              disabled={isDeletingOrg}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              className="bg-red-600 text-white hover:bg-red-700"
+              disabled={deleteConfirmInput !== deleteOrgTarget?.name || isDeletingOrg}
+              onClick={handleConfirmDeleteOrg}
+            >
+              {isDeletingOrg ? 'Deleting…' : 'Delete workspace'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
