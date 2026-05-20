@@ -12,7 +12,7 @@
 
 CREATE TABLE IF NOT EXISTS google_dma_credentials (
   id                    uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id                uuid        NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  org_id                uuid        NOT NULL REFERENCES organisations(id) ON DELETE CASCADE,
   -- Points to the Google Ads manager platform_connections row that holds OAuth tokens.
   -- SET NULL on connection deletion so the row persists and the UI can prompt reconnect.
   linked_connection_id  uuid        REFERENCES platform_connections(id) ON DELETE SET NULL,
