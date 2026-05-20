@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -175,7 +176,10 @@ export function Step5TrackingPlanSummary() {
                   <p className="text-sm font-medium text-teal-800">Saved to Tag Library</p>
                   <p className="text-xs text-teal-700">
                     {saveResult.created} new signal{saveResult.created !== 1 ? 's' : ''} added
-                    {saveResult.skipped > 0 && `, ${saveResult.skipped} already existed`}.
+                    {saveResult.skipped > 0 && `, ${saveResult.skipped} already existed`}.{' '}
+                    <Link to="/signals" className="font-medium underline underline-offset-2 hover:text-teal-900">
+                      View Tag Library →
+                    </Link>
                   </p>
                 </div>
               </div>

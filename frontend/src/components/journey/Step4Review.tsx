@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { InfoTooltip } from '@/components/common/InfoTooltip';
 import { TOOLTIPS } from '@/lib/ui-copy';
@@ -243,6 +243,14 @@ export function Step4Review({ onBack }: Step4Props) {
           Back
         </Button>
       </div>
+
+      {/* ── Tag Library nudge ────────────────────────────────────────────── */}
+      <p className="mt-4 text-center text-xs text-[#9CA3AF]">
+        Want to reuse these events across other clients?{' '}
+        <Link to="/signals" className="font-medium text-[#1B2A4A] hover:underline">
+          Save to Tag Library →
+        </Link>
+      </p>
 
       {/* ── Template save ─────────────────────────────────────────────────── */}
       <div className="mt-4 border-t border-[#E5E7EB] pt-4">
