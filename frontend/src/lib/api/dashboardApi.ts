@@ -26,8 +26,10 @@ export const dashboardApi = {
   get: () => apiFetch<DashboardResponse>('/api/dashboard'),
   getAtlasScore: () =>
     apiFetch<{ data: AtlasScore }>('/api/dashboard/atlas-score'),
-  getNextAction: () =>
-    apiFetch<{ data: NextAction }>('/api/dashboard/next-action'),
+  getNextAction: (opts?: { skipStrategy?: boolean }) =>
+    apiFetch<{ data: NextAction }>(
+      `/api/dashboard/next-action${opts?.skipStrategy ? '?skip_strategy=1' : ''}`,
+    ),
   getActivity: () =>
     apiFetch<ActivityResponse>('/api/dashboard/activity'),
   getSetupProgress: () =>

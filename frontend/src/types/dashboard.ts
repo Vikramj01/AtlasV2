@@ -16,6 +16,7 @@ export interface NextAction {
   cta_route: string;
   eta_minutes: number;
   priority: number;
+  is_skippable?: boolean;
 }
 
 export type DashboardCardType =

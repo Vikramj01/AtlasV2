@@ -48,8 +48,9 @@ dashboardRouter.get('/atlas-score', async (req: Request, res: Response): Promise
 
 dashboardRouter.get('/next-action', async (req: Request, res: Response): Promise<void> => {
   const userId = req.user.id;
+  const skipStrategy = req.query.skip_strategy === '1';
   try {
-    const action = await buildNextAction(userId);
+    const action = await buildNextAction(userId, skipStrategy);
     res.json({ data: action, error: null, message: null });
   } catch (err) {
     sendInternalError(res, err);

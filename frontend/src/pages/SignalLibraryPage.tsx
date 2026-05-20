@@ -187,9 +187,9 @@ export function SignalLibraryPage() {
       {/* ── Page header ──────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-page-title">Tracking Map</h1>
+          <h1 className="text-page-title">Tag Library</h1>
           <p className="text-body text-[#6B7280] mt-0.5">
-            Platform-agnostic event definitions. Build once, deploy to any client.
+            Events saved from the AI Site Scan or Manual Plan Builder appear here — build once, deploy to any client.
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
