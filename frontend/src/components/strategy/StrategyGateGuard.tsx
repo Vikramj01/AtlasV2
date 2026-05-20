@@ -1,53 +1,69 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Lock } from 'lucide-react';
+import { Target, X } from 'lucide-react';
 import { strategyApi } from '@/lib/api/strategyApi';
 import { Button } from '@/components/ui/button';
+
+const DISMISS_KEY = 'atlas_strategy_nudge_dismissed';
 
 interface StrategyGateGuardProps {
   children: ReactNode;
 }
 
 /**
- * StrategyGateGuard — blocks rendering of children until a strategy brief exists.
- * Redirects to /planning/strategy if none is found.
+ * StrategyGateGuard — soft nudge encouraging users to set a conversion strategy
+ * before running a site scan. Dismissable per session; never blocks access.
  */
 export function StrategyGateGuard({ children }: StrategyGateGuardProps) {
   const navigate = useNavigate();
-  const [status, setStatus] = useState<'loading' | 'locked' | 'open'>('loading');
+  const [showNudge, setShowNudge] = useState(false);
 
   useEffect(() => {
+    if (sessionStorage.getItem(DISMISS_KEY)) return;
+
     strategyApi
       .listBriefs()
       .then((res) => {
         const hasLocked = (res.data ?? []).some((b) => b.locked_at !== null);
-        setStatus(hasLocked ? 'open' : 'locked');
+        if (!hasLocked) setShowNudge(true);
       })
-      .catch(() => setStatus('open')); // fail open — backend enforces the real gate
+      .catch(() => { /* fail open — never block the user */ });
   }, []);
 
-  if (status === 'loading') return null;
-
-  if (status === 'locked') {
-    return (
-      <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-amber-300 bg-amber-50 px-8 py-16 text-center">
-        <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-amber-100">
-          <Lock className="h-6 w-6 text-amber-600" />
-        </div>
-        <h3 className="mb-2 text-lg font-semibold">Lock your conversion event first</h3>
-        <p className="mb-6 max-w-sm text-sm text-muted-foreground">
-          Before scanning or building a tracking plan, you need to define your conversion objective.
-          This takes about 3 minutes.
-        </p>
-        <Button
-          className="bg-[#1B2A4A] text-white hover:bg-[#1B2A4A]/90"
-          onClick={() => navigate('/planning/strategy')}
-        >
-          Lock my conversion event
-        </Button>
-      </div>
-    );
+  function dismiss() {
+    sessionStorage.setItem(DISMISS_KEY, '1');
+    setShowNudge(false);
   }
 
-  return <>{children}</>;
+  return (
+    <>
+      {showNudge && (
+        <div className="flex items-center gap-3 border-b border-[#1B2A4A]/10 bg-[#EEF1F7] px-6 py-3">
+          <Target className="h-4 w-4 shrink-0 text-[#1B2A4A]" />
+          <p className="flex-1 text-sm text-[#1B2A4A]">
+            <span className="font-medium">No conversion strategy set.</span>{' '}
+            Defining your objective helps Atlas tailor scan recommendations to your campaign goals.
+          </p>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              size="sm"
+              className="h-7 bg-[#1B2A4A] text-xs text-white hover:bg-[#1B2A4A]/90"
+              onClick={() => navigate('/planning/strategy')}
+            >
+              Set up strategy
+            </Button>
+            <button
+              type="button"
+              onClick={dismiss}
+              className="rounded p-1 text-[#1B2A4A]/50 transition-colors hover:bg-[#1B2A4A]/10"
+              aria-label="Skip for now"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
+      {children}
+    </>
+  );
 }
