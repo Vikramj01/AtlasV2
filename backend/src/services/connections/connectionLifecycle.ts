@@ -2,6 +2,8 @@ import * as googleAdsOAuth from './oauthFlows/googleAdsOAuth';
 import * as metaOAuth from './oauthFlows/metaOAuth';
 import * as ga4OAuth from './oauthFlows/ga4OAuth';
 import { encryptTokens } from './tokenManager';
+import { supabaseAdmin } from '@/services/database/supabase';
+import logger from '@/utils/logger';
 import { discoverChildAccounts, resolveManagerAccountId } from './discovery/googleAdsDiscovery';
 import { discoverBusinessManagers, discoverAdAccounts, discoverStandaloneAdAccounts } from './discovery/metaDiscovery';
 import { discoverProperties } from './discovery/ga4Discovery';
@@ -156,11 +158,41 @@ async function handleGoogleAdsCallback(
     // GA4 discovery is best-effort — may fail if analytics.readonly scope was not granted
   }
 
+  // If the user granted the datamanager scope, record the DMA OAuth link for this org.
+  // This allows dmaClient to resolve access tokens via the manager connection row.
+  if (tokens.scope?.includes('datamanager')) {
+    await upsertDmaCredentials(orgId, managerConn.id, tokens.scope);
+  }
+
   return {
     managerId: managerAccountId,
     discovered,
     standaloneDiscovered: ga4Discovered,
   };
+}
+
+async function upsertDmaCredentials(
+  orgId: string,
+  linkedConnectionId: string,
+  oauthScope: string,
+): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from('google_dma_credentials')
+    .upsert(
+      {
+        org_id: orgId,
+        linked_connection_id: linkedConnectionId,
+        oauth_scope: oauthScope,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'org_id' },
+    );
+
+  if (error) {
+    // Non-fatal: log and continue. DMA calls will fail at runtime if credentials
+    // are missing, but the Google Ads connection itself succeeded.
+    logger.error({ orgId, linkedConnectionId, error: error.message }, 'Failed to upsert google_dma_credentials');
+  }
 }
 
 async function handleMetaCallback(

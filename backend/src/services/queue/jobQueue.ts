@@ -485,3 +485,35 @@ ihcDigestQueue.on('failed', (job, err) => {
   logger.error({ jobId: job?.id, err: err.message }, 'IHC digest job failed');
 });
 
+// ── DMA Ingest Queue ──────────────────────────────────────────────────────────
+// Handles events:ingest and audiencemembers:ingest calls to Google Data Manager API.
+// payload_ref is a UUID pointing to a pre-staged row in a DB table — no hashed
+// PII travels through Redis.
+// Retries: 3 attempts with 30s/60s/120s exponential backoff to absorb transient
+// DMA rate-limit responses (429) and brief token-refresh races.
+
+export interface DMAIngestJobData {
+  org_id: string;
+  ingest_type: 'events' | 'audience_members';
+  payload_ref: string; // UUID referencing the staged payload row (enricher_runs or equivalent)
+}
+
+export const dmaIngestQueue = new Bull<DMAIngestJobData>('dma-ingest', makeBullOpts({
+  attempts: 3,
+  backoff: { type: 'exponential', delay: 30_000 },
+  removeOnComplete: 200,
+  removeOnFail: 100,
+}));
+
+dmaIngestQueue.on('completed', (job) => {
+  logger.info({ jobId: job.id, orgId: job.data.org_id, ingestType: job.data.ingest_type }, 'DMA ingest job completed');
+});
+
+dmaIngestQueue.on('failed', (job, err) => {
+  logger.error({ jobId: job?.id, orgId: job?.data?.org_id, ingestType: job?.data?.ingest_type, err: err.message }, 'DMA ingest job failed');
+});
+
+dmaIngestQueue.on('stalled', (job) => {
+  logger.warn({ jobId: job.id, orgId: job.data.org_id }, 'DMA ingest job stalled');
+});
+
