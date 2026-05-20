@@ -5,7 +5,7 @@ import {
   Home, MapPin, CheckCircle, Clock, Settings,
   Building2, LayoutGrid, ShieldCheck, Activity,
   HeartPulse, ShieldAlert, GitBranch, Tag,
-  Link2, ArrowLeftRight, Plus,
+  Link2, ArrowLeftRight, Plus, Target,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { OrgSwitcher } from '@/components/organisation/OrgSwitcher';
@@ -19,7 +19,7 @@ import { Label } from '@/components/ui/label';
 
 // ── Nav data ──────────────────────────────────────────────────────────────────
 
-type NavItemDef = { label: string; technicalLabel?: string; to: string; Icon: LucideIcon; end?: boolean };
+type NavItemDef = { label: string; technicalLabel?: string; to: string; Icon: LucideIcon; end?: boolean; step?: number };
 
 const PERSONAL_NAV_GROUPS: { label: string; items: NavItemDef[] }[] = [
   {
@@ -31,12 +31,13 @@ const PERSONAL_NAV_GROUPS: { label: string; items: NavItemDef[] }[] = [
   {
     label: 'SET UP',
     items: [
-      { label: SECTION_LABELS.planningMode.primary,   technicalLabel: SECTION_LABELS.planningMode.technical,   to: '/planning',          Icon: MapPin },
-      { label: SECTION_LABELS.journeyBuilder.primary, technicalLabel: SECTION_LABELS.journeyBuilder.technical, to: '/journey/new',       Icon: CheckCircle },
-      { label: SECTION_LABELS.tagLibrary.primary,    technicalLabel: SECTION_LABELS.tagLibrary.technical,    to: '/signals',           Icon: Tag },
-      { label: SECTION_LABELS.consentHub.primary,          technicalLabel: SECTION_LABELS.consentHub.technical,          to: '/consent',           Icon: ShieldCheck },
-      { label: SECTION_LABELS.capi.primary,                technicalLabel: SECTION_LABELS.capi.technical,                to: '/integrations/capi', Icon: Activity },
-      { label: SECTION_LABELS.platformConnections.primary, technicalLabel: SECTION_LABELS.platformConnections.technical, to: '/connections',       Icon: Link2 },
+      { label: SECTION_LABELS.conversionStrategyGate.primary, technicalLabel: SECTION_LABELS.conversionStrategyGate.technical, to: '/planning/strategy', Icon: Target,      step: 1 },
+      { label: SECTION_LABELS.planningMode.primary,            technicalLabel: SECTION_LABELS.planningMode.technical,            to: '/planning',          Icon: MapPin,      step: 2 },
+      { label: SECTION_LABELS.journeyBuilder.primary,          technicalLabel: SECTION_LABELS.journeyBuilder.technical,          to: '/journey/new',       Icon: CheckCircle, step: 3 },
+      { label: SECTION_LABELS.tagLibrary.primary,              technicalLabel: SECTION_LABELS.tagLibrary.technical,              to: '/signals',           Icon: Tag,         step: 4 },
+      { label: SECTION_LABELS.consentHub.primary,              technicalLabel: SECTION_LABELS.consentHub.technical,              to: '/consent',           Icon: ShieldCheck, step: 5 },
+      { label: SECTION_LABELS.capi.primary,                    technicalLabel: SECTION_LABELS.capi.technical,                    to: '/integrations/capi', Icon: Activity,    step: 6 },
+      { label: SECTION_LABELS.platformConnections.primary,     technicalLabel: SECTION_LABELS.platformConnections.technical,     to: '/connections',       Icon: Link2,       step: 7 },
     ],
   },
   {
@@ -79,7 +80,7 @@ const NAV_INACTIVE =
 
 // ── Nav item component ────────────────────────────────────────────────────────
 
-function SidebarNavItem({ label, technicalLabel, to, Icon, end = false }: NavItemDef) {
+function SidebarNavItem({ label, technicalLabel, to, Icon, end = false, step }: NavItemDef) {
   return (
     <NavLink
       to={to}
@@ -88,13 +89,24 @@ function SidebarNavItem({ label, technicalLabel, to, Icon, end = false }: NavIte
     >
       {({ isActive }) => (
         <>
-          <Icon
-            className={cn(
-              'h-5 w-5 shrink-0 mt-0.5',
-              isActive ? 'text-white' : 'text-[#9CA3AF] group-hover:text-[#1A1A1A]',
-            )}
-            strokeWidth={1.5}
-          />
+          {step !== undefined ? (
+            <span className={cn(
+              'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-bold mt-0.5',
+              isActive
+                ? 'border-white text-white'
+                : 'border-[#9CA3AF] text-[#9CA3AF] group-hover:border-[#1A1A1A] group-hover:text-[#1A1A1A]',
+            )}>
+              {step}
+            </span>
+          ) : (
+            <Icon
+              className={cn(
+                'h-5 w-5 shrink-0 mt-0.5',
+                isActive ? 'text-white' : 'text-[#9CA3AF] group-hover:text-[#1A1A1A]',
+              )}
+              strokeWidth={1.5}
+            />
+          )}
           <span className="flex flex-col min-w-0">
             <span className="leading-snug">{label}</span>
             {technicalLabel && (
