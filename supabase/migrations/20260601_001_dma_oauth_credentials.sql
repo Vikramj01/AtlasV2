@@ -30,13 +30,20 @@ CREATE TABLE IF NOT EXISTS google_dma_credentials (
 
 ALTER TABLE google_dma_credentials ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "org_members_only" ON google_dma_credentials
-  FOR ALL
-  USING (
-    org_id IN (
-      SELECT organisation_id FROM organisation_members WHERE user_id = auth.uid()
-    )
-  );
+-- Only create the RLS policy if organisation_members exists (not present in preview branches).
+-- Without a policy, RLS defaults to deny-all for non-service-role — safe for this table
+-- since the backend accesses it exclusively via the service role key.
+DO $$ BEGIN
+  IF EXISTS (SELECT FROM pg_tables WHERE tablename = 'organisation_members') THEN
+    CREATE POLICY "org_members_only" ON google_dma_credentials
+      FOR ALL
+      USING (
+        org_id IN (
+          SELECT organisation_id FROM organisation_members WHERE user_id = auth.uid()
+        )
+      );
+  END IF;
+END $$;
 
 -- Extend usage_events with DMA-specific columns for ingest event tracking.
 -- These are nullable: populated only for event_type = 'dma_ingest_event'.
