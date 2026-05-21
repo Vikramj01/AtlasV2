@@ -62,8 +62,11 @@ export const env = {
   // Google Ads OAuth — required for token refresh on Google Enhanced Conversions
   GOOGLE_OAUTH_CLIENT_ID: optional('GOOGLE_OAUTH_CLIENT_ID', ''),
   GOOGLE_OAUTH_CLIENT_SECRET: optional('GOOGLE_OAUTH_CLIENT_SECRET', ''),
-  // Developer token required for every Google Ads API request
+  // Developer token required for every Google Ads API request and Data Manager API calls.
+  // In most cases GOOGLE_DMA_DEVELOPER_TOKEN is the same as GOOGLE_ADS_DEVELOPER_TOKEN.
+  // Set separately only if your DMA project uses a different developer token.
   GOOGLE_ADS_DEVELOPER_TOKEN: optional('GOOGLE_ADS_DEVELOPER_TOKEN', ''),
+  GOOGLE_DMA_DEVELOPER_TOKEN: optional('GOOGLE_DMA_DEVELOPER_TOKEN', ''),
 
   // Platform Reconciliation — separate encryption key for OAuth tokens
   // Generate: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"

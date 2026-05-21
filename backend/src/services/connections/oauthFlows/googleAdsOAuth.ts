@@ -2,11 +2,13 @@ import { createHmac, randomBytes } from 'crypto';
 import { env } from '@/config/env';
 import type { OAuthTokens } from '@/types/connections';
 
-// Combined scopes: Google Ads + GA4 share one Google OAuth consent screen
+// Combined scopes: Google Ads + GA4 + Data Manager share one consent screen.
+// datamanager scope is required for DMA events:ingest and audiencemembers:ingest.
 const SCOPES = [
   'https://www.googleapis.com/auth/adwords',
   'https://www.googleapis.com/auth/analytics.readonly',
   'https://www.googleapis.com/auth/analytics',
+  'https://www.googleapis.com/auth/datamanager',
 ].join(' ');
 
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';

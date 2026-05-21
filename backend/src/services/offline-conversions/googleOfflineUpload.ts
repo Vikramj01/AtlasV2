@@ -1,20 +1,16 @@
 /**
- * Offline Conversion Upload — Google Ads Upload Service
+ * Offline Conversion Upload — Google Data Manager API
  *
- * Uploads CSV-derived offline conversions to the Google Ads API
- * using the `uploadClickConversions` endpoint. Reuses the existing
- * OAuth credentials stored in the CAPI module's `capi_providers`
- * table — no separate credential management needed.
+ * Uploads CSV-derived offline conversions to the Google Data Manager API
+ * using the `events:ingest` endpoint (eventSource: OTHER). Reuses the existing
+ * OAuth credentials stored in the CAPI module's `capi_providers` table.
  *
  * Key behaviours:
  *   - Hashes PII (email, phone) with SHA-256 immediately before upload
- *   - Splits rows into batches of 2,000 (Google API limit)
+ *   - Splits rows into batches of 2,000
  *   - Partial failure mode: one bad row doesn't block the batch
  *   - Exponential backoff: 3 attempts at 30s / 60s / 120s delays
- *   - Fetches conversion actions via Google Ads search API
- *
- * Google Ads API docs:
- *   https://developers.google.com/google-ads/api/reference/rpc/v17/ConversionUploadService
+ *   - Fetches conversion actions via Google Ads GAQL search API (unchanged)
  */
 
 import crypto from 'crypto';
@@ -27,10 +23,17 @@ import type {
   GoogleRowResult,
   UploadResult,
 } from '@/types/offline-conversions';
+import type {
+  DMAEvent,
+  DMAIngestEventsRequest,
+  DMAIngestEventsResponse,
+} from '@/integrations/google/dmaTypes';
 import logger from '@/utils/logger';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
+const DMA_BASE_URL = 'https://datamanager.googleapis.com/v1';
+// GAQL search stays on the Google Ads REST API (metadata lookup, not ingestion)
 const GOOGLE_ADS_API_VERSION = 'v17';
 const GOOGLE_ADS_API_BASE = 'https://googleads.googleapis.com';
 const BATCH_SIZE = 2_000;
@@ -53,13 +56,13 @@ function hashPhone(raw: string): string {
   return sha256(normalised.startsWith('+') ? normalised : `+${normalised}`);
 }
 
-// ── Google Ads API helpers ────────────────────────────────────────────────────
+// ── Google Ads / DMA helpers ───────────────────────────────────────────────────
 
 function cleanCustomerId(id: string): string {
   return id.replace(/-/g, '');
 }
 
-function buildHeaders(creds: GoogleCredentials, accessToken: string): Record<string, string> {
+function buildGoogleAdsHeaders(creds: GoogleCredentials, accessToken: string): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${accessToken}`,
@@ -71,58 +74,31 @@ function buildHeaders(creds: GoogleCredentials, accessToken: string): Record<str
   return headers;
 }
 
+function buildDMAHeaders(creds: GoogleCredentials, accessToken: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${accessToken}`,
+  };
+  const devToken =
+    process.env.GOOGLE_DMA_DEVELOPER_TOKEN || process.env.GOOGLE_ADS_DEVELOPER_TOKEN || '';
+  if (devToken) headers['developer-token'] = devToken;
+  if (creds.login_customer_id) {
+    headers['login-customer-id'] = cleanCustomerId(creds.login_customer_id);
+  }
+  return headers;
+}
+
 /**
  * Format an ISO datetime to Google's required format:
  *   "yyyy-MM-dd HH:mm:ss+00:00" (space separator, no fractional seconds, timezone required)
  */
-function formatGoogleDateTime(iso: string): string {
+export function formatGoogleDateTime(iso: string): string {
   const d = new Date(iso);
   const pad = (n: number) => String(n).padStart(2, '0');
   return [
     `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`,
     `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}+00:00`,
   ].join(' ');
-}
-
-// ── Google Click Conversion payload shape ──────────────────────────────────
-
-interface GoogleClickConversion {
-  conversionAction: string;
-  conversionDateTime: string;
-  gclid?: string;
-  conversionValue?: number;
-  currencyCode?: string;
-  orderId?: string;
-  userIdentifiers?: Array<{
-    hashedEmail?: string;
-    hashedPhoneNumber?: string;
-  }>;
-}
-
-interface GoogleUploadClickConversionsRequest {
-  conversions: GoogleClickConversion[];
-  partialFailure: boolean;
-}
-
-interface GoogleUploadClickConversionsResponse {
-  results?: Array<Record<string, unknown>>;
-  partialFailureError?: {
-    code: number;
-    message: string;
-    details: Array<{
-      errors?: Array<{
-        errorCode?: Record<string, string>;
-        message?: string;
-        location?: { fieldPathElements?: Array<{ fieldName: string; index?: number }> };
-      }>;
-    }>;
-  };
-  error?: {
-    code: number;
-    message: string;
-    status: string;
-    details?: unknown[];
-  };
 }
 
 // ── Conversion action search response ────────────────────────────────────────
@@ -144,33 +120,40 @@ interface GoogleAdsSearchResponse {
   };
 }
 
-// ── Build payload from row ────────────────────────────────────────────────────
+// ── Build DMA event from row ───────────────────────────────────────────────────
 
-function buildClickConversion(
+function buildDMAEventFromRow(
   row: OfflineConversionRow,
   config: OfflineConversionConfig,
   hashedEmail: string | null,
   hashedPhone: string | null,
-): GoogleClickConversion {
+): DMAEvent {
   const cid = cleanCustomerId(config.google_customer_id!);
   const conversionAction = `customers/${cid}/conversionActions/${config.conversion_action_id}`;
+  const eventDateTime = new Date(row.conversion_time!).toISOString();
 
-  const payload: GoogleClickConversion = {
-    conversionAction,
-    conversionDateTime: formatGoogleDateTime(row.conversion_time!),
-    conversionValue: row.conversion_value ?? config.default_conversion_value ?? undefined,
-    currencyCode: row.currency ?? config.default_currency,
-  };
-
-  if (row.raw_gclid) payload.gclid = row.raw_gclid;
-  if (row.order_id) payload.orderId = row.order_id;
-
-  const userIdentifiers: GoogleClickConversion['userIdentifiers'] = [];
+  const userIdentifiers: DMAEvent['userIdentifiers'] = [];
   if (hashedEmail) userIdentifiers.push({ hashedEmail });
   if (hashedPhone) userIdentifiers.push({ hashedPhoneNumber: hashedPhone });
-  if (userIdentifiers.length > 0) payload.userIdentifiers = userIdentifiers;
 
-  return payload;
+  const event: DMAEvent = {
+    eventType: 'CONVERSION',
+    eventSource: 'OTHER',
+    eventDateTime,
+    conversionAction,
+    userIdentifiers,
+  };
+
+  if (row.order_id) event.transactionId = row.order_id;
+
+  if (row.raw_gclid) {
+    event.gclidDateTimePair = {
+      gclid: row.raw_gclid,
+      conversionDateTime: eventDateTime,
+    };
+  }
+
+  return event;
 }
 
 // ── Error code → user-friendly message ───────────────────────────────────────
@@ -183,56 +166,46 @@ const GOOGLE_ERROR_MESSAGES: Record<string, string> = {
   TOO_RECENT_CLICK:               'Click occurred less than 24 hours ago — upload after 24 hours.',
   CLICK_NOT_FOUND:                'GCLID not found. The click may have expired or the ID is incorrect.',
   INVALID_ARGUMENT:               'Invalid data in one or more fields. Check the error details.',
-  RESOURCE_NOT_FOUND:             'Google Ads customer ID not found. Verify your account ID.',
-  AUTHENTICATION_ERROR:           'Google Ads authentication failed. Reconnect your account in CAPI settings.',
+  RESOURCE_NOT_FOUND:             'Google customer ID not found. Verify your account ID.',
+  AUTHENTICATION_ERROR:           'Google authentication failed. Reconnect your account in CAPI settings.',
   AUTHORIZATION_ERROR:            'Insufficient permissions. Ensure your account has Standard or Admin access.',
-  QUOTA_ERROR:                    'Google Ads API quota exceeded. Retry later.',
-  INTERNAL_ERROR:                 'Google Ads internal error. Retry the upload.',
+  QUOTA_ERROR:                    'Google API quota exceeded. Retry later.',
+  INTERNAL_ERROR:                 'Google internal error. Retry the upload.',
 };
 
 function mapErrorCode(code: string): string {
-  return GOOGLE_ERROR_MESSAGES[code] ?? `Google Ads error: ${code}`;
+  return GOOGLE_ERROR_MESSAGES[code] ?? `Google error: ${code}`;
 }
 
-// ── Parse partial failure response into per-row results ───────────────────────
+// ── Parse DMA batch response into per-row results ─────────────────────────────
 
-function parseBatchResponse(
-  response: GoogleUploadClickConversionsResponse,
+function parseDMABatchResponse(
+  response: DMAIngestEventsResponse,
   rows: OfflineConversionRow[],
-  batchOffset: number,
 ): GoogleRowResult[] {
-  const results: GoogleRowResult[] = [];
+  const errorMap = new Map(
+    (response.eventResults ?? [])
+      .filter((r) => r.error)
+      .map((r) => [r.eventIndex, r.error!]),
+  );
 
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i];
-    const rowIndex = row.row_index; // 1-based, from csvValidator
-
-    // Check if this index has a partial failure entry
-    const failureDetail = response.partialFailureError?.details?.[i];
-    if (failureDetail?.errors?.length) {
-      const firstError = failureDetail.errors[0];
-      const errorCodeKey = firstError?.errorCode
-        ? Object.keys(firstError.errorCode)[0]
-        : 'UNKNOWN';
-      results.push({
-        row_index: rowIndex,
-        status: 'rejected',
-        error_code: errorCodeKey,
-        error_message: mapErrorCode(errorCodeKey),
-      });
-    } else {
-      results.push({
-        row_index: rowIndex,
-        status: 'uploaded',
-        error_code: null,
-        error_message: null,
-      });
+  return rows.map((row, i) => {
+    const err = errorMap.get(i);
+    if (err) {
+      return {
+        row_index: row.row_index,
+        status: 'rejected' as const,
+        error_code: String(err.code),
+        error_message: mapErrorCode(String(err.code)) || err.message,
+      };
     }
-
-    void batchOffset; // used for logging only
-  }
-
-  return results;
+    return {
+      row_index: row.row_index,
+      status: 'uploaded' as const,
+      error_code: null,
+      error_message: null,
+    };
+  });
 }
 
 // ── Sleep helper for backoff ───────────────────────────────────────────────────
@@ -244,41 +217,43 @@ function sleep(ms: number): Promise<void> {
 // ── Upload a single batch with retry ─────────────────────────────────────────
 
 async function uploadBatch(
-  conversions: GoogleClickConversion[],
+  events: DMAEvent[],
+  config: OfflineConversionConfig,
   creds: GoogleCredentials,
   accessToken: string,
-): Promise<{ response: GoogleUploadClickConversionsResponse; finalToken: string }> {
-  const cid = cleanCustomerId(creds.customer_id);
-  const url = `${GOOGLE_ADS_API_BASE}/${GOOGLE_ADS_API_VERSION}/customers/${cid}:uploadClickConversions`;
-
-  const body: GoogleUploadClickConversionsRequest = {
-    conversions,
-    partialFailure: true,
+): Promise<{ response: DMAIngestEventsResponse; finalToken: string }> {
+  const body: DMAIngestEventsRequest = {
+    events,
+    destinations: [
+      { type: 'GOOGLE_ADS', customerId: cleanCustomerId(config.google_customer_id!) },
+    ],
   };
 
   let currentToken = accessToken;
 
   for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
-    const res = await fetch(url, {
+    const res = await fetch(`${DMA_BASE_URL}/events:ingest`, {
       method: 'POST',
-      headers: buildHeaders(creds, currentToken),
+      headers: buildDMAHeaders(creds, currentToken),
       body: JSON.stringify(body),
     });
 
-    const responseBody = await res.json() as GoogleUploadClickConversionsResponse;
+    const responseBody = await res.json() as DMAIngestEventsResponse;
 
     if (res.ok) {
       return { response: responseBody, finalToken: currentToken };
     }
 
     if (res.status === 401 && attempt === 0) {
-      // Refresh token and retry immediately on first 401
       try {
         currentToken = await refreshGoogleToken(creds);
         logger.info('Google token refreshed during offline upload');
         continue;
       } catch (refreshErr) {
-        logger.warn({ err: refreshErr instanceof Error ? refreshErr.message : String(refreshErr) }, 'Token refresh failed');
+        logger.warn(
+          { err: refreshErr instanceof Error ? refreshErr.message : String(refreshErr) },
+          'Token refresh failed',
+        );
         return { response: responseBody, finalToken: currentToken };
       }
     }
@@ -286,7 +261,7 @@ async function uploadBatch(
     // Rate limit or transient error — wait and retry
     if ((res.status === 429 || res.status >= 500) && attempt < RETRY_DELAYS_MS.length) {
       const delay = RETRY_DELAYS_MS[attempt];
-      logger.warn({ status: res.status, attempt, delay }, 'Google Ads API transient error — retrying');
+      logger.warn({ status: res.status, attempt, delay }, 'DMA API transient error — retrying');
       await sleep(delay);
       continue;
     }
@@ -295,15 +270,14 @@ async function uploadBatch(
     return { response: responseBody, finalToken: currentToken };
   }
 
-  // Should not reach here, but satisfy TypeScript
-  throw new Error('Exhausted retry attempts for Google Ads upload');
+  throw new Error('Exhausted retry attempts for DMA offline upload');
 }
 
 // ── Main upload function ───────────────────────────────────────────────────────
 
 /**
  * Hashes PII for all valid rows, splits into 2,000-row batches,
- * uploads each batch to Google Ads, and returns per-row results.
+ * uploads each batch to the Google Data Manager API, and returns per-row results.
  *
  * NOTE: This function does NOT write to the DB — callers handle
  * persisting results via bulkUpdateRowStatuses().
@@ -324,9 +298,9 @@ export async function uploadOfflineConversions(
     hashedPhone: row.raw_phone ? hashPhone(row.raw_phone) : null,
   }));
 
-  // ── Build conversion payloads ──────────────────────────────────────────
-  const conversions = rows.map((row, i) =>
-    buildClickConversion(row, config, hashedData[i].hashedEmail, hashedData[i].hashedPhone),
+  // ── Build DMA event payloads ───────────────────────────────────────────
+  const dmaEvents = rows.map((row, i) =>
+    buildDMAEventFromRow(row, config, hashedData[i].hashedEmail, hashedData[i].hashedPhone),
   );
 
   // ── Split into 2,000-row batches ───────────────────────────────────────
@@ -334,38 +308,50 @@ export async function uploadOfflineConversions(
   let hasPartialFailure = false;
   let currentToken = initialAccessToken;
 
-  for (let offset = 0; offset < conversions.length; offset += BATCH_SIZE) {
-    const batchConversions = conversions.slice(offset, offset + BATCH_SIZE);
+  for (let offset = 0; offset < dmaEvents.length; offset += BATCH_SIZE) {
+    const batchEvents = dmaEvents.slice(offset, offset + BATCH_SIZE);
     const batchRows = rows.slice(offset, offset + BATCH_SIZE);
 
     logger.info(
-      { batchStart: offset, batchSize: batchConversions.length, totalRows: rows.length },
-      'Uploading offline conversion batch',
+      { batchStart: offset, batchSize: batchEvents.length, totalRows: rows.length },
+      'Uploading offline conversion batch via DMA',
     );
 
-    const { response, finalToken } = await uploadBatch(batchConversions, creds, currentToken);
+    const { response, finalToken } = await uploadBatch(batchEvents, config, creds, currentToken);
     currentToken = finalToken;
 
-    if (response.error) {
-      // Whole batch failed (auth error, quota, etc.)
-      const errMsg = response.error.message;
-      // Log only the structured error fields — never log the full response which
-      // may include echoed conversion data in the details array.
+    const apiError = (response as unknown as { error?: { code: number; message: string; status: string } }).error;
+
+    if (apiError) {
       logger.error(
-        { code: response.error.code, status: response.error.status, message: response.error.message },
-        'Google Ads batch upload failed',
+        { code: apiError.code, status: apiError.status, message: apiError.message },
+        'DMA batch upload failed',
       );
       for (const row of batchRows) {
         allResults.push({
           row_index: row.row_index,
           status: 'rejected',
-          error_code: response.error.status,
-          error_message: mapErrorCode(response.error.status) || errMsg,
+          error_code: apiError.status,
+          error_message: mapErrorCode(apiError.status) || apiError.message,
+        });
+      }
+      hasPartialFailure = true;
+    } else if (response.partialFailureError) {
+      logger.error(
+        { message: response.partialFailureError.message },
+        'DMA batch partial failure error',
+      );
+      for (const row of batchRows) {
+        allResults.push({
+          row_index: row.row_index,
+          status: 'rejected',
+          error_code: 'PARTIAL_FAILURE',
+          error_message: response.partialFailureError.message,
         });
       }
       hasPartialFailure = true;
     } else {
-      const batchResults = parseBatchResponse(response, batchRows, offset);
+      const batchResults = parseDMABatchResponse(response, batchRows);
       allResults.push(...batchResults);
       if (batchResults.some((r) => r.status === 'rejected')) {
         hasPartialFailure = true;
@@ -373,7 +359,7 @@ export async function uploadOfflineConversions(
     }
 
     // 1-second courtesy delay between batches (PRD spec)
-    if (offset + BATCH_SIZE < conversions.length) {
+    if (offset + BATCH_SIZE < dmaEvents.length) {
       await sleep(1_000);
     }
   }
@@ -402,6 +388,7 @@ export function hashRowIdentifiers(rows: OfflineConversionRow[]): HashedRowData[
 /**
  * Fetches the list of conversion actions for a Google Ads customer account.
  * Filters to UPLOAD_CLICKS type (the correct type for offline CSV uploads).
+ * Stays on the Google Ads GAQL search API — this is a metadata lookup, not ingestion.
  */
 export async function fetchConversionActions(
   creds: GoogleCredentials,
@@ -425,7 +412,7 @@ export async function fetchConversionActions(
   const makeRequest = async (token: string): Promise<Response> => {
     return fetch(url, {
       method: 'POST',
-      headers: buildHeaders(creds, token),
+      headers: buildGoogleAdsHeaders(creds, token),
       body: JSON.stringify({ query }),
     });
   };

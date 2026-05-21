@@ -1,19 +1,15 @@
 /**
- * Google Enhanced Conversions — Delivery Service
+ * Google Enhanced Conversions — Delivery Service (DMA)
  *
- * Sends Enhanced Conversion adjustments to the Google Ads API:
- *   POST https://googleads.googleapis.com/v17/customers/{customerId}/conversionAdjustments:upload
+ * Sends conversion events to the Google Data Manager API:
+ *   POST https://datamanager.googleapis.com/v1/events:ingest
  *
  * Handles:
- *   - Payload formatting from AtlasEvent → GoogleConversionAdjustment
+ *   - Payload formatting from AtlasEvent → DMAEvent
  *   - OAuth access token refresh (using stored refresh token + GOOGLE_OAUTH_CLIENT_* env vars)
- *   - Partial failure detection from Google's response envelope
- *   - Credential validation via tokeninfo endpoint
- *
- * Optional env vars (required for token refresh):
- *   GOOGLE_OAUTH_CLIENT_ID       — Google OAuth client ID
- *   GOOGLE_OAUTH_CLIENT_SECRET   — Google OAuth client secret
- *   GOOGLE_ADS_DEVELOPER_TOKEN   — Google Ads developer token (required for every request)
+ *   - Partial failure detection from DMA response envelope
+ *   - Credential validation via Google tokeninfo endpoint
+ *   - validateOnly mode for test events
  */
 
 import { randomUUID } from 'crypto';
@@ -23,17 +19,21 @@ import type {
   EventMapping,
   GoogleCredentials,
   GoogleConversionAdjustment,
-  GoogleUploadRequest,
   TestResult,
   DeliveryResult,
   ValidationResult,
 } from '@/types/capi';
 import type { ConsentDecisions } from '@/types/consent';
+import type {
+  DMAEvent,
+  DMAUserIdentifier,
+  DMAIngestEventsRequest,
+  DMAIngestEventsResponse,
+} from '@/integrations/google/dmaTypes';
 import logger from '@/utils/logger';
 import { getGoogleDedupEntry } from './dedupStore';
 
-const GOOGLE_ADS_API_VERSION = 'v17';
-const GOOGLE_ADS_API_BASE = 'https://googleads.googleapis.com';
+const DMA_BASE_URL = 'https://datamanager.googleapis.com/v1';
 const GOOGLE_OAUTH_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GOOGLE_OAUTH_TOKENINFO_URL = 'https://oauth2.googleapis.com/tokeninfo';
 
@@ -47,14 +47,6 @@ function buildConversionActionResource(customerId: string, conversionActionId: s
   return `customers/${cleanCustomerId(customerId)}/conversionActions/${conversionActionId}`;
 }
 
-function unixToGoogleDateTime(unixSeconds: number): string {
-  // Format: "yyyy-mm-dd HH:mm:ss+00:00"
-  return new Date(unixSeconds * 1000)
-    .toISOString()
-    .replace('T', ' ')
-    .replace(/\.\d{3}Z$/, '+00:00');
-}
-
 // ── OAuth token refresh ───────────────────────────────────────────────────────
 
 interface TokenResponse {
@@ -63,10 +55,6 @@ interface TokenResponse {
   error_description?: string;
 }
 
-/**
- * Use the stored refresh token + GOOGLE_OAUTH_CLIENT_* env vars to obtain a
- * fresh access token. Throws if env vars are missing or the refresh fails.
- */
 export async function refreshGoogleToken(creds: GoogleCredentials): Promise<string> {
   const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID ?? '';
   const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET ?? '';
@@ -118,18 +106,12 @@ function mapConsentToGoogle(
 
 // ── Payload formatting ────────────────────────────────────────────────────────
 
-/**
- * Format a single AtlasEvent + hashed identifiers into a
- * GoogleConversionAdjustment (Enhanced Conversions payload).
- * Includes consent block sourced from the event's consent_state.
- */
 export function formatGoogleAdjustment(
   event: AtlasEvent,
   mapping: EventMapping,
   identifiers: HashedIdentifier[],
   conversionActionResourceName: string,
 ): GoogleConversionAdjustment {
-  // Build userIdentifiers, merging address fields into a single addressInfo entry
   const userIdentifiers: GoogleConversionAdjustment['userIdentifiers'] = [];
 
   const addressInfo: {
@@ -174,7 +156,6 @@ export function formatGoogleAdjustment(
         addressInfo.countryCode = id.value;
         hasAddressField = true;
         break;
-      // Click IDs and other types are not used in userIdentifiers
     }
   }
 
@@ -188,93 +169,77 @@ export function formatGoogleAdjustment(
     userIdentifiers,
   };
 
-  // Attach gclid + conversion timestamp if available
   if (event.user_data.gclid) {
     adjustment.gclidDateTimePair = {
       gclid: event.user_data.gclid,
-      conversionDateTime: unixToGoogleDateTime(event.event_time),
+      conversionDateTime: new Date(event.event_time * 1000).toISOString(),
     };
   }
 
-  // Attach order ID for deduplication
   if (event.custom_data?.order_id) {
     adjustment.orderId = event.custom_data.order_id;
   }
 
-  // Attach user agent
   if (event.user_data.client_user_agent) {
     adjustment.userAgent = event.user_data.client_user_agent;
   }
 
-  // Attach consent signals (required by Google Ads API for consent mode v2)
   if (event.consent_state) {
     adjustment.consent = mapConsentToGoogle(event.consent_state);
   }
 
-  void mapping; // The outer pipeline logs the mapped provider_event name; not needed here
+  void mapping;
   return adjustment;
 }
 
-// ── HTTP upload ───────────────────────────────────────────────────────────────
+// ── GoogleConversionAdjustment → DMAEvent ─────────────────────────────────────
 
-interface GoogleAdsUploadResponse {
-  results?: Array<{ adjustmentType?: string }>;
-  partialFailureError?: {
-    code: number;
-    message: string;
-    details: unknown[];
-  };
-  error?: {
-    code: number;
-    message: string;
-    status: string;
-    details: unknown[];
+function toDMAEvent(adjustment: GoogleConversionAdjustment, event: AtlasEvent): DMAEvent {
+  const eventDateTime = new Date(event.event_time * 1000).toISOString();
+  return {
+    eventType: 'CONVERSION',
+    eventDateTime,
+    eventSource: 'WEB',
+    userIdentifiers: adjustment.userIdentifiers as DMAUserIdentifier[],
+    conversionAction: adjustment.conversionAction,
+    transactionId: adjustment.orderId,
+    gclidDateTimePair: adjustment.gclidDateTimePair
+      ? { gclid: adjustment.gclidDateTimePair.gclid, conversionDateTime: eventDateTime }
+      : undefined,
+    consent: adjustment.consent,
   };
 }
 
-function buildUploadHeaders(creds: GoogleCredentials, accessToken: string): Record<string, string> {
+// ── DMA HTTP layer ─────────────────────────────────────────────────────────────
+
+function buildDMAHeaders(accessToken: string, loginCustomerId?: string): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${accessToken}`,
-    'developer-token': process.env.GOOGLE_ADS_DEVELOPER_TOKEN ?? '',
   };
-  if (creds.login_customer_id) {
-    headers['login-customer-id'] = cleanCustomerId(creds.login_customer_id);
-  }
+  const devToken =
+    process.env.GOOGLE_DMA_DEVELOPER_TOKEN || process.env.GOOGLE_ADS_DEVELOPER_TOKEN || '';
+  if (devToken) headers['developer-token'] = devToken;
+  if (loginCustomerId) headers['login-customer-id'] = cleanCustomerId(loginCustomerId);
   return headers;
 }
 
-async function uploadAdjustments(
-  adjustments: GoogleConversionAdjustment[],
-  creds: GoogleCredentials,
+async function sendDMAEventsRequest(
+  request: DMAIngestEventsRequest,
   accessToken: string,
-  validateOnly = false,
-): Promise<{ ok: boolean; status: number; body: GoogleAdsUploadResponse }> {
-  const cid = cleanCustomerId(creds.customer_id);
-  const baseUrl = `${GOOGLE_ADS_API_BASE}/${GOOGLE_ADS_API_VERSION}/customers/${cid}/conversionAdjustments:upload`;
-  const url = validateOnly ? `${baseUrl}?validateOnly=true` : baseUrl;
-
-  const uploadRequest: GoogleUploadRequest = {
-    conversionAdjustments: adjustments,
-    partialFailure: !validateOnly,
-  };
-
-  const res = await fetch(url, {
+  loginCustomerId?: string,
+): Promise<{ ok: boolean; status: number; body: DMAIngestEventsResponse }> {
+  const res = await fetch(`${DMA_BASE_URL}/events:ingest`, {
     method: 'POST',
-    headers: buildUploadHeaders(creds, accessToken),
-    body: JSON.stringify(uploadRequest),
+    headers: buildDMAHeaders(accessToken, loginCustomerId),
+    body: JSON.stringify(request),
   });
-
-  const body = await res.json() as GoogleAdsUploadResponse;
+  const body = await res.json() as DMAIngestEventsResponse;
   return { ok: res.ok, status: res.status, body };
 }
 
 // ── Delivery ──────────────────────────────────────────────────────────────────
 
-/**
- * Send a batch of AtlasEvents to Google Enhanced Conversions.
- * Retries once with a refreshed token on 401.
- */
 export async function sendGoogleEvents(
   events: AtlasEvent[],
   identifiersPerEvent: HashedIdentifier[][],
@@ -286,10 +251,6 @@ export async function sendGoogleEvents(
 
   const resource = buildConversionActionResource(creds.customer_id, creds.conversion_action_id);
 
-  // Resolve order_id for each event:
-  //   1. Prefer transaction_id from custom_data (e-commerce — always a hit)
-  //   2. Fall back to a stored event_id from the browser beacon (lead-gen dedup)
-  //   3. Fall back to a new UUID (event still fires; logged as miss)
   const dedupResults = await Promise.all(
     events.map(async (e) => {
       const transactionId = e.custom_data?.order_id ?? null;
@@ -304,9 +265,10 @@ export async function sendGoogleEvents(
         : null;
       const orderId = entry?.event_id ?? randomUUID();
       const dedupStatus: 'hit' | 'miss' = entry ? 'hit' : 'miss';
-      const dedupKey = providerId && entry && gclid
-        ? `${providerId}:${gclid}:${e.event_name}`
-        : undefined;
+      const dedupKey =
+        providerId && entry && gclid
+          ? `${providerId}:${gclid}:${e.event_name}`
+          : undefined;
 
       return { orderId, dedup_status: dedupStatus, dedup_key: dedupKey };
     }),
@@ -321,34 +283,43 @@ export async function sendGoogleEvents(
     return adjustment;
   });
 
-  let accessToken = creds.oauth_access_token;
-  let attempt = await uploadAdjustments(adjustments, creds, accessToken);
+  const dmaEvents: DMAEvent[] = events.map((e, i) => toDMAEvent(adjustments[i], e));
 
-  // Retry with refreshed token on 401
+  const request: DMAIngestEventsRequest = {
+    events: dmaEvents,
+    destinations: [{ type: 'GOOGLE_ADS', customerId: cleanCustomerId(creds.customer_id) }],
+  };
+
+  let accessToken = creds.oauth_access_token;
+  let attempt = await sendDMAEventsRequest(request, accessToken, creds.login_customer_id);
+
   if (!attempt.ok && attempt.status === 401) {
     try {
       accessToken = await refreshGoogleToken(creds);
-      attempt = await uploadAdjustments(adjustments, creds, accessToken);
+      attempt = await sendDMAEventsRequest(request, accessToken, creds.login_customer_id);
     } catch (refreshErr) {
-      logger.warn({ err: refreshErr instanceof Error ? refreshErr.message : String(refreshErr) }, 'Google token refresh failed');
+      logger.warn(
+        { err: refreshErr instanceof Error ? refreshErr.message : String(refreshErr) },
+        'Google DMA token refresh failed',
+      );
     }
   }
 
   const { ok, body } = attempt;
 
   if (!ok) {
-    const errMsg = body.error?.message ?? 'Google Ads API error';
+    const errMsg = (body as unknown as { error?: { message?: string; code?: number } }).error?.message ?? 'Google DMA API error';
+    const errCode = (body as unknown as { error?: { code?: number } }).error?.code ?? 'DELIVERY_FAILED';
     return events.map((e, i) => ({
       event_id: e.event_id,
       status: 'failed' as const,
       provider_response: body,
-      error_code: `${body.error?.code ?? 'DELIVERY_FAILED'}`,
+      error_code: String(errCode),
       error_message: errMsg,
       dedup_status: providerId ? dedupResults[i].dedup_status : undefined,
     }));
   }
 
-  // Check partial failures (returned even on HTTP 200 with partialFailure: true)
   if (body.partialFailureError) {
     return events.map((e, i) => ({
       event_id: e.event_id,
@@ -360,23 +331,39 @@ export async function sendGoogleEvents(
     }));
   }
 
-  return events.map((e, i) => ({
-    event_id: e.event_id,
-    status: 'delivered' as const,
-    provider_response: body,
-    dedup_status: providerId ? dedupResults[i].dedup_status : undefined,
-    dedup_key: providerId ? dedupResults[i].dedup_key : undefined,
-    dedup_matched_at: dedupResults[i].dedup_status === 'hit' ? new Date().toISOString() : undefined,
-  }));
+  // Build error map from DMA eventResults (keyed by eventIndex)
+  const errorMap = new Map(
+    (body.eventResults ?? [])
+      .filter((r) => r.error)
+      .map((r) => [r.eventIndex, r.error!]),
+  );
+
+  return events.map((e, i) => {
+    const err = errorMap.get(i);
+    if (err) {
+      return {
+        event_id: e.event_id,
+        status: 'failed' as const,
+        provider_response: body,
+        error_code: String(err.code),
+        error_message: err.message,
+        dedup_status: providerId ? dedupResults[i].dedup_status : undefined,
+      };
+    }
+    return {
+      event_id: e.event_id,
+      status: 'delivered' as const,
+      provider_response: body,
+      dedup_status: providerId ? dedupResults[i].dedup_status : undefined,
+      dedup_key: providerId ? dedupResults[i].dedup_key : undefined,
+      dedup_matched_at:
+        dedupResults[i].dedup_status === 'hit' ? new Date().toISOString() : undefined,
+    };
+  });
 }
 
 // ── Test event ────────────────────────────────────────────────────────────────
 
-/**
- * Validate a single event against the Google Ads API using validateOnly=true.
- * Google Enhanced Conversions does not have a dedicated test mode, so this is
- * the closest equivalent — it validates the payload without recording data.
- */
 export async function sendGoogleTestEvent(
   event: AtlasEvent,
   identifiers: HashedIdentifier[],
@@ -385,15 +372,27 @@ export async function sendGoogleTestEvent(
 ): Promise<TestResult> {
   const resource = buildConversionActionResource(creds.customer_id, creds.conversion_action_id);
   const adjustment = formatGoogleAdjustment(event, mapping, identifiers, resource);
+  const dmaEvent = toDMAEvent(adjustment, event);
+
+  const request: DMAIngestEventsRequest = {
+    events: [dmaEvent],
+    destinations: [{ type: 'GOOGLE_ADS', customerId: cleanCustomerId(creds.customer_id) }],
+    validateOnly: true,
+  };
 
   try {
-    const { ok, body } = await uploadAdjustments([adjustment], creds, creds.oauth_access_token, true);
+    const { ok, body } = await sendDMAEventsRequest(
+      request,
+      creds.oauth_access_token,
+      creds.login_customer_id,
+    );
 
     if (!ok) {
+      const err = (body as unknown as { error?: { message?: string } }).error;
       return {
         status: 'failed',
         provider_response: body,
-        error: body.error?.message ?? 'Google Ads API validation failed',
+        error: err?.message ?? 'Google DMA validation failed',
       };
     }
 
@@ -409,10 +408,6 @@ export async function sendGoogleTestEvent(
 
 // ── Credential validation ─────────────────────────────────────────────────────
 
-/**
- * Validate Google credentials by checking the access token via tokeninfo endpoint.
- * If the token is expired, attempts a refresh.
- */
 export async function validateGoogleCredentials(
   creds: GoogleCredentials,
 ): Promise<ValidationResult> {
@@ -427,10 +422,13 @@ export async function validateGoogleCredentials(
     const res = await fetch(
       `${GOOGLE_OAUTH_TOKENINFO_URL}?access_token=${encodeURIComponent(creds.oauth_access_token)}`,
     );
-    const body = await res.json() as { error?: string; error_description?: string; scope?: string; expires_in?: string };
+    const body = await res.json() as {
+      error?: string;
+      error_description?: string;
+      scope?: string;
+    };
 
     if (!res.ok) {
-      // Token may be expired — try to refresh if we have the client credentials
       try {
         await refreshGoogleToken(creds);
         return { valid: true };
@@ -450,10 +448,6 @@ export async function validateGoogleCredentials(
 
 // ── Token refresh with expiry ─────────────────────────────────────────────────
 
-/**
- * Refresh the Google OAuth token and return the new access token along with
- * an ISO expiry timestamp (access tokens typically expire in 3600 seconds).
- */
 export async function refreshGoogleTokenWithExpiry(
   creds: GoogleCredentials,
 ): Promise<{ access_token: string; expires_at: string }> {
@@ -479,7 +473,13 @@ export async function refreshGoogleTokenWithExpiry(
     body: params.toString(),
   });
 
-  const body = await res.json() as { access_token?: string; expires_in?: number; error?: string; error_description?: string };
+  const body = await res.json() as {
+    access_token?: string;
+    expires_in?: number;
+    error?: string;
+    error_description?: string;
+  };
+
   if (!res.ok || !body.access_token) {
     throw new Error(
       body.error_description ?? body.error ?? `Token refresh failed: HTTP ${res.status}`,
