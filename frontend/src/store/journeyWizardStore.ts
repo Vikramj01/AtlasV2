@@ -4,6 +4,8 @@ import { DEFAULT_STAGES, PLATFORM_OPTIONS } from '../types/journey';
 import { buildTimingResult } from '../lib/journey/classifyEvent';
 import type { SavedTemplate } from '../lib/api/journeyApi';
 
+export type TransportRoute = 'tag_only' | 'gtm_destinations' | 'dma_push' | 'combination';
+
 function generateId(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
@@ -22,7 +24,7 @@ function makeDefaultStages(type: BusinessType): WizardStage[] {
 
 interface JourneyWizardStore extends WizardState {
   // Step navigation
-  goToStep: (step: 1 | 2 | 3 | 4) => void;
+  goToStep: (step: 1 | 2 | 3 | 4 | 5 | 6) => void;
   canProceedFromStep: (step: number) => boolean;
 
   // Step 1
@@ -43,7 +45,15 @@ interface JourneyWizardStore extends WizardState {
   addProxyStage: (parentStageId: string, proxyActionKey: string, proxyLabel: string, duration: JourneyDuration) => void;
   removeProxyStage: (stageId: string) => void;
 
-  // Step 3 — platforms
+  // Step 3 — per-event transport routing
+  transportRoutes: Record<string, TransportRoute>;
+  setTransportRoute: (stageId: string, route: TransportRoute) => void;
+
+  // Step 4 — GTG pre-flight
+  gtgPreflightDismissed: boolean;
+  setGtgPreflightDismissed: (v: boolean) => void;
+
+  // Step 5 — platforms
   togglePlatform: (platform: Platform) => void;
   setPlatformId: (platform: Platform, id: string) => void;
   setImplementationFormat: (format: ImplementationFormat) => void;
@@ -55,13 +65,15 @@ interface JourneyWizardStore extends WizardState {
   reset: () => void;
 }
 
-const INITIAL_STATE: WizardState & { stageTiming: StageTimingMap } = {
+const INITIAL_STATE: WizardState & { stageTiming: StageTimingMap; transportRoutes: Record<string, TransportRoute>; gtgPreflightDismissed: boolean } = {
   currentStep: 1,
   businessType: null,
   stages: [],
   platforms: makeDefaultPlatforms(),
   implementationFormat: 'gtm',
   stageTiming: {},
+  transportRoutes: {},
+  gtgPreflightDismissed: false,
 };
 
 export const useJourneyWizardStore = create<JourneyWizardStore>((set, get) => ({
@@ -79,7 +91,9 @@ export const useJourneyWizardStore = create<JourneyWizardStore>((set, get) => ({
       const hasAction = stages.some((s) => s.actions.length > 0);
       return hasAction;
     }
-    if (step === 3) {
+    if (step === 3) return true; // Per-event routing — non-blocking
+    if (step === 4) return true; // GTG pre-flight — non-blocking
+    if (step === 5) {
       const { platforms } = get();
       return platforms.some((p) => p.isActive);
     }
@@ -192,6 +206,14 @@ export const useJourneyWizardStore = create<JourneyWizardStore>((set, get) => ({
     set({ stages: filtered, stageTiming: remainingTiming });
   },
 
+  setTransportRoute(stageId, route) {
+    set({ transportRoutes: { ...get().transportRoutes, [stageId]: route } });
+  },
+
+  setGtgPreflightDismissed(v) {
+    set({ gtgPreflightDismissed: v });
+  },
+
   togglePlatform(platform) {
     set({
       platforms: get().platforms.map((p) =>
@@ -230,6 +252,6 @@ export const useJourneyWizardStore = create<JourneyWizardStore>((set, get) => ({
   },
 
   reset() {
-    set({ ...INITIAL_STATE, platforms: makeDefaultPlatforms(), stageTiming: {} });
+    set({ ...INITIAL_STATE, platforms: makeDefaultPlatforms(), stageTiming: {}, transportRoutes: {}, gtgPreflightDismissed: false });
   },
 }));

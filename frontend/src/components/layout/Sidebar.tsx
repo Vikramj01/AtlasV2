@@ -5,7 +5,7 @@ import {
   Home, MapPin, CheckCircle, Clock, Settings,
   Building2, LayoutGrid, ShieldCheck, Activity,
   HeartPulse, ShieldAlert, GitBranch, Tag,
-  Link2, ArrowLeftRight, Plus, Target,
+  Link2, ArrowLeftRight, Plus, Target, Zap,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { OrgSwitcher } from '@/components/organisation/OrgSwitcher';
@@ -37,8 +37,9 @@ const PERSONAL_NAV_GROUPS: { label: string; items: NavItemDef[] }[] = [
       { label: SECTION_LABELS.journeyBuilder.primary,          technicalLabel: SECTION_LABELS.journeyBuilder.technical,          to: '/journey/new',       Icon: CheckCircle, step: 3, stepKey: 'tracking-plan' },
       { label: SECTION_LABELS.tagLibrary.primary,              technicalLabel: SECTION_LABELS.tagLibrary.technical,              to: '/signals',           Icon: Tag,         step: 4, stepKey: 'tag-library'   },
       { label: SECTION_LABELS.consentHub.primary,              technicalLabel: SECTION_LABELS.consentHub.technical,              to: '/consent',           Icon: ShieldCheck, step: 5, stepKey: 'consent'       },
-      { label: SECTION_LABELS.capi.primary,                    technicalLabel: SECTION_LABELS.capi.technical,                    to: '/integrations/capi', Icon: Activity,    step: 6, stepKey: 'capi'          },
-      { label: SECTION_LABELS.platformConnections.primary,     technicalLabel: SECTION_LABELS.platformConnections.technical,     to: '/connections',       Icon: Link2,       step: 7, stepKey: 'connections'   },
+      { label: SECTION_LABELS.capi.primary,                    technicalLabel: SECTION_LABELS.capi.technical,                    to: '/integrations/capi',     Icon: Activity,    step: 6, stepKey: 'capi'          },
+      { label: 'Bid Signal Enricher',                           technicalLabel: 'bid_signal_enricher',                            to: '/integrations/enricher', Icon: Zap,                                                    },
+      { label: SECTION_LABELS.platformConnections.primary,     technicalLabel: SECTION_LABELS.platformConnections.technical,     to: '/connections',           Icon: Link2,       step: 7, stepKey: 'connections'   },
     ],
   },
   {
@@ -62,6 +63,7 @@ function orgNav(orgId: string): NavItemDef[] {
     { label: SECTION_LABELS.auditEngine.primary,    technicalLabel: SECTION_LABELS.auditEngine.technical,    to: '/dashboard',             Icon: Clock },
     { label: SECTION_LABELS.channelInsights.primary,technicalLabel: SECTION_LABELS.channelInsights.technical,to: '/channels',              Icon: GitBranch },
     { label: SECTION_LABELS.capi.primary,           technicalLabel: SECTION_LABELS.capi.technical,           to: '/integrations/capi',     Icon: Activity },
+    { label: 'Bid Signal Enricher',                 technicalLabel: 'bid_signal_enricher',                    to: '/integrations/enricher', Icon: Zap },
     { label: SECTION_LABELS.consentHub.primary,     technicalLabel: SECTION_LABELS.consentHub.technical,     to: '/consent',               Icon: ShieldCheck },
     { label: SECTION_LABELS.signalHealth.primary,   technicalLabel: SECTION_LABELS.signalHealth.technical,   to: '/health',                Icon: HeartPulse },
     { label: 'Team & Settings',                                                                                   to: `/org/${orgId}/settings`, Icon: Settings },

@@ -31,6 +31,7 @@ const PackDetailPage            = lazy(() => import('@/pages/PackDetailPage').th
 const OrgSettingsPage           = lazy(() => import('@/pages/OrgSettingsPage').then(m => ({ default: m.OrgSettingsPage })));
 const ConsentPage               = lazy(() => import('@/pages/ConsentPage').then(m => ({ default: m.ConsentPage })));
 const CAPIPage                  = lazy(() => import('@/pages/CAPIPage').then(m => ({ default: m.CAPIPage })));
+const EnricherPage              = lazy(() => import('@/pages/EnricherPage').then(m => ({ default: m.EnricherPage })));
 const HealthDashboardPage       = lazy(() => import('@/pages/HealthDashboardPage'));
 const ChannelInsightsPage       = lazy(() => import('@/pages/ChannelInsightsPage').then(m => ({ default: m.ChannelInsightsPage })));
 const AdminPage                 = lazy(() => import('@/pages/AdminPage').then(m => ({ default: m.AdminPage })));
@@ -90,6 +91,8 @@ export default function App() {
                 <Route path="/consent" element={<SectionErrorBoundary label="Consent & Privacy"><ConsentPage /></SectionErrorBoundary>} />
                 {/* CAPI Integrations */}
                 <Route path="/integrations/capi" element={<SectionErrorBoundary label="Conversion API"><CAPIPage /></SectionErrorBoundary>} />
+                {/* Bid Signal Enricher */}
+                <Route path="/integrations/enricher" element={<SectionErrorBoundary label="Bid Signal Enricher"><EnricherPage /></SectionErrorBoundary>} />
                 {/* Data Health Dashboard */}
                 <Route path="/health" element={<SectionErrorBoundary label="Health dashboard"><HealthDashboardPage /></SectionErrorBoundary>} />
                 {/* Channel Insights */}

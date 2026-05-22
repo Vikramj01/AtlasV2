@@ -30,6 +30,7 @@ import { connectionsRouter } from '@/api/routes/connections';
 import { reconciliationRouter } from '@/api/routes/reconciliation';
 import { gtmRouter } from '@/api/routes/gtm';
 import { ihcRouter } from '@/api/routes/ihc';
+import { enricherRouter } from '@/api/routes/enricher';
 import logger from '@/utils/logger';
 import { env } from '@/config/env';
 
@@ -149,6 +150,7 @@ app.use('/api/connections', connectionsRouter);
 app.use('/api/reconciliation', reconciliationRouter);
 app.use('/api/gtm', gtmRouter);
 app.use('/api/ihc', ihcRouter);
+app.use('/api/enricher', enricherRouter);
 
 // ─── 404 handler ─────────────────────────────────────────────────────────────
 
