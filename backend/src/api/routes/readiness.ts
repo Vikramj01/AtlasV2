@@ -69,7 +69,7 @@ readinessRouter.get('/', async (req: Request, res: Response): Promise<void> => {
       healthResult,
       gtgResult,
       dmaCredsResult,
-      googleProviderResult,
+      dmaPollResult,
     ] = await Promise.all([
       supabaseAdmin
         .from('consent_configs')
@@ -101,21 +101,19 @@ readinessRouter.get('/', async (req: Request, res: Response): Promise<void> => {
         .eq('organization_id', userId)
         .limit(1),
 
-      // DA-DMA-001 + DA-DMA-002 + DA-DMA-004: DMA credentials row
+      // DA-DMA-001 + DA-DMA-004: DMA credentials row
       supabaseAdmin
         .from('google_dma_credentials')
         .select('linked_connection_id, expires_at, oauth_scope')
         .eq('org_id', userId)
         .maybeSingle(),
 
-      // DA-DMA-003: Google CAPI provider has conversion_action_id configured
+      // DA-DMA-002 + DA-DMA-003 (real data): DQM poll state for this org
       supabaseAdmin
-        .from('capi_providers')
-        .select('credentials')
-        .eq('organization_id', userId)
-        .eq('provider', 'google')
-        .eq('status', 'active')
-        .limit(1),
+        .from('dqm_dma_poll_state')
+        .select('upload_success_rate, avg_match_rate, last_successful_at, total_members_30d')
+        .eq('org_id', userId)
+        .maybeSingle(),
     ]);
 
     const sessionIds = (sessionIdsResult.data ?? []).map((s: { id: string }) => s.id);
@@ -171,18 +169,52 @@ readinessRouter.get('/', async (req: Request, res: Response): Promise<void> => {
     // DA-DMA-001: credentials linked
     const dmaConnected = !!dmaCreds?.linked_connection_id;
 
-    // DA-DMA-002: token not expired (expires_at is UI-display field populated at upsert)
-    const dmaTokenValid = dmaConnected && (
-      !dmaCreds!.expires_at ||
-      new Date(dmaCreds!.expires_at) > new Date()
-    );
-
-    // DA-DMA-003: active Google CAPI provider exists (proxy for conversion action reachability)
-    const conversionActionConfigured = (googleProviderResult.data?.length ?? 0) > 0;
-
     // DA-DMA-004: oauth_scope includes datamanager
     const dmaScopeValid = dmaConnected &&
       (dmaCreds!.oauth_scope ?? '').includes('datamanager');
+
+    // DA-DMA-002 + DA-DMA-003: real data from dqm_dma_poll_state
+    const dmaPoll = dmaPollResult.data as {
+      upload_success_rate: number;
+      avg_match_rate: number | null;
+      last_successful_at: string | null;
+      total_members_30d: number;
+    } | null;
+
+    // DA-DMA-002: DMA events landing (members seen in last 30d)
+    let dmaMembersStatus: DMACheck['status'];
+    let dmaMembersRecommendation: string;
+    if (!dmaPoll) {
+      dmaMembersStatus = 'unknown';
+      dmaMembersRecommendation = 'No DMA poll data yet. The hourly DQM check will populate this once enricher runs are present.';
+    } else if (dmaPoll.total_members_30d > 0) {
+      dmaMembersStatus = 'pass';
+      dmaMembersRecommendation = `${dmaPoll.total_members_30d.toLocaleString()} audience members processed in the last 30 days.`;
+    } else if (dmaConnected) {
+      dmaMembersStatus = 'fail';
+      dmaMembersRecommendation = 'No audience members have been processed in the last 30 days. Check that your enricher is running and sending data to Google Data Manager.';
+    } else {
+      dmaMembersStatus = 'unknown';
+      dmaMembersRecommendation = 'Connect Google Data Manager first.';
+    }
+
+    // DA-DMA-003: match rate above threshold
+    let matchRateStatus: DMACheck['status'];
+    let matchRateRecommendation: string;
+    const avgMatchRate = dmaPoll?.avg_match_rate ?? null;
+    if (avgMatchRate === null) {
+      matchRateStatus = 'unknown';
+      matchRateRecommendation = 'No match rate data available yet. Match rate will appear once completed enricher runs are present.';
+    } else if (avgMatchRate >= 40) {
+      matchRateStatus = 'pass';
+      matchRateRecommendation = `Match rate is ${avgMatchRate.toFixed(0)}% — above the recommended 40% threshold.`;
+    } else if (avgMatchRate >= 20) {
+      matchRateStatus = 'warn';
+      matchRateRecommendation = `Match rate is ${avgMatchRate.toFixed(0)}% — below the 40% target. Improve by enabling Enhanced Conversions (email/phone) on your Google CAPI provider.`;
+    } else {
+      matchRateStatus = 'fail';
+      matchRateRecommendation = `Match rate is ${avgMatchRate.toFixed(0)}% — critically low. Enable Enhanced Conversions with email and phone identifiers to improve audience match quality.`;
+    }
 
     const dma_checks: DMACheck[] = [
       {
@@ -205,23 +237,17 @@ readinessRouter.get('/', async (req: Request, res: Response): Promise<void> => {
       },
       {
         key: 'DA-DMA-002',
-        label: 'OAuth token valid',
-        description: 'The Google Data Manager access token is not expired',
-        status: !dmaConnected ? 'unknown' : dmaTokenValid ? 'pass' : 'warn',
-        recommendation: !dmaConnected
-          ? 'Connect Google Data Manager first.'
-          : dmaTokenValid
-          ? 'Token is valid.'
-          : 'Token may be expired. Reconnect Google Ads in Platform Connections to refresh.',
+        label: 'DMA events landing',
+        description: 'Audience members have been processed by Google Data Manager in the last 30 days',
+        status: dmaMembersStatus,
+        recommendation: dmaMembersRecommendation,
       },
       {
         key: 'DA-DMA-003',
-        label: 'Conversion action configured',
-        description: 'An active Google conversion action is set up for server-side delivery',
-        status: conversionActionConfigured ? 'pass' : dmaConnected ? 'warn' : 'unknown',
-        recommendation: conversionActionConfigured
-          ? 'Conversion action is configured.'
-          : 'Add a Google conversion action in the Data Manager (Google) CAPI provider.',
+        label: 'Match rate above threshold',
+        description: 'Audience match rate is above the 40% recommended threshold',
+        status: matchRateStatus,
+        recommendation: matchRateRecommendation,
       },
       {
         key: 'DA-DMA-004',

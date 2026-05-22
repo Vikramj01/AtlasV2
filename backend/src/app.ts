@@ -31,6 +31,7 @@ import { reconciliationRouter } from '@/api/routes/reconciliation';
 import { gtmRouter } from '@/api/routes/gtm';
 import { ihcRouter } from '@/api/routes/ihc';
 import { enricherRouter } from '@/api/routes/enricher';
+import { dqmRouter } from '@/api/routes/dqm';
 import logger from '@/utils/logger';
 import { env } from '@/config/env';
 
@@ -151,6 +152,7 @@ app.use('/api/reconciliation', reconciliationRouter);
 app.use('/api/gtm', gtmRouter);
 app.use('/api/ihc', ihcRouter);
 app.use('/api/enricher', enricherRouter);
+app.use('/api/dqm', dqmRouter);
 
 // ─── 404 handler ─────────────────────────────────────────────────────────────
 

@@ -517,3 +517,24 @@ dmaIngestQueue.on('stalled', (job) => {
   logger.warn({ jobId: job.id, orgId: job.data.org_id }, 'DMA ingest job stalled');
 });
 
+// ── DQM Queue ────────────────────────────────────────────────────────────────
+// Runs GTG path probe + DMA diagnostics polling for all active orgs hourly.
+
+export interface DQMJobData {
+  trigger: 'scheduled' | 'manual';
+  org_id?: string; // if set, run for a single org
+}
+
+export const dqmQueue = new Bull<DQMJobData>('dqm', makeBullOpts({
+  attempts: 2,
+  backoff: { type: 'fixed', delay: 60000 },
+}));
+
+dqmQueue.on('completed', (job) => {
+  logger.info({ jobId: job.id, trigger: job.data.trigger }, 'DQM job completed');
+});
+
+dqmQueue.on('failed', (job, err) => {
+  logger.error({ jobId: job?.id, err }, 'DQM job failed');
+});
+

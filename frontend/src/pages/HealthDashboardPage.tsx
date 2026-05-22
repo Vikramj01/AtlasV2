@@ -27,6 +27,7 @@ import { HealthHistoryChart } from '@/components/health/HealthHistoryChart';
 import { ReadinessScore } from '@/components/health/ReadinessScore';
 import { PlatformAcceptanceTile } from '@/components/health/PlatformAcceptanceTile';
 import { ReauthBanner } from '@/components/health/ReauthBanner';
+import { DQMStatusPanel } from '@/components/health/DQMStatusPanel';
 import { SECTION_LABELS, LOW_HEALTH_CALLOUT, TOOLTIPS } from '@/lib/ui-copy';
 import { InfoTooltip } from '@/components/common/InfoTooltip';
 import { EmptyState } from '@/components/common/EmptyState';
@@ -284,6 +285,14 @@ export default function HealthDashboardPage() {
         </div>
         <ReadinessScore />
       </section>
+
+      {/* ── Zone 4b: Data Quality Monitor ─────────────────────────────────── */}
+      {loadState === 'loaded' && (
+        <section>
+          <h2 className="text-section-header mb-3">Data Quality Monitor</h2>
+          <DQMStatusPanel />
+        </section>
+      )}
 
       {/* ── Zone 5: Quick actions ──────────────────────────────────────────── */}
       <section>
