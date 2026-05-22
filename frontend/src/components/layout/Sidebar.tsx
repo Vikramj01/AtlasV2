@@ -5,7 +5,7 @@ import {
   Home, MapPin, CheckCircle, Clock, Settings,
   Building2, LayoutGrid, ShieldCheck, Activity,
   HeartPulse, ShieldAlert, GitBranch, Tag,
-  Link2, ArrowLeftRight, Plus, Target, Zap,
+  Link2, ArrowLeftRight, Plus, Target, Zap, BarChart2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { OrgSwitcher } from '@/components/organisation/OrgSwitcher';
@@ -56,7 +56,8 @@ const PERSONAL_NAV_GROUPS: { label: string; items: NavItemDef[] }[] = [
 function orgNav(orgId: string): NavItemDef[] {
   return [
     { label: 'Overview',                                                                                          to: `/org/${orgId}`,          Icon: Home },
-    { label: 'Clients',                                                                                           to: `/org/${orgId}/clients`,  Icon: Building2 },
+    { label: 'Clients',                                                                                           to: `/org/${orgId}/clients`,      Icon: Building2 },
+    { label: 'Data Manager',                                                                                       to: `/org/${orgId}/data-manager`, Icon: BarChart2 },
     { label: 'Tracking Map',                                                                                      to: `/org/${orgId}/signals`,  Icon: MapPin },
     { label: 'Templates',                                                                                         to: `/org/${orgId}/packs`,    Icon: LayoutGrid },
     { label: SECTION_LABELS.planningMode.primary,   technicalLabel: SECTION_LABELS.planningMode.technical,   to: '/planning',              Icon: MapPin },
