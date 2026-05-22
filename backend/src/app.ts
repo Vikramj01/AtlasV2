@@ -32,6 +32,7 @@ import { gtmRouter } from '@/api/routes/gtm';
 import { ihcRouter } from '@/api/routes/ihc';
 import { enricherRouter } from '@/api/routes/enricher';
 import { dqmRouter } from '@/api/routes/dqm';
+import { dataManagerRouter } from '@/api/routes/dataManager';
 import logger from '@/utils/logger';
 import { env } from '@/config/env';
 
@@ -153,6 +154,7 @@ app.use('/api/gtm', gtmRouter);
 app.use('/api/ihc', ihcRouter);
 app.use('/api/enricher', enricherRouter);
 app.use('/api/dqm', dqmRouter);
+app.use('/api/data-manager', dataManagerRouter);
 
 // ─── 404 handler ─────────────────────────────────────────────────────────────
 

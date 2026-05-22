@@ -43,6 +43,7 @@ const ClientConnectionsPage     = lazy(() => import('@/pages/ClientConnectionsPa
 const ReconciliationPage        = lazy(() => import('@/pages/ReconciliationPage').then(m => ({ default: m.ReconciliationPage })));
 const ImplementationHealthPage  = lazy(() => import('@/pages/ImplementationHealthPage').then(m => ({ default: m.ImplementationHealthPage })));
 const ReconciliationRunDetailPage = lazy(() => import('@/pages/ReconciliationRunDetailPage').then(m => ({ default: m.ReconciliationRunDetailPage })));
+const DataManagerConsolePage      = lazy(() => import('@/pages/DataManagerConsolePage').then(m => ({ default: m.DataManagerConsolePage })));
 
 const PageFallback = () => <SkeletonCard variant="page" />;
 
@@ -107,6 +108,7 @@ export default function App() {
                 <Route path="/org/:orgId/packs" element={<SectionErrorBoundary label="Signal packs"><SignalPacksPage /></SectionErrorBoundary>} />
                 <Route path="/org/:orgId/packs/:packId" element={<SectionErrorBoundary label="Pack detail"><PackDetailPage /></SectionErrorBoundary>} />
                 <Route path="/org/:orgId/settings" element={<SectionErrorBoundary label="Organisation settings"><OrgSettingsPage /></SectionErrorBoundary>} />
+                <Route path="/org/:orgId/data-manager" element={<SectionErrorBoundary label="Data Manager Console"><DataManagerConsolePage /></SectionErrorBoundary>} />
               </Route>
               {/* Full-screen routes (no sidebar) */}
               <Route path="/audit/:auditId/progress" element={<SectionErrorBoundary label="Audit progress"><AuditProgressPage /></SectionErrorBoundary>} />
