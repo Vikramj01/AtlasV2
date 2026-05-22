@@ -19,6 +19,7 @@ import { MetricGuidance } from '@/components/shared/MetricGuidance';
 import { emqGuidance, capiDeliveryGuidance } from '@/lib/guidance/metricGuidance';
 import { ErrorLog } from '@/components/capi/ErrorLog';
 import { SkeletonCard } from '@/components/common/SkeletonCard';
+import { AudienceUploadTab } from '@/components/capi/AudienceUploadTab';
 import type { CAPIProviderConfig } from '@/types/capi';
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -32,7 +33,7 @@ const AMBER    = '#D97706';
 
 const PROVIDER_LABELS: Record<string, string> = {
   meta:     'Meta (Facebook)',
-  google:   'Google Ads',
+  google:   'Data Manager (Google)',
   tiktok:   'TikTok',
   linkedin: 'LinkedIn',
   snapchat: 'Snapchat',
@@ -355,10 +356,12 @@ interface CAPIMonitoringDashboardProps {
 }
 
 type Window = 7 | 30;
+type Tab = 'delivery' | 'audience';
 
 export function CAPIMonitoringDashboard({ provider, onBack }: CAPIMonitoringDashboardProps) {
   const { dashboard, dashboardLoading, setDashboard, setDashboardLoading } = useCAPIStore();
   const [window, setWindow] = useState<Window>(7);
+  const [tab, setTab] = useState<Tab>('delivery');
 
   function load(days: Window) {
     setDashboardLoading(true);
@@ -409,37 +412,71 @@ export function CAPIMonitoringDashboard({ provider, onBack }: CAPIMonitoringDash
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* 7d / 30d toggle */}
-          <div className="flex items-center rounded-lg border border-[#E5E7EB] p-0.5">
-            {([7, 30] as Window[]).map((d) => (
-              <button
-                key={d}
-                type="button"
-                onClick={() => setWindow(d)}
-                className="px-3 py-1 text-xs font-medium rounded transition-colors"
-                style={
-                  window === d
-                    ? { backgroundColor: NAVY, color: '#fff' }
-                    : { color: '#9CA3AF' }
-                }
-              >
-                {d}d
-              </button>
-            ))}
-          </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Delivery / Audience tab switcher — Audience only for Google */}
+          {provider.provider === 'google' && (
+            <div className="flex items-center rounded-lg border border-[#E5E7EB] p-0.5">
+              {(['delivery', 'audience'] as Tab[]).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setTab(t)}
+                  className="px-3 py-1 text-xs font-medium rounded transition-colors capitalize"
+                  style={
+                    tab === t
+                      ? { backgroundColor: NAVY, color: '#fff' }
+                      : { color: '#9CA3AF' }
+                  }
+                >
+                  {t === 'delivery' ? 'Delivery' : 'Audience'}
+                </button>
+              ))}
+            </div>
+          )}
 
-          <button
-            type="button"
-            onClick={() => load(window)}
-            disabled={dashboardLoading}
-            className="flex items-center gap-1.5 text-xs text-[#9CA3AF] hover:text-[#1A1A1A] transition-colors disabled:opacity-40"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${dashboardLoading ? 'animate-spin' : ''}`} strokeWidth={1.5} />
-            Refresh
-          </button>
+          {/* 7d / 30d toggle — only on Delivery tab */}
+          {tab === 'delivery' && (
+            <div className="flex items-center rounded-lg border border-[#E5E7EB] p-0.5">
+              {([7, 30] as Window[]).map((d) => (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => setWindow(d)}
+                  className="px-3 py-1 text-xs font-medium rounded transition-colors"
+                  style={
+                    window === d
+                      ? { backgroundColor: NAVY, color: '#fff' }
+                      : { color: '#9CA3AF' }
+                  }
+                >
+                  {d}d
+                </button>
+              ))}
+            </div>
+          )}
+
+          {tab === 'delivery' && (
+            <button
+              type="button"
+              onClick={() => load(window)}
+              disabled={dashboardLoading}
+              className="flex items-center gap-1.5 text-xs text-[#9CA3AF] hover:text-[#1A1A1A] transition-colors disabled:opacity-40"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${dashboardLoading ? 'animate-spin' : ''}`} strokeWidth={1.5} />
+              Refresh
+            </button>
+          )}
         </div>
       </div>
+
+      {/* ── Audience tab ─────────────────────────────────────────────────── */}
+      {tab === 'audience' && (
+        <AudienceUploadTab orgId={provider.id} />
+      )}
+
+      {/* ── Delivery tab ─────────────────────────────────────────────────── */}
+      {tab === 'delivery' && (
+        <>
 
       {/* ── Loading ──────────────────────────────────────────────────────── */}
       {dashboardLoading && !dashboard && (
@@ -541,6 +578,8 @@ export function CAPIMonitoringDashboard({ provider, onBack }: CAPIMonitoringDash
             errors={dashboard.errors ?? []}
             isLoading={dashboardLoading}
           />
+        </>
+      )}
         </>
       )}
     </div>

@@ -34,6 +34,8 @@ import { validateMetaCredentials, sendMetaTestEvent, formatMetaEvent } from '@/s
 import { validateGoogleCredentials, sendGoogleTestEvent } from '@/services/capi/googleDelivery';
 import { processEvent } from '@/services/capi/pipeline';
 import { setDedupEntry } from '@/services/capi/dedupStore';
+import { ingestCustomerMatchBatch } from '@/services/capi/customerMatch';
+import { DMAClientError } from '@/integrations/google/dmaClient';
 import { supabaseAdmin } from '@/services/database/supabase';
 import logger from '@/utils/logger';
 import type {
@@ -391,5 +393,101 @@ capiRouter.post('/process', async (req: Request, res: Response): Promise<void> =
     res.json(result);
   } catch (err) {
     sendInternalError(res, err, 'Failed to process CAPI event');
+  }
+});
+
+// ── POST /api/capi/google/audience ────────────────────────────────────────────
+// Upload a Customer Match audience batch to Google Ads via the DMA API.
+
+const AudienceUploadSchema = z.object({
+  customer_id: z.string().min(1),
+  contacts: z.array(
+    z.object({
+      email: z.string().optional(),
+      phone: z.string().optional(),
+      first_name: z.string().optional(),
+      last_name: z.string().optional(),
+      zip: z.string().optional(),
+      country: z.string().optional(),
+    }),
+  ).min(1).max(500_000),
+  operation_type: z.enum(['CREATE', 'REMOVE']).default('CREATE'),
+});
+
+capiRouter.post('/google/audience', async (req: Request, res: Response): Promise<void> => {
+  const parsed = AudienceUploadSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({
+      error: 'VALIDATION_FAILED',
+      message: parsed.error.issues[0]?.message ?? 'Invalid request body',
+    });
+    return;
+  }
+
+  const { customer_id, contacts, operation_type } = parsed.data;
+
+  try {
+    const result = await ingestCustomerMatchBatch(req.user.id, customer_id, contacts, operation_type);
+
+    const { data: insertedRow, error: insertErr } = await supabaseAdmin
+      .from('audience_member_uploads')
+      .insert({
+        org_id: req.user.id,
+        customer_id,
+        operation_type,
+        status: 'completed',
+        record_count: result.record_count,
+        matched_count: result.matched_count,
+        failed_count: result.failed_count,
+        dma_response: result.raw_response as Record<string, unknown>,
+      })
+      .select('id')
+      .single();
+
+    if (insertErr || !insertedRow) {
+      logger.warn({ err: insertErr?.message }, 'Failed to persist audience_member_uploads row');
+    }
+
+    res.json({
+      data: {
+        id: insertedRow?.id ?? null,
+        record_count: result.record_count,
+        matched_count: result.matched_count,
+        failed_count: result.failed_count,
+        member_errors: result.member_errors,
+      },
+    });
+  } catch (err) {
+    if (err instanceof DMAClientError && err.status === 401) {
+      res.status(400).json({
+        error: 'DMA_NOT_CONNECTED',
+        message: 'Connect Google Ads via Platform Connections to use audience uploads.',
+      });
+      return;
+    }
+    sendInternalError(res, err, 'Failed to ingest Customer Match audience');
+  }
+});
+
+// ── GET /api/capi/google/audience ─────────────────────────────────────────────
+// Returns the last 20 Customer Match upload records for the authenticated org.
+
+capiRouter.get('/google/audience', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { data: uploads, error } = await supabaseAdmin
+      .from('audience_member_uploads')
+      .select('id, operation_type, status, record_count, matched_count, failed_count, error_message, created_at')
+      .eq('org_id', req.user.id)
+      .order('created_at', { ascending: false })
+      .limit(20);
+
+    if (error) {
+      sendInternalError(res, error, 'Failed to fetch audience uploads');
+      return;
+    }
+
+    res.json({ data: uploads ?? [] });
+  } catch (err) {
+    sendInternalError(res, err, 'Failed to fetch audience uploads');
   }
 });

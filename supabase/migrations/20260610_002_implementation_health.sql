@@ -56,13 +56,19 @@ $$;
 
 alter table gtm_container_connections enable row level security;
 
-create policy "gtm_container_connections_org_isolation"
-  on gtm_container_connections
-  using (
-    organization_id = (
-      select organization_id from profiles where id = auth.uid()
-    )
-  );
+do $$ begin
+  if exists (select from pg_tables where tablename = 'organisation_members') then
+    execute $policy$
+      create policy "gtm_container_connections_org_isolation"
+        on gtm_container_connections
+        using (
+          organization_id in (
+            select organisation_id from organisation_members where user_id = auth.uid()
+          )
+        )
+    $policy$;
+  end if;
+end $$;
 
 create index if not exists idx_gtm_connections_org
   on gtm_container_connections (organization_id);
@@ -101,13 +107,19 @@ $$;
 
 alter table gtm_container_snapshots enable row level security;
 
-create policy "gtm_container_snapshots_org_isolation"
-  on gtm_container_snapshots
-  using (
-    organization_id = (
-      select organization_id from profiles where id = auth.uid()
-    )
-  );
+do $$ begin
+  if exists (select from pg_tables where tablename = 'organisation_members') then
+    execute $policy$
+      create policy "gtm_container_snapshots_org_isolation"
+        on gtm_container_snapshots
+        using (
+          organization_id in (
+            select organisation_id from organisation_members where user_id = auth.uid()
+          )
+        )
+    $policy$;
+  end if;
+end $$;
 
 create index if not exists idx_gtm_snapshots_connection
   on gtm_container_snapshots (connection_id);
@@ -154,13 +166,19 @@ $$;
 
 alter table ihc_alert_preferences enable row level security;
 
-create policy "ihc_alert_preferences_org_isolation"
-  on ihc_alert_preferences
-  using (
-    organization_id = (
-      select organization_id from profiles where id = auth.uid()
-    )
-  );
+do $$ begin
+  if exists (select from pg_tables where tablename = 'organisation_members') then
+    execute $policy$
+      create policy "ihc_alert_preferences_org_isolation"
+        on ihc_alert_preferences
+        using (
+          organization_id in (
+            select organisation_id from organisation_members where user_id = auth.uid()
+          )
+        )
+    $policy$;
+  end if;
+end $$;
 
 -- ── audit_findings ───────────────────────────────────────────────────────────
 -- Persistent finding store, cross-run. One row per (property, rule) with
@@ -215,13 +233,19 @@ $$;
 
 alter table audit_findings enable row level security;
 
-create policy "audit_findings_org_isolation"
-  on audit_findings
-  using (
-    organization_id = (
-      select organization_id from profiles where id = auth.uid()
-    )
-  );
+do $$ begin
+  if exists (select from pg_tables where tablename = 'organisation_members') then
+    execute $policy$
+      create policy "audit_findings_org_isolation"
+        on audit_findings
+        using (
+          organization_id in (
+            select organisation_id from organisation_members where user_id = auth.uid()
+          )
+        )
+    $policy$;
+  end if;
+end $$;
 
 create index if not exists idx_audit_findings_org_status
   on audit_findings (organization_id, status);
