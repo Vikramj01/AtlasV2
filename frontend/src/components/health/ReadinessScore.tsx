@@ -13,7 +13,7 @@ import { useNavigate } from 'react-router-dom';
 import { CheckCircle2, Circle, ArrowRight } from 'lucide-react';
 import { SkeletonCard } from '@/components/common/SkeletonCard';
 import { readinessApi } from '@/lib/api/readinessApi';
-import type { ReadinessScore as ReadinessScoreType, ReadinessItem } from '@/lib/api/readinessApi';
+import type { ReadinessScore as ReadinessScoreType, ReadinessItem, DMACheck } from '@/lib/api/readinessApi';
 
 const NAVY = '#1B2A4A';
 
@@ -101,6 +101,32 @@ function ReadinessItemRow({
   );
 }
 
+// ── DMA Check row ─────────────────────────────────────────────────────────────
+
+function statusIcon(status: DMACheck['status']) {
+  if (status === 'pass')    return <CheckCircle2 className="h-4 w-4 shrink-0 text-[#059669]" strokeWidth={1.5} />;
+  if (status === 'fail')    return <Circle className="h-4 w-4 shrink-0 text-[#DC2626]" strokeWidth={1.5} />;
+  if (status === 'warn')    return <Circle className="h-4 w-4 shrink-0 text-[#D97706]" strokeWidth={1.5} />;
+  return <Circle className="h-4 w-4 shrink-0 text-[#D1D5DB]" strokeWidth={1.5} />;
+}
+
+function DMACheckRow({ check }: { check: DMACheck }) {
+  return (
+    <div className="flex items-start gap-3 px-3 py-1.5">
+      {statusIcon(check.status)}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-[#1A1A1A]">{check.label}</span>
+          <span className="text-[10px] font-mono text-[#9CA3AF]">{check.key}</span>
+        </div>
+        {check.status !== 'pass' && (
+          <p className="text-[11px] text-[#6B7280] mt-0.5 leading-snug">{check.recommendation}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function ReadinessScore() {
@@ -171,6 +197,19 @@ export function ReadinessScore() {
           />
         ))}
       </div>
+
+      {data.dma_checks && data.dma_checks.length > 0 && (
+        <div className="mt-5 pt-4 border-t border-[#E5E7EB]">
+          <p className="text-xs font-semibold text-[#6B7280] uppercase tracking-wide mb-2">
+            Google Data Manager
+          </p>
+          <div className="space-y-1.5">
+            {data.dma_checks.map((check) => (
+              <DMACheckRow key={check.key} check={check} />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

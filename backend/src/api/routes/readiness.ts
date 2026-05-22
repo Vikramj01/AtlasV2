@@ -34,11 +34,20 @@ interface ReadinessItem {
   link: string;
 }
 
+interface DMACheck {
+  key: string;
+  label: string;
+  description: string;
+  status: 'pass' | 'fail' | 'warn' | 'unknown';
+  recommendation: string;
+}
+
 export interface ReadinessResponse {
   score: number;
   level: 'getting_started' | 'building' | 'strong' | 'best_in_class';
   level_label: string;
   items: ReadinessItem[];
+  dma_checks: DMACheck[];
 }
 
 // ── GET /api/readiness-score ──────────────────────────────────────────────────
@@ -53,6 +62,9 @@ readinessRouter.get('/', async (req: Request, res: Response): Promise<void> => {
       capiResult,
       sessionIdsResult,
       healthResult,
+      gtgResult,
+      dmaCredsResult,
+      googleProviderResult,
     ] = await Promise.all([
       supabaseAdmin
         .from('consent_configs')
@@ -76,6 +88,29 @@ readinessRouter.get('/', async (req: Request, res: Response): Promise<void> => {
         .select('overall_score')
         .eq('user_id', userId)
         .single(),
+
+      // DA-GTG-001: GTM/sGTM container connection exists
+      supabaseAdmin
+        .from('gtm_container_connections')
+        .select('id')
+        .eq('organization_id', userId)
+        .limit(1),
+
+      // DA-DMA-001 + DA-DMA-002 + DA-DMA-004: DMA credentials row
+      supabaseAdmin
+        .from('google_dma_credentials')
+        .select('linked_connection_id, expires_at, oauth_scope')
+        .eq('org_id', userId)
+        .maybeSingle(),
+
+      // DA-DMA-003: Google CAPI provider has conversion_action_id configured
+      supabaseAdmin
+        .from('capi_providers')
+        .select('credentials')
+        .eq('organization_id', userId)
+        .eq('provider', 'google')
+        .eq('status', 'active')
+        .limit(1),
     ]);
 
     const sessionIds = (sessionIdsResult.data ?? []).map((s: { id: string }) => s.id);
@@ -116,6 +151,85 @@ readinessRouter.get('/', async (req: Request, res: Response): Promise<void> => {
 
     const healthScore = (healthResult.data as { overall_score?: number } | null)?.overall_score ?? 0;
     const healthGood = healthScore > 80;
+
+    // ── DMA check logic ──────────────────────────────────────────────────────
+
+    const dmaCreds = dmaCredsResult.data as {
+      linked_connection_id: string | null;
+      expires_at: string | null;
+      oauth_scope: string | null;
+    } | null;
+
+    // DA-GTG-001: sGTM / GTG configured
+    const gtgActive = (gtgResult.data?.length ?? 0) > 0;
+
+    // DA-DMA-001: credentials linked
+    const dmaConnected = !!dmaCreds?.linked_connection_id;
+
+    // DA-DMA-002: token not expired (expires_at is UI-display field populated at upsert)
+    const dmaTokenValid = dmaConnected && (
+      !dmaCreds!.expires_at ||
+      new Date(dmaCreds!.expires_at) > new Date()
+    );
+
+    // DA-DMA-003: active Google CAPI provider exists (proxy for conversion action reachability)
+    const conversionActionConfigured = (googleProviderResult.data?.length ?? 0) > 0;
+
+    // DA-DMA-004: oauth_scope includes datamanager
+    const dmaScopeValid = dmaConnected &&
+      (dmaCreds!.oauth_scope ?? '').includes('datamanager');
+
+    const dma_checks: DMACheck[] = [
+      {
+        key: 'DA-GTG-001',
+        label: 'Server-side GTM configured',
+        description: 'A Google Tag Manager server-side container is connected to Atlas',
+        status: gtgActive ? 'pass' : 'warn',
+        recommendation: gtgActive
+          ? 'Server-side GTM is connected.'
+          : 'Connect a GTM container in Platform Connections to enable server-side measurement.',
+      },
+      {
+        key: 'DA-DMA-001',
+        label: 'Data Manager connected',
+        description: 'Google Data Manager OAuth credentials are linked to this workspace',
+        status: dmaConnected ? 'pass' : 'fail',
+        recommendation: dmaConnected
+          ? 'Google Data Manager is connected.'
+          : 'Reconnect Google Ads in Platform Connections and grant the Data Manager scope.',
+      },
+      {
+        key: 'DA-DMA-002',
+        label: 'OAuth token valid',
+        description: 'The Google Data Manager access token is not expired',
+        status: !dmaConnected ? 'unknown' : dmaTokenValid ? 'pass' : 'warn',
+        recommendation: !dmaConnected
+          ? 'Connect Google Data Manager first.'
+          : dmaTokenValid
+          ? 'Token is valid.'
+          : 'Token may be expired. Reconnect Google Ads in Platform Connections to refresh.',
+      },
+      {
+        key: 'DA-DMA-003',
+        label: 'Conversion action configured',
+        description: 'An active Google conversion action is set up for server-side delivery',
+        status: conversionActionConfigured ? 'pass' : dmaConnected ? 'warn' : 'unknown',
+        recommendation: conversionActionConfigured
+          ? 'Conversion action is configured.'
+          : 'Add a Google conversion action in the Data Manager (Google) CAPI provider.',
+      },
+      {
+        key: 'DA-DMA-004',
+        label: 'Data Manager scope granted',
+        description: 'The OAuth token includes the required Data Manager API scope',
+        status: !dmaConnected ? 'unknown' : dmaScopeValid ? 'pass' : 'fail',
+        recommendation: !dmaConnected
+          ? 'Connect Google Data Manager first.'
+          : dmaScopeValid
+          ? 'Data Manager scope is granted.'
+          : 'Reconnect Google Ads in Platform Connections — ensure the Data Manager scope is approved on the consent screen.',
+      },
+    ];
 
     // ── Build items array ────────────────────────────────────────────────────
 
@@ -179,7 +293,7 @@ readinessRouter.get('/', async (req: Request, res: Response): Promise<void> => {
     else if (score <= 85) { level = 'strong';           level_label = 'Strong';          }
     else                  { level = 'best_in_class';    level_label = 'Best in class';   }
 
-    const response: ReadinessResponse = { score, level, level_label, items };
+    const response: ReadinessResponse = { score, level, level_label, items, dma_checks };
     res.json(response);
   } catch (err) {
     logger.error({ err, userId }, 'Failed to compute readiness score');

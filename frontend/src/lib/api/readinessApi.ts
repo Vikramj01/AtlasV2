@@ -17,11 +17,20 @@ export interface ReadinessItem {
   link: string;
 }
 
+export interface DMACheck {
+  key: string;
+  label: string;
+  description: string;
+  status: 'pass' | 'fail' | 'warn' | 'unknown';
+  recommendation: string;
+}
+
 export interface ReadinessScore {
   score: number;
   level: 'getting_started' | 'building' | 'strong' | 'best_in_class';
   level_label: string;
   items: ReadinessItem[];
+  dma_checks?: DMACheck[];
 }
 
 export const readinessApi = {
