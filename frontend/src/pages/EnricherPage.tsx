@@ -144,22 +144,22 @@ export function EnricherPage() {
 
   function addDestination() {
     if (destinations.length >= 3) return;
-    setDestinations((prev) => [...prev, { type: 'GOOGLE_ADS', id: '' }]);
+    setDestinations((prev: DestinationRow[]) => [...prev, { type: 'GOOGLE_ADS', id: '' }]);
   }
 
   function removeDestination(index: number) {
-    setDestinations((prev) => prev.filter((_, i) => i !== index));
+    setDestinations((prev: DestinationRow[]) => prev.filter((_: DestinationRow, i: number) => i !== index));
   }
 
   function updateDestType(index: number, type: DestType) {
-    setDestinations((prev) =>
-      prev.map((d, i) => (i === index ? { type, id: '' } : d)),
+    setDestinations((prev: DestinationRow[]) =>
+      prev.map((d: DestinationRow, i: number) => (i === index ? { type, id: '' } : d)),
     );
   }
 
   function updateDestId(index: number, id: string) {
-    setDestinations((prev) =>
-      prev.map((d, i) => (i === index ? { ...d, id } : d)),
+    setDestinations((prev: DestinationRow[]) =>
+      prev.map((d: DestinationRow, i: number) => (i === index ? { ...d, id } : d)),
     );
   }
 
