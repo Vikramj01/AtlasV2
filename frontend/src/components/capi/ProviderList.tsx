@@ -3,7 +3,7 @@
  * Used by CAPIPage (/integrations/capi).
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type MouseEvent } from 'react';
 import { capiApi } from '@/lib/api/capiApi';
 import { useCAPIStore } from '@/store/capiStore';
 import { Button } from '@/components/ui/button';
@@ -145,7 +145,7 @@ export function ProviderList({ onAddProvider, onSelectProvider }: ProviderListPr
                     </span>
                     <button
                       className="text-muted-foreground hover:text-red-600 text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                      onClick={e => { e.stopPropagation(); void handleDelete(p.id); }}
+                      onClick={(e: MouseEvent) => { e.stopPropagation(); void handleDelete(p.id); }}
                       disabled={deletingId === p.id}
                       title="Delete provider"
                       aria-label={`Delete ${PROVIDER_LABELS[p.provider] ?? p.provider}`}

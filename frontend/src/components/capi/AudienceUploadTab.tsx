@@ -264,7 +264,7 @@ export function AudienceUploadTab({ orgId: _orgId }: AudienceUploadTabProps) {
                   </td>
                 </tr>
               ) : (
-                history.map((row) => (
+                history.map((row: AudienceUpload) => (
                   <tr key={row.id} className="border-b border-[#E5E7EB] last:border-0">
                     <td className="py-2.5 pr-4 text-[#1A1A1A] whitespace-nowrap">
                       {new Date(row.created_at).toLocaleDateString(undefined, {
