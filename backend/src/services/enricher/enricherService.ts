@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { ingestAudienceMembers } from '@/integrations/google/dmaClient';
 import { supabaseAdmin } from '@/services/database/supabase';
 import logger from '@/utils/logger';
+import { logUsage } from '@/services/usage/usageLogger';
 import type { DMAUserIdData, DMADestination } from '@/integrations/google/dmaTypes';
 
 export interface EnricherContact {
@@ -133,6 +134,14 @@ export async function runAudienceEnricher(
         dma_response: response as unknown as Record<string, unknown>,
       })
       .eq('id', runId);
+
+    void logUsage({
+      org_id: orgId,
+      event_type: 'dma_enricher_event',
+      dma_member_count: contacts.length,
+      dma_matched_count: matchedCount,
+      metadata: { run_id: runId, destinations: destinations.length },
+    });
 
     logger.info(
       { orgId, runId, recordCount: contacts.length, matchedCount, failedCount, matchRate },

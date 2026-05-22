@@ -48,6 +48,11 @@ export interface ReadinessResponse {
   level_label: string;
   items: ReadinessItem[];
   dma_checks: DMACheck[];
+  gtg_recommendation?: {
+    headline: string;
+    uplift: string;
+    cdn_guides: Array<{ cdn: string; instruction: string }>;
+  } | null;
 }
 
 // ── GET /api/readiness-score ──────────────────────────────────────────────────
@@ -293,7 +298,18 @@ readinessRouter.get('/', async (req: Request, res: Response): Promise<void> => {
     else if (score <= 85) { level = 'strong';           level_label = 'Strong';          }
     else                  { level = 'best_in_class';    level_label = 'Best in class';   }
 
-    const response: ReadinessResponse = { score, level, level_label, items, dma_checks };
+    const gtg_recommendation = !gtgActive ? {
+      headline: 'Deploy Google Tag Gateway to recover ~11% signal loss',
+      uplift: '~11% more measured conversions at no additional cost',
+      cdn_guides: [
+        { cdn: 'Cloudflare', instruction: 'Add a Worker proxying https://www.googletagmanager.com/gtag/js to /gtag/js on your domain. Enable via the Workers dashboard.' },
+        { cdn: 'Akamai', instruction: 'Use EdgeWorkers to proxy the GTG script endpoint. Add a Property Manager rule forwarding /gtag/js to the GTG origin.' },
+        { cdn: 'Fastly', instruction: 'Add a VCL snippet routing /gtag/js to the GTG backend. Set bereq.url to the GTG path in vcl_recv.' },
+        { cdn: 'GCP (Cloud CDN)', instruction: 'Use Cloud Load Balancing + Cloud CDN. Add a URL map rule forwarding /gtag/js to the GTG origin backend service.' },
+      ],
+    } : null;
+
+    const response: ReadinessResponse = { score, level, level_label, items, dma_checks, gtg_recommendation };
     res.json(response);
   } catch (err) {
     logger.error({ err, userId }, 'Failed to compute readiness score');

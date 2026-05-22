@@ -83,6 +83,17 @@ function consentStatus(v: number): CellStatus {
   return v >= 100 ? 'good' : 'warning';
 }
 
+function gtgStatus(active: boolean): CellStatus {
+  return active ? 'good' : 'warning';
+}
+
+function dmaStatus(v: number | null): CellStatus {
+  if (v === null) return 'neutral';
+  if (v >= 70) return 'good';
+  if (v >= 40) return 'warning';
+  return 'critical';
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 interface KeyMetricsRowProps {
@@ -98,8 +109,12 @@ export function KeyMetricsRow({ score }: KeyMetricsRowProps) {
     ? 'N/A'
     : `${score.capi_delivery_rate.toFixed(1)}%`;
 
+  const dmaCoverageValue = score.dma_coverage_score !== null
+    ? `${score.dma_coverage_score.toFixed(0)}%`
+    : 'No data';
+
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
       <MetricCell
         label="Signal Health"
         value={`${score.signal_health}%`}
@@ -125,6 +140,18 @@ export function KeyMetricsRow({ score }: KeyMetricsRowProps) {
         subtext="Conversion events firing"
         status={signalStatus(score.tag_firing_rate)}
         tooltip={TOOLTIPS.deduplication}
+      />
+      <MetricCell
+        label="GTG Status"
+        value={score.gtg_active ? 'Active' : 'Not deployed'}
+        subtext={score.gtg_active ? '+11% signal uplift' : 'Deploy to recover signal'}
+        status={gtgStatus(score.gtg_active)}
+      />
+      <MetricCell
+        label="DMA Coverage"
+        value={dmaCoverageValue}
+        subtext={score.dma_coverage_score !== null ? 'Avg match rate (30d)' : 'Run Bid Signal Enricher'}
+        status={dmaStatus(score.dma_coverage_score)}
       />
     </div>
   );

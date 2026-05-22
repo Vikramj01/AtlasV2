@@ -11,6 +11,7 @@ import { createHash } from 'crypto';
 import { ingestAudienceMembers, DMAClientError } from '@/integrations/google/dmaClient';
 import type { DMAUserIdData } from '@/integrations/google/dmaTypes';
 import logger from '@/utils/logger';
+import { logUsage } from '@/services/usage/usageLogger';
 
 export { DMAClientError };
 
@@ -133,6 +134,14 @@ export async function ingestCustomerMatchBatch(
     { orgId, record_count, matched_count, failed_count },
     'Customer Match batch ingested',
   );
+
+  void logUsage({
+    org_id: orgId,
+    event_type: 'dma_ingest_event',
+    dma_member_count: contacts.length,
+    dma_matched_count: matched_count,
+    metadata: { customer_id: customerId },
+  });
 
   return {
     record_count,
