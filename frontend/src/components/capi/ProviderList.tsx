@@ -12,7 +12,7 @@ import type { CAPIProvider, CAPIProviderConfig } from '@/types/capi';
 
 const PROVIDER_LABELS: Record<string, string> = {
   meta:     'Meta (Facebook)',
-  google:   'Google Ads',
+  google:   'Data Manager (Google)',
   tiktok:   'TikTok',
   linkedin: 'LinkedIn',
   snapchat: 'Snapchat',
@@ -33,7 +33,7 @@ interface ProviderListProps {
 
 const ADDABLE_PROVIDERS: Array<{ value: CAPIProvider; label: string }> = [
   { value: 'meta',   label: 'Meta (Facebook)' },
-  { value: 'google', label: 'Google Ads' },
+  { value: 'google', label: 'Data Manager (Google)' },
 ];
 
 export function ProviderList({ onAddProvider, onSelectProvider }: ProviderListProps) {

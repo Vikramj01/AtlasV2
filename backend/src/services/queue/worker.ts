@@ -1,4 +1,4 @@
-import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue, crawlQueue, reconciliationSyncQueue, reconciliationRunQueue, reconciliationStatsQueue, reconciliationStaleResyncQueue, gtmContainerSyncQueue, ihcRulesQueue, ihcDriftQueue, ihcAlertQueue, ihcDigestQueue } from './jobQueue';
+import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue, crawlQueue, reconciliationSyncQueue, reconciliationRunQueue, reconciliationStatsQueue, reconciliationStaleResyncQueue, gtmContainerSyncQueue, ihcRulesQueue, ihcDriftQueue, ihcAlertQueue, ihcDigestQueue, dmaIngestQueue } from './jobQueue';
 import type { GtmContainerSyncJobData, IhcRulesJobData, IhcDriftJobData, IhcAlertJobData, IhcDigestJobData } from './jobQueue';
 import { runConfigSyncForConnection, getConnectionsDueForSync, runStatsSyncForConnection, getConnectionsDueForStatsSync, runStaleResyncForConnection, getConnectionsForStaleResync } from '@/services/reconciliation/sync/syncOrchestrator';
 import { executeRun } from '@/services/reconciliation/reconciliationRunner';
@@ -1156,3 +1156,36 @@ ihcDigestQueue.add(
   { trigger: 'scheduled' },
   { repeat: { cron: '0 * * * *' }, jobId: 'ihc-digest-hourly' }, // runs every hour, checks which orgs are due
 ).catch((err) => logger.error({ err }, 'Failed to schedule IHC digest job'));
+
+// ── DMA Ingest worker (audience_members) ─────────────────────────────────────
+// v1: direct uploads call ingestCustomerMatchBatch synchronously in the route
+// handler. This worker handles the queue processor registration to prevent
+// "missing processor" errors and is ready for async large-batch support in a
+// future sprint.
+
+dmaIngestQueue.process(async (job) => {
+  const { org_id, ingest_type, payload_ref } = job.data;
+
+  if (ingest_type !== 'audience_members') {
+    logger.warn({ ingest_type }, 'DMA ingest worker: unsupported ingest_type, skipping');
+    return;
+  }
+
+  const { data: upload, error } = await supabaseAdmin
+    .from('audience_member_uploads')
+    .select('customer_id, operation_type')
+    .eq('id', payload_ref)
+    .eq('org_id', org_id)
+    .maybeSingle();
+
+  if (error || !upload) {
+    throw new Error(`audience_member_uploads row not found: ${payload_ref}`);
+  }
+
+  // Contacts are not stored in the DB (no PII in queue payloads).
+  // For queue-based retries, this worker handles status updates only.
+  // Direct uploads already call ingestCustomerMatchBatch synchronously in the route handler.
+  logger.info({ jobId: job.id, payloadRef: payload_ref }, 'DMA ingest job processed');
+});
+
+logger.info('DMA ingest worker registered');

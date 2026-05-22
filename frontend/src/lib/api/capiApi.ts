@@ -94,4 +94,40 @@ export const capiApi = {
   getDashboard(id: string, days = 30): Promise<ProviderDashboardResponse> {
     return apiFetch(`/api/capi/providers/${id}/dashboard?days=${days}`);
   },
+
+  // ── Audience Upload (Google Customer Match) ───────────────────────────────
+
+  uploadAudience(payload: {
+    customer_id: string;
+    contacts: Array<{ email?: string; phone?: string; first_name?: string; last_name?: string; zip?: string; country?: string }>;
+    operation_type: 'CREATE' | 'REMOVE';
+  }): Promise<{
+    data: {
+      id: string;
+      record_count: number;
+      matched_count: number;
+      failed_count: number;
+      member_errors: Array<{ index: number; code: string; message: string }>;
+    };
+  }> {
+    return apiFetch('/api/capi/google/audience', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  getAudienceUploads(): Promise<{
+    data: Array<{
+      id: string;
+      operation_type: string;
+      status: string;
+      record_count: number;
+      matched_count: number | null;
+      failed_count: number | null;
+      error_message: string | null;
+      created_at: string;
+    }>;
+  }> {
+    return apiFetch('/api/capi/google/audience');
+  },
 };
