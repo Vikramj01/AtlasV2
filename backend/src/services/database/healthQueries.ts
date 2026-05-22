@@ -37,6 +37,8 @@ export async function upsertHealthScore(
         consent_coverage: metrics.consent_coverage,
         tag_firing_rate: metrics.tag_firing_rate,
         platform_acceptance_score: metrics.platform_acceptance_score ?? null,
+        gtg_active: metrics.gtg_active,
+        dma_coverage_score: metrics.dma_coverage_score ?? null,
         last_audit_id: metrics.last_audit_id,
         last_audit_at: metrics.last_audit_at,
         computed_at: new Date().toISOString(),
@@ -104,6 +106,8 @@ export async function insertSnapshot(
       consent_coverage: metrics.consent_coverage,
       tag_firing_rate: metrics.tag_firing_rate,
       platform_acceptance_score: metrics.platform_acceptance_score ?? null,
+      gtg_active: metrics.gtg_active,
+      dma_coverage_score: metrics.dma_coverage_score ?? null,
       snapshot_at: new Date().toISOString(),
     });
 

@@ -10,6 +10,8 @@ export interface HealthScore {
   consent_coverage: number;      // 0 or 100 (configured = 100)
   tag_firing_rate: number;       // 0–100 % (alias of signal_health for display)
   platform_acceptance_score: number | null;  // 0–100 composite from reconciliation findings
+  gtg_active: boolean;           // true if sGTM / GTG container connection exists
+  dma_coverage_score: number | null;  // 0–100 avg match rate from enricher_runs (30d)
   last_audit_id: string | null;
   last_audit_at: string | null;
   computed_at: string;
@@ -25,6 +27,8 @@ export interface HealthSnapshot {
   consent_coverage: number | null;
   tag_firing_rate: number | null;
   platform_acceptance_score: number | null;
+  gtg_active: boolean | null;
+  dma_coverage_score: number | null;
   snapshot_at: string;
 }
 
@@ -78,6 +82,8 @@ export interface ComputedMetrics {
   consent_coverage: number;
   tag_firing_rate: number;
   platform_acceptance_score: number | null;
+  gtg_active: boolean;
+  dma_coverage_score: number | null;
   last_audit_id: string | null;
   last_audit_at: string | null;
   website_url: string | null;    // site the audit came from

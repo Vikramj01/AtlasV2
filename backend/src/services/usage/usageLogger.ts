@@ -13,7 +13,9 @@ export type UsageEventType =
   | 'page_scan'
   | 'ai_report_scheduled'
   | 'ai_report_ondemand'
-  | 'ai_query_ondemand';
+  | 'ai_query_ondemand'
+  | 'dma_ingest_event'
+  | 'dma_enricher_event';
 
 export interface UsageEventPayload {
   org_id: string;
@@ -26,6 +28,9 @@ export interface UsageEventPayload {
   input_tokens?: number;
   output_tokens?: number;
   model?: string;
+  // DMA (dma_ingest_event / dma_enricher_event)
+  dma_member_count?: number;
+  dma_matched_count?: number;
   // Pre-computed cost (if not provided, computed from other fields)
   cost_usd?: number;
   // Traceability
@@ -38,6 +43,9 @@ export interface UsageEventPayload {
 // Browserbase: $0.12 per browser hour (overage rate from Developer plan).
 // Confirmed from Browserbase pricing screenshot — update when plan changes.
 const BROWSERBASE_COST_PER_MINUTE = 0.12 / 60; // $0.002/min
+
+// DMA pricing: $0.002 per 1,000 members ingested (internal estimate; update from Google invoice)
+const DMA_COST_PER_MEMBER = 0.002 / 1000;
 
 // Claude token pricing (per token). Update from Anthropic invoice when rates change.
 const CLAUDE_PRICING: Record<string, { input: number; output: number }> = {
@@ -94,6 +102,10 @@ function computeCost(payload: UsageEventPayload): number {
       (payload.input_tokens  ?? 0) * rates.input +
       (payload.output_tokens ?? 0) * rates.output
     );
+  }
+
+  if (payload.event_type === 'dma_ingest_event' || payload.event_type === 'dma_enricher_event') {
+    return (payload.dma_member_count ?? 0) * DMA_COST_PER_MEMBER;
   }
 
   return 0;

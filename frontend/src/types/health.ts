@@ -8,6 +8,8 @@ export interface HealthScore {
   consent_coverage: number;
   tag_firing_rate: number;
   platform_acceptance_score: number | null;
+  gtg_active: boolean;
+  dma_coverage_score: number | null;
   last_audit_id: string | null;
   last_audit_at: string | null;
   computed_at: string;
@@ -28,6 +30,8 @@ export interface HealthSnapshot {
   consent_coverage: number | null;
   tag_firing_rate: number | null;
   platform_acceptance_score: number | null;
+  gtg_active: boolean | null;
+  dma_coverage_score: number | null;
   snapshot_at: string;
 }
 

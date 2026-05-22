@@ -86,6 +86,34 @@ async function fetchConsentCoverage(userId: string): Promise<number> {
   return (data?.length ?? 0) > 0 ? 100 : 0;
 }
 
+async function fetchGTGActive(orgId: string): Promise<boolean> {
+  const { data } = await supabaseAdmin
+    .from('gtm_container_connections')
+    .select('id')
+    .eq('organization_id', orgId)
+    .limit(1);
+  return (data?.length ?? 0) > 0;
+}
+
+async function fetchDMACoverageScore(orgId: string): Promise<number | null> {
+  // Coverage = % of enricher_runs in last 30 days that completed successfully
+  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const { data } = await supabaseAdmin
+    .from('enricher_runs')
+    .select('status, matched_count, record_count')
+    .eq('org_id', orgId)
+    .gte('created_at', since);
+
+  if (!data || data.length === 0) return null;
+
+  type RunRow = { status: string; matched_count: number | null; record_count: number };
+  const rows = data as RunRow[];
+  const totalRecords = rows.reduce((s, r) => s + r.record_count, 0);
+  const totalMatched = rows.reduce((s, r) => s + (r.matched_count ?? 0), 0);
+  if (totalRecords === 0) return null;
+  return Math.round((totalMatched / totalRecords) * 100 * 100) / 100;
+}
+
 // ── Freshness score (0–100) ────────────────────────────────────────────────────
 // 100 = audit in last 7 days, 50 = 7–30 days, 0 = >30 days or no audit
 
@@ -160,31 +188,46 @@ function computeOverallScore(
   consent: number,
   daysSince: number | null,
   platformAcceptance: number | null,
+  gtgActive: boolean,
+  dmaCoverageScore: number | null,
 ): number {
   const capiContribution = capiDelivery === -1
     ? 70  // no CAPI = neutral (not penalised heavily, just not full marks)
     : capiDelivery;
 
-  let score: number;
+  const freshness = freshnessScore(daysSince);
+  let rawScore: number;
 
-  if (platformAcceptance === null) {
+  if (dmaCoverageScore !== null) {
+    // 6-component formula with DMA coverage at 0.10 weight
+    rawScore =
+      signalHealth      * 0.30 +
+      capiContribution  * 0.22 +
+      consent           * 0.15 +
+      freshness         * 0.08 +
+      (platformAcceptance ?? 70) * 0.15 +
+      dmaCoverageScore  * 0.10;
+  } else if (platformAcceptance === null) {
     // Fall back to original 4-component formula
-    score =
+    rawScore =
       signalHealth      * 0.40 +
       capiContribution  * 0.30 +
       consent           * 0.20 +
-      freshnessScore(daysSince) * 0.10;
+      freshness         * 0.10;
   } else {
     // 5-component formula — existing weights scaled to 83.33%, platform_acceptance at 16.67%
-    score =
+    rawScore =
       signalHealth      * 0.3333 +
       capiContribution  * 0.25 +
       consent           * 0.1667 +
-      freshnessScore(daysSince) * 0.0833 +
+      freshness         * 0.0833 +
       platformAcceptance * 0.1667;
   }
 
-  return Math.round(Math.min(100, Math.max(0, score)));
+  // Apply 85-cap when GTG is not deployed (before the 100 ceiling)
+  if (!gtgActive) rawScore = Math.min(rawScore, 85);
+
+  return Math.round(Math.min(100, Math.max(0, rawScore)));
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -195,11 +238,13 @@ export async function computeHealthMetrics(userId: string, websiteUrl?: string):
 }> {
   const orgId = await fetchOrgId(userId);
 
-  const [auditData, capiRate, consent, platformAcceptance] = await Promise.all([
+  const [auditData, capiRate, consent, platformAcceptance, gtgActive, dmaCoverage] = await Promise.all([
     fetchLatestAuditScore(userId, websiteUrl),
     fetchCAPIDeliveryRate(userId),
     fetchConsentCoverage(userId),
     orgId ? fetchPlatformAcceptanceScore(orgId) : Promise.resolve(null),
+    orgId ? fetchGTGActive(orgId) : Promise.resolve(false),
+    orgId ? fetchDMACoverageScore(orgId) : Promise.resolve(null),
   ]);
 
   const metrics: ComputedMetrics = {
@@ -208,6 +253,8 @@ export async function computeHealthMetrics(userId: string, websiteUrl?: string):
     consent_coverage:         consent,
     tag_firing_rate:          auditData.signal_health, // derived from same audit
     platform_acceptance_score: platformAcceptance,
+    gtg_active:               gtgActive,
+    dma_coverage_score:       dmaCoverage,
     last_audit_id:            auditData.last_audit_id,
     last_audit_at:            auditData.last_audit_at,
     website_url:              auditData.website_url,
@@ -219,6 +266,8 @@ export async function computeHealthMetrics(userId: string, websiteUrl?: string):
     consent,
     auditData.days_since_audit,
     platformAcceptance,
+    gtgActive,
+    dmaCoverage,
   );
 
   return { metrics, overallScore };
