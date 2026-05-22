@@ -115,9 +115,9 @@ export function getGoogleAssessment(lagClass: LagClass): PlatformAssessment {
     case 'short_lag':
       return { icon: '✅', copy: 'Within Smart Bidding tolerance for this lag duration.' };
     case 'long_lag':
-      return { icon: '⚠️', copy: 'Accepted up to 90 days, but ties campaign feedback loop to your sales cycle length.' };
+      return { icon: '⚠️', copy: 'Creates a feedback loop tied to your sales cycle. Use DMA backfill to maintain attribution without delaying campaign learning.' };
     case 'deep_lag':
-      return { icon: '⚠️', copy: 'Accepted up to 90 days, but creates a 30+ day feedback loop delaying campaign learning.' };
+      return { icon: '⚠️', copy: 'DMA backfill recommended: push offline conversions via Google Data Manager to preserve attribution with a 30+ day sales cycle.' };
   }
 }
 
@@ -128,8 +128,8 @@ export function getRiskSummary(lagClass: LagClass, eventName: string): string {
     case 'short_lag':
       return `${eventName} may arrive outside Meta's 2h preference window for some journeys. Consider a same-session proxy to strengthen Meta signal volume.`;
     case 'long_lag':
-      return `${eventName} falls outside Meta's attribution window and will create a feedback loop on Google, delaying campaign learning by the length of your sales cycle.`;
+      return `${eventName} falls outside Meta's attribution window. For Google, use DMA offline conversion backfill to maintain attribution without a long feedback loop.`;
     case 'deep_lag':
-      return `${eventName} falls well outside Meta's attribution window and will create a 30+ day feedback loop on Google, delaying campaign learning by the same duration as your sales cycle.`;
+      return `${eventName} is well outside Meta's window. Use DMA push + a same-session proxy event: push the offline conversion via Google Data Manager, and instrument an early-funnel proxy for Meta signal volume.`;
   }
 }

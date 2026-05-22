@@ -1,5 +1,5 @@
 /**
- * WizardProgress — 4-step journey wizard stepper.
+ * WizardProgress — 6-step journey wizard stepper.
  *
  * Design spec:
  *   Completed steps: green fill (#059669) + checkmark, green connector.
@@ -12,14 +12,16 @@ import { Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface WizardProgressProps {
-  currentStep: 1 | 2 | 3 | 4;
+  currentStep: 1 | 2 | 3 | 4 | 5 | 6;
 }
 
 const STEPS = [
   { number: 1, label: 'Business Type' },
   { number: 2, label: 'Journey Stages' },
-  { number: 3, label: 'Platforms' },
-  { number: 4, label: 'Review & Generate' },
+  { number: 3, label: 'Transport' },
+  { number: 4, label: 'GTG Check' },
+  { number: 5, label: 'Platforms' },
+  { number: 6, label: 'Review' },
 ];
 
 const NAVY  = '#1B2A4A';
@@ -61,7 +63,7 @@ export function WizardProgress({ currentStep }: WizardProgressProps) {
             {/* Connector line */}
             {i < STEPS.length - 1 && (
               <div
-                className="w-16 h-0.5 mx-2 mb-5 rounded-full transition-colors"
+                className="w-12 h-0.5 mx-2 mb-5 rounded-full transition-colors"
                 style={{ backgroundColor: isDone ? GREEN : '#E5E7EB' }}
               />
             )}

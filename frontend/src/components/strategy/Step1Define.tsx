@@ -15,6 +15,57 @@ import {
 import { cn } from '@/lib/utils';
 import { useStrategyStore } from '@/store/strategyStore';
 import type { BriefMode, BusinessType } from '@/types/strategy';
+import { readinessApi } from '@/lib/api/readinessApi';
+import type { ReadinessScore, DMACheck } from '@/lib/api/readinessApi';
+
+// ── Signal Readiness Panel ────────────────────────────────────────────────────
+
+function statusIcon(status: DMACheck['status']): string {
+  switch (status) {
+    case 'pass':    return '✅';
+    case 'warn':    return '⚠️';
+    case 'fail':    return '❌';
+    case 'unknown': return '◑';
+  }
+}
+
+function SignalReadinessPanel() {
+  const [data, setData] = useState<ReadinessScore | null>(null);
+
+  useEffect(() => {
+    readinessApi.getScore().then(setData).catch(() => {/* silent — don't block form */});
+  }, []);
+
+  if (!data?.dma_checks || data.dma_checks.length === 0) return null;
+
+  const gtgCheck  = data.dma_checks.find((c) => c.key === 'DA-GTG-001');
+  const dmaCheck  = data.dma_checks.find((c) => c.key === 'DA-DMA-001');
+  const rows = [gtgCheck, dmaCheck].filter((c): c is DMACheck => c !== undefined);
+
+  if (rows.length === 0) return null;
+
+  return (
+    <div
+      className="rounded-md border-l-4 bg-gray-50 px-4 py-3 space-y-2"
+      style={{ borderLeftColor: '#1B2A4A' }}
+    >
+      <p className="text-xs font-semibold text-foreground">Signal readiness</p>
+      {rows.map((check) => (
+        <div key={check.key} className="flex items-start gap-2 text-xs">
+          <span className="mt-0.5 shrink-0">{statusIcon(check.status)}</span>
+          <div>
+            <span className="font-medium">{check.label}</span>
+            {check.status !== 'pass' && check.recommendation && (
+              <span className="ml-1 text-muted-foreground">— {check.recommendation}</span>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 const TIMING_OPTIONS: { label: string; value: number }[] = [
   { label: 'Same day', value: 0 },
@@ -148,6 +199,8 @@ export function Step1Define({ briefId, mode, objectiveId, onEvaluated, onBack }:
           Tell us what success looks like and how you're currently measuring it.
         </p>
       </div>
+
+      <SignalReadinessPanel />
 
       <div className="space-y-6">
         {/* Objective name — multiple mode only */}
