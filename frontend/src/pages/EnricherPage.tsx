@@ -5,7 +5,7 @@
  * destinations (Google Ads, GA4, DV360, CM360) in a single call.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type ReactElement } from 'react';
 import { Loader2, X } from 'lucide-react';
 import { PlanGate } from '@/components/common/PlanGate';
 import { Button } from '@/components/ui/button';
@@ -66,7 +66,7 @@ function matchRateColour(rate: number | null): string {
   return 'text-red-600 font-semibold';
 }
 
-function statusBadge(status: string): JSX.Element {
+function statusBadge(status: string): ReactElement {
   const map: Record<string, string> = {
     completed:  'bg-emerald-100 text-emerald-700',
     failed:     'bg-red-100 text-red-700',
