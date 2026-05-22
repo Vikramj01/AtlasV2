@@ -1,5 +1,5 @@
-import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue, crawlQueue, reconciliationSyncQueue, reconciliationRunQueue, reconciliationStatsQueue, reconciliationStaleResyncQueue, gtmContainerSyncQueue, ihcRulesQueue, ihcDriftQueue, ihcAlertQueue, ihcDigestQueue, dmaIngestQueue } from './jobQueue';
-import type { GtmContainerSyncJobData, IhcRulesJobData, IhcDriftJobData, IhcAlertJobData, IhcDigestJobData } from './jobQueue';
+import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue, crawlQueue, reconciliationSyncQueue, reconciliationRunQueue, reconciliationStatsQueue, reconciliationStaleResyncQueue, gtmContainerSyncQueue, ihcRulesQueue, ihcDriftQueue, ihcAlertQueue, ihcDigestQueue, dmaIngestQueue, dqmQueue } from './jobQueue';
+import type { GtmContainerSyncJobData, IhcRulesJobData, IhcDriftJobData, IhcAlertJobData, IhcDigestJobData, DQMJobData } from './jobQueue';
 import { runConfigSyncForConnection, getConnectionsDueForSync, runStatsSyncForConnection, getConnectionsDueForStatsSync, runStaleResyncForConnection, getConnectionsForStaleResync } from '@/services/reconciliation/sync/syncOrchestrator';
 import { executeRun } from '@/services/reconciliation/reconciliationRunner';
 import type { SyncJobData, StatsSyncJobData, StaleResyncJobData, ReconciliationJobData } from './jobQueue';
@@ -1189,3 +1189,23 @@ dmaIngestQueue.process(async (job) => {
 });
 
 logger.info('DMA ingest worker registered');
+
+// ── DQM processor ──────────────────────────────────────────────────────────
+
+dqmQueue.process(async (job) => {
+  const { org_id } = job.data as DQMJobData;
+  const { runDQMForOrg, runDQMForAllActiveOrgs } = await import('@/services/dqm/dqmOrchestrator');
+  if (org_id) {
+    await runDQMForOrg(org_id);
+  } else {
+    await runDQMForAllActiveOrgs();
+  }
+});
+
+logger.info('DQM worker registered');
+
+// Schedule hourly DQM run
+dqmQueue.add(
+  { trigger: 'scheduled' },
+  { repeat: { cron: '0 * * * *' }, jobId: 'dqm-hourly' },
+).catch((err) => logger.error({ err }, 'Failed to schedule DQM job'));
