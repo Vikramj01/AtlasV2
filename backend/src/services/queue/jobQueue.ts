@@ -517,6 +517,28 @@ dmaIngestQueue.on('stalled', (job) => {
   logger.warn({ jobId: job.id, orgId: job.data.org_id }, 'DMA ingest job stalled');
 });
 
+// ── Signal Aggregates MV Refresh Queue ───────────────────────────────────────
+// Refreshes mv_signal_aggregates_daily every 5 minutes via CONCURRENT refresh.
+// Single-instance job; no payload needed beyond the scheduled trigger marker.
+
+export interface SignalMvRefreshJobData {
+  trigger: 'scheduled';
+}
+
+export const signalMvRefreshQueue = new Bull<SignalMvRefreshJobData>('signal-mv-refresh', makeBullOpts({
+  attempts: 1,
+  removeOnComplete: 10,
+  removeOnFail: 10,
+}));
+
+signalMvRefreshQueue.on('completed', (job) => {
+  logger.info({ jobId: job.id }, 'Signal aggregates MV refresh completed');
+});
+
+signalMvRefreshQueue.on('failed', (job, err) => {
+  logger.error({ jobId: job?.id, err: err.message }, 'Signal aggregates MV refresh failed');
+});
+
 // ── DQM Queue ────────────────────────────────────────────────────────────────
 // Runs GTG path probe + DMA diagnostics polling for all active orgs hourly.
 
