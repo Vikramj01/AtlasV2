@@ -4,7 +4,8 @@ import { RefreshCw } from 'lucide-react';
 import { signalEventsApi } from '@/lib/api/signalEventsApi';
 import { SignalFilterBar } from '@/components/signals/SignalFilterBar';
 import { SignalFlowTable } from '@/components/signals/SignalFlowTable';
-import type { SignalEventRow, SignalFilters } from '@/types/signal-tracking';
+import { SignalAggregateCards } from '@/components/signals/SignalAggregateCards';
+import type { SignalEventRow, SignalFilters, SignalAggregates } from '@/types/signal-tracking';
 
 // ── Filter ↔ URL helpers ──────────────────────────────────────────────────────
 
@@ -55,7 +56,9 @@ export function SignalTrackingDashboard() {
   const [isLoading, setIsLoading]       = useState(false);
   const [isAppending, setIsAppending]   = useState(false);
   const [error, setError]               = useState<string | null>(null);
-  const [p95, setP95]                   = useState<number | null>(null);
+  const [aggregates, setAggregates]     = useState<SignalAggregates | null>(null);
+  const [aggLoading, setAggLoading]     = useState(false);
+  const [activeCard, setActiveCard]     = useState<string | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -70,25 +73,27 @@ export function SignalTrackingDashboard() {
     setError(null);
 
     try {
-      const [listRes, aggRes] = await Promise.all([
-        signalEventsApi.list({
-          from:           currentFilters.from,
-          to:             currentFilters.to,
-          destinations:   currentFilters.destinations.length ? currentFilters.destinations : undefined,
-          event_names:    currentFilters.event_names.length   ? currentFilters.event_names  : undefined,
-          statuses:       currentFilters.statuses.length      ? currentFilters.statuses     : undefined,
-          dedup_statuses: currentFilters.dedup_statuses.length? currentFilters.dedup_statuses : undefined,
-          cursor,
-        }),
-        // Only fetch aggregates on the first page to get p95
-        isFirstPage
-          ? signalEventsApi.aggregates(
-              currentFilters.from,
-              currentFilters.to,
-              currentFilters.destinations.length ? currentFilters.destinations : undefined,
-            ).catch(() => null)
-          : Promise.resolve(null),
-      ]);
+      const listPromise = signalEventsApi.list({
+        from:           currentFilters.from,
+        to:             currentFilters.to,
+        destinations:   currentFilters.destinations.length ? currentFilters.destinations : undefined,
+        event_names:    currentFilters.event_names.length   ? currentFilters.event_names  : undefined,
+        statuses:       currentFilters.statuses.length      ? currentFilters.statuses     : undefined,
+        dedup_statuses: currentFilters.dedup_statuses.length? currentFilters.dedup_statuses : undefined,
+        cursor,
+      });
+
+      // Only fetch aggregates on first page load
+      const aggPromise = isFirstPage
+        ? (setAggLoading(true),
+           signalEventsApi.aggregates(
+             currentFilters.from,
+             currentFilters.to,
+             currentFilters.destinations.length ? currentFilters.destinations : undefined,
+           ).catch(() => null))
+        : Promise.resolve(null);
+
+      const [listRes, aggRes] = await Promise.all([listPromise, aggPromise]);
 
       if (isFirstPage) {
         setRows(listRes.data);
@@ -96,13 +101,14 @@ export function SignalTrackingDashboard() {
         setRows((prev) => [...prev, ...listRes.data]);
       }
       setNextCursor(listRes.next_cursor);
-      if (aggRes) setP95(aggRes.data.p95_latency_ms);
+      if (aggRes) setAggregates(aggRes.data);
       setLastRefreshed(new Date());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load signals');
     } finally {
       setIsLoading(false);
       setIsAppending(false);
+      setAggLoading(false);
     }
   }, []);
 
@@ -121,6 +127,14 @@ export function SignalTrackingDashboard() {
       setSearchParams(filtersToParams(next), { replace: true });
       return next;
     });
+  }
+
+  function handleCardClick(card: string, filterPatch: Partial<SignalFilters>) {
+    const next = activeCard === card ? null : card;
+    setActiveCard(next);
+    applyFilter(next === null
+      ? { dedup_statuses: [] }
+      : filterPatch);
   }
 
   // Re-fetch whenever filters change (reset pagination)
@@ -178,6 +192,14 @@ export function SignalTrackingDashboard() {
         </div>
       </div>
 
+      {/* Aggregate cards */}
+      <SignalAggregateCards
+        aggregates={aggregates}
+        isLoading={aggLoading}
+        activeCard={activeCard}
+        onCardClick={handleCardClick}
+      />
+
       {/* Filter bar */}
       <SignalFilterBar
         filters={filters}
@@ -198,7 +220,7 @@ export function SignalTrackingDashboard() {
           rows={rows}
           isLoading={isLoading || isAppending}
           hasMore={nextCursor !== null}
-          p95LatencyMs={p95}
+          p95LatencyMs={aggregates?.p95_latency_ms ?? null}
           onLoadMore={() => { if (nextCursor) fetchPage(filters, nextCursor); }}
         />
       </div>
