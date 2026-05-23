@@ -33,6 +33,7 @@ import { ihcRouter } from '@/api/routes/ihc';
 import { enricherRouter } from '@/api/routes/enricher';
 import { dqmRouter } from '@/api/routes/dqm';
 import { dataManagerRouter } from '@/api/routes/dataManager';
+import { signalEventsRouter } from '@/api/routes/signalEvents';
 import logger from '@/utils/logger';
 import { env } from '@/config/env';
 
@@ -155,6 +156,7 @@ app.use('/api/ihc', ihcRouter);
 app.use('/api/enricher', enricherRouter);
 app.use('/api/dqm', dqmRouter);
 app.use('/api/data-manager', dataManagerRouter);
+app.use('/api/signal-events', signalEventsRouter);
 
 // ─── 404 handler ─────────────────────────────────────────────────────────────
 
