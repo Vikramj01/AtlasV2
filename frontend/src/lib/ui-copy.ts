@@ -1,4 +1,8 @@
 export const SECTION_LABELS = {
+  signalTracking: {
+    primary: 'Signal Tracking',
+    technical: 'Signal Tracking Dashboard',
+  },
   signalHealth: {
     primary: 'Ad Data Quality',
     technical: 'Signal Health',

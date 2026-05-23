@@ -45,6 +45,7 @@ const PERSONAL_NAV_GROUPS: { label: string; items: NavItemDef[] }[] = [
   {
     label: 'MONITOR',
     items: [
+      { label: SECTION_LABELS.signalTracking.primary,   technicalLabel: SECTION_LABELS.signalTracking.technical,   to: '/signal-tracking',Icon: Activity },
       { label: SECTION_LABELS.signalHealth.primary,     technicalLabel: SECTION_LABELS.signalHealth.technical,     to: '/health',         Icon: HeartPulse },
       { label: SECTION_LABELS.auditEngine.primary,      technicalLabel: SECTION_LABELS.auditEngine.technical,      to: '/dashboard',      Icon: Clock },
       { label: SECTION_LABELS.channelInsights.primary,  technicalLabel: SECTION_LABELS.channelInsights.technical,  to: '/channels',       Icon: GitBranch },
