@@ -1,4 +1,4 @@
-import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue, crawlQueue, reconciliationSyncQueue, reconciliationRunQueue, reconciliationStatsQueue, reconciliationStaleResyncQueue, gtmContainerSyncQueue, ihcRulesQueue, ihcDriftQueue, ihcAlertQueue, ihcDigestQueue, dmaIngestQueue, dqmQueue } from './jobQueue';
+import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue, crawlQueue, reconciliationSyncQueue, reconciliationRunQueue, reconciliationStatsQueue, reconciliationStaleResyncQueue, gtmContainerSyncQueue, ihcRulesQueue, ihcDriftQueue, ihcAlertQueue, ihcDigestQueue, dmaIngestQueue, dqmQueue, signalMvRefreshQueue } from './jobQueue';
 import type { GtmContainerSyncJobData, IhcRulesJobData, IhcDriftJobData, IhcAlertJobData, IhcDigestJobData, DQMJobData } from './jobQueue';
 import { runConfigSyncForConnection, getConnectionsDueForSync, runStatsSyncForConnection, getConnectionsDueForStatsSync, runStaleResyncForConnection, getConnectionsForStaleResync } from '@/services/reconciliation/sync/syncOrchestrator';
 import { executeRun } from '@/services/reconciliation/reconciliationRunner';
@@ -1189,6 +1189,28 @@ dmaIngestQueue.process(async (job) => {
 });
 
 logger.info('DMA ingest worker registered');
+
+// ── Signal Aggregates MV Refresh Worker ──────────────────────────────────────
+// Calls refresh_signal_aggregates_daily() via supabaseAdmin.rpc() every 5 min.
+// CONCURRENT refresh requires the unique index on the view to already exist
+// (created in migration 20260620_001_signal_tracking_dashboard.sql).
+
+signalMvRefreshQueue.process(async (_job) => {
+  logger.info('Signal aggregates MV refresh job received');
+  const { error } = await supabaseAdmin.rpc('refresh_signal_aggregates_daily');
+  if (error) {
+    logger.error({ err: error.message }, 'Signal aggregates MV refresh failed');
+    throw new Error(error.message);
+  }
+  logger.info('Signal aggregates MV refreshed');
+});
+
+logger.info('Signal aggregates MV refresh worker registered');
+
+signalMvRefreshQueue.add(
+  { trigger: 'scheduled' },
+  { repeat: { cron: '*/5 * * * *' }, jobId: 'signal-mv-refresh-tick' },
+).catch((err) => logger.error({ err }, 'Failed to schedule signal aggregates MV refresh'));
 
 // ── DQM processor ──────────────────────────────────────────────────────────
 
