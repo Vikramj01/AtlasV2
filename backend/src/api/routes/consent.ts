@@ -86,45 +86,8 @@ consentRouter.post('/record', async (req: Request, res: Response): Promise<void>
   }
 });
 
-// ── GET /api/consent/:projectId/:visitorId ─────────────────────────────────────
-
-consentRouter.get('/:projectId/:visitorId', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  const { projectId, visitorId } = req.params;
-
-  try {
-    const record = await getLatestConsentRecord(projectId, visitorId);
-    if (!record) {
-      res.status(404).json({ error: 'NO_CONSENT_RECORD', message: 'No active consent record found' });
-      return;
-    }
-
-    res.json({
-      visitor_id: record.visitor_id,
-      decisions: record.decisions,
-      gcm_state: record.gcm_state ?? {},
-      expires_at: record.expires_at,
-      last_updated: record.created_at,
-    });
-  } catch (err) {
-    sendInternalError(res, err, 'Failed to get consent record');
-  }
-});
-
-// ── DELETE /api/consent/:projectId/:visitorId ──────────────────────────────────
-// Right-to-erasure: delete all consent records for a visitor.
-
-consentRouter.delete('/:projectId/:visitorId', authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  const { projectId, visitorId } = req.params;
-
-  try {
-    const deleted_count = await deleteConsentRecords(projectId, visitorId);
-    res.json({ deleted_count, visitor_id: visitorId });
-  } catch (err) {
-    sendInternalError(res, err, 'Failed to delete consent records');
-  }
-});
-
 // ── GET /api/consent/:projectId/analytics ─────────────────────────────────────
+// Must be registered BEFORE /:projectId/:visitorId to avoid route shadowing.
 
 consentRouter.get('/:projectId/analytics', authMiddleware, async (req: Request, res: Response): Promise<void> => {
   const { projectId } = req.params;
@@ -151,6 +114,44 @@ consentRouter.get('/:projectId/analytics', authMiddleware, async (req: Request, 
     res.json({ ...analytics, group_by });
   } catch (err) {
     sendInternalError(res, err, 'Failed to get consent analytics');
+  }
+});
+
+// ── GET /api/consent/:projectId/:visitorId ────────────────────────────────────
+
+consentRouter.get('/:projectId/:visitorId', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  const { projectId, visitorId } = req.params;
+
+  try {
+    const record = await getLatestConsentRecord(projectId, visitorId);
+    if (!record) {
+      res.status(404).json({ error: 'NO_CONSENT_RECORD', message: 'No active consent record found' });
+      return;
+    }
+
+    res.json({
+      visitor_id: record.visitor_id,
+      decisions: record.decisions,
+      gcm_state: record.gcm_state ?? {},
+      expires_at: record.expires_at,
+      last_updated: record.created_at,
+    });
+  } catch (err) {
+    sendInternalError(res, err, 'Failed to get consent record');
+  }
+});
+
+// ── DELETE /api/consent/:projectId/:visitorId ─────────────────────────────────
+// Right-to-erasure: delete all consent records for a visitor.
+
+consentRouter.delete('/:projectId/:visitorId', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  const { projectId, visitorId } = req.params;
+
+  try {
+    const deleted_count = await deleteConsentRecords(projectId, visitorId);
+    res.json({ deleted_count, visitor_id: visitorId });
+  } catch (err) {
+    sendInternalError(res, err, 'Failed to delete consent records');
   }
 });
 

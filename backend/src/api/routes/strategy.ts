@@ -195,7 +195,7 @@ router.post('/save-brief', async (req: Request, res: Response): Promise<void> =>
 
 const createBriefSchema = z.object({
   mode: z.enum(['single', 'multi']).optional(),
-  brief_name: z.string().max(120).optional(),
+  brief_name: z.string().min(1).max(120),
   client_id: z.string().uuid().optional(),
   project_id: z.string().uuid().optional(),
 });
@@ -216,6 +216,7 @@ router.post('/briefs', async (req: Request, res: Response): Promise<void> => {
     const brief = await createBrief(req.user.id, parse.data);
     res.status(201).json({ data: brief, error: null, message: null });
   } catch (err) {
+    if (handleKnownError(res, err)) return;
     sendInternalError(res, err);
   }
 });
@@ -262,6 +263,7 @@ router.delete('/briefs/:id', async (req: Request, res: Response): Promise<void> 
     await deleteBrief(req.params.id, req.user.id);
     res.json({ data: null, error: null, message: 'Brief deleted.' });
   } catch (err) {
+    if (handleKnownError(res, err)) return;
     sendInternalError(res, err);
   }
 });
@@ -376,6 +378,7 @@ router.delete('/objectives/:id', async (req: Request, res: Response): Promise<vo
 router.post('/objectives/:id/evaluate', async (req: Request, res: Response): Promise<void> => {
   const objective = await getObjective(req.params.id, req.user.id).catch(() => null);
   if (!objective) { res.status(404).json({ error: 'Objective not found' }); return; }
+  if (objective.locked) { res.status(403).json({ error: 'Objective is locked and cannot be re-evaluated.' }); return; }
   if (!objective.current_event || objective.outcome_timing_days == null) {
     res.status(422).json({ error: 'Objective must have current_event and outcome_timing_days before evaluation.' });
     return;

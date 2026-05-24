@@ -406,8 +406,8 @@ offlineConversionsRouter.post('/upload/:uploadId/confirm', async (req: Request, 
     }
 
     if (uploadRecord.status !== 'validated') {
-      res.status(400).json({
-        error: 'INVALID_STATE',
+      res.status(409).json({
+        error: 'INVALID_STATUS',
         message: `Upload is in "${uploadRecord.status}" state — only "validated" uploads can be confirmed`,
       });
       return;
@@ -429,7 +429,7 @@ offlineConversionsRouter.post('/upload/:uploadId/confirm', async (req: Request, 
 
     logger.info({ upload_id: req.params.uploadId, userId: req.user.id }, 'Offline conversion upload confirmed and queued');
 
-    res.json({
+    res.status(202).json({
       upload_id: req.params.uploadId,
       status: 'confirmed',
       message: `${uploadRecord.row_count_valid} conversions queued for upload. Processing typically completes within 24 hours.`,
@@ -451,8 +451,8 @@ offlineConversionsRouter.post('/upload/:uploadId/cancel', async (req: Request, r
 
     const cancellableStatuses = ['pending', 'validating', 'validated'];
     if (!cancellableStatuses.includes(uploadRecord.status)) {
-      res.status(400).json({
-        error: 'INVALID_STATE',
+      res.status(409).json({
+        error: 'INVALID_STATUS',
         message: `Upload cannot be cancelled in "${uploadRecord.status}" state`,
       });
       return;
@@ -475,7 +475,8 @@ offlineConversionsRouter.get('/history', async (req: Request, res: Response): Pr
 
   try {
     const { uploads, total } = await listUploads(req.user.id, pageNum, pageSize);
-    res.json({ uploads, total, page: pageNum, page_size: pageSize });
+    const safeUploads = uploads.map(({ raw_email: _, raw_phone: __, ...rest }: any) => rest);
+    res.json({ uploads: safeUploads, total, page: pageNum, page_size: pageSize });
   } catch (err) {
     sendInternalError(res, err, 'Failed to get upload history');
   }
