@@ -22,6 +22,7 @@ import {
   getExportJob,
   countSignalEvents,
 } from '@/services/database/signalEventQueries';
+import { signalCsvExportQueue } from '@/services/queue/jobQueue';
 
 export const signalEventsRouter = Router();
 signalEventsRouter.use(authMiddleware);
@@ -146,9 +147,8 @@ signalEventsRouter.post('/export', async (req: Request, res: Response): Promise<
 
     const job = await createExportJob(organization_id, filters, rowCount);
 
-    // Sprint 5 will enqueue the Bull job here. For now the record is created
-    // in 'pending' state and the worker will be wired up in that sprint.
-    logger.info({ organization_id, job_id: job.id, row_estimate: rowCount }, 'Signal export job created');
+    await signalCsvExportQueue.add({ job_id: job.id, organization_id });
+    logger.info({ organization_id, job_id: job.id, row_estimate: rowCount }, 'Signal export job enqueued');
 
     res.status(202).json({ data: { job_id: job.id, row_estimate: rowCount } });
   } catch (err) {

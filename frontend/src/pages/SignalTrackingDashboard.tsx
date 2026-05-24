@@ -1,6 +1,6 @@
 import { useEffect, useCallback, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { RefreshCw } from 'lucide-react';
+import { useSearchParams, Link } from 'react-router-dom';
+import { RefreshCw, Download } from 'lucide-react';
 import { signalEventsApi } from '@/lib/api/signalEventsApi';
 import { SignalFilterBar } from '@/components/signals/SignalFilterBar';
 import { SignalFlowTable } from '@/components/signals/SignalFlowTable';
@@ -180,6 +180,13 @@ export function SignalTrackingDashboard() {
               Updated {lastRefreshed.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
             </span>
           )}
+          <Link
+            to={`/signal-tracking/export?from=${encodeURIComponent(filters.from)}&to=${encodeURIComponent(filters.to)}`}
+            className="flex items-center gap-1.5 rounded-md border border-[#E5E7EB] bg-white px-3 py-1.5 text-xs font-medium text-[#374151] hover:border-[#9CA3AF] transition-colors"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Export CSV
+          </Link>
           <button
             onClick={() => fetchPage(filters)}
             disabled={isLoading}

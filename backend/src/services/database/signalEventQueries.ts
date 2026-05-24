@@ -446,6 +446,46 @@ export async function getExportJob(
   };
 }
 
+// ── updateExportJob ───────────────────────────────────────────────────────────
+
+export async function updateExportJob(
+  job_id: string,
+  updates: {
+    status?: string;
+    storage_path?: string;
+    download_url?: string;
+    expires_at?: string;
+    error_message?: string;
+    completed_at?: string;
+  },
+): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from('signal_export_jobs')
+    .update(updates)
+    .eq('id', job_id);
+
+  if (error) throw new Error(`Failed to update export job: ${error.message}`);
+}
+
+// ── getExportJobForWorker ─────────────────────────────────────────────────────
+// Loads the filters for a pending export job. Called by the Bull worker.
+
+export async function getExportJobForWorker(
+  job_id: string,
+  organization_id: string,
+): Promise<{ filters: ExportJobFilters } | null> {
+  const { data, error } = await supabaseAdmin
+    .from('signal_export_jobs')
+    .select('filters')
+    .eq('id', job_id)
+    .eq('organization_id', organization_id)
+    .maybeSingle();
+
+  if (error) throw new Error(`Failed to load export job filters: ${error.message}`);
+  if (!data) return null;
+  return { filters: data.filters as ExportJobFilters };
+}
+
 // ── countSignalEvents ─────────────────────────────────────────────────────────
 // Pre-flight count used for the 100k row export guard.
 

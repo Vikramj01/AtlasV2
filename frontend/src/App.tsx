@@ -46,6 +46,7 @@ const ReconciliationRunDetailPage = lazy(() => import('@/pages/ReconciliationRun
 const DataManagerConsolePage      = lazy(() => import('@/pages/DataManagerConsolePage').then(m => ({ default: m.DataManagerConsolePage })));
 const SignalTrackingDashboard     = lazy(() => import('@/pages/SignalTrackingDashboard').then(m => ({ default: m.SignalTrackingDashboard })));
 const SignalDetailPage            = lazy(() => import('@/pages/SignalDetailPage').then(m => ({ default: m.SignalDetailPage })));
+const SignalExportPage            = lazy(() => import('@/pages/SignalExportPage').then(m => ({ default: m.SignalExportPage })));
 
 const PageFallback = () => <SkeletonCard variant="page" />;
 
@@ -112,6 +113,7 @@ export default function App() {
                 <Route path="/org/:orgId/settings" element={<SectionErrorBoundary label="Organisation settings"><OrgSettingsPage /></SectionErrorBoundary>} />
                 <Route path="/org/:orgId/data-manager" element={<SectionErrorBoundary label="Data Manager Console"><DataManagerConsolePage /></SectionErrorBoundary>} />
                 <Route path="/signal-tracking" element={<SectionErrorBoundary label="Signal Tracking"><SignalTrackingDashboard /></SectionErrorBoundary>} />
+                <Route path="/signal-tracking/export" element={<SectionErrorBoundary label="Signal export"><SignalExportPage /></SectionErrorBoundary>} />
                 <Route path="/signal-tracking/:event_id" element={<SectionErrorBoundary label="Signal detail"><SignalDetailPage /></SectionErrorBoundary>} />
               </Route>
               {/* Full-screen routes (no sidebar) */}

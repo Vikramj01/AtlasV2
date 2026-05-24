@@ -1,4 +1,4 @@
-import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue, crawlQueue, reconciliationSyncQueue, reconciliationRunQueue, reconciliationStatsQueue, reconciliationStaleResyncQueue, gtmContainerSyncQueue, ihcRulesQueue, ihcDriftQueue, ihcAlertQueue, ihcDigestQueue, dmaIngestQueue, dqmQueue, signalMvRefreshQueue } from './jobQueue';
+import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue, crawlQueue, reconciliationSyncQueue, reconciliationRunQueue, reconciliationStatsQueue, reconciliationStaleResyncQueue, gtmContainerSyncQueue, ihcRulesQueue, ihcDriftQueue, ihcAlertQueue, ihcDigestQueue, dmaIngestQueue, dqmQueue, signalMvRefreshQueue, signalCsvExportQueue } from './jobQueue';
 import type { GtmContainerSyncJobData, IhcRulesJobData, IhcDriftJobData, IhcAlertJobData, IhcDigestJobData, DQMJobData } from './jobQueue';
 import { runConfigSyncForConnection, getConnectionsDueForSync, runStatsSyncForConnection, getConnectionsDueForStatsSync, runStaleResyncForConnection, getConnectionsForStaleResync } from '@/services/reconciliation/sync/syncOrchestrator';
 import { executeRun } from '@/services/reconciliation/reconciliationRunner';
@@ -1211,6 +1211,98 @@ signalMvRefreshQueue.add(
   { trigger: 'scheduled' },
   { repeat: { cron: '*/5 * * * *' }, jobId: 'signal-mv-refresh-tick' },
 ).catch((err) => logger.error({ err }, 'Failed to schedule signal aggregates MV refresh'));
+
+// ── Signal CSV Export Worker ──────────────────────────────────────────────────
+// 1. Mark job as processing
+// 2. Load filters from signal_export_jobs
+// 3. Cursor-paginate capi_events in batches of 1000
+// 4. Build CSV buffer
+// 5. Upload to signal-exports bucket
+// 6. Generate 24h signed URL + mark completed
+
+function csvEscapeField(val: string): string {
+  if (val.includes(',') || val.includes('"') || val.includes('\n')) {
+    return `"${val.replace(/"/g, '""')}"`;
+  }
+  return val;
+}
+
+signalCsvExportQueue.process(2, async (job) => {
+  const { job_id, organization_id } = job.data;
+  logger.info({ job_id, organization_id, jobId: job.id }, 'Signal CSV export job received');
+
+  const { updateExportJob, getExportJobForWorker, listSignalEvents } = await import('@/services/database/signalEventQueries');
+  const { uploadSignalExportCsv, getSignalExportSignedUrl } = await import('@/services/database/supabase');
+
+  await updateExportJob(job_id, { status: 'processing' });
+
+  try {
+    const jobRecord = await getExportJobForWorker(job_id, organization_id);
+    if (!jobRecord) throw new Error(`Export job ${job_id} not found`);
+
+    const { filters } = jobRecord;
+
+    const csvLines: string[] = [
+      'event_id,atlas_event_id,event_name,destination,status,dedup_status,dedup_key,match_quality_score,latency_ms,processed_at,delivered_at,error_code,error_message',
+    ];
+
+    let cursor: string | undefined;
+    do {
+      const { rows, next_cursor } = await listSignalEvents({
+        organization_id,
+        from:         filters.from,
+        to:           filters.to,
+        destinations: filters.destinations,
+        event_names:  filters.event_names,
+        statuses:     filters.statuses,
+        limit:        1000,
+        cursor,
+      });
+
+      for (const r of rows) {
+        csvLines.push([
+          r.event_id ?? '',
+          r.atlas_event_id,
+          csvEscapeField(r.event_name),
+          r.destination,
+          r.status,
+          r.dedup_status ?? '',
+          r.dedup_key ?? '',
+          r.match_quality_score !== null ? String(r.match_quality_score) : '',
+          r.latency_ms !== null ? String(r.latency_ms) : '',
+          r.processed_at,
+          r.delivered_at ?? '',
+          r.error_code ?? '',
+          csvEscapeField(r.error_message ?? ''),
+        ].join(','));
+      }
+
+      cursor = next_cursor ?? undefined;
+    } while (cursor);
+
+    const buffer = Buffer.from(csvLines.join('\n'), 'utf-8');
+    const storagePath = await uploadSignalExportCsv(organization_id, job_id, buffer);
+    const downloadUrl = await getSignalExportSignedUrl(storagePath);
+    const expiresAt   = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+    await updateExportJob(job_id, {
+      status:       'completed',
+      storage_path: storagePath,
+      download_url: downloadUrl,
+      expires_at:   expiresAt,
+      completed_at: new Date().toISOString(),
+    });
+
+    logger.info({ job_id, organization_id, rows: csvLines.length - 1 }, 'Signal CSV export completed');
+
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await updateExportJob(job_id, { status: 'failed', error_message: msg }).catch(() => undefined);
+    throw err;
+  }
+});
+
+logger.info('Signal CSV export worker registered');
 
 // ── DQM processor ──────────────────────────────────────────────────────────
 

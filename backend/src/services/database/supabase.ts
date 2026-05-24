@@ -86,6 +86,38 @@ export async function getStrategyBriefSignedUrl(storagePath: string): Promise<st
   return data.signedUrl;
 }
 
+// ── Signal Export CSV storage ──────────────────────────────────────────────────
+
+/**
+ * Upload a signal export CSV to the private `signal-exports` bucket.
+ * Path: {orgId}/{jobId}.csv
+ */
+export async function uploadSignalExportCsv(
+  orgId: string,
+  jobId: string,
+  buffer: Buffer,
+): Promise<string> {
+  const path = `${orgId}/${jobId}.csv`;
+  const { error } = await supabaseAdmin.storage
+    .from('signal-exports')
+    .upload(path, buffer, { contentType: 'text/csv', upsert: true });
+  if (error) throw new Error(`Signal export upload failed: ${error.message}`);
+  return path;
+}
+
+/**
+ * Create a 24-hour signed URL for a signal export CSV.
+ */
+export async function getSignalExportSignedUrl(storagePath: string): Promise<string> {
+  const { data, error } = await supabaseAdmin.storage
+    .from('signal-exports')
+    .createSignedUrl(storagePath, 86400);
+  if (error || !data?.signedUrl) {
+    throw new Error(`Failed to create signed URL: ${error?.message ?? 'no URL returned'}`);
+  }
+  return data.signedUrl;
+}
+
 export async function getScreenshotSignedUrl(storagePath: string): Promise<string> {
   console.log('[screenshot] createSignedUrl path:', storagePath);
 

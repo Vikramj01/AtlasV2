@@ -539,6 +539,31 @@ signalMvRefreshQueue.on('failed', (job, err) => {
   logger.error({ jobId: job?.id, err: err.message }, 'Signal aggregates MV refresh failed');
 });
 
+// ── Signal CSV Export Queue ───────────────────────────────────────────────────
+// Generates a filtered CSV of capi_events and uploads it to Supabase Storage.
+// PII (payload contents) stays in DB — job payload carries only IDs.
+
+export interface SignalCsvExportJobData {
+  job_id: string;
+  organization_id: string;
+}
+
+export const signalCsvExportQueue = new Bull<SignalCsvExportJobData>('signal-csv-export', makeBullOpts({
+  attempts: 2,
+  backoff: { type: 'fixed', delay: 10_000 },
+  timeout: 10 * 60 * 1000, // 10-minute hard cap for up to 100k rows
+  removeOnComplete: 50,
+  removeOnFail: 25,
+}));
+
+signalCsvExportQueue.on('completed', (job) => {
+  logger.info({ jobId: job.id, job_id: job.data.job_id }, 'Signal CSV export job completed');
+});
+
+signalCsvExportQueue.on('failed', (job, err) => {
+  logger.error({ jobId: job?.id, job_id: job?.data?.job_id, err: err.message }, 'Signal CSV export job failed');
+});
+
 // ── DQM Queue ────────────────────────────────────────────────────────────────
 // Runs GTG path probe + DMA diagnostics polling for all active orgs hourly.
 
