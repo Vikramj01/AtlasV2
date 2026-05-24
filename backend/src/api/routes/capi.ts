@@ -77,7 +77,7 @@ capiRouter.post('/browser-event', async (req: Request, res: Response): Promise<v
 
     const { data: provider, error: providerErr } = await supabaseAdmin
       .from('capi_providers')
-      .select('id, organization_id')
+      .select('id, organization_id, provider')
       .eq('provider_token', token)
       .single();
 
@@ -95,10 +95,14 @@ capiRouter.post('/browser-event', async (req: Request, res: Response): Promise<v
     const { event_id, event_name, fbc, gclid, session_id, timestamp, event_data } = parsed.data;
     const entry = { event_id, timestamp };
 
-    // Write to Redis for whichever click IDs are present
+    // Write to Redis for whichever click IDs / identifiers are present
     const writes: Promise<void>[] = [];
-    if (fbc)   writes.push(setDedupEntry('meta',   provider.id, fbc,   event_name, entry));
-    if (gclid) writes.push(setDedupEntry('google', provider.id, gclid, event_name, entry));
+    if (fbc)   writes.push(setDedupEntry('meta',   provider.id, fbc,      event_name, entry));
+    if (gclid) writes.push(setDedupEntry('google', provider.id, gclid,    event_name, entry));
+    // LinkedIn has no click cookie — deduplicate on event_id instead
+    if (provider.provider === 'linkedin') {
+      writes.push(setDedupEntry('linkedin', provider.id, event_id, event_name, entry));
+    }
     await Promise.all(writes);
 
     // Audit trail — fire-and-forget; a write failure must never surface to the beacon caller
