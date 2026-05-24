@@ -66,23 +66,23 @@ describe('planningStore', () => {
 
   describe('updateDraftSetup', () => {
     it('merges new fields into existing draft', () => {
-      usePlanningStore.getState().updateDraftSetup({ site_url: 'https://example.com' });
-      usePlanningStore.getState().updateDraftSetup({ business_type: 'ecommerce' } as any);
+      usePlanningStore.getState().updateDraftSetup({ website_url: 'https://example.com' });
+      usePlanningStore.getState().updateDraftSetup({ business_type: 'ecommerce' });
       const { draftSetup } = usePlanningStore.getState();
-      expect(draftSetup.site_url).toBe('https://example.com');
-      expect((draftSetup as any).business_type).toBe('ecommerce');
+      expect(draftSetup.website_url).toBe('https://example.com');
+      expect(draftSetup.business_type).toBe('ecommerce');
     });
 
     it('preserves existing draft fields when merging', () => {
-      usePlanningStore.getState().updateDraftSetup({ site_url: 'https://example.com' });
-      usePlanningStore.getState().updateDraftSetup({ business_type: 'saas' } as any);
-      expect(usePlanningStore.getState().draftSetup.site_url).toBe('https://example.com');
+      usePlanningStore.getState().updateDraftSetup({ website_url: 'https://example.com' });
+      usePlanningStore.getState().updateDraftSetup({ business_type: 'saas' });
+      expect(usePlanningStore.getState().draftSetup.website_url).toBe('https://example.com');
     });
   });
 
   describe('clearDraft', () => {
     it('resets draftSetup to empty object', () => {
-      usePlanningStore.getState().updateDraftSetup({ site_url: 'https://example.com' });
+      usePlanningStore.getState().updateDraftSetup({ website_url: 'https://example.com' });
       usePlanningStore.getState().clearDraft();
       expect(usePlanningStore.getState().draftSetup).toEqual({});
     });
@@ -127,12 +127,12 @@ describe('planningStore', () => {
 
     it('updates only the matching page by id', () => {
       usePlanningStore.getState().setPages([
-        { id: 'p1', scan_status: 'pending' },
-        { id: 'p2', scan_status: 'pending' },
+        { id: 'p1', status: 'pending' as const },
+        { id: 'p2', status: 'pending' as const },
       ] as any);
-      usePlanningStore.getState().updatePage('p1', { scan_status: 'done' } as any);
-      expect(usePlanningStore.getState().pages[0].scan_status).toBe('done');
-      expect(usePlanningStore.getState().pages[1].scan_status).toBe('pending');
+      usePlanningStore.getState().updatePage('p1', { status: 'done' as const });
+      expect(usePlanningStore.getState().pages[0].status).toBe('done');
+      expect(usePlanningStore.getState().pages[1].status).toBe('pending');
     });
   });
 
@@ -146,12 +146,12 @@ describe('planningStore', () => {
 
     it('updates only the matching recommendation by id', () => {
       usePlanningStore.getState().setRecommendations([
-        { id: 'r1', approved: false },
-        { id: 'r2', approved: false },
+        { id: 'r1', user_decision: null },
+        { id: 'r2', user_decision: null },
       ] as any);
-      usePlanningStore.getState().updateRecommendation('r1', { approved: true });
-      expect(usePlanningStore.getState().recommendations[0].approved).toBe(true);
-      expect(usePlanningStore.getState().recommendations[1].approved).toBe(false);
+      usePlanningStore.getState().updateRecommendation('r1', { user_decision: 'approved' });
+      expect(usePlanningStore.getState().recommendations[0].user_decision).toBe('approved');
+      expect(usePlanningStore.getState().recommendations[1].user_decision).toBeNull();
     });
   });
 

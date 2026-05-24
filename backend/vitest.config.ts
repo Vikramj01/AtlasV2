@@ -8,6 +8,18 @@ export default defineConfig({
       'src/**/*.{test,spec}.?(c|m)[jt]s?(x)',
       '../audit/tests/**/*.{test,spec}.?(c|m)[jt]s?(x)',
     ],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'lcov', 'json-summary'],
+      reportsDirectory: './coverage',
+      exclude: [
+        'src/index.ts',
+        'src/app.ts',
+        'src/**/*.d.ts',
+        'src/**/types.ts',
+        'src/**/types/*.ts',
+      ],
+    },
     env: {
       SUPABASE_URL: 'https://test.supabase.co',
       SUPABASE_ANON_KEY: 'test-anon-key',
