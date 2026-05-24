@@ -1,8 +1,9 @@
 import Redis, { type RedisOptions } from 'ioredis';
 import { env } from '@/config/env';
 
-const META_TTL_S   = 48 * 60 * 60;       // 48 hours — Meta dedup window
-const GOOGLE_TTL_S = 90 * 24 * 60 * 60;  // 90 days  — Google dedup window
+const META_TTL_S     = 48 * 60 * 60;       // 48 hours — Meta dedup window
+const GOOGLE_TTL_S   = 90 * 24 * 60 * 60; // 90 days  — Google dedup window
+const LINKEDIN_TTL_S = 48 * 60 * 60;       // 48 hours — LinkedIn dedup window
 
 function buildRedisClient(): Redis {
   const parsed = new URL(env.REDIS_URL);
@@ -36,6 +37,10 @@ function googleKey(providerId: string, identifier: string, eventName: string): s
   return `capi:google:dedup:${providerId}:${identifier}:${eventName}`;
 }
 
+function linkedinKey(providerId: string, eventId: string, eventName: string): string {
+  return `capi:linkedin:dedup:${providerId}:${eventId}:${eventName}`;
+}
+
 export async function getMetaDedupEntry(
   providerId: string,
   fbclid: string | null,
@@ -56,16 +61,40 @@ export async function getGoogleDedupEntry(
   return raw ? (JSON.parse(raw) as DedupEntry) : null;
 }
 
+export async function getLinkedInDedupEntry(
+  providerId: string,
+  eventId: string | null,
+  eventName: string,
+): Promise<DedupEntry | null> {
+  if (!eventId) return null;
+  const raw = await dedupRedis.get(linkedinKey(providerId, eventId, eventName));
+  return raw ? (JSON.parse(raw) as DedupEntry) : null;
+}
+
 export async function setDedupEntry(
-  provider: 'meta' | 'google',
+  provider: 'meta' | 'google' | 'linkedin',
   providerId: string,
   identifier: string,
   eventName: string,
   entry: DedupEntry,
 ): Promise<void> {
-  const key = provider === 'meta'
-    ? metaKey(providerId, identifier, eventName)
-    : googleKey(providerId, identifier, eventName);
-  const ttl = provider === 'meta' ? META_TTL_S : GOOGLE_TTL_S;
+  let key: string;
+  let ttl: number;
+
+  switch (provider) {
+    case 'meta':
+      key = metaKey(providerId, identifier, eventName);
+      ttl = META_TTL_S;
+      break;
+    case 'google':
+      key = googleKey(providerId, identifier, eventName);
+      ttl = GOOGLE_TTL_S;
+      break;
+    case 'linkedin':
+      key = linkedinKey(providerId, identifier, eventName);
+      ttl = LINKEDIN_TTL_S;
+      break;
+  }
+
   await dedupRedis.set(key, JSON.stringify(entry), 'EX', ttl);
 }
