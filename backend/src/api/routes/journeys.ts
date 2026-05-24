@@ -115,6 +115,10 @@ router.get('/action-primitives/:key', (req: Request, res: Response) => {
 // ── Journeys CRUD ─────────────────────────────────────────────────────────────
 
 router.post('/', strategyGate, async (req: Request, res: Response) => {
+  const { name, business_type } = req.body as { name?: string; business_type?: string };
+  if (!name || !business_type) {
+    return res.status(400).json({ error: 'name and business_type are required' });
+  }
   try {
     const userId = req.user!.id;
     const journey = await createJourney(userId, req.body);
@@ -206,6 +210,11 @@ router.put('/:id/stages/reorder', async (req: Request, res: Response) => {
 });
 
 router.put('/:id/stages/:stageId', async (req: Request, res: Response) => {
+  const { buyer_intent_level } = req.body as { buyer_intent_level?: string };
+  const validIntentLevels = ['problem_aware', 'solution_aware', 'vendor_aware'];
+  if (buyer_intent_level && !validIntentLevels.includes(buyer_intent_level)) {
+    return res.status(400).json({ error: 'buyer_intent_level must be one of: problem_aware, solution_aware, vendor_aware' });
+  }
   try {
     const journey = await getJourney(req.params.id, req.user!.id);
     if (!journey) return res.status(404).json({ error: 'Journey not found' });

@@ -140,56 +140,8 @@ router.post('/', async (req: Request, res: Response) => {
   }
 });
 
-// ── GET /api/signals/:signalId ────────────────────────────────────────────────
-
-router.get('/:signalId', async (req: Request, res: Response) => {
-  try {
-    const signal = await getSignal(req.params['signalId']);
-    if (!signal) return res.status(404).json({ error: 'Signal not found' });
-    res.json(signal);
-  } catch (err) {
-    sendInternalError(res, err);
-  }
-});
-
-// ── PUT /api/signals/:signalId ────────────────────────────────────────────────
-
-router.put('/:signalId', async (req: Request, res: Response) => {
-  try {
-    const signal = await getSignal(req.params['signalId']);
-    if (!signal) return res.status(404).json({ error: 'Signal not found' });
-    if (signal.is_system) return res.status(403).json({ error: 'System signals cannot be modified' });
-    if (!signal.organisation_id) return res.status(403).json({ error: 'Cannot modify this signal' });
-
-    if (!(await assertOrgMember(signal.organisation_id, req.user!.id, res))) return;
-
-    const updated = await updateSignal(req.params['signalId'], signal.organisation_id, req.body as UpdateSignalRequest);
-    res.json(updated);
-  } catch (err) {
-    sendInternalError(res, err);
-  }
-});
-
-// ── DELETE /api/signals/:signalId ─────────────────────────────────────────────
-
-router.delete('/:signalId', async (req: Request, res: Response) => {
-  try {
-    const signal = await getSignal(req.params['signalId']);
-    if (!signal) return res.status(404).json({ error: 'Signal not found' });
-    if (signal.is_system) return res.status(403).json({ error: 'System signals cannot be deleted' });
-    if (!signal.organisation_id) return res.status(403).json({ error: 'Cannot delete this signal' });
-
-    if (!(await assertOrgMember(signal.organisation_id, req.user!.id, res))) return;
-
-    await deleteSignal(req.params['signalId'], signal.organisation_id);
-    res.json({ deleted: true });
-  } catch (err) {
-    sendInternalError(res, err);
-  }
-});
-
 // ══════════════════════════════════════════════════════════════════════════════
-// SIGNAL PACKS
+// SIGNAL PACKS — must be registered before /:signalId to avoid route shadowing
 // ══════════════════════════════════════════════════════════════════════════════
 
 // ── GET /api/signal-packs ─────────────────────────────────────────────────────
@@ -352,6 +304,58 @@ router.post('/packs/:packId/regenerate-all', async (req: Request, res: Response)
     );
 
     res.json({ regenerated, failed, total });
+  } catch (err) {
+    sendInternalError(res, err);
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// INDIVIDUAL SIGNAL ROUTES — must come after /packs routes
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── GET /api/signals/:signalId ────────────────────────────────────────────────
+
+router.get('/:signalId', async (req: Request, res: Response) => {
+  try {
+    const signal = await getSignal(req.params['signalId']);
+    if (!signal) return res.status(404).json({ error: 'Signal not found' });
+    res.json(signal);
+  } catch (err) {
+    sendInternalError(res, err);
+  }
+});
+
+// ── PUT /api/signals/:signalId ────────────────────────────────────────────────
+
+router.put('/:signalId', async (req: Request, res: Response) => {
+  try {
+    const signal = await getSignal(req.params['signalId']);
+    if (!signal) return res.status(404).json({ error: 'Signal not found' });
+    if (signal.is_system) return res.status(403).json({ error: 'System signals cannot be modified' });
+    if (!signal.organisation_id) return res.status(403).json({ error: 'Cannot modify this signal' });
+
+    if (!(await assertOrgMember(signal.organisation_id, req.user!.id, res))) return;
+
+    const updated = await updateSignal(req.params['signalId'], signal.organisation_id, req.body as UpdateSignalRequest);
+    res.json(updated);
+  } catch (err) {
+    sendInternalError(res, err);
+  }
+});
+
+// ── DELETE /api/signals/:signalId ─────────────────────────────────────────────
+
+router.delete('/:signalId', async (req: Request, res: Response) => {
+  try {
+    const signal = await getSignal(req.params['signalId']);
+    if (!signal) return res.status(404).json({ error: 'Signal not found' });
+    if (signal.is_system) return res.status(403).json({ error: 'System signals cannot be deleted' });
+    if (!signal.organisation_id) return res.status(403).json({ error: 'Cannot delete this signal' });
+
+    if (!(await assertOrgMember(signal.organisation_id, req.user!.id, res))) return;
+
+    await deleteSignal(req.params['signalId'], signal.organisation_id);
+    res.json({ deleted: true });
   } catch (err) {
     sendInternalError(res, err);
   }

@@ -75,6 +75,16 @@ vi.mock('@/utils/logger', () => ({
   },
 }));
 
+vi.mock('@/api/middleware/authMiddleware', () => ({
+  authMiddleware: (req: any, _res: any, next: any) => {
+    next();
+  },
+}));
+
+vi.mock('@/api/middleware/planGuard', () => ({
+  planGuard: () => (_req: any, _res: any, next: any) => next(),
+}));
+
 // ── Import mocked modules for assertion ──────────────────────────────────────
 
 import * as dbQueries from '@/services/database/offlineConversionQueries';
@@ -276,14 +286,15 @@ describe('POST /api/offline-conversions/upload', () => {
     vi.mocked(dbQueries.setUploadStatus).mockResolvedValue(undefined);
     vi.mocked(dbQueries.setUploadValidated).mockResolvedValue(undefined);
     vi.mocked(dbQueries.insertRows).mockResolvedValue(undefined);
-    vi.mocked(dbQueries.findCrossUploadDuplicates).mockResolvedValue([]);
+    vi.mocked(dbQueries.findCrossUploadDuplicates).mockResolvedValue({ orderIds: new Set(), hashedEmails: new Set() } as any);
+    vi.mocked(dbQueries.getUploadRowPage).mockResolvedValue({ rows: [], total: 0 } as any);
 
     const app = buildTestApp();
     const res = await request(app)
       .post('/api/offline-conversions/upload')
       .attach('file', makeValidCsvBuffer(), { filename: 'deals.csv', contentType: 'text/csv' });
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(201);
     expect(res.body).toHaveProperty('upload_id');
     expect(res.body).toHaveProperty('validation_summary');
     expect(res.body.validation_summary).toHaveProperty('total_rows');
@@ -297,7 +308,8 @@ describe('POST /api/offline-conversions/upload', () => {
     vi.mocked(dbQueries.setUploadStatus).mockResolvedValue(undefined);
     vi.mocked(dbQueries.setUploadValidated).mockResolvedValue(undefined);
     vi.mocked(dbQueries.insertRows).mockResolvedValue(undefined);
-    vi.mocked(dbQueries.findCrossUploadDuplicates).mockResolvedValue([]);
+    vi.mocked(dbQueries.findCrossUploadDuplicates).mockResolvedValue({ orderIds: new Set(), hashedEmails: new Set() } as any);
+    vi.mocked(dbQueries.getUploadRowPage).mockResolvedValue({ rows: [], total: 0 } as any);
 
     const app = buildTestApp();
     const res = await request(app)
@@ -342,6 +354,7 @@ describe('POST /api/offline-conversions/upload/:id/confirm', () => {
   });
 
   it('enqueues a Bull job and returns 202 for a validated upload', async () => {
+
     vi.mocked(dbQueries.getUpload).mockResolvedValue(
       MOCK_UPLOAD as ReturnType<typeof dbQueries.getUpload> extends Promise<infer T> ? T : never,
     );

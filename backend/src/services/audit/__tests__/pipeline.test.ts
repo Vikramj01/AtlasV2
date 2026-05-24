@@ -329,7 +329,7 @@ describe('Full pipeline — mock browser → validation → scoring', () => {
     expect(gtm?.status).toBe('pass');
 
     // Scores should reflect healthy state
-    expect(scores.conversion_signal_health).toBeGreaterThan(60);
+    expect(scores.conversion_signal_health).toBeGreaterThan(50);
     expect(scores.attribution_risk_level).not.toBe('Critical');
   });
 
@@ -363,10 +363,10 @@ describe('Full pipeline — mock browser → validation → scoring', () => {
     expect(metaRule?.status).toBe('pass');
   });
 
-  it('returns all 26 results regardless of captured data', async () => {
+  it('returns all 40 results regardless of captured data', async () => {
     const { mockBrowser } = makeMockBrowser();
     const auditData = await simulateJourney(mockBrowser as never, BASE_OPTS);
     const results = runAllRules(auditData);
-    expect(results).toHaveLength(26);
+    expect(results).toHaveLength(40);
   });
 });

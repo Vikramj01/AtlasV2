@@ -4,18 +4,18 @@ import { makePerfectAuditData, makeEmptyAuditData } from './mockAuditData';
 import type { AuditData } from '@/types/audit';
 
 describe('Validation engine', () => {
-  it('has exactly 26 rules registered', () => {
-    expect(ALL_RULES).toHaveLength(26);
+  it('has exactly 40 rules registered', () => {
+    expect(ALL_RULES).toHaveLength(40);
   });
 
   it('each rule has a unique rule_id', () => {
     const ids = ALL_RULES.map((r) => r.rule_id);
-    expect(new Set(ids).size).toBe(26);
+    expect(new Set(ids).size).toBe(40);
   });
 
-  it('returns 26 results for perfect AuditData', () => {
+  it('returns 40 results for perfect AuditData', () => {
     const results = runAllRules(makePerfectAuditData());
-    expect(results).toHaveLength(26);
+    expect(results).toHaveLength(40);
   });
 
   it('all results are pass or warning for perfect AuditData', () => {
@@ -77,9 +77,9 @@ describe('Validation engine', () => {
   it('malformed AuditData does not throw — returns warning for each rule', () => {
     const broken = {} as AuditData;
     const results = runAllRules(broken);
-    expect(results).toHaveLength(26);
-    // All should be warning (not crash)
-    expect(results.every((r) => r.status === 'warning' || r.status === 'pass' || r.status === 'fail')).toBe(true);
+    expect(results).toHaveLength(40);
+    // All should be warning, pass, fail, or skipped (not crash)
+    expect(results.every((r) => ['warning', 'pass', 'fail', 'skipped'].includes(r.status))).toBe(true);
   });
 
   it('completes in <500ms on typical data', () => {
@@ -98,8 +98,8 @@ describe('Scoring engine', () => {
     const { calculateScores } = await import('@/services/scoring/engine');
     const results = runAllRules(makePerfectAuditData());
     const scores = calculateScores(results);
-    // Some rules return 'warning' (COUPON, SHIPPING) so health < 100 unless coupons/shipping present
-    expect(scores.conversion_signal_health).toBeGreaterThan(75);
+    // 14 additional tag_configuration/implementation_drift rules are skipped on perfect data
+    expect(scores.conversion_signal_health).toBeGreaterThan(50);
   });
 
   it('returns Low attribution risk for perfect data', async () => {
