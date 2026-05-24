@@ -9,7 +9,7 @@ import type * as React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useCAPIStore } from '@/store/capiStore';
-import type { CAPIAdapterName, MetaCredentials, GoogleCredentials } from '@/types/capi';
+import type { CAPIAdapterName, MetaCredentials, GoogleCredentials, LinkedInCredentials } from '@/types/capi';
 
 // ── Google adapter decision tree ──────────────────────────────────────────────
 
@@ -439,19 +439,154 @@ function GoogleConnectForm({ onNext }: ConnectAccountProps) {
   );
 }
 
+// ── LinkedIn form ─────────────────────────────────────────────────────────────
+
+function LinkedInConnectForm({ onNext }: ConnectAccountProps) {
+  const { wizardDraft, setWizardDraft } = useCAPIStore();
+
+  const draft = wizardDraft.credentials as Partial<LinkedInCredentials>;
+
+  const [accountId, setAccountId]       = useState(draft.account_id    ?? '');
+  const [accessToken, setAccessToken]   = useState(draft.access_token  ?? '');
+  const [conversionId, setConversionId] = useState(draft.conversion_id ?? '');
+  const [showToken, setShowToken]       = useState(false);
+  const [errors, setErrors] = useState<{
+    account_id?: string;
+    access_token?: string;
+    conversion_id?: string;
+  }>({});
+
+  function validate(): boolean {
+    const next: typeof errors = {};
+    if (!accountId.trim())    next.account_id    = 'Ad Account ID is required.';
+    if (!accessToken.trim())  next.access_token  = 'Access Token is required.';
+    if (!conversionId.trim()) next.conversion_id = 'Conversion ID is required.';
+    setErrors(next);
+    return Object.keys(next).length === 0;
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!validate()) return;
+    setWizardDraft({
+      credentials: {
+        account_id:    accountId.trim().replace(/^urn:.*:/, ''), // strip URN prefix if pasted
+        access_token:  accessToken.trim(),
+        conversion_id: conversionId.trim().replace(/^urn:.*:/, ''),
+      } satisfies LinkedInCredentials,
+    });
+    onNext();
+  }
+
+  return (
+    <form onSubmit={handleSubmit} noValidate className="space-y-5">
+      <div className="space-y-1">
+        <label htmlFor="li_account_id" className="block text-sm font-medium">
+          Ad Account ID
+        </label>
+        <input
+          id="li_account_id"
+          type="text"
+          value={accountId}
+          onChange={(e) => setAccountId(e.target.value)}
+          placeholder="123456789"
+          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+        />
+        <p className="text-xs text-muted-foreground">
+          Found in LinkedIn Campaign Manager &rarr; Account Assets &rarr; your account number.
+        </p>
+        {errors.account_id && (
+          <p className="text-xs text-destructive">{errors.account_id}</p>
+        )}
+      </div>
+
+      <div className="space-y-1">
+        <label htmlFor="li_access_token" className="block text-sm font-medium">
+          Access Token
+        </label>
+        <div className="relative">
+          <input
+            id="li_access_token"
+            type={showToken ? 'text' : 'password'}
+            value={accessToken}
+            onChange={(e) => setAccessToken(e.target.value)}
+            placeholder="Enter your LinkedIn OAuth access token"
+            className="w-full rounded-md border border-input bg-background px-3 py-2 pr-20 text-sm shadow-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+          />
+          <button
+            type="button"
+            onClick={() => setShowToken((v) => !v)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-foreground focus:outline-none"
+          >
+            {showToken ? 'Hide' : 'Show'}
+          </button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          OAuth 2.0 token with <code className="font-mono">rw_conversions</code> scope. Generated from
+          LinkedIn Developer Portal &rarr; your app &rarr; Auth.
+        </p>
+        {errors.access_token && (
+          <p className="text-xs text-destructive">{errors.access_token}</p>
+        )}
+      </div>
+
+      <div className="space-y-1">
+        <label htmlFor="li_conversion_id" className="block text-sm font-medium">
+          Conversion ID
+        </label>
+        <input
+          id="li_conversion_id"
+          type="text"
+          value={conversionId}
+          onChange={(e) => setConversionId(e.target.value)}
+          placeholder="987654321"
+          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+        />
+        <p className="text-xs text-muted-foreground">
+          Numeric ID from Campaign Manager &rarr; Analyze &rarr; Conversion Tracking &rarr; your
+          conversion rule. Atlas wraps it in the URN format automatically.
+        </p>
+        {errors.conversion_id && (
+          <p className="text-xs text-destructive">{errors.conversion_id}</p>
+        )}
+      </div>
+
+      <div className="rounded-md bg-muted px-4 py-3 text-sm text-muted-foreground">
+        Your LinkedIn app must have the <code className="font-mono">rw_conversions</code> Marketing
+        API permission approved. Tokens expire after 60 days — you will be prompted to reconnect when
+        Atlas detects an expired token.
+      </div>
+
+      <div className="flex justify-end">
+        <Button type="submit">Next</Button>
+      </div>
+    </form>
+  );
+}
+
 // ── Container ─────────────────────────────────────────────────────────────────
 
 export function ConnectAccount({ onNext }: ConnectAccountProps) {
   const { wizardDraft } = useCAPIStore();
-  const isGoogle = wizardDraft.provider === 'google';
+  const provider = wizardDraft.provider;
+  const isGoogle   = provider === 'google';
+  const isLinkedIn = provider === 'linkedin';
 
   const adapterLabel = GOOGLE_ADAPTER_OPTIONS.find((o) => o.name === wizardDraft.adapter_name)?.label;
-  const title = isGoogle ? 'Connect your Google Ads account' : 'Connect your Meta account';
+
+  const title = isGoogle
+    ? 'Connect your Google Ads account'
+    : isLinkedIn
+      ? 'Connect your LinkedIn account'
+      : 'Connect your Meta account';
+
   const subtitle = isGoogle
     ? adapterLabel
       ? `Step 1 of 5 — ${adapterLabel}. Provide your Google Ads OAuth credentials.`
       : 'Step 1 of 5 — Choose your conversion type and provide your Google Ads credentials.'
-    : 'Step 1 of 5 — Provide your Meta Pixel credentials to get started.';
+    : isLinkedIn
+      ? 'Step 1 of 5 — Provide your LinkedIn OAuth token and Conversion ID to get started.'
+      : 'Step 1 of 5 — Provide your Meta Pixel credentials to get started.';
 
   return (
     <Card>
@@ -460,11 +595,9 @@ export function ConnectAccount({ onNext }: ConnectAccountProps) {
         <p className="text-sm text-muted-foreground mt-1">{subtitle}</p>
       </CardHeader>
       <CardContent>
-        {isGoogle ? (
-          <GoogleConnectForm onNext={onNext} />
-        ) : (
-          <MetaConnectForm onNext={onNext} />
-        )}
+        {isGoogle   ? <GoogleConnectForm   onNext={onNext} /> :
+         isLinkedIn ? <LinkedInConnectForm onNext={onNext} /> :
+                      <MetaConnectForm     onNext={onNext} />}
       </CardContent>
     </Card>
   );

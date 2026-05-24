@@ -32,8 +32,9 @@ interface ProviderListProps {
 }
 
 const ADDABLE_PROVIDERS: Array<{ value: CAPIProvider; label: string }> = [
-  { value: 'meta',   label: 'Meta (Facebook)' },
-  { value: 'google', label: 'Data Manager (Google)' },
+  { value: 'meta',     label: 'Meta (Facebook)' },
+  { value: 'google',   label: 'Data Manager (Google)' },
+  { value: 'linkedin', label: 'LinkedIn' },
 ];
 
 export function ProviderList({ onAddProvider, onSelectProvider }: ProviderListProps) {

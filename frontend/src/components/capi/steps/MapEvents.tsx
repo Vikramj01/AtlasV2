@@ -15,6 +15,7 @@ import { useSignalStore } from '@/store/signalStore';
 import { useTaxonomyStore } from '@/store/taxonomyStore';
 import { META_EVENT_SUGGESTIONS, META_STANDARD_EVENTS } from '@/lib/capi/adapters/meta';
 import { GOOGLE_EVENT_SUGGESTIONS, GOOGLE_STANDARD_EVENTS } from '@/lib/capi/adapters/google';
+import { LINKEDIN_EVENT_SUGGESTIONS, LINKEDIN_STANDARD_EVENTS } from '@/lib/capi/adapters/linkedin';
 import type { EventMapping } from '@/types/capi';
 import type { TaxonomyNode } from '@/types/taxonomy';
 
@@ -30,20 +31,28 @@ interface MappingRow extends EventMapping {
   taxonomyMapped?: boolean;
 }
 
-const DEFAULT_ROWS: MappingRow[] = [
-  { key: 'default-purchase', atlas_event: 'purchase', provider_event: 'Purchase', isCustom: false },
-  { key: 'default-lead',     atlas_event: 'lead',     provider_event: 'Lead',     isCustom: false },
-];
-
-let rowCounter = DEFAULT_ROWS.length;
+let rowCounter = 2;
 
 function makeKey(): string {
   rowCounter += 1;
   return `row-${rowCounter}`;
 }
 
-function buildInitialRows(existing: EventMapping[], standardEvents: readonly string[]): MappingRow[] {
-  if (!existing.length) return DEFAULT_ROWS;
+function getDefaultRows(provider: string): MappingRow[] {
+  if (provider === 'linkedin') {
+    return [
+      { key: 'default-lead', atlas_event: 'lead',        provider_event: 'LEAD', isCustom: false },
+      { key: 'default-form', atlas_event: 'form_submit', provider_event: 'LEAD', isCustom: false },
+    ];
+  }
+  return [
+    { key: 'default-purchase', atlas_event: 'purchase', provider_event: 'Purchase', isCustom: false },
+    { key: 'default-lead',     atlas_event: 'lead',     provider_event: 'Lead',     isCustom: false },
+  ];
+}
+
+function buildInitialRows(existing: EventMapping[], standardEvents: readonly string[], provider: string): MappingRow[] {
+  if (!existing.length) return getDefaultRows(provider);
   return existing.map((m, i) => ({
     ...m,
     key: `existing-${i}`,
@@ -69,12 +78,23 @@ export function MapEvents({ onNext, onBack }: MapEventsProps) {
   const { signals } = useSignalStore();
   const { tree } = useTaxonomyStore();
 
-  const isGoogle = wizardDraft.provider === 'google';
-  const standardEvents: readonly string[] = isGoogle ? GOOGLE_STANDARD_EVENTS : META_STANDARD_EVENTS;
-  const eventSuggestions: Record<string, string> = isGoogle ? GOOGLE_EVENT_SUGGESTIONS : META_EVENT_SUGGESTIONS;
+  const isGoogle   = wizardDraft.provider === 'google';
+  const isLinkedIn = wizardDraft.provider === 'linkedin';
+
+  const standardEvents: readonly string[] = isGoogle
+    ? GOOGLE_STANDARD_EVENTS
+    : isLinkedIn
+      ? LINKEDIN_STANDARD_EVENTS
+      : META_STANDARD_EVENTS;
+
+  const eventSuggestions: Record<string, string> = isGoogle
+    ? GOOGLE_EVENT_SUGGESTIONS
+    : isLinkedIn
+      ? LINKEDIN_EVENT_SUGGESTIONS
+      : META_EVENT_SUGGESTIONS;
 
   const [rows, setRows] = useState<MappingRow[]>(() =>
-    buildInitialRows(wizardDraft.event_mapping, standardEvents),
+    buildInitialRows(wizardDraft.event_mapping, standardEvents, wizardDraft.provider),
   );
 
   const [newAtlas, setNewAtlas] = useState('');
@@ -102,7 +122,7 @@ export function MapEvents({ onNext, onBack }: MapEventsProps) {
   // Build a lookup: taxonomy slug → provider event name for this platform
   const taxonomyProviderMap: Record<string, string> = useMemo(() => {
     const map: Record<string, string> = {};
-    const platform = isGoogle ? 'google_ads' : 'meta';
+    const platform = isGoogle ? 'google_ads' : isLinkedIn ? 'linkedin' : 'meta';
     function visit(nodes: TaxonomyNode[]) {
       for (const node of nodes) {
         if (node.node_type === 'event' && node.platform_mappings) {
@@ -190,13 +210,23 @@ export function MapEvents({ onNext, onBack }: MapEventsProps) {
     onNext();
   }
 
-  const providerLabel = isGoogle ? 'Google Ads Conversion Type' : 'Meta Standard Event';
+  const providerLabel = isGoogle
+    ? 'Google Ads Conversion Type'
+    : isLinkedIn
+      ? 'LinkedIn Conversion Event'
+      : 'Meta Standard Event';
+
   const cardTitle = isGoogle
     ? 'Map your events to Google Ads conversion types'
-    : 'Map your events to Meta standard events';
+    : isLinkedIn
+      ? 'Map your events to LinkedIn conversion events'
+      : 'Map your events to Meta standard events';
+
   const cardSubtitle = isGoogle
     ? 'Step 2 of 5 — Tell Atlas which of your events maps to each Google Ads conversion type.'
-    : 'Step 2 of 5 — Tell Atlas which of your events maps to each Meta standard event.';
+    : isLinkedIn
+      ? 'Step 2 of 5 — Tell Atlas which of your events maps to each LinkedIn conversion event.'
+      : 'Step 2 of 5 — Tell Atlas which of your events maps to each Meta standard event.';
 
   return (
     <Card>

@@ -59,17 +59,45 @@ export interface LinkedInConversionEvent {
   };
 }
 
-// ── Standard LinkedIn conversion types ────────────────────────────────────────
+// ── Standard LinkedIn conversion event types ──────────────────────────────────
+// Full list per LinkedIn Marketing Developer Platform (as of 2026-Q2)
 
+export const LINKEDIN_STANDARD_EVENTS = [
+  'ADD_TO_CART',
+  'DOWNLOAD',
+  'INSTALL',
+  'KEY_PAGE_VIEW',
+  'LEAD',
+  'PURCHASE',
+  'SIGN_UP',
+  'OTHER',
+] as const;
+
+export type LinkedInStandardEvent = typeof LINKEDIN_STANDARD_EVENTS[number];
+
+// B2B-oriented Atlas event → LinkedIn conversion type suggestions
 export const LINKEDIN_EVENT_SUGGESTIONS: Record<string, string> = {
-  purchase:          'PURCHASE',
-  lead:              'LEAD',
-  form_submit:       'LEAD',
-  sign_up:           'SIGN_UP',
-  registration:      'SIGN_UP',
-  page_view:         'OTHER',
-  subscribe:         'SIGN_UP',
-  add_to_cart:       'ADD_TO_CART',
+  // Revenue / pipeline
+  purchase:           'PURCHASE',
+  closed_won:         'PURCHASE',
+  // Demand gen / lead capture
+  lead:               'LEAD',
+  form_submit:        'LEAD',
+  demo_request:       'LEAD',
+  contact:            'LEAD',
+  // Content & nurture
+  content_download:   'DOWNLOAD',
+  whitepaper_download:'DOWNLOAD',
+  // Registration
+  sign_up:            'SIGN_UP',
+  registration:       'SIGN_UP',
+  webinar_register:   'SIGN_UP',
+  subscribe:          'SIGN_UP',
+  // Awareness / engagement
+  page_view:          'KEY_PAGE_VIEW',
+  // Trial / other
+  trial_start:        'OTHER',
+  add_to_cart:        'ADD_TO_CART',
 };
 
 // ── Payload formatter (pure — no API calls) ───────────────────────────────────
