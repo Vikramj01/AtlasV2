@@ -27,7 +27,8 @@ import { safeDecryptCredentials } from './credentials';
 import { isEventDuplicate, createCAPIEvent, incrementProviderCounters } from '@/services/database/capiQueries';
 import { sendMetaEvents, checkUserParamCompleteness } from './metaDelivery';
 import { sendGoogleEvents } from './googleDelivery';
-import type { MetaCredentials, GoogleCredentials } from '@/types/capi';
+import { sendLinkedInEvents } from './linkedinDelivery';
+import type { MetaCredentials, GoogleCredentials, LinkedInCredentials } from '@/types/capi';
 import logger from '@/utils/logger';
 
 // ── PII Hashing ───────────────────────────────────────────────────────────────
@@ -99,11 +100,11 @@ function isConsentGranted(event: AtlasEvent, provider: CAPIProvider): boolean {
 
   switch (provider) {
     case 'meta':
-      // Meta requires marketing consent
       return d.marketing === 'granted';
     case 'google':
-      // Google requires analytics consent
       return d.analytics === 'granted';
+    case 'linkedin':
+      return d.marketing === 'granted';
     default:
       return d.marketing === 'granted';
   }
@@ -269,6 +270,15 @@ async function deliverToProvider(
         [identifiers],
         config.event_mapping,
         creds as GoogleCredentials,
+        config.id,
+      );
+
+    case 'linkedin':
+      return sendLinkedInEvents(
+        [event],
+        [identifiers],
+        config.event_mapping,
+        creds as LinkedInCredentials,
         config.id,
       );
 
