@@ -137,7 +137,7 @@ export class LinkedInAdapter implements CAPIProviderAdapter {
   readonly dedupStrategy = { key: ['event_name', 'event_id'], window_seconds: 86400 };
   readonly retryPolicy = { max_attempts: 3, backoff: 'exponential' as const, base_ms: 1000 };
   readonly consentSignals = ['marketing'];
-  readonly testMode = { supported: false, credentialField: null as string | null };
+  readonly testMode = { supported: true, credentialField: null as string | null };
 
   constructor(
     /** @internal reserved for future authenticated calls */

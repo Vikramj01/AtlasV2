@@ -32,6 +32,7 @@ import {
 import { safeDecryptCredentials } from '@/services/capi/credentials';
 import { validateMetaCredentials, sendMetaTestEvent, formatMetaEvent } from '@/services/capi/metaDelivery';
 import { validateGoogleCredentials, sendGoogleTestEvent } from '@/services/capi/googleDelivery';
+import { validateLinkedInCredentials, sendLinkedInTestEvent } from '@/services/capi/linkedinDelivery';
 import { processEvent } from '@/services/capi/pipeline';
 import { setDedupEntry } from '@/services/capi/dedupStore';
 import { ingestCustomerMatchBatch } from '@/services/capi/customerMatch';
@@ -45,6 +46,7 @@ import type {
   EventMapping,
   MetaCredentials,
   GoogleCredentials,
+  LinkedInCredentials,
   HashedIdentifier,
 } from '@/types/capi';
 
@@ -149,6 +151,12 @@ capiRouter.post('/providers', planGuard('pro'), async (req: Request, res: Respon
     const validation = await validateGoogleCredentials(body.credentials as GoogleCredentials).catch(() => ({ valid: false, error: 'Validation request failed' }));
     if (!validation.valid) {
       res.status(400).json({ error: 'INVALID_CREDENTIALS', message: validation.error ?? 'Google credential validation failed' });
+      return;
+    }
+  } else if (body.provider === 'linkedin') {
+    const validation = await validateLinkedInCredentials(body.credentials as LinkedInCredentials).catch(() => ({ valid: false, error: 'Validation request failed' }));
+    if (!validation.valid) {
+      res.status(400).json({ error: 'INVALID_CREDENTIALS', message: validation.error ?? 'LinkedIn credential validation failed' });
       return;
     }
   }
@@ -297,6 +305,10 @@ capiRouter.post('/providers/:id/test', async (req: Request, res: Response): Prom
         }
         if (provider.provider === 'google') {
           const result = await sendGoogleTestEvent(event, [], mapping, creds as GoogleCredentials);
+          return { event_name: event.event_name, ...result };
+        }
+        if (provider.provider === 'linkedin') {
+          const result = await sendLinkedInTestEvent(event, [], mapping, creds as LinkedInCredentials);
           return { event_name: event.event_name, ...result };
         }
         return { event_name: event.event_name, status: 'failed' as const, provider_response: null, error: 'Provider not supported for testing yet' };
