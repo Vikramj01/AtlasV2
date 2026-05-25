@@ -48,17 +48,15 @@ interface MetricCellProps {
 
 function MetricCell({ label, value, subtext, status, tooltip }: MetricCellProps) {
   return (
-    <div className={cn('rounded-lg border px-4 py-4', CELL_BG[status], CELL_BORDER[status])}>
-      {/* Label — 12px uppercase per design spec */}
+    <div className={cn('rounded-lg border px-4 py-4 min-w-0', CELL_BG[status], CELL_BORDER[status])}>
       <div className="flex items-center gap-1 mb-1">
-        <p className="text-caption-upper">{label}</p>
+        <p className="text-caption-upper truncate">{label}</p>
         {tooltip && <InfoTooltip entry={tooltip} side="top" />}
       </div>
-      {/* Value — 24px semibold per design spec */}
-      <p className={cn('text-2xl font-semibold tabular-nums leading-tight', VALUE_COLOR[status])}>
+      <p className={cn('text-xl font-semibold leading-tight truncate', VALUE_COLOR[status])}>
         {value}
       </p>
-      <p className="text-caption mt-1">{subtext}</p>
+      <p className="text-caption mt-1 truncate">{subtext}</p>
     </div>
   );
 }

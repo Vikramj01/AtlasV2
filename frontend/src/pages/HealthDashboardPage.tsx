@@ -238,12 +238,10 @@ export default function HealthDashboardPage() {
       {/* ── Zone 1: Score ring + key metrics ──────────────────────────────── */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[auto_1fr]">
         {/* Score ring — centered in its own card */}
-        <div className="flex items-center justify-center rounded-lg border border-[#E5E7EB] bg-white px-10 py-8">
-          <div className="flex flex-col items-center gap-1 mb-3">
-            <div className="flex items-center gap-1">
-              <span className="text-caption-upper">Overall Score</span>
-              <InfoTooltip entry={TOOLTIPS.healthScore} side="right" />
-            </div>
+        <div className="flex flex-col items-center justify-center rounded-lg border border-[#E5E7EB] bg-white px-10 py-8 gap-3">
+          <div className="flex items-center gap-1">
+            <span className="text-caption-upper">Overall Score</span>
+            <InfoTooltip entry={TOOLTIPS.healthScore} side="right" />
           </div>
           <OverallScoreRing score={score.overall_score} computedAt={score.computed_at} />
         </div>
