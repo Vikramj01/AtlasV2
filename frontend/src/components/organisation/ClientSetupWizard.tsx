@@ -46,6 +46,26 @@ export function ClientSetupWizard({ orgId, onCreated, onClose }: Props) {
     { label: 'Checkout', url: '', page_type: 'checkout', stage_order: 4 },
     { label: 'Confirmation', url: '', page_type: 'confirmation', stage_order: 5 },
   ]);
+
+  function addProductPage() {
+    setPages((pp) => {
+      const lastProductIdx = pp.reduce((last, p, i) => p.page_type === 'product' ? i : last, -1);
+      const inserted = [
+        ...pp.slice(0, lastProductIdx + 1),
+        { label: 'Product', url: '', page_type: 'product', stage_order: 0 },
+        ...pp.slice(lastProductIdx + 1),
+      ];
+      return inserted.map((p, i) => ({ ...p, stage_order: i + 1 }));
+    });
+  }
+
+  function removeProductPage(idx: number) {
+    setPages((pp) => {
+      const updated = pp.filter((_, i) => i !== idx);
+      return updated.map((p, i) => ({ ...p, stage_order: i + 1 }));
+    });
+  }
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -161,17 +181,50 @@ export function ClientSetupWizard({ orgId, onCreated, onClose }: Props) {
                 </p>
               </div>
               <div className="space-y-2">
-                {pages.map((page, idx) => (
-                  <div key={idx} className="flex items-center gap-2">
-                    <span className="w-24 shrink-0 text-xs text-muted-foreground">{page.label}</span>
-                    <Input
-                      placeholder={`https://…/${page.page_type}`}
-                      value={page.url}
-                      onChange={(e) => setPages((pp) => pp.map((p, i) => i === idx ? { ...p, url: e.target.value } : p))}
-                      className="text-xs"
-                    />
-                  </div>
-                ))}
+                {(() => {
+                  const productPages = pages.filter((p) => p.page_type === 'product');
+                  let productCounter = 0;
+                  return pages.map((page, idx) => {
+                    const isProduct = page.page_type === 'product';
+                    if (isProduct) productCounter++;
+                    const isLastProduct = isProduct && productCounter === productPages.length;
+                    const displayLabel = isProduct && productPages.length > 1
+                      ? `Product ${productCounter}`
+                      : page.label;
+                    return (
+                      <div key={idx}>
+                        <div className="flex items-center gap-2">
+                          <span className="w-24 shrink-0 text-xs text-muted-foreground">{displayLabel}</span>
+                          <Input
+                            placeholder={`https://…/${page.page_type}`}
+                            value={page.url}
+                            onChange={(e) => setPages((pp) => pp.map((p, i) => i === idx ? { ...p, url: e.target.value } : p))}
+                            className="text-xs"
+                          />
+                          {isProduct && productPages.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => removeProductPage(idx)}
+                              className="shrink-0 text-base leading-none text-muted-foreground hover:text-red-500"
+                              aria-label="Remove product URL"
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
+                        {isLastProduct && (
+                          <button
+                            type="button"
+                            onClick={addProductPage}
+                            className="mt-1.5 ml-[6.5rem] text-xs text-primary hover:underline"
+                          >
+                            + Add another product URL
+                          </button>
+                        )}
+                      </div>
+                    );
+                  });
+                })()}
               </div>
             </div>
           )}
