@@ -195,7 +195,7 @@ router.post('/save-brief', async (req: Request, res: Response): Promise<void> =>
 
 const createBriefSchema = z.object({
   mode: z.enum(['single', 'multi']).optional(),
-  brief_name: z.string().min(1).max(120),
+  brief_name: z.string().min(1).max(120).optional(),
   client_id: z.string().uuid().optional(),
   project_id: z.string().uuid().optional(),
 });
