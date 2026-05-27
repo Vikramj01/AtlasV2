@@ -223,7 +223,7 @@ function CreateOrgDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
 
 export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
   const { currentOrg, organisations, setOrganisations } = useOrganisationStore();
-  const params = useParams<{ orgId?: string }>();
+  const params = useParams<{ orgId?: string; clientId?: string }>();
   const [createOrgOpen, setCreateOrgOpen] = useState(false);
   const [completedSteps, setCompletedSteps] = useState<string[]>([]);
 
@@ -240,6 +240,7 @@ export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
   }, []);
 
   const activeOrgId = params.orgId ?? currentOrg?.id;
+  const activeClientId = params.clientId;
 
   return (
     <>
@@ -288,6 +289,16 @@ export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
                 <SidebarNavItem key={item.to} {...item} />
               ))}
             </div>
+            {activeClientId && (
+              <div className="mt-2 border-t border-[#E5E7EB] pt-2">
+                <p className="text-caption-upper px-3 pb-1 pt-1">This client</p>
+                <SidebarNavItem
+                  label="Set up tracking"
+                  to={`/clients/${activeClientId}/tracking`}
+                  Icon={MapPin}
+                />
+              </div>
+            )}
           </>
         ) : (
           // Personal context: grouped nav

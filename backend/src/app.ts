@@ -34,6 +34,8 @@ import { enricherRouter } from '@/api/routes/enricher';
 import { dqmRouter } from '@/api/routes/dqm';
 import { dataManagerRouter } from '@/api/routes/dataManager';
 import { signalEventsRouter } from '@/api/routes/signalEvents';
+import { trackingRouter } from '@/api/routes/tracking';
+import { deliverableShareRouter } from '@/api/routes/deliverableShare';
 import logger from '@/utils/logger';
 import { env } from '@/config/env';
 
@@ -157,6 +159,8 @@ app.use('/api/enricher', enricherRouter);
 app.use('/api/dqm', dqmRouter);
 app.use('/api/data-manager', dataManagerRouter);
 app.use('/api/signal-events', signalEventsRouter);
+app.use('/api/tracking', trackingRouter);
+app.use('/api/share', deliverableShareRouter);
 
 // ─── 404 handler ─────────────────────────────────────────────────────────────
 

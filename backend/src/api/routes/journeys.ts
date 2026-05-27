@@ -25,6 +25,14 @@ import {
   saveTemplate,
   deleteTemplate,
 } from '../../services/database/journeyQueries';
+import { supabaseAdmin } from '../../services/database/supabase';
+import {
+  listSignals,
+  createSignal,
+  createSignalPack,
+  addSignalToPack,
+} from '../../services/database/signalQueries';
+import logger from '../../utils/logger';
 import { generateAndSaveSpecs } from '../../services/journey/specOrchestrator';
 import { ACTION_PRIMITIVES, getActionPrimitive } from '../../services/journey/actionPrimitives';
 import type { SpecFormat } from '../../types/journey';
@@ -179,6 +187,26 @@ router.delete('/:id', async (req: Request, res: Response) => {
   }
 });
 
+// ── DELETE /api/journeys/:id/client-link ──────────────────────────────────────
+
+router.delete('/:id/client-link', async (req: Request, res: Response) => {
+  try {
+    const journey = await getJourney(req.params.id, req.user!.id);
+    if (!journey) return res.status(404).json({ data: null, error: 'Journey not found', message: null });
+
+    const { error } = await supabaseAdmin
+      .from('journeys')
+      .update({ client_id: null })
+      .eq('id', req.params.id);
+
+    if (error) throw new Error(error.message);
+    res.json({ data: { unlinked: true }, error: null, message: null });
+  } catch (err) {
+    logger.error({ err }, 'Unlink journey from client failed');
+    sendInternalError(res, err);
+  }
+});
+
 // ── Stages ────────────────────────────────────────────────────────────────────
 
 router.post('/:id/stages', async (req: Request, res: Response) => {
@@ -293,6 +321,106 @@ router.get('/:id/specs/:format', async (req: Request, res: Response) => {
   }
 });
 
+
+// ── Save to Signal Library ────────────────────────────────────────────────────
+// POST /api/journeys/:id/save-to-library
+// Mirrors the planning session save-to-library bridge.
+// Each stage becomes an org-scoped custom signal; all stages are bundled in a pack.
+
+router.post('/:id/save-to-library', async (req: Request, res: Response) => {
+  try {
+    const journey = await getJourney(req.params.id, req.user!.id);
+    if (!journey) return res.status(404).json({ error: 'Journey not found' });
+
+    // Resolve org from the journey's client or the user's profile
+    let orgId = '';
+
+    const journeyAny = journey as unknown as Record<string, unknown>;
+    if (journeyAny.client_id) {
+      const { data: clientRow } = await supabaseAdmin
+        .from('clients')
+        .select('organisation_id')
+        .eq('id', journeyAny.client_id as string)
+        .single();
+      orgId = (clientRow as { organisation_id: string } | null)?.organisation_id ?? '';
+    }
+
+    if (!orgId) {
+      const { data: profileRow } = await supabaseAdmin
+        .from('profiles')
+        .select('organization_id')
+        .eq('id', req.user!.id)
+        .single();
+      orgId = (profileRow as { organisation_id: string } | null)?.organization_id ?? '';
+    }
+
+    if (!orgId) {
+      return res.status(403).json({ error: 'No organisation found. Link this journey to a client first.' });
+    }
+
+    const [stages, existingSignals] = await Promise.all([
+      getJourneyStages(req.params.id),
+      listSignals(orgId),
+    ]);
+
+    if (stages.length === 0) return res.json({ data: { signals_created: 0, pack_id: null }, error: null, message: null });
+
+    const existingKeys = new Set(existingSignals.map((s) => s.key));
+    const toCreate = stages.filter((s) => {
+      const key = s.label.toLowerCase().replace(/\s+/g, '_');
+      return !existingKeys.has(key);
+    });
+
+    const createdSignals = await Promise.all(
+      toCreate.map((stage) => {
+        const key = stage.label.toLowerCase().replace(/\s+/g, '_');
+        return createSignal({
+          organisation_id: orgId,
+          key,
+          name: stage.label,
+          description: stage.page_type ? `Stage: ${stage.page_type}` : '',
+          category: 'conversion',
+          required_params: [],
+          optional_params: [],
+          platform_mappings: {},
+        });
+      }),
+    );
+
+    // Create a pack named after the journey
+    const pack = await createSignalPack({
+      organisation_id: orgId,
+      name: `Journey: ${journeyAny.name ?? 'Untitled Journey'}`,
+      description: `Auto-generated from Journey Builder`,
+      business_type: (journeyAny.business_type as string) ?? 'ecommerce',
+    });
+
+    // Add all signals (new + existing that match stages) to the pack
+    const allSignalIds: string[] = createdSignals.map((s) => s.id);
+    for (const stage of stages) {
+      const key = stage.label.toLowerCase().replace(/\s+/g, '_');
+      const existing = existingSignals.find((s) => s.key === key);
+      if (existing && !allSignalIds.includes(existing.id)) {
+        allSignalIds.push(existing.id);
+      }
+    }
+
+    await Promise.all(allSignalIds.map((signalId) => addSignalToPack(pack.id, signalId)));
+
+    // Stamp sync timestamp on stages
+    const now = new Date().toISOString();
+    await supabaseAdmin
+      .from('journey_stages')
+      .update({ signal_library_synced_at: now })
+      .eq('journey_id', req.params.id);
+
+    logger.info({ journeyId: req.params.id, signalsCreated: createdSignals.length, packId: pack.id }, 'Journey saved to library');
+    res.json({ data: { signals_created: createdSignals.length, pack_id: pack.id }, error: null, message: null });
+  } catch (err) {
+    logger.error({ err }, 'Journey save-to-library failed');
+    sendInternalError(res, err);
+  }
+});
 
 // ── Proxy Event Library ────────────────────────────────────────────────────────
 // GET /api/journeys/proxy-events?lag_class=long_lag&business_type=saas

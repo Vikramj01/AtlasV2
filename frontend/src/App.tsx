@@ -45,6 +45,8 @@ const ImplementationHealthPage  = lazy(() => import('@/pages/ImplementationHealt
 const ReconciliationRunDetailPage = lazy(() => import('@/pages/ReconciliationRunDetailPage').then(m => ({ default: m.ReconciliationRunDetailPage })));
 const DataManagerConsolePage      = lazy(() => import('@/pages/DataManagerConsolePage').then(m => ({ default: m.DataManagerConsolePage })));
 const SignalTrackingDashboard     = lazy(() => import('@/pages/SignalTrackingDashboard').then(m => ({ default: m.SignalTrackingDashboard })));
+const SetupTrackingHubPage        = lazy(() => import('@/pages/SetupTrackingHubPage').then(m => ({ default: m.SetupTrackingHubPage })));
+const PublicDeliverableView       = lazy(() => import('@/pages/PublicDeliverableView').then(m => ({ default: m.PublicDeliverableView })));
 
 const PageFallback = () => <SkeletonCard variant="page" />;
 
@@ -105,6 +107,7 @@ export default function App() {
                 <Route path="/org/:orgId" element={<SectionErrorBoundary label="Organisation"><OrgDashboardPage /></SectionErrorBoundary>} />
                 <Route path="/org/:orgId/clients" element={<SectionErrorBoundary label="Clients"><ClientListPage /></SectionErrorBoundary>} />
                 <Route path="/org/:orgId/clients/:clientId" element={<SectionErrorBoundary label="Client detail"><ClientDetailPage /></SectionErrorBoundary>} />
+                <Route path="/clients/:clientId/tracking" element={<SectionErrorBoundary label="Set up tracking"><SetupTrackingHubPage /></SectionErrorBoundary>} />
                 <Route path="/org/:orgId/signals" element={<SectionErrorBoundary label="Tracking map"><SignalLibraryPage /></SectionErrorBoundary>} />
                 <Route path="/org/:orgId/packs" element={<SectionErrorBoundary label="Signal packs"><SignalPacksPage /></SectionErrorBoundary>} />
                 <Route path="/org/:orgId/packs/:packId" element={<SectionErrorBoundary label="Pack detail"><PackDetailPage /></SectionErrorBoundary>} />
@@ -122,6 +125,8 @@ export default function App() {
 
             {/* Developer Portal — public, no auth required */}
             <Route path="/dev/:shareToken" element={<SectionErrorBoundary label="Developer portal"><DeveloperPortalPage /></SectionErrorBoundary>} />
+            {/* Public deliverable share — no auth required */}
+            <Route path="/share/:token" element={<PublicDeliverableView />} />
 
             {/* Catch-all */}
             <Route path="*" element={<Navigate to="/" replace />} />
