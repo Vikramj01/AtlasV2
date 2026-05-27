@@ -351,7 +351,7 @@ router.post('/:id/save-to-library', async (req: Request, res: Response) => {
         .select('organization_id')
         .eq('id', req.user!.id)
         .single();
-      orgId = (profileRow as { organisation_id: string } | null)?.organization_id ?? '';
+      orgId = (profileRow as { organization_id: string } | null)?.organization_id ?? '';
     }
 
     if (!orgId) {
