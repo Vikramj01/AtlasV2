@@ -6,6 +6,7 @@ import { useConnectionStore } from '@/store/connectionStore';
 import { strategyApi } from '@/lib/api/strategyApi';
 import { organisationApi } from '@/lib/api/organisationApi';
 import { useOrganisationStore } from '@/store/organisationStore';
+import { useOnboardingStore } from '@/store/onboardingStore';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
@@ -51,6 +52,7 @@ export function SettingsPage() {
   const [isSigningOut, setIsSigningOut] = useState(false);
 
   const { organisations, setOrganisations, setCurrentOrg, removeOrganisation, reset: resetOrgStore } = useOrganisationStore();
+  const { status: onboardingStatus, completedCount, totalSteps, reset: resetOnboarding } = useOnboardingStore();
   const [orgName, setOrgName] = useState('');
   const [orgSlug, setOrgSlug] = useState('');
   const [orgSlugTouched, setOrgSlugTouched] = useState(false);
@@ -306,6 +308,31 @@ export function SettingsPage() {
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Email</p>
               <p className="mt-0.5 text-sm text-foreground">{email}</p>
             </div>
+          </div>
+          <Separator />
+          {/* Setup guide status */}
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Setup guide</p>
+              <p className="mt-0.5 text-sm text-foreground">
+                {onboardingStatus?.overall_status === 'complete'
+                  ? `Complete${onboardingStatus.completed_at ? ` · ${new Date(onboardingStatus.completed_at).toLocaleDateString()}` : ''}`
+                  : onboardingStatus
+                  ? `In progress · ${completedCount}/${totalSteps} steps done`
+                  : 'Not started'}
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs"
+              onClick={async () => {
+                await resetOnboarding();
+                navigate('/getting-started');
+              }}
+            >
+              Restart setup guide
+            </Button>
           </div>
           <Separator />
           <Button
