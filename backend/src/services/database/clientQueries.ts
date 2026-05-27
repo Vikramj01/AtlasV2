@@ -27,6 +27,7 @@ export async function createClient(
       business_type: data.business_type,
       notes: data.notes ?? null,
       detected_platform: data.detected_platform ?? null,
+      primary_conversion_objective: data.primary_conversion_objective ?? null,
     })
     .select('*')
     .single();
