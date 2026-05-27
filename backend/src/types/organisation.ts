@@ -34,6 +34,7 @@ export interface Client {
   website_url: string;
   business_type: BusinessType;
   detected_platform: string | null;
+  primary_conversion_objective: string | null;
   status: ClientStatus;
   notes: string | null;
   created_at: string;
@@ -75,6 +76,7 @@ export interface CreateClientRequest {
   website_url: string;
   business_type: BusinessType;
   notes?: string;
+  primary_conversion_objective?: string;
 }
 
 export interface UpdateClientRequest {

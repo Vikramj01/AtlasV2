@@ -47,12 +47,13 @@ router.use('/:orgId/clients', orgMiddleware);
 
 router.post('/:orgId/clients', async (req: Request, res: Response) => {
   try {
-    const { name, website_url, business_type, notes, auto_detect } = req.body as {
+    const { name, website_url, business_type, notes, auto_detect, primary_conversion_objective } = req.body as {
       name?: string;
       website_url?: string;
       business_type?: BusinessType;
       notes?: string;
       auto_detect?: boolean;
+      primary_conversion_objective?: string;
     };
 
     if (!name || !website_url || !business_type) {
@@ -61,6 +62,9 @@ router.post('/:orgId/clients', async (req: Request, res: Response) => {
     const urlResult = validateUrl(website_url);
     if (!urlResult.valid) {
       return res.status(400).json({ error: `Invalid website_url: ${urlResult.error}` });
+    }
+    if (primary_conversion_objective && primary_conversion_objective.length > 500) {
+      return res.status(400).json({ error: 'primary_conversion_objective must be 500 characters or fewer' });
     }
 
     // Optionally run site detection to prefill detected_platform
@@ -76,6 +80,7 @@ router.post('/:orgId/clients', async (req: Request, res: Response) => {
       business_type,
       notes,
       detected_platform: detectedPlatform,
+      primary_conversion_objective,
     });
 
     logger.info({ orgId: req.params['orgId'], clientId: client.id }, 'Client created');

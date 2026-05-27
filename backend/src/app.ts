@@ -36,6 +36,7 @@ import { dataManagerRouter } from '@/api/routes/dataManager';
 import { signalEventsRouter } from '@/api/routes/signalEvents';
 import { trackingRouter } from '@/api/routes/tracking';
 import { deliverableShareRouter } from '@/api/routes/deliverableShare';
+import { onboardingRouter } from '@/api/routes/onboarding';
 import logger from '@/utils/logger';
 import { env } from '@/config/env';
 
@@ -161,6 +162,7 @@ app.use('/api/data-manager', dataManagerRouter);
 app.use('/api/signal-events', signalEventsRouter);
 app.use('/api/tracking', trackingRouter);
 app.use('/api/share', deliverableShareRouter);
+app.use('/api/onboarding', onboardingRouter);
 
 // ─── 404 handler ─────────────────────────────────────────────────────────────
 
