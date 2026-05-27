@@ -28,7 +28,12 @@ import {
   getClientOutput,
   getClientsByPack,
 } from '@/services/database/clientQueries';
-import { getSignalPackWithSignals, resolveDeploymentsForClient } from '@/services/database/signalQueries';
+import {
+  getSignalPackWithSignals,
+  resolveDeploymentsForClient,
+  saveClientAsAgencyTemplatePack,
+} from '@/services/database/signalQueries';
+import { getOrgClientSummary } from '@/services/clients/clientSummaryService';
 import { generateComposableOutputs } from '@/services/signals/composableOutputGenerator';
 import { createAudit } from '@/services/database/queries';
 import { auditQueue } from '@/services/queue/jobQueue';
@@ -47,13 +52,18 @@ router.use('/:orgId/clients', orgMiddleware);
 
 router.post('/:orgId/clients', async (req: Request, res: Response) => {
   try {
-    const { name, website_url, business_type, notes, auto_detect, primary_conversion_objective } = req.body as {
+    const {
+      name, website_url, business_type, notes, auto_detect,
+      primary_conversion_objective, apply_pack_id, copy_signals_from_client_id,
+    } = req.body as {
       name?: string;
       website_url?: string;
       business_type?: BusinessType;
       notes?: string;
       auto_detect?: boolean;
       primary_conversion_objective?: string;
+      apply_pack_id?: string;
+      copy_signals_from_client_id?: string;
     };
 
     if (!name || !website_url || !business_type) {
@@ -74,16 +84,32 @@ router.post('/:orgId/clients', async (req: Request, res: Response) => {
       detectedPlatform = detection?.detected_platform?.name ?? undefined;
     }
 
-    const client = await createClient(req.params['orgId'], {
+    // If copying from another client, collect their pack IDs first
+    let sourcePackIds: string[] = [];
+    if (copy_signals_from_client_id) {
+      const sourceDeployments = await listDeployments(copy_signals_from_client_id);
+      sourcePackIds = sourceDeployments.map((d) => d.pack_id);
+    }
+
+    const orgId = req.params['orgId'];
+    const client = await createClient(orgId, {
       name,
       website_url,
       business_type,
       notes,
       detected_platform: detectedPlatform,
       primary_conversion_objective,
+      template_source_client_id: copy_signals_from_client_id,
+      template_source_pack_id: apply_pack_id,
     });
 
-    logger.info({ orgId: req.params['orgId'], clientId: client.id }, 'Client created');
+    // Deploy packs from the starting point choice
+    const packIdsToDeploy = apply_pack_id ? [apply_pack_id] : sourcePackIds;
+    for (const packId of packIdsToDeploy) {
+      await deployPack(client.id, packId).catch(() => null);
+    }
+
+    logger.info({ orgId, clientId: client.id }, 'Client created');
     res.status(201).json(client);
   } catch (err) {
     sendInternalError(res, err);
@@ -96,6 +122,18 @@ router.get('/:orgId/clients', async (req: Request, res: Response) => {
   try {
     const clients = await listClients(req.params['orgId']);
     res.json({ clients });
+  } catch (err) {
+    sendInternalError(res, err);
+  }
+});
+
+// ── GET /api/organisations/:orgId/clients/summary ─────────────────────────────
+// Must be registered before /:clientId to avoid Express matching "summary" as an ID
+
+router.get('/:orgId/clients/summary', async (req: Request, res: Response) => {
+  try {
+    const summary = await getOrgClientSummary(req.params['orgId']);
+    res.json(summary);
   } catch (err) {
     sendInternalError(res, err);
   }
@@ -136,6 +174,32 @@ router.delete('/:orgId/clients/:clientId', async (req: Request, res: Response) =
   try {
     await archiveClient(req.params['clientId'], req.params['orgId']);
     res.json({ archived: true });
+  } catch (err) {
+    sendInternalError(res, err);
+  }
+});
+
+// ── POST /api/organisations/:orgId/clients/:clientId/save-as-pack ────────────
+
+router.post('/:orgId/clients/:clientId/save-as-pack', async (req: Request, res: Response) => {
+  try {
+    const { name, description } = req.body as { name?: string; description?: string };
+    if (!name?.trim()) {
+      return res.status(400).json({ error: 'name is required' });
+    }
+
+    const client = await getClient(req.params['clientId'], req.params['orgId']);
+    if (!client) return res.status(404).json({ error: 'Client not found' });
+
+    const pack = await saveClientAsAgencyTemplatePack(
+      req.params['orgId'],
+      req.params['clientId'],
+      name.trim(),
+      description?.trim(),
+    );
+
+    logger.info({ orgId: req.params['orgId'], clientId: req.params['clientId'], packId: pack.id }, 'Agency template pack saved');
+    res.status(201).json(pack);
   } catch (err) {
     sendInternalError(res, err);
   }

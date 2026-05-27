@@ -39,6 +39,8 @@ export interface SignalPack {
   description: string | null;
   business_type: string;
   is_system: boolean;
+  is_agency_template: boolean;
+  source_client_id: string | null;
   version: number;
   signals_count: number;
   created_at: string;

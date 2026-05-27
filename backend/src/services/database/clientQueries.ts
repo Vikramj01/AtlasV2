@@ -16,7 +16,11 @@ import { getTimingRiskForClient } from './journeyQueries';
 
 export async function createClient(
   orgId: string,
-  data: CreateClientRequest & { detected_platform?: string },
+  data: CreateClientRequest & {
+    detected_platform?: string;
+    template_source_client_id?: string;
+    template_source_pack_id?: string;
+  },
 ): Promise<Client> {
   const { data: client, error } = await supabase
     .from('clients')
@@ -28,6 +32,8 @@ export async function createClient(
       notes: data.notes ?? null,
       detected_platform: data.detected_platform ?? null,
       primary_conversion_objective: data.primary_conversion_objective ?? null,
+      template_source_client_id: data.template_source_client_id ?? null,
+      template_source_pack_id: data.template_source_pack_id ?? null,
     })
     .select('*')
     .single();

@@ -324,3 +324,90 @@ export async function incrementPackVersion(packId: string): Promise<void> {
     .update({ version: (data as { version: number }).version + 1, updated_at: new Date().toISOString() })
     .eq('id', packId);
 }
+
+// ─── Agency Template Packs ────────────────────────────────────────────────────
+
+export async function saveClientAsAgencyTemplatePack(
+  orgId: string,
+  clientId: string,
+  name: string,
+  description?: string,
+): Promise<SignalPack> {
+  // Get the client's business type
+  const { data: client } = await supabase
+    .from('clients')
+    .select('business_type')
+    .eq('id', clientId)
+    .eq('organisation_id', orgId)
+    .single();
+
+  const businessType = (client as { business_type: string } | null)?.business_type ?? 'custom';
+
+  // Collect all signal IDs from the client's deployed packs
+  const { data: deployments } = await supabase
+    .from('deployments')
+    .select('pack_id')
+    .eq('client_id', clientId);
+
+  const packIds = (deployments ?? []).map((d: { pack_id: string }) => d.pack_id);
+
+  let signalIds: string[] = [];
+  if (packIds.length > 0) {
+    const { data: packSignals } = await supabase
+      .from('signal_pack_signals')
+      .select('signal_id')
+      .in('pack_id', packIds);
+
+    const seen = new Set<string>();
+    for (const ps of packSignals ?? []) {
+      const row = ps as { signal_id: string };
+      if (!seen.has(row.signal_id)) {
+        seen.add(row.signal_id);
+        signalIds.push(row.signal_id);
+      }
+    }
+  }
+
+  // Create the agency template pack
+  const { data: pack, error } = await supabase
+    .from('signal_packs')
+    .insert({
+      organisation_id: orgId,
+      name,
+      description: description ?? null,
+      business_type: businessType,
+      is_system: false,
+      is_agency_template: true,
+      source_client_id: clientId,
+    })
+    .select('*')
+    .single();
+
+  if (error || !pack) throw new Error(`Failed to create agency template pack: ${error?.message}`);
+
+  // Add all collected signals to the new pack
+  if (signalIds.length > 0) {
+    const rows = signalIds.map((signalId, idx) => ({
+      pack_id: (pack as SignalPack).id,
+      signal_id: signalId,
+      display_order: idx + 1,
+      is_required: true,
+      stage_hint: null,
+    }));
+    await supabase.from('signal_pack_signals').insert(rows);
+  }
+
+  return pack as SignalPack;
+}
+
+export async function listAgencyTemplatePacks(orgId: string): Promise<SignalPack[]> {
+  const { data, error } = await supabase
+    .from('signal_packs')
+    .select('*')
+    .eq('organisation_id', orgId)
+    .eq('is_agency_template', true)
+    .order('name');
+
+  if (error) throw new Error(`Failed to list agency template packs: ${error.message}`);
+  return (data ?? []) as SignalPack[];
+}
