@@ -14,6 +14,8 @@ import { LogOut, Building2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { OnboardingWidget } from '@/components/onboarding/OnboardingWidget';
+import { useOnboardingStore } from '@/store/onboardingStore';
 
 // ── Plan badge ────────────────────────────────────────────────────────────────
 
@@ -60,6 +62,11 @@ interface TopBarProps {
 
 export function TopBar({ email, plan = 'free', workspaceName }: TopBarProps) {
   const navigate = useNavigate();
+  const { status: onboardingStatus } = useOnboardingStore();
+
+  const showWidget =
+    onboardingStatus !== null &&
+    (!!onboardingStatus.dismissed_at || onboardingStatus.overall_status === 'complete');
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
@@ -76,6 +83,7 @@ export function TopBar({ email, plan = 'free', workspaceName }: TopBarProps) {
 
       {/* Right — plan + email + sign out */}
       <div className="flex items-center gap-4">
+        {showWidget && <OnboardingWidget />}
         <PlanBadge plan={plan} />
 
         {email && (
