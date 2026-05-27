@@ -22,7 +22,7 @@ END $$;
 -- ── shareable_deliverable_links ────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS shareable_deliverable_links (
   id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  organization_id   UUID        NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  organization_id   UUID        NOT NULL REFERENCES organisations(id) ON DELETE CASCADE,
   client_id         UUID        NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
   share_token       TEXT        UNIQUE NOT NULL,
   deliverable_type  TEXT        NOT NULL CHECK (deliverable_type IN ('datalayer_spec','gtm_container','combined')),
@@ -55,7 +55,7 @@ CREATE INDEX IF NOT EXISTS idx_shareable_links_token
 -- ── client_deliverable_exports ─────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS client_deliverable_exports (
   id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  organization_id   UUID        NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  organization_id   UUID        NOT NULL REFERENCES organisations(id) ON DELETE CASCADE,
   client_id         UUID        NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
   export_type       TEXT        NOT NULL CHECK (export_type IN ('gtm_container','datalayer_spec','combined')),
   exported_by       UUID        REFERENCES profiles(id),
