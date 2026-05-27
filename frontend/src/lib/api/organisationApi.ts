@@ -81,6 +81,7 @@ export const clientApi = {
     business_type: BusinessType;
     notes?: string;
     auto_detect?: boolean;
+    primary_conversion_objective?: string;
   }) =>
     apiFetch<Client>(`/api/organisations/${orgId}/clients`, { method: 'POST', body: JSON.stringify(data) }),
 

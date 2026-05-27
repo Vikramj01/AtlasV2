@@ -10,8 +10,22 @@ import { ScheduleModal } from '@/components/audit/ScheduleModal';
 import { auditApi } from '@/lib/api/auditApi';
 import { scheduleApi } from '@/lib/api/scheduleApi';
 import type { Schedule } from '@/types/schedule';
+import { OnboardingChecklist } from '@/components/onboarding/OnboardingChecklist';
+import { useOnboardingStore } from '@/store/onboardingStore';
 
 export function DashboardPage() {
+  const { status: onboardingStatus, fetchStatus: fetchOnboarding } = useOnboardingStore();
+
+  useEffect(() => {
+    if (!onboardingStatus) {
+      fetchOnboarding().catch(() => undefined);
+    }
+  }, [onboardingStatus, fetchOnboarding]);
+
+  const showChecklist =
+    onboardingStatus !== null &&
+    !(onboardingStatus.dismissed_at && onboardingStatus.overall_status !== 'complete');
+
   const [audits, setAudits]         = useState<AuditHistoryItem[]>([]);
   const [schedules, setSchedules]   = useState<Schedule[]>([]);
   const [loadingAudits, setLoadingAudits]     = useState(true);
@@ -60,6 +74,9 @@ export function DashboardPage() {
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-8 space-y-8">
+      {/* Onboarding checklist */}
+      {showChecklist && <OnboardingChecklist />}
+
       {/* Page heading */}
       <div>
         <h1 className="text-2xl font-bold tracking-tight">

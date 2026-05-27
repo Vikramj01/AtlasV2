@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent } from '@/components/ui/card';
 import { clientApi } from '@/lib/api/organisationApi';
 import type { ClientWithDetails, BusinessType, PlatformKey } from '@/types/organisation';
@@ -37,7 +38,8 @@ export function ClientSetupWizard({ orgId, onCreated, onClose }: Props) {
   const [step, setStep] = useState(1);
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
-  const [businessType, setBusinessType] = useState<BusinessType>('ecommerce');
+  const [businessType, setBusinessType] = useState<BusinessType | ''>('');
+  const [primaryConversionObjective, setPrimaryConversionObjective] = useState('');
   const [platformIds, setPlatformIds] = useState<Partial<Record<PlatformKey, string>>>({});
   const [pages, setPages] = useState([
     { label: 'Home', url: '', page_type: 'home', stage_order: 1 },
@@ -73,7 +75,13 @@ export function ClientSetupWizard({ orgId, onCreated, onClose }: Props) {
     setIsSubmitting(true);
     setError(null);
     try {
-      const client = await clientApi.create(orgId, { name, website_url: url, business_type: businessType, auto_detect: true });
+      const client = await clientApi.create(orgId, {
+        name,
+        website_url: url,
+        business_type: businessType as BusinessType,
+        auto_detect: true,
+        primary_conversion_objective: primaryConversionObjective.trim() || undefined,
+      });
 
       // Save platform IDs
       const activePlatforms = PLATFORM_FIELDS
@@ -126,7 +134,9 @@ export function ClientSetupWizard({ orgId, onCreated, onClose }: Props) {
                 <Input id="client-url" placeholder="https://acmefurniture.com" value={url} onChange={(e) => setUrl(e.target.value)} />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">Business type</Label>
+                <Label className="text-xs">
+                  Business type <span className="text-red-500">*</span>
+                </Label>
                 <div className="flex flex-wrap gap-2">
                   {BUSINESS_TYPES.map((bt) => (
                     <button
@@ -143,6 +153,22 @@ export function ClientSetupWizard({ orgId, onCreated, onClose }: Props) {
                     </button>
                   ))}
                 </div>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="primary-objective" className="text-xs">
+                  Primary conversion objective <span className="text-muted-foreground">(optional)</span>
+                </Label>
+                <Textarea
+                  id="primary-objective"
+                  placeholder="e.g. Form submissions from enterprise prospects, demo bookings, trial signups"
+                  value={primaryConversionObjective}
+                  onChange={(e) => setPrimaryConversionObjective(e.target.value.slice(0, 500))}
+                  className="text-xs resize-none"
+                  rows={2}
+                />
+                <p className="text-right text-[10px] text-muted-foreground">
+                  {primaryConversionObjective.length}/500
+                </p>
               </div>
             </div>
           )}
@@ -246,6 +272,12 @@ export function ClientSetupWizard({ orgId, onCreated, onClose }: Props) {
                   <span className="text-muted-foreground">Business type</span>
                   <span className="font-medium capitalize">{businessType}</span>
                 </div>
+                {primaryConversionObjective.trim() && (
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-muted-foreground">Primary objective</span>
+                    <span className="font-medium text-right">{primaryConversionObjective.trim()}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Platforms configured</span>
                   <span className="font-medium">
@@ -271,7 +303,7 @@ export function ClientSetupWizard({ orgId, onCreated, onClose }: Props) {
               {step === 1 ? 'Cancel' : '← Back'}
             </Button>
             {step < 4 ? (
-              <Button onClick={() => setStep((s) => s + 1)} disabled={step === 1 && (!name.trim() || !url.trim())}>
+              <Button onClick={() => setStep((s) => s + 1)} disabled={step === 1 && (!name.trim() || !url.trim() || !businessType)}>
                 Next →
               </Button>
             ) : (
