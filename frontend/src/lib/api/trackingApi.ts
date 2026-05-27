@@ -66,6 +66,14 @@ export async function generateShareLink(
   return result.data;
 }
 
+export async function discardPlanningSession(sessionId: string): Promise<void> {
+  await apiFetch(`/api/planning/sessions/${sessionId}`, { method: 'DELETE' });
+}
+
+export async function unlinkJourneyFromClient(journeyId: string): Promise<void> {
+  await apiFetch(`/api/journeys/${journeyId}/client-link`, { method: 'DELETE' });
+}
+
 export async function fetchPublicShare(token: string): Promise<PublicShareResult> {
   const res = await fetch(`${API_BASE}/api/share/${token}`);
   const body = await res.json().catch(() => ({}));

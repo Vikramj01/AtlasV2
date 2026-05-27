@@ -46,6 +46,7 @@ function SetupTrackingHubContent() {
   }
 
   const { client, preconditions, in_progress, deployment, verification } = status;
+  const orgId = currentOrg?.id;
   const subscription_supports_cse = (currentOrg as unknown as Record<string, unknown> | null)?.plan === 'pro'
     || (currentOrg as unknown as Record<string, unknown> | null)?.plan === 'agency';
 
@@ -73,6 +74,7 @@ function SetupTrackingHubContent() {
               intent="plan_from_scratch"
               preconditions={enrichedPreconditions}
               clientId={clientId!}
+              orgId={orgId}
               businessType={client.business_type}
               onPreconditionSaved={() => fetchStatus(clientId!)}
             />
@@ -80,6 +82,7 @@ function SetupTrackingHubContent() {
               intent="audit_existing"
               preconditions={enrichedPreconditions}
               clientId={clientId!}
+              orgId={orgId}
               businessType={client.business_type}
               onPreconditionSaved={() => fetchStatus(clientId!)}
             />
@@ -87,6 +90,7 @@ function SetupTrackingHubContent() {
               intent="inventory"
               preconditions={enrichedPreconditions}
               clientId={clientId!}
+              orgId={orgId}
               businessType={client.business_type}
               onPreconditionSaved={() => fetchStatus(clientId!)}
             />
@@ -140,6 +144,7 @@ function SetupTrackingHubContent() {
                 intent="plan_from_scratch"
                 preconditions={enrichedPreconditions}
                 clientId={clientId!}
+                orgId={orgId}
                 businessType={client.business_type}
                 onPreconditionSaved={() => fetchStatus(clientId!)}
               />
@@ -147,6 +152,7 @@ function SetupTrackingHubContent() {
                 intent="audit_existing"
                 preconditions={enrichedPreconditions}
                 clientId={clientId!}
+                orgId={orgId}
                 businessType={client.business_type}
                 onPreconditionSaved={() => fetchStatus(clientId!)}
               />
@@ -154,6 +160,7 @@ function SetupTrackingHubContent() {
                 intent="inventory"
                 preconditions={enrichedPreconditions}
                 clientId={clientId!}
+                orgId={orgId}
                 businessType={client.business_type}
                 onPreconditionSaved={() => fetchStatus(clientId!)}
               />
@@ -177,6 +184,7 @@ function SetupTrackingHubContent() {
 
           <RedesignDrawer
             clientId={clientId!}
+            orgId={orgId}
             businessType={client.business_type}
             preconditions={enrichedPreconditions}
             hasBaseline={verification.baseline.set}

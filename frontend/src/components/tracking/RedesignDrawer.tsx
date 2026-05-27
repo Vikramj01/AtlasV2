@@ -6,6 +6,7 @@ import type { TrackingPreconditions } from '@/types/tracking';
 
 interface RedesignDrawerProps {
   clientId: string;
+  orgId: string | undefined;
   businessType: string | null;
   preconditions: TrackingPreconditions & { subscription_supports_cse: boolean };
   hasBaseline: boolean;
@@ -14,6 +15,7 @@ interface RedesignDrawerProps {
 
 export function RedesignDrawer({
   clientId,
+  orgId,
   businessType,
   preconditions,
   hasBaseline,
@@ -75,6 +77,7 @@ export function RedesignDrawer({
               intent="plan_from_scratch"
               preconditions={preconditions}
               clientId={clientId}
+              orgId={orgId}
               businessType={businessType}
               onPreconditionSaved={onPreconditionSaved}
             />
@@ -82,6 +85,7 @@ export function RedesignDrawer({
               intent="audit_existing"
               preconditions={preconditions}
               clientId={clientId}
+              orgId={orgId}
               businessType={businessType}
               onPreconditionSaved={onPreconditionSaved}
             />
@@ -89,6 +93,7 @@ export function RedesignDrawer({
               intent="inventory"
               preconditions={preconditions}
               clientId={clientId}
+              orgId={orgId}
               businessType={businessType}
               onPreconditionSaved={onPreconditionSaved}
             />

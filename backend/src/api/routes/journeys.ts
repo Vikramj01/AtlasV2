@@ -187,6 +187,26 @@ router.delete('/:id', async (req: Request, res: Response) => {
   }
 });
 
+// ── DELETE /api/journeys/:id/client-link ──────────────────────────────────────
+
+router.delete('/:id/client-link', async (req: Request, res: Response) => {
+  try {
+    const journey = await getJourney(req.params.id, req.user!.id);
+    if (!journey) return res.status(404).json({ data: null, error: 'Journey not found', message: null });
+
+    const { error } = await supabaseAdmin
+      .from('journeys')
+      .update({ client_id: null })
+      .eq('id', req.params.id);
+
+    if (error) throw new Error(error.message);
+    res.json({ data: { unlinked: true }, error: null, message: null });
+  } catch (err) {
+    logger.error({ err }, 'Unlink journey from client failed');
+    sendInternalError(res, err);
+  }
+});
+
 // ── Stages ────────────────────────────────────────────────────────────────────
 
 router.post('/:id/stages', async (req: Request, res: Response) => {

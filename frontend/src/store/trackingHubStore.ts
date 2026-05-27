@@ -6,6 +6,8 @@ import {
   buildDeliverables,
   exportDeliverable,
   generateShareLink as apiGenerateShareLink,
+  discardPlanningSession,
+  unlinkJourneyFromClient,
 } from '@/lib/api/trackingApi';
 
 interface TrackingHubState {
@@ -19,7 +21,7 @@ interface TrackingHubState {
   isGeneratingShareLink: boolean;
 
   fetchStatus: (clientId: string) => Promise<void>;
-  discardInProgress: (module: 'planning' | 'journey' | 'crawl', id: string) => void;
+  discardInProgress: (module: 'planning' | 'journey' | 'crawl', id: string) => Promise<void>;
   buildAndDownloadDeliverables: (
     clientId: string,
     type: 'gtm_container' | 'datalayer_spec',
@@ -48,7 +50,9 @@ export const useTrackingHubStore = create<TrackingHubState>((set, get) => ({
     }
   },
 
-  discardInProgress: (module, id) => {
+  discardInProgress: async (module, id) => {
+    if (module === 'planning') await discardPlanningSession(id);
+    else if (module === 'journey') await unlinkJourneyFromClient(id);
     const { status } = get();
     if (!status) return;
     const updatedInProgress = { ...status.in_progress };

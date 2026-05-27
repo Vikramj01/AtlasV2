@@ -16,6 +16,7 @@ interface IntentCardProps {
   intent: Intent;
   preconditions: TrackingPreconditions & { subscription_supports_cse: boolean };
   clientId: string;
+  orgId: string | undefined;
   businessType: string | null;
   onPreconditionSaved?: () => void;
 }
@@ -54,7 +55,7 @@ const INTENT_CONFIG: Record<Intent, {
   },
 };
 
-export function IntentCard({ intent, preconditions, clientId, businessType, onPreconditionSaved }: IntentCardProps) {
+export function IntentCard({ intent, preconditions, clientId, orgId, businessType, onPreconditionSaved }: IntentCardProps) {
   const navigate = useNavigate();
   const config = INTENT_CONFIG[intent];
   const { Icon } = config;
@@ -103,7 +104,7 @@ export function IntentCard({ intent, preconditions, clientId, businessType, onPr
       const { data: { session } } = await supabase.auth.getSession();
       if (session) headers['Authorization'] = `Bearer ${session.access_token}`;
       const apiBase = import.meta.env.VITE_API_URL ?? '';
-      const res = await fetch(`${apiBase}/api/organisations/clients/${clientId}`, {
+      const res = await fetch(`${apiBase}/api/organisations/${orgId}/clients/${clientId}`, {
         method: 'PUT',
         headers,
         body: JSON.stringify({ [fixingField]: fieldValue.trim() }),
