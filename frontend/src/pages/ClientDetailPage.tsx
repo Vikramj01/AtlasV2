@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { ExternalLink, Package, Download, Plus, Trash2, AlertTriangle, FileText } from 'lucide-react';
+import { ExternalLink, Package, Download, Plus, Trash2, AlertTriangle, FileText, MapPin } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { clientApi } from '@/lib/api/organisationApi';
 import { strategyApi } from '@/lib/api/strategyApi';
 import { DeploymentWizard } from '@/components/signals/DeploymentWizard';
 import { SkeletonCard } from '@/components/common/SkeletonCard';
+import { SetupTrackingHubPage } from '@/pages/SetupTrackingHubPage';
 import type { ClientWithDetails, ClientDeployment, ClientOutput } from '@/types/organisation';
 import type { StrategyBriefRecord } from '@/types/strategy';
 
@@ -106,7 +108,7 @@ export function ClientDetailPage() {
   }, {});
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-4 p-6">
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
@@ -146,195 +148,212 @@ export function ClientDetailPage() {
 
       {error && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>}
 
-      {/* Ungenerated-outputs nudge */}
-      {deployments.length > 0 && deployments.some((d) => !d.last_generated_at) && !isGenerating && (
-        <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-          <div className="flex-1">
-            <p className="text-sm font-medium text-amber-800">
-              {deployments.filter((d) => !d.last_generated_at).length} pack
-              {deployments.filter((d) => !d.last_generated_at).length !== 1 ? 's' : ''} deployed — outputs not yet generated
-            </p>
-            <p className="mt-0.5 text-xs text-amber-700">
-              Generate outputs to get the GTM container JSON, dataLayer spec, and implementation guide for this client.
-            </p>
-          </div>
-          <Button size="sm" variant="outline" className="shrink-0 border-amber-300 text-amber-800 hover:bg-amber-100" onClick={handleGenerate}>
-            Generate now
-          </Button>
-        </div>
-      )}
+      <Tabs defaultValue="overview">
+        <TabsList>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="tracking" className="flex items-center gap-1.5">
+            <MapPin className="h-3.5 w-3.5" />
+            Set up tracking
+          </TabsTrigger>
+        </TabsList>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Deployed Tracking Kits */}
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <Package className="h-4 w-4 text-muted-foreground" />
-                Deployed tracking kits
-              </CardTitle>
-              <Button size="sm" variant="ghost" className="text-xs h-7" onClick={() => setShowDeployWizard(true)}>
-                <Plus className="h-3 w-3 mr-1" />
-                Add pack
+        <TabsContent value="overview" className="space-y-6 mt-4">
+          {/* Ungenerated-outputs nudge */}
+          {deployments.length > 0 && deployments.some((d) => !d.last_generated_at) && !isGenerating && (
+            <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-amber-800">
+                  {deployments.filter((d) => !d.last_generated_at).length} pack
+                  {deployments.filter((d) => !d.last_generated_at).length !== 1 ? 's' : ''} deployed — outputs not yet generated
+                </p>
+                <p className="mt-0.5 text-xs text-amber-700">
+                  Generate outputs to get the GTM container JSON, dataLayer spec, and implementation guide for this client.
+                </p>
+              </div>
+              <Button size="sm" variant="outline" className="shrink-0 border-amber-300 text-amber-800 hover:bg-amber-100" onClick={handleGenerate}>
+                Generate now
               </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {deployments.length === 0 ? (
-              <div className="py-6 text-center">
-                <p className="text-xs text-muted-foreground">No tracking kits deployed yet.</p>
-                <Button size="sm" variant="outline" className="mt-3 text-xs" onClick={() => setShowDeployWizard(true)}>
-                  Deploy a pack
-                </Button>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {deployments.map((dep) => (
-                  <div key={dep.id} className="flex items-center justify-between rounded-lg border px-3 py-2.5">
-                    <div>
-                      <p className="text-xs font-medium">{dep.pack?.name ?? 'Unknown Pack'}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {dep.pack?.business_type} · v{dep.pack?.version ?? 1}
-                        {dep.last_generated_at && ` · Generated ${new Date(dep.last_generated_at).toLocaleDateString()}`}
-                      </p>
-                    </div>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-7 w-7 text-muted-foreground hover:text-red-600"
-                      onClick={() => handleRemoveDeployment(dep.id)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Platform Configuration */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-semibold">Platform Configuration</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {client.platforms.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-2">No platforms configured.</p>
-            ) : (
-              <div className="space-y-1.5">
-                {client.platforms.filter((p) => p.is_active).map((p) => (
-                  <div key={p.id} className="flex items-center justify-between text-xs">
-                    <span className="font-medium uppercase text-muted-foreground">{p.platform}</span>
-                    <span className="font-mono text-muted-foreground/70">
-                      {p.measurement_id ?? '— not set'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Strategy Briefs */}
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <FileText className="h-4 w-4 text-muted-foreground" />
-              Strategy Briefs
-            </CardTitle>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-xs h-7"
-              onClick={() => navigate('/planning/strategy')}
-            >
-              <Plus className="h-3 w-3 mr-1" />
-              New brief
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {clientBriefs.length === 0 ? (
-            <div className="py-4 text-center">
-              <p className="text-xs text-muted-foreground">No strategy briefs for this client yet.</p>
-              <Button
-                size="sm"
-                variant="outline"
-                className="mt-3 text-xs"
-                onClick={() => navigate('/planning/strategy')}
-              >
-                Create brief
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {clientBriefs.map((brief) => (
-                <div key={brief.id} className="flex items-center justify-between rounded-lg border px-3 py-2.5">
-                  <div>
-                    <p className="text-xs font-medium">
-                      {brief.brief_name ?? 'Untitled brief'}
-                      <span className="ml-1.5 font-normal text-muted-foreground">v{brief.version_no}</span>
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {brief.locked_at
-                        ? `Locked ${new Date(brief.locked_at).toLocaleDateString()}`
-                        : 'Draft'}
-                    </p>
-                  </div>
-                  {brief.locked_at ? (
-                    <Link
-                      to={`/strategy/briefs/${brief.id}`}
-                      className="flex items-center gap-1 text-xs text-primary hover:underline"
-                    >
-                      View <ExternalLink className="h-3 w-3" />
-                    </Link>
-                  ) : (
-                    <Button size="sm" variant="ghost" className="text-xs h-7" onClick={() => navigate('/planning/strategy')}>
-                      Continue
-                    </Button>
-                  )}
-                </div>
-              ))}
             </div>
           )}
-        </CardContent>
-      </Card>
 
-      {/* Generated Outputs */}
-      {Object.keys(latestOutputsByType).length > 0 && (
-        <div>
-          <h2 className="mb-3 text-sm font-semibold">Latest Outputs</h2>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {Object.values(latestOutputsByType).map((output) => (
-              <Card key={output.id}>
-                <CardContent className="flex items-center justify-between p-4">
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl">{OUTPUT_ICONS[output.output_type] ?? '📁'}</span>
-                    <div>
-                      <p className="text-xs font-medium">{OUTPUT_LABELS[output.output_type]}</p>
-                      <p className="text-xs text-muted-foreground">
-                        v{output.version} · {new Date(output.generated_at).toLocaleDateString()}
-                      </p>
-                    </div>
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            {/* Deployed Tracking Kits */}
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                    <Package className="h-4 w-4 text-muted-foreground" />
+                    Deployed tracking kits
+                  </CardTitle>
+                  <Button size="sm" variant="ghost" className="text-xs h-7" onClick={() => setShowDeployWizard(true)}>
+                    <Plus className="h-3 w-3 mr-1" />
+                    Add pack
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {deployments.length === 0 ? (
+                  <div className="py-6 text-center">
+                    <p className="text-xs text-muted-foreground">No tracking kits deployed yet.</p>
+                    <Button size="sm" variant="outline" className="mt-3 text-xs" onClick={() => setShowDeployWizard(true)}>
+                      Deploy a pack
+                    </Button>
                   </div>
-                  <a
-                    href={clientApi.downloadOutputUrl(orgId!, clientId!, output.id)}
-                    download
-                    className="flex items-center gap-1 rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-accent"
-                  >
-                    <Download className="h-3 w-3" />
-                    Download
-                  </a>
-                </CardContent>
-              </Card>
-            ))}
+                ) : (
+                  <div className="space-y-2">
+                    {deployments.map((dep) => (
+                      <div key={dep.id} className="flex items-center justify-between rounded-lg border px-3 py-2.5">
+                        <div>
+                          <p className="text-xs font-medium">{dep.pack?.name ?? 'Unknown Pack'}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {dep.pack?.business_type} · v{dep.pack?.version ?? 1}
+                            {dep.last_generated_at && ` · Generated ${new Date(dep.last_generated_at).toLocaleDateString()}`}
+                          </p>
+                        </div>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7 text-muted-foreground hover:text-red-600"
+                          onClick={() => handleRemoveDeployment(dep.id)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Platform Configuration */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold">Platform Configuration</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {client.platforms.length === 0 ? (
+                  <p className="text-xs text-muted-foreground py-2">No platforms configured.</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {client.platforms.filter((p) => p.is_active).map((p) => (
+                      <div key={p.id} className="flex items-center justify-between text-xs">
+                        <span className="font-medium uppercase text-muted-foreground">{p.platform}</span>
+                        <span className="font-mono text-muted-foreground/70">
+                          {p.measurement_id ?? '— not set'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
-        </div>
-      )}
+
+          {/* Strategy Briefs */}
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-muted-foreground" />
+                  Strategy Briefs
+                </CardTitle>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-xs h-7"
+                  onClick={() => navigate('/planning/strategy')}
+                >
+                  <Plus className="h-3 w-3 mr-1" />
+                  New brief
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {clientBriefs.length === 0 ? (
+                <div className="py-4 text-center">
+                  <p className="text-xs text-muted-foreground">No strategy briefs for this client yet.</p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-3 text-xs"
+                    onClick={() => navigate('/planning/strategy')}
+                  >
+                    Create brief
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {clientBriefs.map((brief) => (
+                    <div key={brief.id} className="flex items-center justify-between rounded-lg border px-3 py-2.5">
+                      <div>
+                        <p className="text-xs font-medium">
+                          {brief.brief_name ?? 'Untitled brief'}
+                          <span className="ml-1.5 font-normal text-muted-foreground">v{brief.version_no}</span>
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {brief.locked_at
+                            ? `Locked ${new Date(brief.locked_at).toLocaleDateString()}`
+                            : 'Draft'}
+                        </p>
+                      </div>
+                      {brief.locked_at ? (
+                        <Link
+                          to={`/strategy/briefs/${brief.id}`}
+                          className="flex items-center gap-1 text-xs text-primary hover:underline"
+                        >
+                          View <ExternalLink className="h-3 w-3" />
+                        </Link>
+                      ) : (
+                        <Button size="sm" variant="ghost" className="text-xs h-7" onClick={() => navigate('/planning/strategy')}>
+                          Continue
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Generated Outputs */}
+          {Object.keys(latestOutputsByType).length > 0 && (
+            <div>
+              <h2 className="mb-3 text-sm font-semibold">Latest Outputs</h2>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {Object.values(latestOutputsByType).map((output) => (
+                  <Card key={output.id}>
+                    <CardContent className="flex items-center justify-between p-4">
+                      <div className="flex items-center gap-3">
+                        <span className="text-2xl">{OUTPUT_ICONS[output.output_type] ?? '📁'}</span>
+                        <div>
+                          <p className="text-xs font-medium">{OUTPUT_LABELS[output.output_type]}</p>
+                          <p className="text-xs text-muted-foreground">
+                            v{output.version} · {new Date(output.generated_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+                      <a
+                        href={clientApi.downloadOutputUrl(orgId!, clientId!, output.id)}
+                        download
+                        className="flex items-center gap-1 rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-accent"
+                      >
+                        <Download className="h-3 w-3" />
+                        Download
+                      </a>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="tracking" className="mt-0 -mx-6">
+          {/* Render hub inline, passing clientId via URL param override */}
+          {clientId && <SetupTrackingHubPage />}
+        </TabsContent>
+      </Tabs>
 
       {showDeployWizard && orgId && (
         <DeploymentWizard

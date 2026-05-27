@@ -136,3 +136,14 @@ export async function createJourneyFromTemplate(
     body: JSON.stringify({ name, implementation_format: implementationFormat }),
   });
 }
+
+export async function saveToLibrary(
+  journeyId: string,
+): Promise<{ signals_created: number; pack_id: string | null }> {
+  const result = await apiFetch<{ data: { signals_created: number; pack_id: string | null }; error: string | null }>(
+    `/api/journeys/${journeyId}/save-to-library`,
+    { method: 'POST' },
+  );
+  if (result.error) throw new Error(result.error);
+  return result.data;
+}
