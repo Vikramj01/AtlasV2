@@ -229,7 +229,7 @@ export interface JourneyStage {
 
 export interface PlatformBreakdown {
   platform: string;
-  status: 'healthy' | 'at_risk' | 'broken';
+  status: 'healthy' | 'at_risk' | 'broken' | 'not_included';
   risk_explanation: string;
   failed_rules: string[];
 }

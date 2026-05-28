@@ -72,10 +72,14 @@ function buildJourneyStages(funnelType: string, resultMap: Map<string, Validatio
     if (stageResults.length === 0) {
       return { stage, status: 'not_run' as RuleStatus, issues: [] };
     }
+    const allSkipped = stageResults.every((r) => r.status === 'skipped');
+    if (allSkipped) {
+      return { stage, status: 'not_run' as RuleStatus, issues: [] };
+    }
     const failedRules = stageResults.filter((r) => r.status === 'fail' || r.status === 'warning');
     const status = worstStatus(stageResults.map((r) => r.status));
     const issues = failedRules.map(
-      (r) => `${r.rule_id.replace(/_/g, ' ').toLowerCase()} — ${r.technical_details.found}`,
+      (r) => `${r.rule_id.replace(/_/g, ' ')} — ${r.technical_details.found}`,
     );
     return { stage, status, issues };
   });
@@ -84,16 +88,26 @@ function buildJourneyStages(funnelType: string, resultMap: Map<string, Validatio
 function buildPlatformBreakdown(resultMap: Map<string, ValidationResult>): PlatformBreakdown[] {
   return Object.entries(PLATFORM_RULES).map(([platform, ruleIds]) => {
     const platformResults = ruleIds.map((id) => resultMap.get(id)).filter((r): r is ValidationResult => !!r);
+    const totalCount = platformResults.length;
+
+    if (totalCount === 0) {
+      return {
+        platform,
+        status: 'not_included' as const,
+        risk_explanation: 'Not included in this scan — no checks were run for this platform.',
+        failed_rules: [],
+      };
+    }
+
     const failedRules = platformResults
       .filter((r) => r.status === 'fail')
       .map((r) => r.rule_id);
     const failCount = failedRules.length;
-    const totalCount = platformResults.length;
     const platformStatus =
       failCount === 0 ? 'healthy' : failCount <= totalCount / 2 ? 'at_risk' : 'broken';
     const riskExplanation =
       failCount === 0
-        ? `All ${totalCount} ${platform.replace('_', ' ')} checks passed.`
+        ? `All ${totalCount} checks passed.`
         : `${failCount} of ${totalCount} checks failed. ${PLATFORM_RISK_MESSAGES[platform] ?? ''}`;
     return { platform, status: platformStatus, risk_explanation: riskExplanation, failed_rules: failedRules };
   });

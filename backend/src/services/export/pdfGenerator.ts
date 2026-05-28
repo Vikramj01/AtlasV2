@@ -40,7 +40,7 @@ const PLATFORM_LABELS: Record<string, string> = {
 function statusColor(status: string): string {
   if (status === 'healthy' || status === 'pass') return C.healthy;
   if (status === 'at_risk' || status === 'warning' || status === 'partially_broken') return C.atRisk;
-  if (status === 'not_run' || status === 'skipped') return '#9CA3AF';
+  if (status === 'not_run' || status === 'skipped' || status === 'not_included') return '#9CA3AF';
   return C.broken;
 }
 
@@ -147,13 +147,14 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
     sectionHeading('Scores at a Glance');
 
     const cardW = (CONTENT_W - 10) / 2;
-    const cardH = 58;
+    const cardH = 72;
     const gridStartY = doc.y;
 
     const scoreCards = [
       {
         label: 'Conversion Signal Health',
         value: `${scores.conversion_signal_health}/100`,
+        description: 'Overall signal quality (100 = fully healthy)',
         color: scores.conversion_signal_health >= 80 ? C.healthy
              : scores.conversion_signal_health >= 60 ? C.atRisk
              : C.broken,
@@ -161,6 +162,11 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
       {
         label: 'Attribution Risk',
         value: scores.attribution_risk_level,
+        description: scores.attribution_risk_level === 'Low'
+          ? 'Ad attribution is well-configured — low is best'
+          : scores.attribution_risk_level === 'Medium'
+          ? 'Some attribution gaps present — low is best'
+          : 'Significant attribution gaps — low is best',
         color: scores.attribution_risk_level === 'Low' ? C.healthy
              : scores.attribution_risk_level === 'Medium' ? C.atRisk
              : C.broken,
@@ -168,6 +174,11 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
       {
         label: 'Optimization Strength',
         value: scores.optimization_strength,
+        description: scores.optimization_strength === 'Strong'
+          ? 'Sufficient signals for smart bidding — strong is best'
+          : scores.optimization_strength === 'Moderate'
+          ? 'Partial signals available — strong is best'
+          : 'Insufficient signals for smart bidding — strong is best',
         color: scores.optimization_strength === 'Strong' ? C.healthy
              : scores.optimization_strength === 'Moderate' ? C.atRisk
              : C.broken,
@@ -175,6 +186,11 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
       {
         label: 'Data Consistency',
         value: scores.data_consistency_score,
+        description: scores.data_consistency_score === 'High'
+          ? 'Data is consistent across platforms — high is best'
+          : scores.data_consistency_score === 'Medium'
+          ? 'Some data inconsistencies detected — high is best'
+          : 'Significant data inconsistencies detected — high is best',
         color: scores.data_consistency_score === 'High' ? C.healthy
              : scores.data_consistency_score === 'Medium' ? C.atRisk
              : C.broken,
@@ -190,6 +206,8 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
         .text(card.label, cx + 12, cy + 10, { width: cardW - 20 });
       doc.fillColor(C.darkText).fontSize(18).font('Helvetica-Bold')
         .text(card.value, cx + 12, cy + 28);
+      doc.fillColor(C.mutedText).fontSize(7.5).font('Helvetica')
+        .text(card.description, cx + 12, cy + 53, { width: cardW - 24 });
     });
 
     doc.y = gridStartY + 2 * (cardH + 8) + 6;
@@ -296,10 +314,10 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
 
       if (stage.status === 'not_run') {
         doc.fillColor('#9CA3AF').fontSize(9).font('Helvetica')
-          .text('Not tested — scan was not run for this stage', LEFT + 26, doc.y);
+          .text('Not included in this scan — this stage was excluded from the audit.', LEFT + 26, doc.y);
       } else if (stage.issues.length === 0) {
         doc.fillColor(C.healthy).fontSize(9).font('Helvetica')
-          .text('All checks passed for this stage', LEFT + 26, doc.y);
+          .text('All checks passed for this stage.', LEFT + 26, doc.y);
       } else {
         stage.issues.forEach((issue) => {
           doc.fillColor(C.broken).fontSize(9).font('Helvetica')
@@ -319,6 +337,7 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
     sectionHeading('Platform Health Summary');
 
     for (const platform of report.platform_breakdown) {
+      const isNotIncluded = platform.status === 'not_included';
       const hasFailedRules = platform.failed_rules.length > 0;
       const cardHeight = hasFailedRules ? 90 : 74;
       if (needsNewPage(cardHeight + 12)) {
@@ -330,14 +349,15 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
       const platY = doc.y;
       const pc = statusColor(platform.status);
       const platName = PLATFORM_LABELS[platform.platform] ?? formatLabel(platform.platform);
+      const pillLabel = isNotIncluded ? 'Not Included' : formatLabel(platform.status);
 
       doc.fillColor(C.bgLight).rect(LEFT, platY, CONTENT_W, cardHeight).fill();
       doc.fillColor(pc).rect(LEFT, platY, 4, cardHeight).fill();
-      doc.fillColor(C.darkText).fontSize(12).font('Helvetica-Bold')
+      doc.fillColor(isNotIncluded ? C.lightText : C.darkText).fontSize(12).font('Helvetica-Bold')
         .text(platName, LEFT + 14, platY + 11);
-      pill(formatLabel(platform.status), pc, LEFT + CONTENT_W - 82, platY + 11);
-      doc.fillColor(C.midText).fontSize(9).font('Helvetica')
-        .text(platform.risk_explanation, LEFT + 14, platY + 32, { width: CONTENT_W - 100 });
+      pill(pillLabel, pc, LEFT + CONTENT_W - 100, platY + 11);
+      doc.fillColor(isNotIncluded ? C.mutedText : C.midText).fontSize(9).font('Helvetica')
+        .text(platform.risk_explanation, LEFT + 14, platY + 32, { width: CONTENT_W - 110 });
 
       if (hasFailedRules) {
         const ruleList = platform.failed_rules.slice(0, 4)
@@ -437,6 +457,11 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
     const issueCount = runtimeIssues.length;
     sectionHeading(`Runtime Action Items \u2014 ${issueCount} issue${issueCount === 1 ? '' : 's'} found`);
 
+    // Build lookup so each issue card can pull evidence from validation results
+    const resultByRuleId = new Map(
+      report.technical_appendix.validation_results.map((r) => [r.rule_id, r]),
+    );
+
     if (issueCount === 0) {
       doc.fillColor(C.healthy).fontSize(11).font('Helvetica')
         .text('No runtime issues found \u2014 all checks passed.', LEFT, doc.y);
@@ -445,7 +470,10 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
     for (let i = 0; i < runtimeIssues.length; i++) {
       const issue = runtimeIssues[i];
       const sevColor = SEVERITY_COLORS[issue.severity] ?? C.lightText;
-      const CARD_H = 94;
+      const vr = resultByRuleId.get(issue.rule_id);
+      const evidenceItems = (vr?.technical_details?.evidence ?? []).slice(0, 3);
+      // Base card height; add room for evidence lines
+      const CARD_H = 104 + evidenceItems.length * 13;
 
       if (needsNewPage(CARD_H + 14)) {
         doc.addPage();
@@ -485,6 +513,29 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
       doc.fillColor(C.midText).fontSize(9).font('Helvetica')
         .text(`Fix: ${fix}`, LEFT + 14, issY + 66, { width: CONTENT_W - 28 });
 
+      // Evidence — what was observed during the scan
+      if (evidenceItems.length > 0) {
+        let evY = issY + 86;
+        doc.fillColor(C.mutedText).fontSize(7.5).font('Helvetica-Bold')
+          .text('Evidence observed during scan:', LEFT + 14, evY);
+        evY += 11;
+        for (const ev of evidenceItems) {
+          const evText = ev.length > 130 ? ev.slice(0, 127) + '…' : ev;
+          doc.fillColor(C.mutedText).fontSize(7.5).font('Helvetica')
+            .text(`• ${evText}`, LEFT + 18, evY, { width: CONTENT_W - 36 });
+          evY += 13;
+        }
+      } else if (vr) {
+        // Fallback: show the observed value if no structured evidence array
+        const foundText = vr.technical_details.found
+          ? `Observed: ${vr.technical_details.found.slice(0, 110)}`
+          : '';
+        if (foundText) {
+          doc.fillColor(C.mutedText).fontSize(7.5).font('Helvetica')
+            .text(foundText, LEFT + 14, issY + 86, { width: CONTENT_W - 28 });
+        }
+      }
+
       doc.y = issY + CARD_H + 10;
     }
 
@@ -509,7 +560,7 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
         .text('Rule', COL_RULE_X + 4, hY + 5)
         .text('Layer', COL_LAYER_X + 4, hY + 5)
         .text('Status', COL_STATUS_X + 4, hY + 5)
-        .text('Severity', COL_SEVERITY_X + 4, hY + 5);
+        .text('Impact Level \u2020', COL_SEVERITY_X + 4, hY + 5);
       doc.y = hY + ROW_H;
     }
 
@@ -528,7 +579,10 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
       if (i % 2 === 0) doc.fillColor(C.bgAlt).rect(LEFT, rowY, CONTENT_W, ROW_H).fill();
 
       const sc   = statusColor(result.status);
-      const sevc = SEVERITY_COLORS[result.severity] ?? C.lightText;
+      // Passed checks: show impact level greyed out (it indicates risk if it were to fail, not current state)
+      const sevc = result.status === 'pass'
+        ? C.mutedText
+        : SEVERITY_COLORS[result.severity] ?? C.lightText;
 
       doc.fillColor(C.midText).fontSize(7.5).font('Helvetica')
         .text(result.rule_id.replace(/_/g, ' '), COL_RULE_X + 4, rowY + 5, { width: 176 });
@@ -536,14 +590,22 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
         .text(result.validation_layer.replace(/_/g, ' '), COL_LAYER_X + 4, rowY + 5, { width: 118 });
       doc.fillColor(sc).font('Helvetica-Bold')
         .text(result.status.toUpperCase(), COL_STATUS_X + 4, rowY + 5, { width: 54 });
-      doc.fillColor(sevc)
+      doc.fillColor(sevc).font(result.status === 'pass' ? 'Helvetica' : 'Helvetica-Bold')
         .text(result.severity.toUpperCase(), COL_SEVERITY_X + 4, rowY + 5, { width: 70 });
 
       doc.y = rowY + ROW_H;
     });
 
+    // Appendix legend
+    doc.moveDown(0.8);
+    doc.fillColor(C.mutedText).fontSize(7.5).font('Helvetica')
+      .text(
+        '\u2020 Impact Level = the risk this check carries if it were to fail. A CRITICAL check that shows PASS is a positive result \u2014 the critical check is green.',
+        LEFT, doc.y, { width: CONTENT_W },
+      );
+
     // Footer
-    doc.moveDown(1.5);
+    doc.moveDown(0.8);
     doc.fillColor(C.mutedText).fontSize(8).font('Helvetica')
       .text(
         'Generated by Atlas Signal Health Platform  \u00b7  atlas.io',
