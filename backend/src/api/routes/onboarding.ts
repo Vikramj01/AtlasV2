@@ -38,7 +38,8 @@ async function isAdmin(orgId: string, userId: string): Promise<boolean> {
     .eq('organisation_id', orgId)
     .eq('user_id', userId)
     .maybeSingle();
-  return (data as { role: string } | null)?.role === 'admin';
+  const role = (data as { role: string } | null)?.role;
+  return role === 'admin' || role === 'owner';
 }
 
 // ── GET /api/onboarding/status ────────────────────────────────────────────────
