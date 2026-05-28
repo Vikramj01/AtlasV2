@@ -327,7 +327,11 @@ export function SettingsPage() {
               size="sm"
               className="text-xs"
               onClick={async () => {
-                await resetOnboarding();
+                try {
+                  await resetOnboarding();
+                } catch {
+                  // proceed to getting-started even if reset fails
+                }
                 navigate('/getting-started');
               }}
             >
