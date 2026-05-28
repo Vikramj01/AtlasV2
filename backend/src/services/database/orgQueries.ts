@@ -12,11 +12,20 @@ import type {
 
 export async function createOrganisation(
   ownerId: string,
-  data: CreateOrgRequest,
+  data: CreateOrgRequest & { org_type?: 'agency' | 'brand'; website_url?: string },
 ): Promise<Organisation> {
+  const orgType = data.org_type ?? 'agency';
+
   const { data: org, error } = await supabase
     .from('organisations')
-    .insert({ owner_id: ownerId, name: data.name, slug: data.slug, plan: 'agency' })
+    .insert({
+      owner_id: ownerId,
+      name: data.name,
+      slug: data.slug,
+      plan: 'agency',
+      org_type: orgType,
+      signup_website_url: data.website_url ?? null,
+    })
     .select('*')
     .single();
 
@@ -34,6 +43,35 @@ export async function createOrganisation(
     }),
     supabase.from('profiles').update({ organisation_id: orgId }).eq('id', ownerId),
   ]);
+
+  // For brand orgs, auto-create the primary client and link it back
+  if (orgType === 'brand' && data.website_url) {
+    const { data: client } = await supabase
+      .from('clients')
+      .insert({
+        organisation_id: orgId,
+        name: data.name,
+        website_url: data.website_url,
+        business_type: 'ecommerce',
+        status: 'active',
+      })
+      .select('id')
+      .single();
+
+    if (client) {
+      await supabase
+        .from('organisations')
+        .update({ primary_client_id: (client as { id: string }).id })
+        .eq('id', orgId);
+
+      const { data: updatedOrg } = await supabase
+        .from('organisations')
+        .select('*')
+        .eq('id', orgId)
+        .single();
+      return (updatedOrg ?? org) as Organisation;
+    }
+  }
 
   return org as Organisation;
 }

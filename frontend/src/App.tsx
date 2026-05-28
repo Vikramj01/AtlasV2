@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ProtectedRoute } from '@/components/layout/ProtectedRoute';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -6,6 +6,9 @@ import { AppErrorBoundary, SectionErrorBoundary } from '@/components/common/Erro
 import { SkeletonCard } from '@/components/common/SkeletonCard';
 import { PlanGate } from '@/components/common/PlanGate';
 import { StrategyGateGuard } from '@/components/strategy/StrategyGateGuard';
+import { BrandRedirectGuard } from '@/components/layout/BrandRedirectGuard';
+import { supabase } from '@/lib/supabase';
+import { dashboardApi } from '@/lib/api/dashboardApi';
 
 const LoginPage                 = lazy(() => import('@/pages/LoginPage').then(m => ({ default: m.LoginPage })));
 const ResetPasswordPage         = lazy(() => import('@/pages/ResetPasswordPage').then(m => ({ default: m.ResetPasswordPage })));
@@ -51,7 +54,19 @@ const GettingStartedPage          = lazy(() => import('@/pages/GettingStartedPag
 
 const PageFallback = () => <SkeletonCard variant="page" />;
 
+function useRecordLogin() {
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_IN') {
+        dashboardApi.recordLogin().catch(() => undefined);
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+}
+
 export default function App() {
+  useRecordLogin();
   return (
     <AppErrorBoundary>
       <BrowserRouter>
@@ -107,7 +122,7 @@ export default function App() {
                 <Route path="/admin" element={<SectionErrorBoundary label="Admin"><AdminPage /></SectionErrorBoundary>} />
                 {/* Agency Workspaces */}
                 <Route path="/org/:orgId" element={<SectionErrorBoundary label="Organisation"><OrgDashboardPage /></SectionErrorBoundary>} />
-                <Route path="/org/:orgId/clients" element={<SectionErrorBoundary label="Clients"><ClientListPage /></SectionErrorBoundary>} />
+                <Route path="/org/:orgId/clients" element={<SectionErrorBoundary label="Clients"><BrandRedirectGuard><ClientListPage /></BrandRedirectGuard></SectionErrorBoundary>} />
                 <Route path="/org/:orgId/clients/:clientId" element={<SectionErrorBoundary label="Client detail"><ClientDetailPage /></SectionErrorBoundary>} />
                 <Route path="/clients/:clientId/tracking" element={<SectionErrorBoundary label="Set up tracking"><SetupTrackingHubPage /></SectionErrorBoundary>} />
                 <Route path="/org/:orgId/signals" element={<SectionErrorBoundary label="Tracking map"><SignalLibraryPage /></SectionErrorBoundary>} />

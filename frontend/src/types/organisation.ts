@@ -9,6 +9,9 @@ export interface Organisation {
   slug: string;
   owner_id: string;
   plan: 'pro' | 'agency';
+  org_type: 'agency' | 'brand';
+  primary_client_id: string | null;
+  signup_website_url: string | null;
   created_at: string;
   updated_at: string;
   member_count?: number;
@@ -32,10 +35,19 @@ export interface Client {
   website_url: string;
   business_type: BusinessType;
   detected_platform: string | null;
+  primary_conversion_objective: string | null;
+  template_source_client_id: string | null;
+  template_source_pack_id: string | null;
   status: ClientStatus;
   notes: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface OrgClientSummary {
+  total_clients: number;
+  clients_with_deployments: number;
+  agency_template_packs: number;
 }
 
 export interface ClientPlatform {

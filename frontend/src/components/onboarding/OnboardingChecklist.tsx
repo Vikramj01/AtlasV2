@@ -111,9 +111,32 @@ export function OnboardingChecklist() {
   if (isLoading) return <SkeletonCard variant="list" />;
   if (error || !status) return null;
 
-  const firstClientId = status.first_client?.id;
-  const phase1Defs = STEP_DEFS.filter((d) => d.phase === 1);
-  const phase2Defs = STEP_DEFS.filter((d) => d.phase === 2);
+  const isBrand = status.org_type === 'brand';
+  const firstClientId = status.primary_client_id ?? status.first_client?.id;
+  // For brand orgs, adapt certain step labels/descriptions
+  const effectiveDefs = isBrand
+    ? STEP_DEFS.map((d) => {
+        if (d.id === '2.1') {
+          return {
+            ...d,
+            title: 'Your website is set up',
+            description: 'Your primary website was automatically added when you created your workspace.',
+            ctaLabel: 'View tracking hub',
+            ctaHref: firstClientId ? () => `/clients/${firstClientId}/tracking` : d.ctaHref,
+          };
+        }
+        if (d.id === '2.2') {
+          return {
+            ...d,
+            ctaHref: (id?: string) => id ? `/connections?client_id=${id}` : '/connections',
+          };
+        }
+        return d;
+      })
+    : STEP_DEFS;
+
+  const phase1Defs = effectiveDefs.filter((d) => d.phase === 1);
+  const phase2Defs = effectiveDefs.filter((d) => d.phase === 2);
 
   // Find first incomplete step (for "current" highlight)
   const firstIncompleteId = STEP_DEFS.find((d) => status.steps[d.id]?.status === 'incomplete')?.id;

@@ -13,6 +13,7 @@ import type { Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { supabaseAdmin } from '@/services/database/supabase';
 import { sendPasswordResetEmail, sendSignupConfirmationEmail } from '@/services/email/emailService';
+import { authMiddleware } from '@/api/middleware/authMiddleware';
 import { env } from '@/config/env';
 import logger from '@/utils/logger';
 
@@ -151,6 +152,34 @@ router.post('/forgot-password', resetLimiter, async (req: Request, res: Response
   } catch (err) {
     logger.error({ err }, '[auth] Unexpected error in forgot-password');
     return res.json(OK_RESPONSE);
+  }
+});
+
+// ── POST /api/auth/record-login ───────────────────────────────────────────────
+// Requires auth. Call once per session on app init to update login timestamps.
+
+router.post('/record-login', authMiddleware, async (req: Request, res: Response) => {
+  const userId = req.user!.id;
+  try {
+    // Read current last_login_at before updating
+    const { data: profile } = await supabaseAdmin
+      .from('profiles')
+      .select('last_login_at')
+      .eq('id', userId)
+      .single();
+
+    const previous_login_at = profile ? (profile as { last_login_at: string | null }).last_login_at : null;
+    const last_login_at = new Date().toISOString();
+
+    await supabaseAdmin
+      .from('profiles')
+      .update({ previous_login_at, last_login_at })
+      .eq('id', userId);
+
+    res.json({ data: { last_login_at, previous_login_at }, error: null, message: null });
+  } catch (err) {
+    logger.error({ err, userId }, '[auth] record-login failed');
+    res.status(500).json({ data: null, error: 'Failed to record login', message: null });
   }
 });
 

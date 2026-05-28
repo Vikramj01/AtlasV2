@@ -17,6 +17,8 @@ export interface OnboardingStatus {
   steps: Record<string, StepState>;
   phase_1_complete: boolean;
   phase_2_complete: boolean;
+  org_type: 'agency' | 'brand';
+  primary_client_id: string | null;
 }
 
 interface StoredStepEntry {
@@ -25,8 +27,8 @@ interface StoredStepEntry {
 }
 
 export async function getOnboardingStatus(orgId: string): Promise<OnboardingStatus> {
-  // Load persisted state and first client concurrently
-  const [stateResult, firstClientResult] = await Promise.all([
+  // Load persisted state, first client, and org details concurrently
+  const [stateResult, firstClientResult, orgResult] = await Promise.all([
     supabaseAdmin
       .from('organisation_onboarding_state')
       .select('steps_state, dismissed_at, completed_at')
@@ -40,12 +42,19 @@ export async function getOnboardingStatus(orgId: string): Promise<OnboardingStat
       .order('created_at', { ascending: true })
       .limit(1)
       .maybeSingle(),
+    supabaseAdmin
+      .from('organisations')
+      .select('org_type, primary_client_id')
+      .eq('id', orgId)
+      .maybeSingle(),
   ]);
 
   const stepsState = (stateResult.data?.steps_state ?? {}) as Record<string, StoredStepEntry>;
   const dismissed_at = stateResult.data?.dismissed_at ?? null;
   const stored_completed_at = stateResult.data?.completed_at ?? null;
   const firstClient = firstClientResult.data as { id: string; name: string; website_url: string | null } | null;
+  const orgType = ((orgResult.data as { org_type?: string } | null)?.org_type ?? 'agency') as 'agency' | 'brand';
+  const primaryClientId = (orgResult.data as { primary_client_id?: string | null } | null)?.primary_client_id ?? null;
 
   // Run all derivation queries in parallel
   const [
@@ -298,5 +307,7 @@ export async function getOnboardingStatus(orgId: string): Promise<OnboardingStat
     steps,
     phase_1_complete,
     phase_2_complete,
+    org_type: orgType,
+    primary_client_id: primaryClientId,
   };
 }

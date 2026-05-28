@@ -1,16 +1,19 @@
-/**
- * ClientSetupWizard — 4-step modal wizard for onboarding a new client.
- * Steps: 1) Name & URL  2) Site detection  3) Platform IDs  4) Page URLs
- */
-
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { Copy, Layers, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent } from '@/components/ui/card';
 import { clientApi } from '@/lib/api/organisationApi';
+import { signalApi } from '@/lib/api/signalApi';
+import { cn } from '@/lib/utils';
 import type { ClientWithDetails, BusinessType, PlatformKey } from '@/types/organisation';
+import type { SignalPack } from '@/types/signal';
+
+const TOTAL_STEPS = 5;
+
+type StartingMode = 'scratch' | 'copy_client' | 'use_pack';
 
 const BUSINESS_TYPES: { value: BusinessType; label: string }[] = [
   { value: 'ecommerce', label: 'Ecommerce' },
@@ -36,11 +39,25 @@ interface Props {
 
 export function ClientSetupWizard({ orgId, onCreated, onClose }: Props) {
   const [step, setStep] = useState(1);
+
+  // Step 1: Starting point
+  const [startingMode, setStartingMode] = useState<StartingMode>('scratch');
+  const [sourceClientId, setSourceClientId] = useState('');
+  const [sourcePackId, setSourcePackId] = useState('');
+  const [existingClients, setExistingClients] = useState<ClientWithDetails[]>([]);
+  const [agencyTemplatePacks, setAgencyTemplatePacks] = useState<SignalPack[]>([]);
+  const [loadingOptions, setLoadingOptions] = useState(false);
+
+  // Step 2: Client details
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
   const [businessType, setBusinessType] = useState<BusinessType | ''>('');
   const [primaryConversionObjective, setPrimaryConversionObjective] = useState('');
+
+  // Step 3: Platforms
   const [platformIds, setPlatformIds] = useState<Partial<Record<PlatformKey, string>>>({});
+
+  // Step 4: Pages
   const [pages, setPages] = useState([
     { label: 'Home', url: '', page_type: 'home', stage_order: 1 },
     { label: 'Product', url: '', page_type: 'product', stage_order: 2 },
@@ -48,6 +65,22 @@ export function ClientSetupWizard({ orgId, onCreated, onClose }: Props) {
     { label: 'Checkout', url: '', page_type: 'checkout', stage_order: 4 },
     { label: 'Confirmation', url: '', page_type: 'confirmation', stage_order: 5 },
   ]);
+
+  // Submit state
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Load existing clients and agency template packs when wizard opens
+  useEffect(() => {
+    setLoadingOptions(true);
+    Promise.all([
+      clientApi.list(orgId).catch(() => [] as ClientWithDetails[]),
+      signalApi.listPacks(orgId).catch(() => [] as SignalPack[]),
+    ]).then(([clientList, packList]) => {
+      setExistingClients(clientList);
+      setAgencyTemplatePacks(packList.filter((p) => p.is_agency_template));
+    }).finally(() => setLoadingOptions(false));
+  }, [orgId]);
 
   function addProductPage() {
     setPages((pp) => {
@@ -68,8 +101,10 @@ export function ClientSetupWizard({ orgId, onCreated, onClose }: Props) {
     });
   }
 
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const step1Valid =
+    startingMode === 'scratch' ||
+    (startingMode === 'copy_client' && !!sourceClientId) ||
+    (startingMode === 'use_pack' && !!sourcePackId);
 
   async function handleFinish() {
     setIsSubmitting(true);
@@ -81,9 +116,10 @@ export function ClientSetupWizard({ orgId, onCreated, onClose }: Props) {
         business_type: businessType as BusinessType,
         auto_detect: true,
         primary_conversion_objective: primaryConversionObjective.trim() || undefined,
+        apply_pack_id: startingMode === 'use_pack' ? sourcePackId : undefined,
+        copy_signals_from_client_id: startingMode === 'copy_client' ? sourceClientId : undefined,
       });
 
-      // Save platform IDs
       const activePlatforms = PLATFORM_FIELDS
         .filter((f) => platformIds[f.key]?.trim())
         .map((f) => ({ platform: f.key, is_active: true, measurement_id: platformIds[f.key]!.trim() }));
@@ -91,7 +127,6 @@ export function ClientSetupWizard({ orgId, onCreated, onClose }: Props) {
         await clientApi.setPlatforms(orgId, client.id, activePlatforms);
       }
 
-      // Save pages
       const validPages = pages.filter((p) => p.url.trim());
       if (validPages.length > 0) {
         await clientApi.setPages(orgId, client.id, validPages);
@@ -105,24 +140,129 @@ export function ClientSetupWizard({ orgId, onCreated, onClose }: Props) {
     }
   }
 
+  const startingModeOptions: Array<{ mode: StartingMode; icon: React.ReactNode; title: string; description: string; available: boolean }> = [
+    {
+      mode: 'scratch',
+      icon: <Sparkles className="h-4 w-4" />,
+      title: 'Start from scratch',
+      description: 'Build this client\'s tracking setup from the ground up.',
+      available: true,
+    },
+    {
+      mode: 'copy_client',
+      icon: <Copy className="h-4 w-4" />,
+      title: 'Copy from a client',
+      description: 'Clone an existing client\'s signal pack configuration.',
+      available: existingClients.length > 0,
+    },
+    {
+      mode: 'use_pack',
+      icon: <Layers className="h-4 w-4" />,
+      title: 'Use an agency template',
+      description: 'Apply a saved template pack from your signal library.',
+      available: agencyTemplatePacks.length > 0,
+    },
+  ];
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <Card className="w-full max-w-lg">
         <CardContent className="p-6">
           {/* Progress */}
           <div className="mb-6 flex items-center gap-2">
-            {[1, 2, 3, 4].map((s) => (
+            {Array.from({ length: TOTAL_STEPS }).map((_, i) => (
               <div
-                key={s}
-                className={`h-1.5 flex-1 rounded-full transition-colors ${
-                  s <= step ? 'bg-primary' : 'bg-muted'
-                }`}
+                key={i}
+                className={cn(
+                  'h-1.5 flex-1 rounded-full transition-colors',
+                  i + 1 <= step ? 'bg-primary' : 'bg-muted',
+                )}
               />
             ))}
           </div>
 
-          {/* Step 1: Name & URL */}
+          {/* Step 1: Starting point */}
           {step === 1 && (
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-base font-bold">Starting point</h2>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  How would you like to set up this client&apos;s tracking?
+                </p>
+              </div>
+
+              {loadingOptions ? (
+                <div className="space-y-2">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="h-16 rounded-lg bg-muted animate-pulse" />
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {startingModeOptions.map((opt) => (
+                    <button
+                      key={opt.mode}
+                      type="button"
+                      disabled={!opt.available}
+                      onClick={() => { if (opt.available) setStartingMode(opt.mode); }}
+                      className={cn(
+                        'w-full rounded-lg border p-3 text-left transition-all',
+                        startingMode === opt.mode
+                          ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                          : 'border-border hover:border-foreground/30',
+                        !opt.available && 'opacity-40 cursor-not-allowed',
+                      )}
+                    >
+                      <div className="flex items-start gap-3">
+                        <span className="mt-0.5 text-muted-foreground">{opt.icon}</span>
+                        <div>
+                          <p className="text-sm font-medium">{opt.title}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">{opt.description}</p>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Source client picker */}
+              {startingMode === 'copy_client' && existingClients.length > 0 && (
+                <div className="space-y-1">
+                  <Label className="text-xs">Copy settings from</Label>
+                  <select
+                    value={sourceClientId}
+                    onChange={(e) => setSourceClientId(e.target.value)}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  >
+                    <option value="">Select a client…</option>
+                    {existingClients.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Agency template pack picker */}
+              {startingMode === 'use_pack' && agencyTemplatePacks.length > 0 && (
+                <div className="space-y-1">
+                  <Label className="text-xs">Apply template pack</Label>
+                  <select
+                    value={sourcePackId}
+                    onChange={(e) => setSourcePackId(e.target.value)}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  >
+                    <option value="">Select a template…</option>
+                    {agencyTemplatePacks.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Step 2: Client details */}
+          {step === 2 && (
             <div className="space-y-4">
               <h2 className="text-base font-bold">Client details</h2>
               <div className="space-y-1">
@@ -173,8 +313,8 @@ export function ClientSetupWizard({ orgId, onCreated, onClose }: Props) {
             </div>
           )}
 
-          {/* Step 2: Platform IDs */}
-          {step === 2 && (
+          {/* Step 3: Platform IDs */}
+          {step === 3 && (
             <div className="space-y-4">
               <div>
                 <h2 className="text-base font-bold">Platform IDs</h2>
@@ -197,8 +337,8 @@ export function ClientSetupWizard({ orgId, onCreated, onClose }: Props) {
             </div>
           )}
 
-          {/* Step 3: Page URLs */}
-          {step === 3 && (
+          {/* Step 4: Page URLs */}
+          {step === 4 && (
             <div className="space-y-4">
               <div>
                 <h2 className="text-base font-bold">Page URLs</h2>
@@ -255,11 +395,21 @@ export function ClientSetupWizard({ orgId, onCreated, onClose }: Props) {
             </div>
           )}
 
-          {/* Step 4: Review */}
-          {step === 4 && (
+          {/* Step 5: Review */}
+          {step === 5 && (
             <div className="space-y-4">
               <h2 className="text-base font-bold">Review & create</h2>
               <div className="space-y-2 rounded-lg border p-4 text-xs">
+                {startingMode !== 'scratch' && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Starting point</span>
+                    <span className="font-medium">
+                      {startingMode === 'copy_client'
+                        ? `Copied from ${existingClients.find((c) => c.id === sourceClientId)?.name ?? 'client'}`
+                        : `Template: ${agencyTemplatePacks.find((p) => p.id === sourcePackId)?.name ?? 'pack'}`}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Client name</span>
                   <span className="font-medium">{name}</span>
@@ -302,8 +452,14 @@ export function ClientSetupWizard({ orgId, onCreated, onClose }: Props) {
             <Button variant="ghost" onClick={step === 1 ? onClose : () => setStep((s) => s - 1)}>
               {step === 1 ? 'Cancel' : '← Back'}
             </Button>
-            {step < 4 ? (
-              <Button onClick={() => setStep((s) => s + 1)} disabled={step === 1 && (!name.trim() || !url.trim() || !businessType)}>
+            {step < TOTAL_STEPS ? (
+              <Button
+                onClick={() => setStep((s) => s + 1)}
+                disabled={
+                  (step === 1 && !step1Valid) ||
+                  (step === 2 && (!name.trim() || !url.trim() || !businessType))
+                }
+              >
                 Next →
               </Button>
             ) : (

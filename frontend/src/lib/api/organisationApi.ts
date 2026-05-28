@@ -8,10 +8,12 @@ import type {
   ClientPage,
   ClientDeployment,
   ClientOutput,
+  OrgClientSummary,
   MemberRole,
   BusinessType,
   PlatformKey,
 } from '@/types/organisation';
+import type { SignalPack } from '@/types/signal';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
 
@@ -37,7 +39,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 // ── Organisations ──────────────────────────────────────────────────────────────
 
 export const organisationApi = {
-  create: (data: { name: string; slug: string }) =>
+  create: (data: { name: string; slug: string; org_type?: 'agency' | 'brand'; website_url?: string }) =>
     apiFetch<Organisation>('/api/organisations', { method: 'POST', body: JSON.stringify(data) }),
 
   list: () =>
@@ -70,6 +72,9 @@ export const organisationApi = {
 
   removeMember: (orgId: string, memberId: string) =>
     apiFetch<{ deleted: boolean }>(`/api/organisations/${orgId}/members/${memberId}`, { method: 'DELETE' }),
+
+  getPrimaryClient: () =>
+    apiFetch<{ data: Client | null; error: null; message: null }>('/api/organisations/me/primary-client'),
 };
 
 // ── Clients ────────────────────────────────────────────────────────────────────
@@ -82,11 +87,22 @@ export const clientApi = {
     notes?: string;
     auto_detect?: boolean;
     primary_conversion_objective?: string;
+    apply_pack_id?: string;
+    copy_signals_from_client_id?: string;
   }) =>
     apiFetch<Client>(`/api/organisations/${orgId}/clients`, { method: 'POST', body: JSON.stringify(data) }),
 
   list: (orgId: string) =>
     apiFetch<{ clients: ClientWithDetails[] }>(`/api/organisations/${orgId}/clients`).then((r) => r.clients),
+
+  summary: (orgId: string) =>
+    apiFetch<OrgClientSummary>(`/api/organisations/${orgId}/clients/summary`),
+
+  saveAsAgencyTemplate: (orgId: string, clientId: string, data: { name: string; description?: string }) =>
+    apiFetch<SignalPack>(`/api/organisations/${orgId}/clients/${clientId}/save-as-pack`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 
   get: (orgId: string, clientId: string) =>
     apiFetch<ClientWithDetails & { deployments: ClientDeployment[]; outputs: ClientOutput[] }>(

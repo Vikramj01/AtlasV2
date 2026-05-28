@@ -12,15 +12,23 @@ import { scheduleApi } from '@/lib/api/scheduleApi';
 import type { Schedule } from '@/types/schedule';
 import { OnboardingChecklist } from '@/components/onboarding/OnboardingChecklist';
 import { useOnboardingStore } from '@/store/onboardingStore';
+import { useOrganisationStore } from '@/store/organisationStore';
+import { ReturningUserDashboard } from '@/components/dashboard/ReturningUserDashboard';
 
 export function DashboardPage() {
   const { status: onboardingStatus, fetchStatus: fetchOnboarding } = useOnboardingStore();
+  const { currentOrg } = useOrganisationStore();
 
   useEffect(() => {
     if (!onboardingStatus) {
       fetchOnboarding().catch(() => undefined);
     }
   }, [onboardingStatus, fetchOnboarding]);
+
+  // Show the returning user dashboard when in an org context and onboarding is complete
+  if (currentOrg && onboardingStatus?.overall_status === 'complete') {
+    return <ReturningUserDashboard />;
+  }
 
   const showChecklist =
     onboardingStatus !== null &&
