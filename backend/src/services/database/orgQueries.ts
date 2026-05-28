@@ -41,7 +41,7 @@ export async function createOrganisation(
       role: 'owner',
       accepted_at: new Date().toISOString(),
     }),
-    supabase.from('profiles').update({ organisation_id: orgId }).eq('id', ownerId),
+    supabase.from('profiles').update({ organization_id: orgId }).eq('id', ownerId),
   ]);
 
   // For brand orgs, auto-create the primary client and link it back
