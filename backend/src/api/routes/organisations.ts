@@ -32,18 +32,69 @@ router.use(authMiddleware);
 
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const { name, slug } = req.body as { name?: string; slug?: string };
+    const { name, slug, org_type, website_url } = req.body as {
+      name?: string; slug?: string; org_type?: string; website_url?: string;
+    };
     if (!name || !slug) {
       return res.status(400).json({ error: 'name and slug are required' });
     }
     if (!/^[a-z0-9-]+$/.test(slug)) {
       return res.status(400).json({ error: 'slug must be lowercase alphanumeric with hyphens only' });
     }
-    const org = await createOrganisation(req.user!.id, { name, slug });
+    if (org_type && org_type !== 'agency' && org_type !== 'brand') {
+      return res.status(400).json({ error: 'org_type must be agency or brand' });
+    }
+    const org = await createOrganisation(req.user!.id, {
+      name,
+      slug,
+      org_type: org_type as 'agency' | 'brand' | undefined,
+      website_url,
+    });
     res.status(201).json(org);
   } catch (err) {
     const msg = err instanceof Error ? err.message : '';
     if (msg.includes('unique')) return res.status(409).json({ error: 'Slug already taken' });
+    sendInternalError(res, err);
+  }
+});
+
+// ── GET /api/organisations/me/primary-client ──────────────────────────────────
+// Returns the primary client for the calling user's brand org, or null.
+// Must be registered before /:orgId to avoid routing collision.
+
+router.get('/me/primary-client', async (req: Request, res: Response) => {
+  const userId = req.user!.id;
+  try {
+    const { data: profile } = await supabaseAdmin
+      .from('profiles')
+      .select('organisation_id')
+      .eq('id', userId)
+      .single();
+
+    if (!profile) {
+      return res.status(404).json({ data: null, error: 'Profile not found', message: null });
+    }
+
+    const orgId = (profile as { organisation_id: string | null }).organisation_id;
+    if (!orgId) return res.json({ data: null, error: null, message: null });
+
+    const { data: org } = await supabaseAdmin
+      .from('organisations')
+      .select('primary_client_id')
+      .eq('id', orgId)
+      .single();
+
+    const primaryClientId = org ? (org as { primary_client_id: string | null }).primary_client_id : null;
+    if (!primaryClientId) return res.json({ data: null, error: null, message: null });
+
+    const { data: client } = await supabaseAdmin
+      .from('clients')
+      .select('*')
+      .eq('id', primaryClientId)
+      .single();
+
+    res.json({ data: client ?? null, error: null, message: null });
+  } catch (err) {
     sendInternalError(res, err);
   }
 });

@@ -73,3 +73,52 @@ export interface ActivityResponse {
   error: null;
   message: null;
 }
+
+// ── PRD-004: Returning User Dashboard ─────────────────────────────────────────
+
+export interface DashboardAlertItem {
+  id: string;
+  source_table: string;
+  client_id: string | null;
+  client_name: string | null;
+  module: 'ihc' | 'dqm' | 'reconciliation' | 'health';
+  severity: 'critical' | 'high' | 'medium' | 'low' | 'info';
+  title: string;
+  description: string;
+  created_at: string;
+  is_new: boolean;
+  is_reviewed: boolean;
+  action_url: string;
+}
+
+export interface DashboardClientSummaryItem {
+  id: string;
+  name: string;
+  setup_status: 'not_started' | 'in_progress' | 'complete';
+  health_level: 'healthy' | 'warning' | 'critical' | 'unknown';
+  signals_count: number;
+  platforms_connected: string[];
+  last_verified_at: string | null;
+  open_findings_count: number;
+}
+
+export interface OrgMetrics {
+  total_clients: number;
+  total_signals_monitored: number;
+  capi_events_24h: number;
+  avg_match_quality_7d: number | null;
+  clients_with_issues: number;
+}
+
+export interface DashboardDelta {
+  since_label: string;
+  since_timestamp: string;
+  new_alerts_count: number;
+}
+
+export interface OrgDashboardSummary {
+  delta: DashboardDelta;
+  alerts: DashboardAlertItem[];
+  clients: DashboardClientSummaryItem[];
+  org_metrics: OrgMetrics;
+}

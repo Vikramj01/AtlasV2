@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase';
-import type { DashboardResponse, AtlasScore, NextAction, ActivityResponse } from '@/types/dashboard';
+import type { DashboardResponse, AtlasScore, NextAction, ActivityResponse, OrgDashboardSummary } from '@/types/dashboard';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
 
@@ -34,4 +34,21 @@ export const dashboardApi = {
     apiFetch<ActivityResponse>('/api/dashboard/activity'),
   getSetupProgress: () =>
     apiFetch<{ data: { completedSteps: string[] } }>('/api/dashboard/setup-progress'),
+
+  fetchSummary: (since?: string) =>
+    apiFetch<{ data: OrgDashboardSummary; error: null; message: null }>(
+      `/api/dashboard/summary${since ? `?since=${encodeURIComponent(since)}` : ''}`,
+    ),
+
+  reviewAlerts: (reviews: Array<{ source_table: string; source_id: string }>) =>
+    apiFetch<{ data: { reviewed_count: number }; error: null; message: null }>(
+      '/api/dashboard/alerts/review',
+      { method: 'POST', body: JSON.stringify({ reviews }) },
+    ),
+
+  recordLogin: () =>
+    apiFetch<{ data: { last_login_at: string; previous_login_at: string | null }; error: null; message: null }>(
+      '/api/auth/record-login',
+      { method: 'POST' },
+    ),
 };

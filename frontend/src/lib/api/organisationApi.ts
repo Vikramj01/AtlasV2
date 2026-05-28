@@ -39,7 +39,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 // ── Organisations ──────────────────────────────────────────────────────────────
 
 export const organisationApi = {
-  create: (data: { name: string; slug: string }) =>
+  create: (data: { name: string; slug: string; org_type?: 'agency' | 'brand'; website_url?: string }) =>
     apiFetch<Organisation>('/api/organisations', { method: 'POST', body: JSON.stringify(data) }),
 
   list: () =>
@@ -72,6 +72,9 @@ export const organisationApi = {
 
   removeMember: (orgId: string, memberId: string) =>
     apiFetch<{ deleted: boolean }>(`/api/organisations/${orgId}/members/${memberId}`, { method: 'DELETE' }),
+
+  getPrimaryClient: () =>
+    apiFetch<{ data: Client | null; error: null; message: null }>('/api/organisations/me/primary-client'),
 };
 
 // ── Clients ────────────────────────────────────────────────────────────────────

@@ -7,6 +7,8 @@ export interface Organisation {
   owner_id: string;
   plan: 'pro' | 'agency';
   org_type: 'agency' | 'brand';
+  primary_client_id: string | null;
+  signup_website_url: string | null;
   created_at: string;
   updated_at: string;
 }

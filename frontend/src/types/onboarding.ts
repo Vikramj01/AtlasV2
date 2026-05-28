@@ -15,4 +15,6 @@ export interface OnboardingStatus {
   steps: Record<string, OnboardingStep>;
   phase_1_complete: boolean;
   phase_2_complete: boolean;
+  org_type: 'agency' | 'brand';
+  primary_client_id: string | null;
 }

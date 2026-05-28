@@ -54,13 +54,21 @@ const PERSONAL_NAV_GROUPS: { label: string; items: NavItemDef[] }[] = [
   },
 ];
 
-function orgNav(orgId: string): NavItemDef[] {
+function orgNav(orgId: string, orgType: 'agency' | 'brand' = 'agency', primaryClientId?: string | null): NavItemDef[] {
+  const isBrand = orgType === 'brand';
+
+  const clientsItem: NavItemDef = isBrand && primaryClientId
+    ? { label: 'My Tracking', to: `/clients/${primaryClientId}/tracking`, Icon: MapPin }
+    : { label: 'Clients', to: `/org/${orgId}/clients`, Icon: Building2 };
+
   return [
     { label: 'Overview',                                                                                          to: `/org/${orgId}`,          Icon: Home },
-    { label: 'Clients',                                                                                           to: `/org/${orgId}/clients`,      Icon: Building2 },
-    { label: 'Data Manager',                                                                                       to: `/org/${orgId}/data-manager`, Icon: BarChart2 },
-    { label: 'Tracking Map',                                                                                      to: `/org/${orgId}/signals`,  Icon: MapPin },
-    { label: 'Templates',                                                                                         to: `/org/${orgId}/packs`,    Icon: LayoutGrid },
+    clientsItem,
+    ...(isBrand ? [] : [
+      { label: 'Data Manager', to: `/org/${orgId}/data-manager`, Icon: BarChart2 } as NavItemDef,
+      { label: 'Tracking Map', to: `/org/${orgId}/signals`,      Icon: MapPin }    as NavItemDef,
+      { label: 'Templates',    to: `/org/${orgId}/packs`,        Icon: LayoutGrid } as NavItemDef,
+    ]),
     { label: SECTION_LABELS.planningMode.primary,   technicalLabel: SECTION_LABELS.planningMode.technical,   to: '/planning',              Icon: MapPin },
     { label: SECTION_LABELS.auditEngine.primary,    technicalLabel: SECTION_LABELS.auditEngine.technical,    to: '/dashboard',             Icon: Clock },
     { label: SECTION_LABELS.channelInsights.primary,technicalLabel: SECTION_LABELS.channelInsights.technical,to: '/channels',              Icon: GitBranch },
@@ -139,6 +147,8 @@ function CreateOrgDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
   const [slugTouched, setSlugTouched] = useState(false);
+  const [orgType, setOrgType] = useState<'agency' | 'brand'>('agency');
+  const [websiteUrl, setWebsiteUrl] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -151,18 +161,30 @@ function CreateOrgDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
     if (!slugTouched) setSlug(toSlug(v));
   }
 
+  const canSubmit =
+    name.trim() && slug.trim() && (orgType === 'agency' || websiteUrl.trim());
+
   async function handleSubmit(e: { preventDefault: () => void }) {
     e.preventDefault();
-    if (!name.trim() || !slug.trim()) return;
+    if (!canSubmit) return;
     setSaving(true);
     setError(null);
     try {
-      const org = await organisationApi.create({ name: name.trim(), slug: slug.trim() });
+      const org = await organisationApi.create({
+        name: name.trim(),
+        slug: slug.trim(),
+        org_type: orgType,
+        website_url: orgType === 'brand' ? websiteUrl.trim() : undefined,
+      });
       const updated = await organisationApi.list();
       setOrganisations(updated);
       setCurrentOrg(org);
       onOpenChange(false);
-      navigate(`/org/${org.id}/clients`);
+      if (orgType === 'brand' && org.primary_client_id) {
+        navigate(`/clients/${org.primary_client_id}/tracking`);
+      } else {
+        navigate(`/org/${org.id}/clients`);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create workspace');
     } finally {
@@ -176,30 +198,71 @@ function CreateOrgDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
         <DialogHeader>
           <DialogTitle>Create your workspace</DialogTitle>
           <DialogDescription>
-            Set up an agency workspace to manage clients and link their tracking work.
+            Set up a workspace to manage your tracking work.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 pt-2">
+          {/* Org type selector */}
+          <div className="space-y-1.5">
+            <Label>Workspace type</Label>
+            <div className="grid grid-cols-2 gap-2">
+              {(['agency', 'brand'] as const).map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => setOrgType(type)}
+                  className={`rounded-lg border px-4 py-3 text-left text-sm transition-colors ${
+                    orgType === type
+                      ? 'border-[#1B2A4A] bg-[#EEF1F7] font-medium text-[#1B2A4A]'
+                      : 'border-border text-muted-foreground hover:border-[#1B2A4A]/40'
+                  }`}
+                >
+                  <span className="font-medium block">
+                    {type === 'agency' ? 'Agency' : 'In-house marketer'}
+                  </span>
+                  <span className="text-xs mt-0.5 block">
+                    {type === 'agency' ? 'Managing multiple client sites' : 'Tracking my own website'}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="space-y-1.5">
             <Label htmlFor="org-name">Workspace name</Label>
             <Input
               id="org-name"
-              placeholder="e.g. Spi3l Agency"
+              placeholder={orgType === 'brand' ? 'e.g. Acme Corp' : 'e.g. Spi3l Agency'}
               value={name}
               onChange={(e) => handleNameChange(e.target.value)}
               autoFocus
             />
           </div>
+
+          {orgType === 'brand' && (
+            <div className="space-y-1.5">
+              <Label htmlFor="org-website">Your website URL</Label>
+              <Input
+                id="org-website"
+                type="url"
+                placeholder="https://example.com"
+                value={websiteUrl}
+                onChange={(e) => setWebsiteUrl(e.target.value)}
+              />
+            </div>
+          )}
+
           <div className="space-y-1.5">
             <Label htmlFor="org-slug">URL slug</Label>
             <Input
               id="org-slug"
-              placeholder="e.g. spi3l-agency"
+              placeholder="e.g. acme-corp"
               value={slug}
               onChange={(e) => { setSlugTouched(true); setSlug(toSlug(e.target.value)); }}
             />
             <p className="text-xs text-muted-foreground">Lowercase letters, numbers and hyphens only.</p>
           </div>
+
           {error && <p className="text-xs text-red-600">{error}</p>}
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={saving}>
@@ -207,7 +270,7 @@ function CreateOrgDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
             </Button>
             <Button
               type="submit"
-              disabled={saving || !name.trim() || !slug.trim()}
+              disabled={saving || !canSubmit}
               className="bg-[#1B2A4A] text-white hover:bg-[#1B2A4A]/90"
             >
               {saving ? 'Creating…' : 'Create workspace'}
@@ -285,7 +348,7 @@ export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
               {currentOrg?.name ?? 'Organisation'}
             </p>
             <div className="space-y-0.5">
-              {orgNav(activeOrgId).map((item) => (
+              {orgNav(activeOrgId, currentOrg?.org_type, currentOrg?.primary_client_id).map((item) => (
                 <SidebarNavItem key={item.to} {...item} />
               ))}
             </div>
