@@ -93,6 +93,7 @@ export function Step2PageDiscovery() {
         business_type: draftSetup.business_type!,
         business_description: draftSetup.business_description,
         selected_platforms: draftSetup.selected_platforms!,
+        client_id: draftSetup.client_id,
         page_urls: urls,
       });
 

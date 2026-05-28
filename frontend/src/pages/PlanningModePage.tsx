@@ -234,7 +234,7 @@ export function PlanningModePage() {
       </header>
 
       {/* ── Step content ──────────────────────────────────────────────────── */}
-      <main className={`flex-1 ${currentStep >= 4 && currentStep <= 5 ? 'overflow-hidden' : 'overflow-y-auto'}`}>
+      <main className={`flex-1 ${currentStep === 4 ? 'overflow-hidden' : 'overflow-y-auto'}`}>
         {currentStep === 1 && <Step1PlanningSetup />}
         {currentStep === 2 && <Step2PageDiscovery />}
         {currentStep === 3 && <Step3ScanningProgress />}
