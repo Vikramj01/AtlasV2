@@ -150,7 +150,7 @@ router.post('/sessions', planningLimiter, strategyGate, async (req: Request, res
       business_type: business_type as CreateSessionInput['business_type'],
       business_description,
       selected_platforms: selected_platforms ?? ['ga4'],
-      client_id: client_id ?? null,
+      client_id: client_id ?? undefined,
       pages: [],
     });
 
