@@ -97,7 +97,7 @@ export function SignalLibraryPage() {
   }
 
   useEffect(() => {
-    if (!orgId) return;
+    if (!orgId) { setIsLoading(false); return; }
     signalApi.listSignals(orgId)
       .then(setSignals)
       .finally(() => setIsLoading(false));

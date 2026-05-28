@@ -42,7 +42,10 @@ export const useOrganisationStore = create<OrganisationState>((set) => ({
   ...initialState,
 
   setCurrentOrg: (org) => set({ currentOrg: org }),
-  setOrganisations: (orgs) => set({ organisations: orgs }),
+  setOrganisations: (orgs) => set((state) => ({
+    organisations: orgs,
+    currentOrg: state.currentOrg ?? orgs[0] ?? null,
+  })),
   setClients: (clients) => set({ clients }),
   setMembers: (members) => set({ members }),
 
