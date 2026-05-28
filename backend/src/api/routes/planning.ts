@@ -101,7 +101,7 @@ router.post('/detect', detectRateLimit, async (req: Request, res: Response) => {
 
 router.post('/sessions', planningLimiter, strategyGate, async (req: Request, res: Response) => {
   try {
-    const { website_url, business_type, business_description, selected_platforms, pages, page_urls } =
+    const { website_url, business_type, business_description, selected_platforms, client_id, pages, page_urls } =
       req.body as CreateSessionInput & {
         pages?: Array<{ url: string; page_type?: string }>;
         page_urls?: string[];
@@ -150,6 +150,7 @@ router.post('/sessions', planningLimiter, strategyGate, async (req: Request, res
       business_type: business_type as CreateSessionInput['business_type'],
       business_description,
       selected_platforms: selected_platforms ?? ['ga4'],
+      client_id: client_id ?? null,
       pages: [],
     });
 
@@ -721,10 +722,10 @@ router.post('/sessions/:id/save-to-library', async (req: Request, res: Response)
     if (!orgId) {
       const { data: profileRow } = await supabaseAdmin
         .from('profiles')
-        .select('organisation_id')
+        .select('organization_id')
         .eq('id', req.user!.id)
         .single();
-      orgId = (profileRow as { organisation_id: string } | null)?.organisation_id ?? '';
+      orgId = (profileRow as { organization_id: string } | null)?.organization_id ?? '';
     }
 
     if (!orgId) return res.status(403).json({
