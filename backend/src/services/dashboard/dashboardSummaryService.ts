@@ -352,7 +352,7 @@ export async function getOrgMetrics(orgId: string): Promise<OrgMetrics> {
       .eq('organisation_id', orgId)
       .eq('status', 'active'),
 
-    supabase.rpc('count_org_signals', { p_org_id: orgId }).single().catch(() => ({ data: null })),
+    supabase.rpc('count_org_signals', { p_org_id: orgId }).single().then((r) => r, () => ({ data: null })),
 
     supabase
       .from('capi_events')
@@ -367,7 +367,7 @@ export async function getOrgMetrics(orgId: string): Promise<OrgMetrics> {
       .gte('event_date', sevenDaysAgo.slice(0, 10))
       .not('match_quality_score', 'is', null),
 
-    supabase.rpc('count_clients_with_open_findings', { p_org_id: orgId }).single().catch(() => ({ data: null })),
+    supabase.rpc('count_clients_with_open_findings', { p_org_id: orgId }).single().then((r) => r, () => ({ data: null })),
   ]);
 
   // Compute avg match quality from the rows (RPC may not exist; fall back gracefully)
