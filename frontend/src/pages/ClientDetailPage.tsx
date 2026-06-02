@@ -7,11 +7,16 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { clientApi } from '@/lib/api/organisationApi';
 import { strategyApi } from '@/lib/api/strategyApi';
+import { enrichmentApi } from '@/lib/api/enrichmentApi';
 import { DeploymentWizard } from '@/components/signals/DeploymentWizard';
 import { SkeletonCard } from '@/components/common/SkeletonCard';
 import { SetupTrackingHubPage } from '@/pages/SetupTrackingHubPage';
+import { EnrichmentScoreBadge } from '@/components/enrichment/EnrichmentScoreBadge';
+import { EnrichmentWarningBanner } from '@/components/enrichment/EnrichmentWarningBanner';
+import { IdentityConfigStep } from '@/components/enrichment/IdentityConfigStep';
 import type { ClientWithDetails, ClientDeployment, ClientOutput } from '@/types/organisation';
 import type { StrategyBriefRecord } from '@/types/strategy';
+import type { ClientIdentityConfig, ClientEnrichmentScore, SaveIdentityConfigRequest } from '@/types/enrichment';
 
 const OUTPUT_LABELS: Record<string, string> = {
   gtm_container: 'GTM Container JSON',
@@ -44,6 +49,8 @@ export function ClientDetailPage() {
   const [isRunningAudit, setIsRunningAudit] = useState(false);
   const [showDeployWizard, setShowDeployWizard] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [identityConfig, setIdentityConfig] = useState<ClientIdentityConfig | null>(null);
+  const [enrichmentScore, setEnrichmentScore] = useState<ClientEnrichmentScore | null>(null);
 
   async function load() {
     if (!orgId || !clientId) return;
@@ -51,6 +58,10 @@ export function ClientDetailPage() {
     setClient(data);
     setDeployments(data.deployments ?? []);
     setOutputs(data.outputs ?? []);
+
+    // Load enrichment data in parallel, non-blocking
+    enrichmentApi.getIdentityConfig(orgId, clientId).then(setIdentityConfig).catch(() => null);
+    enrichmentApi.getEnrichmentScore(orgId, clientId).then(setEnrichmentScore).catch(() => null);
   }
 
   useEffect(() => {
@@ -151,6 +162,12 @@ export function ClientDetailPage() {
       <Tabs defaultValue="overview">
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="enrichment" className="flex items-center gap-1.5">
+            Enrichment
+            {enrichmentScore !== null && enrichmentScore.overall < 60 && (
+              <AlertTriangle className="h-3 w-3 text-amber-500" />
+            )}
+          </TabsTrigger>
           <TabsTrigger value="tracking" className="flex items-center gap-1.5">
             <MapPin className="h-3.5 w-3.5" />
             Set up tracking
@@ -345,6 +362,64 @@ export function ClientDetailPage() {
                   </Card>
                 ))}
               </div>
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="enrichment" className="space-y-6 mt-4">
+          {/* Warning banner when enrichment score is low or missing */}
+          {(enrichmentScore === null || enrichmentScore.overall < 40) && deployments.length > 0 && (
+            <EnrichmentWarningBanner
+              missingCount={deployments.length}
+              onConfigure={() => {}}
+            />
+          )}
+
+          {/* Score overview */}
+          {enrichmentScore ? (
+            <EnrichmentScoreBadge score={enrichmentScore} />
+          ) : (
+            <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
+              Configure identity and signal enrichment below to see your estimated match quality score.
+            </div>
+          )}
+
+          {/* Identity configuration */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-semibold">Identity Configuration</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {orgId && clientId && (
+                <IdentityConfigStep
+                  clientId={clientId}
+                  initialConfig={identityConfig}
+                  onSave={async (req: SaveIdentityConfigRequest) => {
+                    const saved = await enrichmentApi.saveIdentityConfig(orgId, clientId, req);
+                    setIdentityConfig(saved);
+                    // Refresh score
+                    enrichmentApi.getEnrichmentScore(orgId, clientId).then(setEnrichmentScore).catch(() => null);
+                  }}
+                  mode="standalone"
+                  onValidatePath={(path) =>
+                    enrichmentApi.validateFieldPath(orgId, clientId, { field_path: path })
+                  }
+                />
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Re-generate CTA when enrichment saved after last output */}
+          {outputs.length > 0 && identityConfig?.updated_at && outputs.some((o) =>
+            identityConfig.updated_at && new Date(identityConfig.updated_at) > new Date(o.generated_at ?? 0),
+          ) && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 flex items-center justify-between gap-4">
+              <p className="text-sm text-blue-800">
+                Identity config updated — re-generate outputs to include enriched variable references in your GTM container.
+              </p>
+              <Button size="sm" variant="outline" onClick={handleGenerate} disabled={isGenerating}>
+                {isGenerating ? 'Generating…' : 'Re-generate outputs'}
+              </Button>
             </div>
           )}
         </TabsContent>
