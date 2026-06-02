@@ -11,6 +11,7 @@ Atlas is a marketing signal optimisation and tracking infrastructure platform fo
 - **Journey Builder** — Multi-step wizard generating GTM container JSON (client + server-side). Business types: ecommerce, lead_gen, b2b_saas, marketplace, nonprofit, **b2b_lead_gen** (7-stage B2B template). Journey stages carry `proxy_value_gbp` (monetary value for value-based bidding) and `buyer_intent_level` (problem_aware / solution_aware / vendor_aware).
 - **AI Planning Mode** — Browserbase/Playwright site scan → Claude analysis → tagging recommendations, PII detection, GTM container + implementation guide. Implementation guide includes GCLID/UTM cookie capture, hidden form fields, CRM mapping, and Enhanced Conversions for Leads guidance. Approved recommendations save to the Signal Library via `POST /sessions/:id/save-to-library`.
 - **Signal Library** — Accessible at `/signals`. `signals` + `signal_packs` tables with system and org-scoped custom signals. Per-event specs, platform mappings, composable packs with deployment wizard.
+- **Signal Enrichment Configuration** — Per-client identity field mapping (`client_identity_configs`) and per-deployment signal field mapping (`signal_enrichment_configs`). Composite enrichment score (0–100, 50% identity / 50% signal average), Meta EMQ estimate, Google match rate estimate. 12-rule validation engine (IDENT_01–05, SIG_01–05, CROSS_01–02). Enrichment injected into CAPI pipeline as step 0a (non-fatal). GTM container generation includes identity DataLayer Variables. `IdentityConfigStep` embedded in ClientSetupWizard (step 4) and ClientDetailPage Enrichment tab. `SignalEnrichmentStep` embedded in DeploymentWizard (step 2). `capi_providers` extended with `identity_config_id`, `enrichment_score`, `enrichment_validated_at`.
 - **Conversion Strategy Gate** — Multi-objective wizard at `/planning/strategy`. Claude produces CONFIRM/AUGMENT/REPLACE verdicts with measurement governance tier (primary/secondary/suppression), platform-specific action types, and OCI nudge for CRM-stage events. PDF brief export + web view at `/strategy/briefs/:id`. Brief must be locked before site scan.
 - **Platform Connections** — OAuth connections to Google Ads (manager/child/standalone), Meta, GA4, and GTM. Encrypted tokens (AES-256-GCM). Supports account discovery under manager connections.
 - **Platform Reconciliation** — Config + volume + delivery diff runs against connected platforms. Findings tracking with severity, tolerance config per client, daily event stats time-series. Triggered manually or post-brief-lock.
@@ -77,6 +78,8 @@ AtlasV2/
 │   │   ├── organisation/ # ClientCard, ClientSetupWizard, MemberManagement, OrgSwitcher
 │   │   ├── planning/     # AnnotatedScreenshot, GTMContainerPreview, RecommendationCard, Step1–7
 │   │   ├── reconciliation/ # ReconciliationFindings, FindingCard, DiffViewer
+│   │   ├── enrichment/   # FieldMappingRow, EnrichmentScoreBadge, EnrichmentWarningBanner,
+│   │   │                 # IdentityConfigStep, SignalEnrichmentStep
 │   │   ├── signals/      # SignalCard, PackCard, DeploymentWizard
 │   │   ├── strategy/     # StrategyGateBanner, StrategyGateGuard, Step1Define, Step2Verdict,
 │   │   │                 # ObjectivesList, BriefLocked
@@ -87,7 +90,7 @@ AtlasV2/
 │   │   │                 # developerApi, enricherApi, exportApi, healthApi, ihcApi,
 │   │   │                 # journeyApi, offlineConversionsApi, organisationApi, planningApi,
 │   │   │                 # proxyEventApi, readinessApi, reconciliationApi, scheduleApi,
-│   │   │                 # signalApi, signalEventsApi, strategyApi, taxonomyApi
+│   │   │                 # signalApi, signalEventsApi, strategyApi, taxonomyApi, enrichmentApi
 │   │   ├── capi/         # adapters/ (meta, google, google-offline, linkedin, tiktok stub)
 │   │   ├── consent/      # banner-generator.ts, cmp-listeners.ts, consent-engine.ts, gcm-mapper.ts
 │   │   └── shared/       # crypto.ts
@@ -108,19 +111,19 @@ AtlasV2/
 │   │                     # ChannelInsightsPage, ClientListPage,
 │   │                     # SettingsPage, BillingSuccessPage, BillingCancelPage, ResetPasswordPage
 │   ├── store/            # auditStore, billingStore, capiStore, connectionStore, consentStore,
-│   │                     # crawlStore, dashboardStore, journeyWizardStore,
+│   │                     # crawlStore, dashboardStore, enrichmentStore, journeyWizardStore,
 │   │                     # offlineConversionsStore, organisationStore, planningStore,
 │   │                     # reconciliationStore, signalStore, strategyStore, taxonomyStore
 │   └── types/            # audit, capi, channel, connections, consent, crawl, dashboard,
-│                         # health, ihc, journey, offline-conversions, organisation, planning,
-│                         # schedule, signal, signal-tracking, strategy, taxonomy, usage
+│                         # enrichment, health, ihc, journey, offline-conversions, organisation,
+│                         # planning, schedule, signal, signal-tracking, strategy, taxonomy, usage
 │
 ├── backend/src/
 │   ├── api/
 │   │   ├── middleware/   # authMiddleware, planGuard, rateLimiter, planningLimiter, errorHandler
 │   │   └── routes/       # admin, audits, auth, billing, capi, channels, checklist, clients,
 │   │                     # connections, consent, crawl, dashboard, dataManager, developer,
-│   │                     # dqm, enricher, exports, gtm, health, ihc, journeys,
+│   │                     # dqm, enricher, enrichment, exports, gtm, health, ihc, journeys,
 │   │                     # namingConventions, offlineConversions, organisations, planning,
 │   │                     # readiness, reconciliation, schedules, signalEvents, signals,
 │   │                     # strategy, taxonomy
@@ -138,6 +141,8 @@ AtlasV2/
 │       │                 # baselineManager, findingsWriter
 │       ├── dqm/          # dqmOrchestrator, dmaPolling
 │       ├── enricher/     # enricherService
+│       ├── enrichment/   # enrichmentConfigService.ts, enrichmentValidationRules.ts;
+│       │                 # __tests__/ (enrichmentConfigService.test.ts, enrichmentValidationRules.test.ts)
 │       ├── scoring/      # scoring engine
 │       ├── strategy/     # evaluationPrompt.ts, briefPdfGenerator.ts
 │       ├── crawl/        # crawlJob.ts, pageDiscovery.ts, signalDetector.ts, signalWriter.ts
@@ -149,7 +154,7 @@ AtlasV2/
 │       └── [others]/     # audit/, browserbase/, channels/, health/, journey/, stripe/,
 │                         # signals/, export/, reporting/, developer/
 │
-└── supabase/migrations/  # 47 migrations (20260317 → 20260620)
+└── supabase/migrations/  # 51 migrations (20260317 → 20260703)
 ```
 
 ---
@@ -262,6 +267,19 @@ mv_signal_aggregates_daily  (materialized view — org/provider/event aggregates
 signal_export_jobs  (id, organization_id, status, filters JSONB, storage_path,
                      download_url, expires_at, ...)
 
+-- Signal Enrichment (20260703)
+signal_enrichment_configs  (id, deployment_id, signal_key, value_config JSONB,
+                             currency_config JSONB, dedup_config JSONB, content_config JSONB,
+                             meta_enabled, google_enabled, linkedin_enabled,
+                             validation_score, validation_warnings JSONB, last_validated_at,
+                             UNIQUE(deployment_id, signal_key))
+client_identity_configs    (id, client_id UNIQUE, email_field, phone_field, first_name_field,
+                             last_name_field, postal_code_field, country_field, external_id_field,
+                             fbc_field, fbp_field, gclid_field, wbraid_field, gbraid_field,
+                             auto_capture_ip, auto_capture_ua, enabled_identifiers TEXT[])
+-- capi_providers extended: identity_config_id UUID, enrichment_score INTEGER, enrichment_validated_at TIMESTAMPTZ
+-- signals.platform_mappings extended: identity_fields arrays for purchase/generate_lead/begin_checkout/sign_up
+
 -- Health (extended across phases)
 health_scores      (+ platform_acceptance_score, gtg_active, dma_coverage_score)
 health_snapshots   (+ platform_acceptance_score)
@@ -285,6 +303,7 @@ health_snapshots   (+ platform_acceptance_score)
 | `/api/data-manager` | dataManager.ts | GET /clients-summary (agency only) |
 | `/api/dqm` | dqm.ts | GET /status |
 | `/api/enricher` | enricher.ts | POST /runs; GET /runs |
+| `/api/enrichment` | enrichment.ts | GET /clients/:id/identity, /clients/:id/score; PUT /clients/:id/identity; POST /clients/:id/identity/validate, /deployments/:id/signals, /deployments/:id/signals/validate, /validate-field-path; GET /deployments/:id/signals |
 | `/api/exports` | exports.ts | POST /audit/:id/pdf; POST /signals/inventory |
 | `/api/gtm` | gtm.ts | POST /connect, /upload; GET /callback, /containers; DELETE /containers/:id |
 | `/api/health` | health.ts | GET /score, /alerts, /history |
@@ -336,7 +355,7 @@ health_snapshots   (+ platform_acceptance_score)
 
 ## Active Development Branch
 
-`claude/eager-johnson-883G1`
+`claude/gallant-davinci-oxBvs`
 
 ---
 
@@ -363,3 +382,4 @@ health_snapshots   (+ platform_acceptance_score)
 | Naming Conventions | org naming rules, real-time validation, rename preview |
 | LinkedIn CAPI | Full LinkedIn delivery (previously stub) |
 | Integration Tests | Backend route integration test suite (37 routes × test files) |
+| Signal Enrichment Configuration | signal_enrichment_configs + client_identity_configs tables (4 migrations); enrichmentConfigService (field resolution, applyIdentityConfig, applySignalEnrichment, scoring); 12-rule validation engine (enrichmentValidationRules); 8-endpoint enrichment route; enrichmentApi + enrichmentStore; FieldMappingRow, EnrichmentScoreBadge, EnrichmentWarningBanner, IdentityConfigStep, SignalEnrichmentStep components; IdentityConfigStep in ClientSetupWizard (step 4) + ClientDetailPage Enrichment tab; SignalEnrichmentStep in DeploymentWizard (step 2); CAPI pipeline enrichment injection (step 0a, non-fatal); GTM container identity DLV variables; 40 unit tests |
