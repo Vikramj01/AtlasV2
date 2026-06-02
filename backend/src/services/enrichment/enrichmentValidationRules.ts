@@ -185,7 +185,7 @@ function rule_CROSS_02(signals: SignalEnrichmentConfig[]): ValidationRuleResult 
     severity: 'warning',
     message: passed
       ? 'All Meta-enabled signals have dedup IDs configured'
-      : `${metaEnabled.filter((s) => !s.dedup_config?.field_path).length} Meta-enabled signal(s) lack dedup IDs — duplicate events may inflate conversion counts`,
+      : `${metaEnabled.filter((s) => !s.dedup_config?.field).length} Meta-enabled signal(s) lack dedup IDs — duplicate events may inflate conversion counts`,
   };
 }
 
