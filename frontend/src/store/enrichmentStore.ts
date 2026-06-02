@@ -36,7 +36,7 @@ interface EnrichmentState {
   clearError: (key: string) => void;
 }
 
-export const useEnrichmentStore = create<EnrichmentState>((set, get) => ({
+export const useEnrichmentStore = create<EnrichmentState>((set) => ({
   identityConfigs: {},
   signalEnrichments: {},
   enrichmentScores: {},
