@@ -1,4 +1,4 @@
-import { useState, useMemo, type ChangeEvent } from 'react';
+import { useState, useMemo, type ChangeEvent, type ReactElement } from 'react';
 import type { FC } from 'react';
 import { Search, BookOpen, Users, Zap, ChevronRight, ExternalLink } from 'lucide-react';
 import { SectionErrorBoundary } from '@/components/common/ErrorBoundary';
@@ -784,7 +784,7 @@ function PlanBadge({ plan }: { plan: 'pro' | 'agency' }) {
 
 function renderContent(raw: string) {
   const lines = raw.split('\n');
-  const elements: JSX.Element[] = [];
+  const elements: ReactElement[] = [];
   let tableRows: string[][] = [];
   let inTable = false;
   let key = 0;
@@ -817,7 +817,7 @@ function renderContent(raw: string) {
     tableRows = []; inTable = false;
   }
 
-  function parseInline(text: string): JSX.Element[] {
+  function parseInline(text: string): ReactElement[] {
     const parts = text.split(/(`[^`]+`|\*\*[^*]+\*\*)/g);
     return parts.map((part, i) => {
       if (part.startsWith('`') && part.endsWith('`')) return <code key={i} className="bg-gray-100 text-gray-800 text-xs px-1.5 py-0.5 rounded font-mono">{part.slice(1, -1)}</code>;
