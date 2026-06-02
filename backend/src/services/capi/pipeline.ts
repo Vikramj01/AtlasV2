@@ -2,6 +2,7 @@
  * CAPI Server-Side Processing Pipeline
  *
  * For each incoming AtlasEvent:
+ *   0. Enrichment    — resolve identity + signal field mappings from raw event data
  *   1. Consent gate  — reject if required categories are denied
  *   2. Dedup check   — skip if event_id seen within dedup window
  *   3. Hash PII      — normalise + SHA-256 hash user_data fields
@@ -25,6 +26,8 @@ import type {
 } from '@/types/capi';
 import { safeDecryptCredentials } from './credentials';
 import { isEventDuplicate, createCAPIEvent, incrementProviderCounters } from '@/services/database/capiQueries';
+import { getClientIdentityConfig, listSignalEnrichmentConfigs } from '@/services/database/enrichmentQueries';
+import { applyIdentityConfig, applySignalEnrichment } from '@/services/enrichment/enrichmentConfigService';
 import { sendMetaEvents, checkUserParamCompleteness } from './metaDelivery';
 import { sendGoogleEvents } from './googleDelivery';
 import { sendLinkedInEvents } from './linkedinDelivery';
@@ -123,12 +126,56 @@ export interface PipelineResult {
 export async function processEvent(
   event: AtlasEvent,
   providerConfig: CAPIProviderConfig,
+  options?: {
+    clientId?: string;
+    rawEventData?: Record<string, unknown>;
+    requestIp?: string;
+    requestUa?: string;
+  },
 ): Promise<PipelineResult> {
   const { id: providerId, provider, organization_id, identifier_config, dedup_config, event_mapping } = providerConfig;
 
   // 0. Ensure event_id is present — auto-generate UUID if caller omitted it
   if (!event.event_id) {
     event = { ...event, event_id: randomUUID() };
+  }
+
+  // 0a. Enrichment — resolve identity + signal field mappings from raw event data.
+  // Only runs when a clientId and rawEventData are supplied by the caller.
+  if (options?.clientId && options?.rawEventData) {
+    try {
+      const identityConfig = await getClientIdentityConfig(options.clientId);
+      if (identityConfig) {
+        event = applyIdentityConfig(
+          event,
+          options.rawEventData,
+          identityConfig,
+          options.requestIp,
+          options.requestUa,
+        );
+      }
+
+      // Load signal enrichment config for this event's signal key
+      // Deployments are keyed by client — we fetch all and find one matching the signal
+      const { supabaseAdmin } = await import('@/services/database/supabase');
+      const { data: deployments } = await supabaseAdmin
+        .from('deployments')
+        .select('id')
+        .eq('client_id', options.clientId)
+        .limit(10);
+
+      for (const dep of deployments ?? []) {
+        const enrichments = await listSignalEnrichmentConfigs(dep.id);
+        const signalEnrichment = enrichments.find((e) => e.signal_key === event.event_name);
+        if (signalEnrichment) {
+          event = applySignalEnrichment(event, options.rawEventData, signalEnrichment);
+          break;
+        }
+      }
+    } catch (enrichErr) {
+      // Enrichment failure is non-fatal — log and continue with unenriched event
+      logger.warn({ event_id: event.event_id, err: enrichErr }, 'Enrichment resolution failed — continuing without enrichment');
+    }
   }
 
   // 1. Consent gate
