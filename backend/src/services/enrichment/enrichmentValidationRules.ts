@@ -84,20 +84,20 @@ function rule_IDENT_05(identity: ClientIdentityConfig | null): ValidationRuleRes
 
 function rule_SIG_01(signals: SignalEnrichmentConfig[]): ValidationRuleResult {
   const purchaseConfig = signals.find((s) => s.signal_key === 'purchase');
-  const hasValue = !!purchaseConfig?.value_config?.field_path;
+  const hasValue = !!purchaseConfig?.value_config?.field;
   return {
     rule_id: 'SIG_01',
     passed: hasValue,
     severity: 'error',
     message: hasValue
-      ? `Purchase value field mapped to: ${purchaseConfig!.value_config!.field_path}`
+      ? `Purchase value field mapped to: ${purchaseConfig!.value_config!.field}`
       : 'Purchase value field is not mapped — required for value-based bidding and ROAS optimisation',
   };
 }
 
 function rule_SIG_02(signals: SignalEnrichmentConfig[]): ValidationRuleResult {
   const purchaseConfig = signals.find((s) => s.signal_key === 'purchase');
-  const hasCurrency = !!(purchaseConfig?.currency_config?.static_value || purchaseConfig?.currency_config?.field_path);
+  const hasCurrency = !!(purchaseConfig?.currency_config?.static_value || purchaseConfig?.currency_config?.field);
   return {
     rule_id: 'SIG_02',
     passed: hasCurrency,
@@ -110,13 +110,13 @@ function rule_SIG_02(signals: SignalEnrichmentConfig[]): ValidationRuleResult {
 
 function rule_SIG_03(signals: SignalEnrichmentConfig[]): ValidationRuleResult {
   const purchaseConfig = signals.find((s) => s.signal_key === 'purchase');
-  const hasDedup = !!purchaseConfig?.dedup_config?.field_path;
+  const hasDedup = !!purchaseConfig?.dedup_config?.field;
   return {
     rule_id: 'SIG_03',
     passed: hasDedup,
     severity: 'error',
     message: hasDedup
-      ? `Purchase dedup ID field mapped to: ${purchaseConfig!.dedup_config!.field_path}`
+      ? `Purchase dedup ID field mapped to: ${purchaseConfig!.dedup_config!.field}`
       : 'Purchase dedup ID not mapped — without it, duplicate conversions cannot be suppressed',
   };
 }
@@ -124,10 +124,10 @@ function rule_SIG_03(signals: SignalEnrichmentConfig[]): ValidationRuleResult {
 function rule_SIG_04(signals: SignalEnrichmentConfig[]): ValidationRuleResult {
   const conversionSignals = ['purchase', 'begin_checkout', 'generate_lead'];
   const enabledForMeta = signals.filter(
-    (s) => conversionSignals.includes(s.signal_key) && s.meta_enabled,
+    (s) => conversionSignals.includes(s.signal_key) && s.enabled_for_meta,
   );
   const enabledForGoogle = signals.filter(
-    (s) => conversionSignals.includes(s.signal_key) && s.google_enabled,
+    (s) => conversionSignals.includes(s.signal_key) && s.enabled_for_google,
   );
   const passed = enabledForMeta.length > 0 || enabledForGoogle.length > 0;
   return {
@@ -142,13 +142,13 @@ function rule_SIG_04(signals: SignalEnrichmentConfig[]): ValidationRuleResult {
 
 function rule_SIG_05(signals: SignalEnrichmentConfig[]): ValidationRuleResult {
   const purchaseConfig = signals.find((s) => s.signal_key === 'purchase');
-  const hasContentIds = !!purchaseConfig?.content_config?.field_path;
+  const hasContentIds = !!purchaseConfig?.content_config?.ids_field;
   return {
     rule_id: 'SIG_05',
     passed: hasContentIds,
     severity: 'info',
     message: hasContentIds
-      ? `Purchase content IDs mapped to: ${purchaseConfig!.content_config!.field_path}`
+      ? `Purchase content IDs mapped to: ${purchaseConfig!.content_config!.ids_field}`
       : 'Purchase content IDs not mapped — recommended for Meta Advantage+ catalogue campaigns',
   };
 }
@@ -161,7 +161,7 @@ function rule_CROSS_01(
 ): ValidationRuleResult {
   const hasIdentity = !!(identity?.email_field || identity?.phone_field);
   const hasConversionSignal = signals.some(
-    (s) => (s.signal_key === 'purchase' || s.signal_key === 'generate_lead') && (s.meta_enabled || s.google_enabled),
+    (s) => (s.signal_key === 'purchase' || s.signal_key === 'generate_lead') && (s.enabled_for_meta || s.enabled_for_google),
   );
   // If there are enabled conversion signals, identity must be configured
   const passed = !hasConversionSignal || hasIdentity;
@@ -176,8 +176,8 @@ function rule_CROSS_01(
 }
 
 function rule_CROSS_02(signals: SignalEnrichmentConfig[]): ValidationRuleResult {
-  const metaEnabled = signals.filter((s) => s.meta_enabled);
-  const allHaveDedup = metaEnabled.every((s) => !!s.dedup_config?.field_path);
+  const metaEnabled = signals.filter((s) => s.enabled_for_meta);
+  const allHaveDedup = metaEnabled.every((s) => !!s.dedup_config?.field);
   const passed = metaEnabled.length === 0 || allHaveDedup;
   return {
     rule_id: 'CROSS_02',
