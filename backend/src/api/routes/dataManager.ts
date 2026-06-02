@@ -120,7 +120,7 @@ dataManagerRouter.get('/:orgId/clients', async (req: Request, res: Response) => 
   const { data: clients, error: clientsError } = await supabaseAdmin
     .from('clients')
     .select('id, name, website_url')
-    .eq('organization_id', orgId);
+    .eq('organisation_id', orgId);
 
   if (clientsError) {
     res.status(500).json({ error: 'Failed to fetch clients' });
@@ -144,7 +144,7 @@ dataManagerRouter.get('/:orgId/export/csv', async (req: Request, res: Response) 
   const { data: clients } = await supabaseAdmin
     .from('clients')
     .select('id, name, website_url')
-    .eq('organization_id', orgId);
+    .eq('organisation_id', orgId);
 
   const header =
     'client_name,website_url,gtg_active,avg_match_rate,upload_success_rate,total_members_30d,destination_count,last_dma_activity,needs_action';
