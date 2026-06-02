@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { NavLink, useParams, useNavigate } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
 import {
-  Home, MapPin, CheckCircle, Clock, Settings,
+  Home, MapPin, CheckCircle, Clock, Settings, HelpCircle,
   Building2, LayoutGrid, ShieldCheck, Activity,
   HeartPulse, ShieldAlert, GitBranch, Tag,
   Link2, ArrowLeftRight, Plus, Target, Zap, BarChart2,
@@ -382,8 +382,9 @@ export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
                 </div>
               </div>
             ))}
-            {/* Settings — standalone below divider */}
+            {/* Settings & Help — standalone below divider */}
             <div className="mt-3 border-t border-[#E5E7EB] pt-2">
+              <SidebarNavItem label="Help" to="/help" Icon={HelpCircle} />
               <SidebarNavItem label="Settings" to="/settings" Icon={Settings} />
             </div>
           </>

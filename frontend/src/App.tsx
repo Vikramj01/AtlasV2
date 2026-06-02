@@ -51,6 +51,7 @@ const SignalTrackingDashboard     = lazy(() => import('@/pages/SignalTrackingDas
 const SetupTrackingHubPage        = lazy(() => import('@/pages/SetupTrackingHubPage').then(m => ({ default: m.SetupTrackingHubPage })));
 const PublicDeliverableView       = lazy(() => import('@/pages/PublicDeliverableView').then(m => ({ default: m.PublicDeliverableView })));
 const GettingStartedPage          = lazy(() => import('@/pages/GettingStartedPage').then(m => ({ default: m.GettingStartedPage })));
+const HelpPage                    = lazy(() => import('@/pages/HelpPage').then(m => ({ default: m.HelpPage })));
 
 const PageFallback = () => <SkeletonCard variant="page" />;
 
@@ -93,6 +94,7 @@ export default function App() {
                 <Route path="/strategy/briefs/:id" element={<SectionErrorBoundary label="Strategy brief"><StrategyBriefPage /></SectionErrorBoundary>} />
                 {/* Settings */}
                 <Route path="/getting-started" element={<SectionErrorBoundary label="Getting started"><GettingStartedPage /></SectionErrorBoundary>} />
+                <Route path="/help" element={<SectionErrorBoundary label="Help"><HelpPage /></SectionErrorBoundary>} />
                 <Route path="/settings" element={<SectionErrorBoundary label="Settings"><SettingsPage /></SectionErrorBoundary>} />
                 <Route path="/settings/billing/success" element={<BillingSuccessPage />} />
                 <Route path="/settings/billing/cancel" element={<BillingCancelPage />} />
