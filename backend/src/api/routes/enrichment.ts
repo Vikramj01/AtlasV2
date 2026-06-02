@@ -47,8 +47,8 @@ async function assertClientAccess(
     res.status(403).json({ error: 'Not a member of this organisation' });
     return false;
   }
-  const client = await getClient(clientId);
-  if (!client || client.organization_id !== orgId) {
+  const client = await getClient(clientId, orgId);
+  if (!client || client.organisation_id !== orgId) {
     res.status(404).json({ error: 'Client not found' });
     return false;
   }
@@ -147,7 +147,11 @@ router.put(
         return;
       }
 
-      const config = await upsertClientIdentityConfig({ ...parsed.data, client_id: clientId });
+      const config = await upsertClientIdentityConfig({
+        ...parsed.data,
+        client_id: clientId,
+        enabled_identifiers: parsed.data.enabled_identifiers as import('@/types/enrichment').SaveIdentityConfigRequest['enabled_identifiers'],
+      });
       res.json({ data: config });
     } catch (err) {
       sendInternalError(res, err);
