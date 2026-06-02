@@ -13,17 +13,51 @@ import type { ClientWithDetails } from '@/types/organisation';
 import type { ClientOutput, DeploymentWithSignals, SignalWithOverrides } from '@/types/signal';
 import { resolveDeploymentsForClient } from '@/services/database/signalQueries';
 import { listDeployments, saveClientOutput, markDeploymentGenerated } from '@/services/database/clientQueries';
+import { getClientIdentityConfig } from '@/services/database/enrichmentQueries';
+import type { ClientIdentityConfig } from '@/types/enrichment';
 import logger from '@/utils/logger';
 
 // ── GTM container generation from resolved signals ────────────────────────────
 
+function buildIdentityVariables(identityConfig: ClientIdentityConfig): unknown[] {
+  const vars: unknown[] = [];
+  const fields: Array<{ fieldPath: string | null; varName: string }> = [
+    { fieldPath: identityConfig.email_field, varName: 'identity - email' },
+    { fieldPath: identityConfig.phone_field, varName: 'identity - phone' },
+    { fieldPath: identityConfig.first_name_field, varName: 'identity - first_name' },
+    { fieldPath: identityConfig.last_name_field, varName: 'identity - last_name' },
+    { fieldPath: identityConfig.postal_code_field, varName: 'identity - postal_code' },
+    { fieldPath: identityConfig.country_field, varName: 'identity - country' },
+    { fieldPath: identityConfig.external_id_field, varName: 'identity - external_id' },
+    { fieldPath: identityConfig.fbc_field, varName: 'identity - fbc' },
+    { fieldPath: identityConfig.fbp_field, varName: 'identity - fbp' },
+    { fieldPath: identityConfig.gclid_field, varName: 'identity - gclid' },
+  ];
+  for (const { fieldPath, varName } of fields) {
+    if (fieldPath) {
+      vars.push({
+        name: `dlv - ${varName}`,
+        type: 'dlv',
+        parameter: [{ type: 'template', key: 'name', value: fieldPath }],
+      });
+    }
+  }
+  return vars;
+}
+
 function buildGTMContainer(
   client: ClientWithDetails,
   allSignals: SignalWithOverrides[],
+  identityConfig: ClientIdentityConfig | null,
 ): Record<string, unknown> {
   const tags: unknown[] = [];
   const triggers: unknown[] = [];
   const variables: unknown[] = [];
+
+  // Identity variables from client enrichment config
+  if (identityConfig) {
+    variables.push(...buildIdentityVariables(identityConfig));
+  }
 
   // GA4 Configuration tag
   const ga4Platform = client.platforms.find((p) => p.platform === 'ga4' && p.is_active);
@@ -238,7 +272,8 @@ export async function generateComposableOutputs(
   const outputs: ClientOutput[] = [];
 
   // 1. GTM container
-  const gtmData = buildGTMContainer(client, allSignals);
+  const identityConfig = await getClientIdentityConfig(clientId).catch(() => null);
+  const gtmData = buildGTMContainer(client, allSignals, identityConfig);
   const gtmOutput = await saveClientOutput(clientId, 'gtm_container', gtmData, sourceDeployments);
   outputs.push(gtmOutput);
 
