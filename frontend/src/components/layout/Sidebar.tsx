@@ -362,6 +362,9 @@ export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
                 />
               </div>
             )}
+            <div className="mt-3 border-t border-[#E5E7EB] pt-2">
+              <SidebarNavItem label="Help" to="/help" Icon={HelpCircle} />
+            </div>
           </>
         ) : (
           // Personal context: grouped nav
