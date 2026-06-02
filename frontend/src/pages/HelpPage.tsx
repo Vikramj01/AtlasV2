@@ -822,7 +822,7 @@ function renderContent(raw: string) {
     return parts.map((part, i) => {
       if (part.startsWith('`') && part.endsWith('`')) return <code key={i} className="bg-gray-100 text-gray-800 text-xs px-1.5 py-0.5 rounded font-mono">{part.slice(1, -1)}</code>;
       if (part.startsWith('**') && part.endsWith('**')) return <strong key={i}>{part.slice(2, -2)}</strong>;
-      return part;
+      return <span key={i}>{part}</span>;
     });
   }
 
