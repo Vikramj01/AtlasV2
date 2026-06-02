@@ -7,11 +7,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent } from '@/components/ui/card';
 import { clientApi } from '@/lib/api/organisationApi';
 import { signalApi } from '@/lib/api/signalApi';
+import { enrichmentApi } from '@/lib/api/enrichmentApi';
 import { cn } from '@/lib/utils';
+import { IdentityConfigStep } from '@/components/enrichment/IdentityConfigStep';
 import type { ClientWithDetails, BusinessType, PlatformKey } from '@/types/organisation';
 import type { SignalPack } from '@/types/signal';
 
-const TOTAL_STEPS = 5;
+const TOTAL_STEPS = 6;
 
 type StartingMode = 'scratch' | 'copy_client' | 'use_pack';
 
@@ -66,6 +68,9 @@ export function ClientSetupWizard({ orgId, onCreated, onClose }: Props) {
     { label: 'Confirmation', url: '', page_type: 'confirmation', stage_order: 5 },
   ]);
 
+  // Created client (set after step 3, used for identity config in step 4)
+  const [createdClientId, setCreatedClientId] = useState<string | null>(null);
+
   // Submit state
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -106,7 +111,10 @@ export function ClientSetupWizard({ orgId, onCreated, onClose }: Props) {
     (startingMode === 'copy_client' && !!sourceClientId) ||
     (startingMode === 'use_pack' && !!sourcePackId);
 
-  async function handleFinish() {
+  // Create the client record and platforms when advancing from step 3 → step 4.
+  // Pages are saved at final finish so the user can still edit them in step 5.
+  async function handleAdvanceToIdentityStep() {
+    if (createdClientId) { setStep(4); return; }
     setIsSubmitting(true);
     setError(null);
     try {
@@ -127,14 +135,28 @@ export function ClientSetupWizard({ orgId, onCreated, onClose }: Props) {
         await clientApi.setPlatforms(orgId, client.id, activePlatforms);
       }
 
-      const validPages = pages.filter((p) => p.url.trim());
-      if (validPages.length > 0) {
-        await clientApi.setPages(orgId, client.id, validPages);
-      }
-
-      onCreated({ ...client, platforms: [], pages: validPages as ClientWithDetails['pages'] });
+      setCreatedClientId(client.id);
+      setStep(4);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create client');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function handleFinish() {
+    if (!createdClientId) return;
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      const validPages = pages.filter((p) => p.url.trim());
+      if (validPages.length > 0) {
+        await clientApi.setPages(orgId, createdClientId, validPages);
+      }
+      const client = await clientApi.get(orgId, createdClientId);
+      onCreated({ ...client, platforms: client.platforms ?? [], pages: validPages as ClientWithDetails['pages'] });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to finalise client');
     } finally {
       setIsSubmitting(false);
     }
@@ -337,8 +359,25 @@ export function ClientSetupWizard({ orgId, onCreated, onClose }: Props) {
             </div>
           )}
 
-          {/* Step 4: Page URLs */}
-          {step === 4 && (
+          {/* Step 4: Identity Configuration */}
+          {step === 4 && createdClientId && (
+            <IdentityConfigStep
+              clientId={createdClientId}
+              initialConfig={null}
+              onSave={async (req) => {
+                await enrichmentApi.saveIdentityConfig(orgId, createdClientId, req);
+                setStep(5);
+              }}
+              onSkip={() => setStep(5)}
+              mode="wizard"
+              onValidatePath={(path) =>
+                enrichmentApi.validateFieldPath(orgId, createdClientId, { field_path: path })
+              }
+            />
+          )}
+
+          {/* Step 5: Page URLs */}
+          {step === 5 && (
             <div className="space-y-4">
               <div>
                 <h2 className="text-base font-bold">Page URLs</h2>
@@ -395,8 +434,8 @@ export function ClientSetupWizard({ orgId, onCreated, onClose }: Props) {
             </div>
           )}
 
-          {/* Step 5: Review */}
-          {step === 5 && (
+          {/* Step 6: Review */}
+          {step === 6 && (
             <div className="space-y-4">
               <h2 className="text-base font-bold">Review & create</h2>
               <div className="space-y-2 rounded-lg border p-4 text-xs">
@@ -447,27 +486,30 @@ export function ClientSetupWizard({ orgId, onCreated, onClose }: Props) {
             </div>
           )}
 
-          {/* Nav buttons */}
-          <div className="mt-6 flex justify-between">
-            <Button variant="ghost" onClick={step === 1 ? onClose : () => setStep((s) => s - 1)}>
-              {step === 1 ? 'Cancel' : '← Back'}
-            </Button>
-            {step < TOTAL_STEPS ? (
-              <Button
-                onClick={() => setStep((s) => s + 1)}
-                disabled={
-                  (step === 1 && !step1Valid) ||
-                  (step === 2 && (!name.trim() || !url.trim() || !businessType))
-                }
-              >
-                Next →
+          {/* Nav buttons — hidden on step 4 (IdentityConfigStep has its own buttons) */}
+          {step !== 4 && (
+            <div className="mt-6 flex justify-between">
+              <Button variant="ghost" onClick={step === 1 ? onClose : () => setStep((s) => (s - 1) as typeof step)}>
+                {step === 1 ? 'Cancel' : '← Back'}
               </Button>
-            ) : (
-              <Button onClick={handleFinish} disabled={isSubmitting}>
-                {isSubmitting ? 'Creating…' : 'Create client'}
-              </Button>
-            )}
-          </div>
+              {step < TOTAL_STEPS ? (
+                <Button
+                  onClick={step === 3 ? handleAdvanceToIdentityStep : () => setStep((s) => (s + 1) as typeof step)}
+                  disabled={
+                    (step === 1 && !step1Valid) ||
+                    (step === 2 && (!name.trim() || !url.trim() || !businessType)) ||
+                    (step === 3 && isSubmitting)
+                  }
+                >
+                  {step === 3 && isSubmitting ? 'Creating…' : 'Next →'}
+                </Button>
+              ) : (
+                <Button onClick={handleFinish} disabled={isSubmitting}>
+                  {isSubmitting ? 'Saving…' : 'Finish'}
+                </Button>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
