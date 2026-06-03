@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { organisationApi } from '@/lib/api/organisationApi';
 import { useOrganisationStore } from '@/store/organisationStore';
 import { MemberManagement } from '@/components/organisation/MemberManagement';
+import { useBillingStore } from '@/store/billingStore';
 import { supabase } from '@/lib/supabase';
 import type { Organisation, MemberRole } from '@/types/organisation';
 
@@ -16,6 +17,7 @@ export function OrgSettingsPage() {
   const { orgId } = useParams<{ orgId: string }>();
   const navigate = useNavigate();
   const { setOrganisations, organisations } = useOrganisationStore();
+  const { status: billingStatus, fetchStatus } = useBillingStore();
 
   const [org, setOrg] = useState<Organisation | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -35,6 +37,10 @@ export function OrgSettingsPage() {
   const [deleteConfirm, setDeleteConfirm] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchStatus();
+  }, [fetchStatus]);
 
   useEffect(() => {
     if (!orgId) return;
@@ -164,6 +170,7 @@ export function OrgSettingsPage() {
             orgId={orgId!}
             currentUserId={currentUserId}
             currentUserRole={currentUserRole}
+            plan={(billingStatus?.plan ?? 'free') as 'free' | 'pro' | 'agency'}
           />
         </CardContent>
       </Card>

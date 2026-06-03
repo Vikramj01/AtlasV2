@@ -169,6 +169,26 @@ router.post('/:orgId/members', orgMiddleware, requireOrgAdmin, async (req: Reque
       return res.status(400).json({ error: 'role must be admin or member' });
     }
 
+    // Enforce per-plan member seat limits
+    const plan = req.user!.plan;
+    if (!req.user!.isSuperAdmin) {
+      const existingMembers = await listMembers(req.params['orgId']);
+      const nonOwnerCount = existingMembers.filter((m) => m.role !== 'owner').length;
+
+      if (plan === 'free' || plan === 'pro') {
+        return res.status(403).json({
+          error: 'Your plan only supports a single user. Upgrade to Agency to add team members.',
+        });
+      }
+
+      // Agency: owner + up to 5 additional members (admin or member roles)
+      if (plan === 'agency' && nonOwnerCount >= 5) {
+        return res.status(403).json({
+          error: 'You have reached the 5 team member limit on the Agency plan. Contact support at support@vimi.digital to add more seats.',
+        });
+      }
+    }
+
     // Look up user by email via admin API
     const { data: { users }, error } = await supabaseAdmin.auth.admin.listUsers();
     if (error) return sendInternalError(res, error);

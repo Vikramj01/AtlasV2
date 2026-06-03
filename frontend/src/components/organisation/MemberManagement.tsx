@@ -5,16 +5,19 @@
 import { useEffect, useState } from 'react';
 import type * as React from 'react';
 
-import { UserPlus, Trash2, Crown, Shield, User } from 'lucide-react';
+import { UserPlus, Trash2, Crown, Shield, User, Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { organisationApi } from '@/lib/api/organisationApi';
 import type { OrganisationMember, MemberRole } from '@/types/organisation';
 
+const AGENCY_MEMBER_LIMIT = 5;
+
 interface Props {
   orgId: string;
   currentUserId: string;
   currentUserRole: MemberRole;
+  plan: 'free' | 'pro' | 'agency';
 }
 
 const ROLE_ICONS: Record<MemberRole, typeof User> = {
@@ -29,7 +32,7 @@ const ROLE_COLOURS: Record<MemberRole, string> = {
   member: 'bg-gray-50 text-gray-600 border-gray-200',
 };
 
-export function MemberManagement({ orgId, currentUserId, currentUserRole }: Props) {
+export function MemberManagement({ orgId, currentUserId, currentUserRole, plan }: Props) {
   const [members, setMembers] = useState<OrganisationMember[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -107,8 +110,35 @@ export function MemberManagement({ orgId, currentUserId, currentUserRole }: Prop
     return <p className="text-sm text-red-600 bg-red-50 rounded-lg p-4">{error}</p>;
   }
 
+  const nonOwnerCount = members.filter((m) => m.role !== 'owner').length;
+  const isAtAgencyLimit = plan === 'agency' && nonOwnerCount >= AGENCY_MEMBER_LIMIT;
+  const canInvite = canManage && plan === 'agency' && !isAtAgencyLimit;
+
   return (
     <div className="space-y-6">
+      {/* Seat usage banner */}
+      {plan === 'free' || plan === 'pro' ? (
+        <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+          <Lock className="h-4 w-4 mt-0.5 shrink-0 text-amber-600" />
+          <p className="text-sm text-amber-800">
+            Your <span className="font-semibold capitalize">{plan}</span> plan is single-user only.{' '}
+            <a href="/settings" className="underline font-medium">Upgrade to Agency</a> to add team members.
+          </p>
+        </div>
+      ) : isAtAgencyLimit ? (
+        <div className="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3">
+          <Lock className="h-4 w-4 mt-0.5 shrink-0 text-blue-600" />
+          <p className="text-sm text-blue-800">
+            You've reached the {AGENCY_MEMBER_LIMIT}-member limit on the Agency plan.{' '}
+            <a href="mailto:support@vimi.digital" className="underline font-medium">Contact support</a> to add more seats.
+          </p>
+        </div>
+      ) : plan === 'agency' ? (
+        <p className="text-xs text-muted-foreground">
+          {AGENCY_MEMBER_LIMIT - nonOwnerCount} of {AGENCY_MEMBER_LIMIT} seats remaining
+        </p>
+      ) : null}
+
       {/* Member list */}
       <div className="divide-y rounded-lg border">
         {members.map((member) => {
@@ -173,8 +203,8 @@ export function MemberManagement({ orgId, currentUserId, currentUserRole }: Prop
         })}
       </div>
 
-      {/* Invite form */}
-      {canManage && (
+      {/* Invite form — agency plan only, under the limit */}
+      {canInvite && (
         <form onSubmit={handleInvite} className="space-y-3">
           <p className="text-sm font-medium">Invite a team member</p>
           <div className="flex gap-2">
