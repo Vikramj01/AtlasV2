@@ -130,7 +130,7 @@ export function MemberManagement({ orgId, currentUserId, currentUserRole, plan }
           <Lock className="h-4 w-4 mt-0.5 shrink-0 text-blue-600" />
           <p className="text-sm text-blue-800">
             You've reached the {AGENCY_MEMBER_LIMIT}-member limit on the Agency plan.{' '}
-            <a href="mailto:support@atlas.vimi.digital" className="underline font-medium">Contact support</a> to add more seats.
+            <a href="mailto:support@vimi.digital" className="underline font-medium">Contact support</a> to add more seats.
           </p>
         </div>
       ) : plan === 'agency' ? (

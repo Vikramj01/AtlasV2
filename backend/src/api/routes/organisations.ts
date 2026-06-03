@@ -184,7 +184,7 @@ router.post('/:orgId/members', orgMiddleware, requireOrgAdmin, async (req: Reque
       // Agency: owner + up to 5 additional members (admin or member roles)
       if (plan === 'agency' && nonOwnerCount >= 5) {
         return res.status(403).json({
-          error: 'You have reached the 5 team member limit on the Agency plan. Contact support at support@atlas.vimi.digital to add more seats.',
+          error: 'You have reached the 5 team member limit on the Agency plan. Contact support at support@vimi.digital to add more seats.',
         });
       }
     }
