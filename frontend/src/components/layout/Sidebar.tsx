@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import { NavLink, useParams, useNavigate } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -6,6 +7,7 @@ import {
   Building2, LayoutGrid, ShieldCheck, Activity,
   HeartPulse, ShieldAlert, GitBranch, Tag,
   Link2, ArrowLeftRight, Plus, Target, Zap, BarChart2,
+  ChevronDown, ChevronRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { OrgSwitcher } from '@/components/organisation/OrgSwitcher';
@@ -136,6 +138,51 @@ function SidebarNavItem({ label, technicalLabel, to, Icon, end = false, step, do
         </>
       )}
     </NavLink>
+  );
+}
+
+// ── CollapsibleNavGroup ───────────────────────────────────────────────────────
+
+interface CollapsibleNavGroupProps {
+  label: string;
+  storageKey: string;
+  children: ReactNode;
+}
+
+function CollapsibleNavGroup({ label, storageKey, children }: CollapsibleNavGroupProps) {
+  const [open, setOpen] = useState<boolean>(() => {
+    try {
+      const stored = localStorage.getItem(storageKey);
+      return stored === null ? true : stored === 'true';
+    } catch {
+      return true;
+    }
+  });
+
+  function toggle() {
+    setOpen((prev) => {
+      const next = !prev;
+      try { localStorage.setItem(storageKey, String(next)); } catch { /* quota exceeded */ }
+      return next;
+    });
+  }
+
+  return (
+    <div className="mb-1">
+      <button
+        type="button"
+        onClick={toggle}
+        className="flex w-full items-center justify-between px-3 pb-1 pt-3 group"
+        aria-expanded={open}
+      >
+        <span className="text-caption-upper">{label}</span>
+        {open
+          ? <ChevronDown className="h-3 w-3 text-[#9CA3AF] group-hover:text-[#1A1A1A] transition-colors" />
+          : <ChevronRight className="h-3 w-3 text-[#9CA3AF] group-hover:text-[#1A1A1A] transition-colors" />
+        }
+      </button>
+      {open && <div className="space-y-0.5">{children}</div>}
+    </div>
   );
 }
 
@@ -342,16 +389,42 @@ export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
       {/* ── Navigation ───────────────────────────────────────────────────── */}
       <nav className="flex-1 overflow-y-auto px-3 py-2">
         {activeOrgId ? (
-          // Org context: flat list with org header
+          // Org context: grouped nav
           <>
             <p className="text-caption-upper px-3 pb-2 pt-2">
               {currentOrg?.name ?? 'Organisation'}
             </p>
-            <div className="space-y-0.5">
-              {orgNav(activeOrgId, currentOrg?.org_type, currentOrg?.primary_client_id).map((item) => (
-                <SidebarNavItem key={item.to} {...item} />
-              ))}
-            </div>
+            {(() => {
+              const allOrgItems = orgNav(activeOrgId, currentOrg?.org_type, currentOrg?.primary_client_id);
+              const teamItem = allOrgItems[allOrgItems.length - 1];
+              const workspacePrefixes = [
+                `/org/${activeOrgId}`,
+                `/org/${activeOrgId}/clients`,
+                `/clients/`,
+                `/org/${activeOrgId}/data-manager`,
+                `/org/${activeOrgId}/signals`,
+                `/org/${activeOrgId}/packs`,
+              ];
+              const workspaceOrgItems = allOrgItems.filter(i =>
+                workspacePrefixes.some(prefix => i.to.startsWith(prefix))
+              );
+              const toolsOrgItems = allOrgItems.filter(i =>
+                !workspaceOrgItems.includes(i) && i !== teamItem
+              );
+              return (
+                <>
+                  <CollapsibleNavGroup label="WORKSPACE" storageKey="atlas.sidebar.org.workspace">
+                    {workspaceOrgItems.map(item => <SidebarNavItem key={item.to} {...item} />)}
+                  </CollapsibleNavGroup>
+                  <CollapsibleNavGroup label="TOOLS" storageKey="atlas.sidebar.org.tools">
+                    {toolsOrgItems.map(item => <SidebarNavItem key={item.to} {...item} />)}
+                  </CollapsibleNavGroup>
+                  <div className="space-y-0.5">
+                    <SidebarNavItem {...teamItem} />
+                  </div>
+                </>
+              );
+            })()}
             {activeClientId && (
               <div className="mt-2 border-t border-[#E5E7EB] pt-2">
                 <p className="text-caption-upper px-3 pb-1 pt-1">This client</p>
@@ -370,20 +443,19 @@ export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
           // Personal context: grouped nav
           <>
             {PERSONAL_NAV_GROUPS.map(({ label, items }) => (
-              <div key={label} className="mb-1">
-                <p role="presentation" className="text-caption-upper px-3 pb-1 pt-3">
-                  {label}
-                </p>
-                <div className="space-y-0.5">
-                  {items.map((item) => (
-                    <SidebarNavItem
-                      key={item.to}
-                      {...item}
-                      done={item.stepKey ? completedSteps.includes(item.stepKey) : false}
-                    />
-                  ))}
-                </div>
-              </div>
+              <CollapsibleNavGroup
+                key={label}
+                label={label}
+                storageKey={`atlas.sidebar.personal.${label.toLowerCase().replace(/\s+/g, '-')}`}
+              >
+                {items.map((item) => (
+                  <SidebarNavItem
+                    key={item.to}
+                    {...item}
+                    done={item.stepKey ? completedSteps.includes(item.stepKey) : false}
+                  />
+                ))}
+              </CollapsibleNavGroup>
             ))}
             {/* Settings & Help — standalone below divider */}
             <div className="mt-3 border-t border-[#E5E7EB] pt-2">
