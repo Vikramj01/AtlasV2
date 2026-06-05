@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type * as React from 'react';
 
 import { useParams, useNavigate } from 'react-router-dom';
-import { Settings, Users, Trash2, Save } from 'lucide-react';
+import { Settings, Users, Trash2, Save, MessageSquare, Plus, Trash, TestTube, ToggleLeft, ToggleRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -12,6 +12,9 @@ import { MemberManagement } from '@/components/organisation/MemberManagement';
 import { useBillingStore } from '@/store/billingStore';
 import { supabase } from '@/lib/supabase';
 import type { Organisation, MemberRole } from '@/types/organisation';
+import { slackApi } from '@/lib/api/slackApi';
+import { useSlackStore } from '@/store/slackStore';
+import type { SlackDestination } from '@/lib/api/slackApi';
 
 export function OrgSettingsPage() {
   const { orgId } = useParams<{ orgId: string }>();
@@ -175,6 +178,9 @@ export function OrgSettingsPage() {
         </CardContent>
       </Card>
 
+      {/* Slack Destinations */}
+      <SlackDestinationsCard plan={(billingStatus?.plan ?? 'free') as string} />
+
       {/* Danger zone — owner only */}
       {isOwner && (
         <Card className="border-red-200">
@@ -211,5 +217,204 @@ export function OrgSettingsPage() {
         </Card>
       )}
     </div>
+  );
+}
+
+// ── Slack Destinations Card ───────────────────────────────────────────────────
+
+function SlackDestinationsCard({ plan }: { plan: string }) {
+  const { destinations, setDestinations, addDestination, updateDestination, removeDestination } = useSlackStore();
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+
+  // Add form state
+  const [newName, setNewName] = useState('');
+  const [newUrl, setNewUrl] = useState('');
+  const [newChannel, setNewChannel] = useState('');
+  const [addError, setAddError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Per-destination test state
+  const [testingId, setTestingId] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<Record<string, 'ok' | 'fail'>>({});
+
+  const isPro = plan === 'pro' || plan === 'agency';
+
+  useEffect(() => {
+    if (!isPro) return;
+    slackApi.listDestinations()
+      .then(setDestinations)
+      .catch(() => setLoadError('Failed to load Slack destinations'));
+  }, [isPro, setDestinations]);
+
+  async function handleAdd() {
+    setAddError(null);
+    if (!newName.trim() || !newUrl.trim()) { setAddError('Name and webhook URL are required'); return; }
+    if (!newUrl.startsWith('https://hooks.slack.com/')) {
+      setAddError('URL must be a Slack Incoming Webhook (https://hooks.slack.com/…)');
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const dest = await slackApi.createDestination({
+        name: newName.trim(),
+        webhook_url: newUrl.trim(),
+        channel_hint: newChannel.trim() || undefined,
+      });
+      addDestination(dest);
+      setNewName(''); setNewUrl(''); setNewChannel('');
+      setAdding(false);
+    } catch (err) {
+      setAddError(err instanceof Error ? err.message : 'Failed to add');
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleToggle(dest: SlackDestination) {
+    try {
+      const updated = await slackApi.updateDestination(dest.id, { enabled: !dest.enabled });
+      updateDestination(updated);
+    } catch {
+      // ignore toggle errors silently
+    }
+  }
+
+  async function handleDelete(id: string) {
+    try {
+      await slackApi.deleteDestination(id);
+      removeDestination(id);
+    } catch {
+      // ignore
+    }
+  }
+
+  async function handleTest(id: string) {
+    setTestingId(id);
+    try {
+      await slackApi.testDestination(id);
+      setTestResult((r) => ({ ...r, [id]: 'ok' }));
+    } catch {
+      setTestResult((r) => ({ ...r, [id]: 'fail' }));
+    } finally {
+      setTestingId(null);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <MessageSquare className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-base">Slack Destinations</CardTitle>
+          </div>
+          {isPro && (
+            <Button size="sm" variant="outline" onClick={() => setAdding((v) => !v)}>
+              <Plus className="h-3 w-3 mr-1" />
+              Add
+            </Button>
+          )}
+        </div>
+        <CardDescription>
+          Configure Slack channels to share Atlas results (audits, briefs, reconciliation, and more).
+          Requires Pro plan.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {!isPro && (
+          <p className="text-sm text-muted-foreground">
+            Upgrade to <strong>Pro</strong> to enable Slack sharing.
+          </p>
+        )}
+
+        {isPro && loadError && (
+          <p className="text-xs text-red-600">{loadError}</p>
+        )}
+
+        {isPro && adding && (
+          <div className="border rounded-lg p-4 space-y-3 bg-muted/30">
+            <p className="text-sm font-medium">New destination</p>
+            <Input
+              placeholder="Name (e.g. Client Reports)"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+            />
+            <Input
+              placeholder="Webhook URL (https://hooks.slack.com/…)"
+              value={newUrl}
+              onChange={(e) => setNewUrl(e.target.value)}
+            />
+            <Input
+              placeholder="Channel hint (optional, e.g. #atlas-reports)"
+              value={newChannel}
+              onChange={(e) => setNewChannel(e.target.value)}
+            />
+            {addError && <p className="text-xs text-red-600">{addError}</p>}
+            <div className="flex gap-2">
+              <Button size="sm" onClick={handleAdd} disabled={isSaving}>
+                {isSaving ? 'Saving…' : 'Save'}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => { setAdding(false); setAddError(null); }}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {isPro && destinations.length > 0 && (
+          <ul className="divide-y">
+            {destinations.map((dest) => (
+              <li key={dest.id} className="flex items-center justify-between gap-3 py-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate">{dest.name}</p>
+                  {dest.channel_hint && (
+                    <p className="text-xs text-muted-foreground truncate">{dest.channel_hint}</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  {testResult[dest.id] && (
+                    <span className={`text-xs ${testResult[dest.id] === 'ok' ? 'text-green-600' : 'text-red-600'}`}>
+                      {testResult[dest.id] === 'ok' ? '✓ sent' : '✗ failed'}
+                    </span>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={testingId === dest.id}
+                    onClick={() => handleTest(dest.id)}
+                    title="Send test message"
+                  >
+                    <TestTube className="h-3 w-3" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => handleToggle(dest)}
+                    title={dest.enabled ? 'Disable' : 'Enable'}
+                  >
+                    {dest.enabled
+                      ? <ToggleRight className="h-4 w-4 text-green-600" />
+                      : <ToggleLeft className="h-4 w-4 text-muted-foreground" />}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => handleDelete(dest.id)}
+                    title="Remove destination"
+                  >
+                    <Trash className="h-3 w-3 text-red-500" />
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {isPro && destinations.length === 0 && !adding && !loadError && (
+          <p className="text-sm text-muted-foreground">No Slack destinations yet. Click Add to configure one.</p>
+        )}
+      </CardContent>
+    </Card>
   );
 }

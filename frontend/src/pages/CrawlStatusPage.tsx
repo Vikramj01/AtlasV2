@@ -6,6 +6,8 @@ import { InfoTooltip } from '@/components/common/InfoTooltip';
 import { CrawlProgress } from '@/components/crawl/CrawlProgress';
 import { CrawlResults } from '@/components/crawl/CrawlResults';
 import { Button } from '@/components/ui/button';
+import { slackApi } from '@/lib/api/slackApi';
+import { ShareToSlackButton } from '@/components/common/ShareToSlackButton';
 import { cn } from '@/lib/utils';
 
 type Tab = 'progress' | 'results';
@@ -80,11 +82,18 @@ export function CrawlStatusPage() {
             )}
             <p className="text-sm text-[#6B7280] mt-0.5 font-mono">{run.id}</p>
           </div>
-          {isTerminal && (
-            <Button variant="outline" size="sm" onClick={handleNewScan}>
-              New scan
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            {isTerminal && (
+              <ShareToSlackButton
+                onShare={(destinationId) => slackApi.shareCrawl(runId!, destinationId).then(() => undefined)}
+              />
+            )}
+            {isTerminal && (
+              <Button variant="outline" size="sm" onClick={handleNewScan}>
+                New scan
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Tabs */}

@@ -25,8 +25,10 @@ import {
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { strategyApi } from '@/lib/api/strategyApi';
+import { slackApi } from '@/lib/api/slackApi';
 import { useStrategyStore } from '@/store/strategyStore';
 import type { StrategyBriefWithObjectives, EventVerdict } from '@/types/strategy';
+import { ShareToSlackButton } from '@/components/common/ShareToSlackButton';
 
 const VERDICT_CONFIG: Record<EventVerdict, { label: string; icon: React.ElementType; badgeClass: string; borderClass: string }> = {
   CONFIRM: { label: 'Keep current event',      icon: Check,         badgeClass: 'bg-green-100 text-green-800',  borderClass: 'border-l-4 border-l-green-500' },
@@ -166,6 +168,9 @@ export function StrategyBriefPage() {
                 {pdfLoading ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Download className="mr-2 size-4" />}
                 Download PDF
               </Button>
+              <ShareToSlackButton
+                onShare={(destinationId) => slackApi.shareBrief(briefId!, destinationId).then(() => undefined)}
+              />
               {!brief.superseded_by && (
                 <Button onClick={() => setVersionConfirmOpen(true)} variant="ghost" size="sm">
                   <Edit className="mr-2 size-4" />

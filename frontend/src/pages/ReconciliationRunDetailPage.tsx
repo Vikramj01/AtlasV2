@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ChevronLeft, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { slackApi } from '@/lib/api/slackApi';
+import { ShareToSlackButton } from '@/components/common/ShareToSlackButton';
 import { useReconciliationStore } from '@/store/reconciliationStore';
 import { FindingsList } from '@/components/reconciliation/FindingsList';
 import { ReconciliationRunSummary } from '@/components/reconciliation/ReconciliationRunSummary';
@@ -126,8 +128,11 @@ function ReconciliationRunDetailPageInner() {
         />
       </div>
 
-      {/* "Re-run" button */}
-      <div className="flex justify-end">
+      {/* Actions */}
+      <div className="flex justify-between">
+        <ShareToSlackButton
+          onShare={(destinationId) => slackApi.shareReconciliation(runId!, destinationId).then(() => undefined)}
+        />
         <Button
           variant="outline"
           size="sm"
