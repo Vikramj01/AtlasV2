@@ -4,7 +4,7 @@
 
 CREATE TABLE IF NOT EXISTS slack_destinations (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  organization_id UUID NOT NULL REFERENCES organisations(id) ON DELETE CASCADE,
   name            TEXT NOT NULL,
   webhook_url     TEXT NOT NULL,   -- AES-256-GCM encrypted envelope
   channel_hint    TEXT,            -- display-only, e.g. "#atlas-reports"
