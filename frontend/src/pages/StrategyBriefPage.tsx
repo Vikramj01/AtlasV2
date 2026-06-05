@@ -169,7 +169,7 @@ export function StrategyBriefPage() {
                 Download PDF
               </Button>
               <ShareToSlackButton
-                onShare={(destinationId) => slackApi.shareBrief(briefId!, destinationId).then(() => undefined)}
+                onShare={(destinationId) => slackApi.shareBrief(id!, destinationId).then(() => undefined)}
               />
               {!brief.superseded_by && (
                 <Button onClick={() => setVersionConfirmOpen(true)} variant="ghost" size="sm">
