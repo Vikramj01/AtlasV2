@@ -9,7 +9,9 @@ import { PlatformImpact } from '@/components/audit/ReportPages/PlatformImpact';
 import { IssuesFixes } from '@/components/audit/ReportPages/IssuesFixes';
 import { TechnicalAppendix } from '@/components/audit/ReportPages/TechnicalAppendix';
 import { auditApi } from '@/lib/api/auditApi';
+import { slackApi } from '@/lib/api/slackApi';
 import { Button } from '@/components/ui/button';
+import { ShareToSlackButton } from '@/components/common/ShareToSlackButton';
 
 export function ReportPage() {
   const { auditId } = useParams<{ auditId: string }>();
@@ -93,15 +95,9 @@ export function ReportPage() {
             >
               Download Developer Report
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled
-              title="Share link — coming soon"
-              className="border-dashed text-muted-foreground cursor-not-allowed"
-            >
-              Share Link
-            </Button>
+            <ShareToSlackButton
+              onShare={(destinationId) => slackApi.shareAudit(auditId!, destinationId).then(() => undefined)}
+            />
           </div>
         </div>
 

@@ -38,6 +38,7 @@ import { trackingRouter } from '@/api/routes/tracking';
 import { deliverableShareRouter } from '@/api/routes/deliverableShare';
 import { onboardingRouter } from '@/api/routes/onboarding';
 import { enrichmentRouter } from '@/api/routes/enrichment';
+import { slackRouter } from '@/api/routes/slack';
 import logger from '@/utils/logger';
 import { env } from '@/config/env';
 
@@ -165,6 +166,7 @@ app.use('/api/tracking', trackingRouter);
 app.use('/api/share', deliverableShareRouter);
 app.use('/api/onboarding', onboardingRouter);
 app.use('/api', enrichmentRouter);
+app.use('/api/slack', slackRouter);
 
 // ─── 404 handler ─────────────────────────────────────────────────────────────
 

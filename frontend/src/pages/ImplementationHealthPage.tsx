@@ -20,6 +20,8 @@ import { Separator } from '@/components/ui/separator';
 import { PlanGate } from '@/components/common/PlanGate';
 import { SectionErrorBoundary } from '@/components/common/ErrorBoundary';
 import { ihcApi } from '@/lib/api/ihcApi';
+import { slackApi } from '@/lib/api/slackApi';
+import { ShareToSlackButton } from '@/components/common/ShareToSlackButton';
 import type { AuditFinding, GTMContainer, BaselineInfo, FindingsSummary, FindingSeverity } from '@/types/ihc';
 
 const SEVERITY_COLORS: Record<FindingSeverity, string> = {
@@ -817,6 +819,9 @@ export function ImplementationHealthPage() {
             GTM configuration checks, drift detection, and alert preferences.
           </p>
         </div>
+        <ShareToSlackButton
+          onShare={(destinationId) => slackApi.shareIHC(destinationId).then(() => undefined)}
+        />
       </div>
 
       <PlanGate minPlan="pro" featureName="Implementation Health Checks">

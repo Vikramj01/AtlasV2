@@ -2,6 +2,8 @@ import { useEffect, useCallback, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { RefreshCw } from 'lucide-react';
 import { signalEventsApi } from '@/lib/api/signalEventsApi';
+import { slackApi } from '@/lib/api/slackApi';
+import { ShareToSlackButton } from '@/components/common/ShareToSlackButton';
 import { SignalFilterBar } from '@/components/signals/SignalFilterBar';
 import { SignalFlowTable } from '@/components/signals/SignalFlowTable';
 import type { SignalEventRow, SignalFilters } from '@/types/signal-tracking';
@@ -161,6 +163,9 @@ export function SignalTrackingDashboard() {
           <p className="text-xs text-[#6B7280] mt-0.5">Real-time view of outbound conversion signals</p>
         </div>
         <div className="flex items-center gap-3">
+          <ShareToSlackButton
+            onShare={(destinationId) => slackApi.shareSignals(destinationId).then(() => undefined)}
+          />
           {lastRefreshed && (
             <span className="text-xs text-[#9CA3AF]">
               Updated {lastRefreshed.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
