@@ -55,6 +55,7 @@ export function ClientSetupWizard({ orgId, onCreated, onClose }: Props) {
   const [url, setUrl] = useState('');
   const [businessType, setBusinessType] = useState<BusinessType | ''>('');
   const [primaryConversionObjective, setPrimaryConversionObjective] = useState('');
+  const [hasOfflineConversions, setHasOfflineConversions] = useState<boolean | null>(null);
 
   // Step 3: Platforms
   const [platformIds, setPlatformIds] = useState<Partial<Record<PlatformKey, string>>>({});
@@ -316,6 +317,38 @@ export function ClientSetupWizard({ orgId, onCreated, onClose }: Props) {
                   ))}
                 </div>
               </div>
+              <div className="space-y-2">
+                <Label className="text-xs">
+                  Does this client have physical retail locations or a sales team closing deals offline?
+                </Label>
+                <div className="flex gap-2">
+                  {([true, false] as const).map((val) => (
+                    <button
+                      key={String(val)}
+                      type="button"
+                      onClick={() => setHasOfflineConversions(val)}
+                      className={cn(
+                        'flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition-colors',
+                        hasOfflineConversions === val
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-border text-muted-foreground hover:border-foreground hover:text-foreground',
+                      )}
+                    >
+                      {val ? 'Yes' : 'No'}
+                    </button>
+                  ))}
+                </div>
+                {hasOfflineConversions && (
+                  <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded px-3 py-2">
+                    When you deploy signals for this client, set the <strong>Event Source</strong> to{' '}
+                    <em>Physical Store</em> or <em>System Generated</em> for offline conversion signals. This
+                    controls Meta&apos;s <code className="text-[11px]">action_source</code> and Google&apos;s DMA{' '}
+                    <code className="text-[11px]">eventSource</code>, which determines attribution windows (62–90 days
+                    vs. 7 days for online events).
+                  </p>
+                )}
+              </div>
+
               <div className="space-y-1">
                 <Label htmlFor="primary-objective" className="text-xs">
                   Primary conversion objective <span className="text-muted-foreground">(optional)</span>
@@ -479,7 +512,20 @@ export function ClientSetupWizard({ orgId, onCreated, onClose }: Props) {
                     {pages.filter((p) => p.url.trim()).length || 'None yet'}
                   </span>
                 </div>
+                {hasOfflineConversions !== null && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Offline conversions</span>
+                    <span className="font-medium">{hasOfflineConversions ? 'Yes' : 'No'}</span>
+                  </div>
+                )}
               </div>
+              {hasOfflineConversions && (
+                <div className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded px-3 py-2">
+                  <strong>Reminder:</strong> When deploying signals, set Event Source to{' '}
+                  <em>Physical Store</em> or <em>System Generated</em> for offline conversions to get the
+                  correct 62–90 day attribution window on Meta and Google.
+                </div>
+              )}
               {error && (
                 <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>
               )}
