@@ -43,6 +43,7 @@ export interface SignalPack {
   source_client_id: string | null;
   version: number;
   signals_count: number;
+  signal_keys?: string[];
   created_at: string;
   updated_at: string;
 }

@@ -24,7 +24,13 @@ interface Props {
   onClose: () => void;
 }
 
-const CONVERSION_SIGNAL_KEYS = new Set(['purchase', 'begin_checkout', 'generate_lead', 'sign_up', 'subscribe']);
+const CONVERSION_SIGNAL_KEYS = new Set([
+  'purchase', 'begin_checkout', 'generate_lead', 'sign_up', 'subscribe',
+  'in_store_purchase', 'crm_conversion',
+]);
+
+// Signals that need a Google Store Sales allowlisting warning in the enrichment step
+const STORE_SALES_SIGNAL_KEYS = new Set(['in_store_purchase']);
 
 export function DeploymentWizard({ orgId, clientId, clientName, onDeployed, onClose }: Props) {
   const [step, setStep] = useState<1 | 2>(1);
@@ -77,17 +83,24 @@ export function DeploymentWizard({ orgId, clientId, clientName, onDeployed, onCl
     onDeployed(deployment!);
   }
 
-  // Build conversion signals list from the selected pack for step 2
+  // Build conversion signals list from the selected pack for step 2.
+  // Uses the pack's signal list if available, otherwise falls back to all known conversion keys.
   const selectedPack = packs.find((p) => p.id === selectedPackId);
-  const conversionSignals = step === 2 && deployment
-    ? CONVERSION_SIGNAL_KEYS.has('purchase')
-      ? [
-          { signal_key: 'purchase', signal_name: 'Purchase', platform_mappings: {}, current_config: null },
-          { signal_key: 'begin_checkout', signal_name: 'Begin Checkout', platform_mappings: {}, current_config: null },
-          { signal_key: 'generate_lead', signal_name: 'Generate Lead', platform_mappings: {}, current_config: null },
-        ].filter(() => selectedPack !== undefined)
-      : []
+  const conversionSignals = step === 2 && deployment && selectedPack
+    ? (selectedPack.signal_keys ?? [])
+        .filter((key: string) => CONVERSION_SIGNAL_KEYS.has(key))
+        .map((key: string) => ({
+          signal_key: key,
+          signal_name: key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+          platform_mappings: {},
+          current_config: null,
+        }))
     : [];
+
+  // Whether the selected pack contains a signal that needs the Store Sales allowlisting warning
+  const hasStoreSalesSignal = selectedPack?.signal_keys?.some((k: string) =>
+    STORE_SALES_SIGNAL_KEYS.has(k),
+  ) ?? false;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -179,16 +192,27 @@ export function DeploymentWizard({ orgId, clientId, clientName, onDeployed, onCl
 
           {/* ── Step 2: Signal Enrichment ── */}
           {step === 2 && deployment && (
-            <SignalEnrichmentStep
-              deploymentId={deployment.id}
-              conversionSignals={conversionSignals}
-              onSave={handleSaveEnrichment}
-              onBack={() => setStep(1)}
-              onSkip={handleSkipEnrichment}
-              onValidatePath={(path) =>
-                enrichmentApi.validateFieldPath(orgId, clientId, { field_path: path })
-              }
-            />
+            <>
+              {hasStoreSalesSignal && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+                  <span className="font-semibold">Google Store Sales eligibility required</span>
+                  {' — '}
+                  This pack includes an in-store purchase signal. Google Store Sales requires your account
+                  to be allowlisted by Google. Contact your Google rep to confirm eligibility before enabling
+                  the Google destination for this signal.
+                </div>
+              )}
+              <SignalEnrichmentStep
+                deploymentId={deployment.id}
+                conversionSignals={conversionSignals}
+                onSave={handleSaveEnrichment}
+                onBack={() => setStep(1)}
+                onSkip={handleSkipEnrichment}
+                onValidatePath={(path) =>
+                  enrichmentApi.validateFieldPath(orgId, clientId, { field_path: path })
+                }
+              />
+            </>
           )}
 
         </CardContent>

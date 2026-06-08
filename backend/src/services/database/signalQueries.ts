@@ -97,12 +97,14 @@ export async function deleteSignal(signalId: string, orgId: string): Promise<voi
 // ─── Signal Packs ─────────────────────────────────────────────────────────────
 
 export async function listSignalPacks(orgId?: string): Promise<SignalPack[]> {
-  let query = supabase.from('signal_packs').select('*');
+  const selectStr = '*, signal_pack_signals(signals(key))';
+
+  let query = supabase.from('signal_packs').select(selectStr);
 
   if (orgId) {
     query = supabase
       .from('signal_packs')
-      .select('*')
+      .select(selectStr)
       .or(`is_system.eq.true,organisation_id.eq.${orgId}`);
   } else {
     query = query.eq('is_system', true);
@@ -110,7 +112,14 @@ export async function listSignalPacks(orgId?: string): Promise<SignalPack[]> {
 
   const { data, error } = await query.order('name');
   if (error) throw new Error(`Failed to list signal packs: ${error.message}`);
-  return (data ?? []) as SignalPack[];
+
+  // Flatten nested join into a flat signal_keys array
+  return (data ?? []).map((row: Record<string, unknown>) => {
+    const joins = (row['signal_pack_signals'] as Array<{ signals: { key: string } | null }> | undefined) ?? [];
+    const signal_keys = joins.map((j) => j.signals?.key).filter((k): k is string => !!k);
+    const { signal_pack_signals: _, ...rest } = row;
+    return { ...rest, signal_keys } as SignalPack;
+  });
 }
 
 export async function getSignalPack(packId: string): Promise<SignalPack | null> {
