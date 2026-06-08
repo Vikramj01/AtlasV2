@@ -132,6 +132,7 @@ export function dbRowToSignalEnrichmentConfig(row: Record<string, unknown>): Sig
     id: row.id as string,
     deployment_id: row.deployment_id as string,
     signal_key: row.signal_key as string,
+    event_source: ((row.event_source as string | undefined) ?? 'website') as import('@/types/capi').ActionSource,
     value_config: row.value_field
       ? {
           field: row.value_field as string,
