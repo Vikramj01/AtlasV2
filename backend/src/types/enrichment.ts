@@ -2,7 +2,7 @@
 // Atlas Signal Enrichment Configuration — Backend Types
 // ============================================================
 
-import type { IdentifierType } from './capi';
+import type { ActionSource, IdentifierType } from './capi';
 
 export type CurrencyMode = 'static' | 'dynamic';
 export type ContentIdsPathType = 'array' | 'string' | 'nested';
@@ -71,6 +71,7 @@ export interface SignalEnrichmentConfig {
   id: string;
   deployment_id: string;
   signal_key: string;
+  event_source: ActionSource;
   value_config: ValueConfig | null;
   currency_config: CurrencyConfig | null;
   dedup_config: SignalDedupConfig | null;
@@ -119,6 +120,7 @@ export interface SaveIdentityConfigRequest {
 export interface SaveSignalEnrichmentRequest {
   deployment_id: string;
   signal_key: string;
+  event_source?: ActionSource;
   value_config: ValueConfig | null;
   currency_config: CurrencyConfig | null;
   dedup_config: SignalDedupConfig | null;

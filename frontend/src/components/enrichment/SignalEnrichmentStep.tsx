@@ -5,6 +5,7 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { FieldMappingRow } from './FieldMappingRow';
 import { cn } from '@/lib/utils';
+import type { ActionSource } from '@/types/capi';
 import type {
   SignalEnrichmentConfig,
   SaveSignalEnrichmentRequest,
@@ -32,6 +33,7 @@ interface SignalEnrichmentStepProps {
 }
 
 interface SignalFormState {
+  event_source: ActionSource;
   value_field: string;
   includes_tax: boolean;
   includes_shipping: boolean;
@@ -47,6 +49,7 @@ interface SignalFormState {
 }
 
 const DEFAULT_FORM: SignalFormState = {
+  event_source: 'website',
   value_field: '',
   includes_tax: false,
   includes_shipping: false,
@@ -64,6 +67,7 @@ const DEFAULT_FORM: SignalFormState = {
 function configToForm(config: SignalEnrichmentConfig | null): SignalFormState {
   if (!config) return { ...DEFAULT_FORM };
   return {
+    event_source: config.event_source ?? 'website',
     value_field: config.value_config?.field ?? '',
     includes_tax: config.value_config?.includes_tax ?? false,
     includes_shipping: config.value_config?.includes_shipping ?? false,
@@ -103,6 +107,7 @@ function formToRequest(deploymentId: string, signalKey: string, form: SignalForm
   return {
     deployment_id: deploymentId,
     signal_key: signalKey,
+    event_source: form.event_source,
     value_config,
     currency_config,
     dedup_config,
@@ -224,6 +229,49 @@ export function SignalEnrichmentStep({
           const form = forms[signal.signal_key] ?? DEFAULT_FORM;
           return (
             <TabsContent key={signal.signal_key} value={signal.signal_key} className="space-y-4 pt-4">
+
+              {/* Event Source */}
+              <div className="rounded-lg border border-gray-200 bg-white px-4 py-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Event Source</p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      Where did this conversion happen? Controls Meta&apos;s <code className="text-[11px]">action_source</code> and
+                      Google&apos;s DMA <code className="text-[11px]">eventSource</code>. Wrong source = wrong attribution window.
+                    </p>
+                  </div>
+                </div>
+                <select
+                  value={form.event_source}
+                  onChange={(e) => updateForm(signal.signal_key, { event_source: e.target.value as ActionSource })}
+                  className="text-sm border border-gray-300 rounded-md px-3 py-1.5 bg-white w-full max-w-xs"
+                >
+                  <option value="website">Website (online — default)</option>
+                  <option value="physical_store">Physical Store (in-store POS)</option>
+                  <option value="phone_call">Phone Call</option>
+                  <option value="system_generated">System Generated (CRM / backend)</option>
+                  <option value="app">App</option>
+                  <option value="chat">Chat</option>
+                </select>
+                {form.event_source === 'physical_store' && (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                    Google Store Sales requires your account to be allowlisted by Google. Contact your Google rep to
+                    confirm eligibility before enabling. Attribution window: 62 days (Meta) / 90 days (Google).
+                  </p>
+                )}
+                {form.event_source === 'system_generated' && (
+                  <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded px-3 py-2">
+                    CRM/offline events: ensure GCLID was captured at the original online touchpoint and is stored
+                    in your CRM. Attribution window: 62 days (Meta) / 90 days (Google).
+                  </p>
+                )}
+                {(form.event_source === 'physical_store' || form.event_source === 'system_generated') && (
+                  <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded px-3 py-2">
+                    Offline events bypass browser deduplication. Ensure your dedup ID field below maps to a
+                    transaction ID or CRM record ID that is unique per event.
+                  </p>
+                )}
+              </div>
 
               {/* Value */}
               <div className="rounded-lg border border-gray-200 bg-white">

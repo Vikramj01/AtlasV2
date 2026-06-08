@@ -2,7 +2,7 @@
 // Atlas Signal Enrichment Configuration — TypeScript Types
 // ============================================================
 
-import type { IdentifierType } from './capi';
+import type { ActionSource, IdentifierType } from './capi';
 
 // ─── Client-Level Identity Configuration ─────────────────────────────────────
 
@@ -83,6 +83,7 @@ export interface SignalEnrichmentConfig {
   id: string;
   deployment_id: string;
   signal_key: string;
+  event_source: ActionSource;
   value_config: ValueConfig | null;
   currency_config: CurrencyConfig | null;
   dedup_config: SignalDedupConfig | null;
@@ -152,6 +153,7 @@ export interface SaveIdentityConfigRequest {
 export interface SaveSignalEnrichmentRequest {
   deployment_id: string;
   signal_key: string;
+  event_source?: ActionSource;
   value_config: ValueConfig | null;
   currency_config: CurrencyConfig | null;
   dedup_config: SignalDedupConfig | null;

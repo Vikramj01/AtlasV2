@@ -26,6 +26,7 @@ import type {
 import type { ConsentDecisions } from '@/types/consent';
 import type {
   DMAEvent,
+  DMAEventSource,
   DMAUserIdentifier,
   DMAIngestEventsRequest,
   DMAIngestEventsResponse,
@@ -194,12 +195,27 @@ export function formatGoogleAdjustment(
 
 // ── GoogleConversionAdjustment → DMAEvent ─────────────────────────────────────
 
+// Maps Atlas/Meta action_source values to the DMA EventSource enum.
+// Both online EC and offline conversions use the same DMA endpoint — eventSource
+// is the only field that distinguishes them. Store Sales (IN_STORE) requires
+// Google account allowlisting; surface a warning in the Deployment Wizard UI.
+function actionSourceToDMAEventSource(actionSource: string | undefined): DMAEventSource {
+  switch (actionSource) {
+    case 'physical_store': return 'IN_STORE';
+    case 'phone_call':     return 'PHONE';
+    case 'app':            return 'APP';
+    case 'system_generated':
+    case 'chat':           return 'OTHER';
+    default:               return 'WEB';
+  }
+}
+
 function toDMAEvent(adjustment: GoogleConversionAdjustment, event: AtlasEvent): DMAEvent {
   const eventDateTime = new Date(event.event_time * 1000).toISOString();
   return {
     eventType: 'CONVERSION',
     eventDateTime,
-    eventSource: 'WEB',
+    eventSource: actionSourceToDMAEventSource(event.action_source),
     userIdentifiers: adjustment.userIdentifiers as DMAUserIdentifier[],
     conversionAction: adjustment.conversionAction,
     transactionId: adjustment.orderId,
