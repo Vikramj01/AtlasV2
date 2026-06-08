@@ -124,26 +124,48 @@ export function EnrichmentScoreBadge({ score, onConfigure, compact = false }: En
       {score.signal_scores.length > 0 && (
         <div className="border-t border-gray-100 pt-3 space-y-1.5">
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Conversion signals</p>
-          {score.signal_scores.map((s) => (
-            <div key={s.signal_key} className="flex items-center justify-between">
-              <span className="text-xs text-gray-700 capitalize">{s.signal_name.replace(/_/g, ' ')}</span>
-              <div className="flex items-center gap-2">
-                {s.warnings.filter((w) => w.severity === 'error').length > 0 && (
-                  <span className="text-[10px] text-red-600 font-medium">
-                    {s.warnings.filter((w) => w.severity === 'error').length} error{s.warnings.filter((w) => w.severity === 'error').length !== 1 ? 's' : ''}
-                  </span>
-                )}
-                <span
-                  className={cn(
-                    'text-xs font-semibold',
-                    s.score >= 70 ? 'text-green-600' : s.score >= 40 ? 'text-amber-600' : 'text-red-600',
-                  )}
-                >
-                  {s.score}/100
-                </span>
+          {score.signal_scores.map((s) => {
+            const errors = s.warnings.filter((w) => w.severity === 'error');
+            const warningItems = s.warnings.filter((w) => w.severity === 'warning');
+            const offlineWarnings = s.warnings.filter((w) =>
+              w.field === 'TIME_02' || w.field === 'TIME_03',
+            );
+            return (
+              <div key={s.signal_key} className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-700 capitalize">{s.signal_name.replace(/_/g, ' ')}</span>
+                  <div className="flex items-center gap-2">
+                    {errors.length > 0 && (
+                      <span className="text-[10px] text-red-600 font-medium">
+                        {errors.length} error{errors.length !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                    {warningItems.length > 0 && (
+                      <span className="text-[10px] text-amber-600 font-medium">
+                        {warningItems.length} warning{warningItems.length !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                    <span
+                      className={cn(
+                        'text-xs font-semibold',
+                        s.score >= 70 ? 'text-green-600' : s.score >= 40 ? 'text-amber-600' : 'text-red-600',
+                      )}
+                    >
+                      {s.score}/100
+                    </span>
+                  </div>
+                </div>
+                {offlineWarnings.map((w, i) => (
+                  <p key={i} className={cn(
+                    'text-[11px] rounded px-2 py-1',
+                    w.severity === 'error' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700',
+                  )}>
+                    {w.message}
+                  </p>
+                ))}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

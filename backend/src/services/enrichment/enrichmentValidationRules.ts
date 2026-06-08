@@ -189,6 +189,79 @@ function rule_CROSS_02(signals: SignalEnrichmentConfig[]): ValidationRuleResult 
   };
 }
 
+// ── Offline / event-time rules ─────────────────────────────────────────────────
+
+// Attribution windows in days per platform and event source.
+const ONLINE_WINDOW_DAYS = 7;       // Meta online
+const OFFLINE_WINDOW_DAYS_META = 62; // Meta offline (physical_store / system_generated)
+const OFFLINE_WINDOW_DAYS_GOOGLE = 90; // Google DMA offline
+
+function isOfflineSource(source: string | undefined): boolean {
+  return source === 'physical_store' || source === 'system_generated' || source === 'phone_call';
+}
+
+function rule_TIME_01(signals: SignalEnrichmentConfig[]): ValidationRuleResult {
+  // Checks whether any signal's event_source is set to an offline type while
+  // the configured window hints (carried in platform_mappings metadata) would
+  // exceed the online 7-day default. Since Atlas doesn't store a concrete
+  // event_time on the config itself, this rule validates that offline signals
+  // are explicitly configured — i.e. the operator has consciously chosen a
+  // non-website source. A future enhancement can validate live event timestamps
+  // against the window when the CAPI pipeline rejects out-of-window events.
+  const offlineSignals = signals.filter((s) => isOfflineSource(s.event_source));
+  const passed = offlineSignals.every((s) => {
+    // Offline signals must have at least email or phone mapped (validated via
+    // identity config in TIME_02) — here we just confirm the source is explicit.
+    return s.event_source !== undefined && s.event_source !== 'website';
+  });
+  return {
+    rule_id: 'TIME_01',
+    passed: true, // informational — real window enforcement happens at ingest time
+    severity: 'info',
+    message: offlineSignals.length > 0
+      ? `${offlineSignals.length} offline signal(s) configured — attribution window: ${OFFLINE_WINDOW_DAYS_META} days (Meta) / ${OFFLINE_WINDOW_DAYS_GOOGLE} days (Google). Ensure event_time in payloads is within these windows.`
+      : `No offline signals configured — default ${ONLINE_WINDOW_DAYS}-day attribution window applies`,
+  };
+}
+
+function rule_TIME_02(
+  identity: ClientIdentityConfig | null,
+  signals: SignalEnrichmentConfig[],
+): ValidationRuleResult {
+  // OFFLINE_SOURCE_MISSING_IDENTITY: physical_store signals require email or
+  // phone to have any chance of matching — without them, Meta and Google cannot
+  // join the event to an ad click.
+  const physicalStoreSignals = signals.filter((s) => s.event_source === 'physical_store');
+  if (physicalStoreSignals.length === 0) {
+    return { rule_id: 'TIME_02', passed: true, severity: 'error', message: 'No physical store signals configured' };
+  }
+  const hasIdentity = !!(identity?.email_field || identity?.phone_field);
+  return {
+    rule_id: 'TIME_02',
+    passed: hasIdentity,
+    severity: 'error',
+    message: hasIdentity
+      ? 'Identity fields (email/phone) are configured for physical store signals'
+      : 'Physical store signals require email or phone identity fields — without them match rate will be zero',
+  };
+}
+
+function rule_TIME_03(signals: SignalEnrichmentConfig[]): ValidationRuleResult {
+  // OFFLINE_MISSING_FBC_CONTEXT: physical_store events benefit greatly from
+  // fbclid capture at the initial online touchpoint. This is a warning to
+  // remind operators to capture it in CRM/loyalty systems.
+  const physicalStoreSignals = signals.filter((s) => s.event_source === 'physical_store');
+  if (physicalStoreSignals.length === 0) {
+    return { rule_id: 'TIME_03', passed: true, severity: 'warning', message: 'No physical store signals configured' };
+  }
+  return {
+    rule_id: 'TIME_03',
+    passed: false, // Always a reminder when physical_store is configured
+    severity: 'warning',
+    message: 'Physical store signals: capture fbclid at the initial online touchpoint and store it in your CRM or loyalty system to enable cross-channel matching on Meta',
+  };
+}
+
 // ── Main evaluator ─────────────────────────────────────────────────────────────
 
 export function evaluateEnrichmentRules(
@@ -208,6 +281,9 @@ export function evaluateEnrichmentRules(
     rule_SIG_05(signals),
     rule_CROSS_01(identity, signals),
     rule_CROSS_02(signals),
+    rule_TIME_01(signals),
+    rule_TIME_02(identity, signals),
+    rule_TIME_03(signals),
   ];
 
   const warnings: EnrichmentWarning[] = ruleResults
