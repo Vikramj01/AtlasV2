@@ -233,6 +233,22 @@ export function validateSignalEnrichment(
     });
   }
 
+  // TIME_02 / TIME_03 — offline source checks (per-signal)
+  if (config.event_source === 'physical_store') {
+    warnings.push({
+      field: 'TIME_03',
+      message: 'Physical store signal: capture fbclid at the initial online touchpoint and store it in your CRM or loyalty system to enable cross-channel matching on Meta',
+      severity: 'warning',
+    });
+  }
+  if (config.event_source === 'system_generated') {
+    warnings.push({
+      field: 'TIME_03',
+      message: 'CRM/system signal: ensure GCLID was captured at the original online touchpoint and is stored in your CRM for Google Enhanced Conversions for Leads',
+      severity: 'info',
+    });
+  }
+
   let score = 100;
   score -= requiredMissing.length * 25;
   score -= recommendedMissing.length * 10;
