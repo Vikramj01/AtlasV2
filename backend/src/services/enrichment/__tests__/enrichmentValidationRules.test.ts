@@ -30,6 +30,7 @@ const purchaseEnrichment: SignalEnrichmentConfig = {
   id: 'sec-1',
   deployment_id: 'dep-1',
   signal_key: 'purchase',
+  event_source: 'website',
   value_config: { field: 'ecommerce.value', includes_tax: false, includes_shipping: false },
   currency_config: { mode: 'static', static_value: 'GBP' },
   dedup_config: { field: 'transaction_id' },
