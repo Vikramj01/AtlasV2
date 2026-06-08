@@ -162,7 +162,10 @@ export function applySignalEnrichment(
     }
   }
 
-  return { ...event, custom_data: cd };
+  // Propagate event_source onto the event so both Meta and Google adapters
+  // receive the correct action_source / DMA EventSource without extra lookups.
+  const eventSource = enrichmentConfig.event_source ?? 'website';
+  return { ...event, action_source: eventSource, custom_data: cd };
 }
 
 // ─── Validation ───────────────────────────────────────────────────────────────

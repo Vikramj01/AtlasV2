@@ -38,7 +38,13 @@ export type IdentifierType =
   | 'wbraid'  // Google iOS web-to-app
   | 'gbraid'; // Google iOS app-to-web
 
-export type ActionSource = 'website' | 'physical_store' | 'system_generated';
+export type ActionSource =
+  | 'website'
+  | 'physical_store'
+  | 'phone_call'
+  | 'system_generated'
+  | 'app'
+  | 'chat';
 
 // --- Hashed Identifier ---
 
@@ -86,6 +92,7 @@ export type ProviderCredentials =
 export interface EventMapping {
   atlas_event: string;         // Event name from Atlas Journey Builder
   provider_event: string;      // Provider's standard event name
+  event_source?: ActionSource; // Overrides AtlasEvent.action_source for this specific mapping; defaults to 'website'
   custom_params?: Record<string, string>; // Additional parameter mappings
 }
 

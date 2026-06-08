@@ -97,9 +97,14 @@ const ContentConfigSchema = z.object({
   num_items_field: z.string().optional(),
 }).nullable();
 
+const ActionSourceEnum = z.enum([
+  'website', 'physical_store', 'phone_call', 'system_generated', 'app', 'chat',
+]);
+
 const SignalEnrichmentSchema = z.object({
   deployment_id: z.string().uuid(),
   signal_key: z.string().min(1),
+  event_source: ActionSourceEnum.optional().default('website'),
   value_config: ValueConfigSchema,
   currency_config: CurrencyConfigSchema,
   dedup_config: DedupConfigSchema,
@@ -318,6 +323,7 @@ router.put(
         id: '',
         deployment_id: deploymentId,
         signal_key: signalKey,
+        event_source: parsed.data.event_source ?? 'website',
         value_config: parsed.data.value_config,
         currency_config: parsed.data.currency_config,
         dedup_config: parsed.data.dedup_config,

@@ -95,6 +95,7 @@ export async function upsertSignalEnrichmentConfig(
   const payload = {
     deployment_id: req.deployment_id,
     signal_key: req.signal_key,
+    event_source: req.event_source ?? 'website',
     value_field: req.value_config?.field ?? null,
     value_includes_tax: req.value_config?.includes_tax ?? false,
     value_includes_shipping: req.value_config?.includes_shipping ?? false,
