@@ -189,10 +189,10 @@ export function ClientSetupWizard({ orgId, onCreated, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <Card className="w-full max-w-lg">
-        <CardContent className="p-6">
+      <Card className="w-full max-w-lg max-h-[90vh] flex flex-col">
+        <CardContent className="p-6 flex flex-col min-h-0">
           {/* Progress */}
-          <div className="mb-6 flex items-center gap-2">
+          <div className="mb-6 flex-none flex items-center gap-2">
             {Array.from({ length: TOTAL_STEPS }).map((_, i) => (
               <div
                 key={i}
@@ -203,6 +203,9 @@ export function ClientSetupWizard({ orgId, onCreated, onClose }: Props) {
               />
             ))}
           </div>
+
+          {/* Scrollable step content */}
+          <div className="flex-1 overflow-y-auto min-h-0">
 
           {/* Step 1: Starting point */}
           {step === 1 && (
@@ -532,9 +535,11 @@ export function ClientSetupWizard({ orgId, onCreated, onClose }: Props) {
             </div>
           )}
 
+          </div>{/* end scrollable step content */}
+
           {/* Nav buttons — hidden on step 4 (IdentityConfigStep has its own buttons) */}
           {step !== 4 && (
-            <div className="mt-6 flex justify-between">
+            <div className="mt-4 flex-none flex justify-between border-t pt-4">
               <Button variant="ghost" onClick={step === 1 ? onClose : () => setStep((s) => (s - 1) as typeof step)}>
                 {step === 1 ? 'Cancel' : '← Back'}
               </Button>
