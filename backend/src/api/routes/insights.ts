@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { authMiddleware } from '@/api/middleware/authMiddleware';
 import { planGuard } from '@/api/middleware/planGuard';
 import { supabaseAdmin } from '@/services/database/supabase';
+import { airIngestionQueue } from '@/services/queue/jobQueue';
+import { yesterday } from '@/services/air/ingestion/airIngestionUtils';
 
 export const insightsRouter = Router();
 
@@ -63,6 +65,39 @@ insightsRouter.patch('/:id', authMiddleware, planGuard('pro'), async (req, res) 
     }
 
     return res.json({ data: { status: parsed.data.status }, message: null });
+  } catch {
+    return res.status(500).json({ error: 'Internal server error', data: null });
+  }
+});
+
+// POST /api/insights/trigger — enqueues an on-demand AIR job for the authenticated org.
+// Deduplicates by jobId so a second call while a job is active returns 202 already_queued.
+insightsRouter.post('/trigger', authMiddleware, planGuard('pro'), async (req, res) => {
+  try {
+    const orgId = await resolveOrgId(req.user!.id);
+    const date  = yesterday();
+    const jobId = `air-ingest:${orgId}:manual`;
+
+    const existing = await airIngestionQueue.getJob(jobId);
+    if (existing) {
+      const state = await existing.getState();
+      if (['active', 'waiting', 'delayed'].includes(state)) {
+        return res.status(202).json({ data: { status: 'already_queued', date }, message: null });
+      }
+    }
+
+    await airIngestionQueue.add(
+      { trigger: 'manual', org_id: orgId },
+      {
+        jobId,
+        attempts:         2,
+        backoff:          { type: 'exponential', delay: 30_000 },
+        removeOnComplete: 5,
+        removeOnFail:     5,
+      },
+    );
+
+    return res.status(202).json({ data: { status: 'queued', date }, message: null });
   } catch {
     return res.status(500).json({ error: 'Internal server error', data: null });
   }

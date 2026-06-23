@@ -31,4 +31,10 @@ export const insightsApi = {
       method: 'PATCH',
       body: JSON.stringify({ status }),
     }),
+
+  trigger: () =>
+    apiFetch<{ data: { status: 'queued' | 'already_queued'; date: string }; message: string | null }>(
+      '/api/insights/trigger',
+      { method: 'POST' },
+    ),
 };
