@@ -5,13 +5,16 @@ import { supabaseAdmin } from '@/services/database/supabase';
 import logger from '@/utils/logger';
 
 export interface GTGProbeResult {
-  checkStatus: 'pass' | 'fail' | 'timeout' | 'error';
+  checkStatus: 'pass' | 'degraded' | 'fail' | 'timeout' | 'error';
   httpStatus: number | null;
   responseMs: number | null;
   errorMessage: string | null;
 }
 
-export async function probeGTGPath(orgId: string): Promise<GTGProbeResult & { gtagUrl: string | null }> {
+export async function probeGTGPath(
+  orgId: string,
+  degradedThresholdMs = 2000,
+): Promise<GTGProbeResult & { gtagUrl: string | null }> {
   // Look up the org's gtm container connection to find a domain to probe
   const { data } = await supabaseAdmin
     .from('gtm_container_connections')
@@ -37,7 +40,14 @@ export async function probeGTGPath(orgId: string): Promise<GTGProbeResult & { gt
     clearTimeout(timeout);
 
     const responseMs = Date.now() - start;
-    const checkStatus = res.ok ? 'pass' : 'fail';
+    let checkStatus: GTGProbeResult['checkStatus'];
+    if (!res.ok) {
+      checkStatus = 'fail';
+    } else if (responseMs > degradedThresholdMs) {
+      checkStatus = 'degraded';
+    } else {
+      checkStatus = 'pass';
+    }
 
     return { checkStatus, httpStatus: res.status, responseMs, errorMessage: res.ok ? null : `HTTP ${res.status}`, gtagUrl };
   } catch (err) {
