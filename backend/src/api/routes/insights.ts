@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { z } from 'zod';
 import { authMiddleware } from '@/api/middleware/authMiddleware';
 import { planGuard } from '@/api/middleware/planGuard';
 import { supabaseAdmin } from '@/services/database/supabase';
@@ -32,6 +33,36 @@ insightsRouter.get('/', authMiddleware, planGuard('pro'), async (req, res) => {
     }
 
     return res.json({ data: insights ?? [], message: null });
+  } catch {
+    return res.status(500).json({ error: 'Internal server error', data: null });
+  }
+});
+
+const patchSchema = z.object({
+  status: z.enum(['read', 'dismissed']),
+});
+
+// PATCH /api/insights/:id — update an insight's read/dismissed status.
+insightsRouter.patch('/:id', authMiddleware, planGuard('pro'), async (req, res) => {
+  try {
+    const parsed = patchSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'status must be "read" or "dismissed"', data: null });
+    }
+
+    const orgId = await resolveOrgId(req.user!.id);
+
+    const { error } = await supabaseAdmin
+      .from('air_insights')
+      .update({ status: parsed.data.status })
+      .eq('id', req.params.id)
+      .eq('org_id', orgId);
+
+    if (error) {
+      return res.status(500).json({ error: 'Failed to update insight', data: null });
+    }
+
+    return res.json({ data: { status: parsed.data.status }, message: null });
   } catch {
     return res.status(500).json({ error: 'Internal server error', data: null });
   }
