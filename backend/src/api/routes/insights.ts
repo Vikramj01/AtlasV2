@@ -15,14 +15,14 @@ async function resolveOrgId(userId: string): Promise<string> {
 }
 
 // GET /api/insights — returns AIR insight feed for the authenticated org.
-// Stub: returns empty feed until the narration layer ships in Sprint 5.
+// Each insight includes the narrated text and the anomaly context that generated it.
 insightsRouter.get('/', authMiddleware, planGuard('pro'), async (req, res) => {
   try {
     const orgId = await resolveOrgId(req.user!.id);
 
     const { data: insights, error } = await supabaseAdmin
       .from('air_insights')
-      .select('id, title, body, status, metric_name, source, snapshot_date, created_at')
+      .select('id, narrative, status, model_version, anomaly_id, created_at, air_anomalies(source, metric_name, dimension, detected_date, deviation_pct, severity, observed_value, baseline_value)')
       .eq('org_id', orgId)
       .order('created_at', { ascending: false })
       .limit(50);
