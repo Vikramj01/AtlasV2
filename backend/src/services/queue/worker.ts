@@ -1,5 +1,5 @@
-import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue, crawlQueue, reconciliationSyncQueue, reconciliationRunQueue, reconciliationStatsQueue, reconciliationStaleResyncQueue, gtmContainerSyncQueue, ihcRulesQueue, ihcDriftQueue, ihcAlertQueue, ihcDigestQueue, dmaIngestQueue, dqmQueue, signalMvRefreshQueue } from './jobQueue';
-import type { GtmContainerSyncJobData, IhcRulesJobData, IhcDriftJobData, IhcAlertJobData, IhcDigestJobData, DQMJobData } from './jobQueue';
+import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue, crawlQueue, reconciliationSyncQueue, reconciliationRunQueue, reconciliationStatsQueue, reconciliationStaleResyncQueue, gtmContainerSyncQueue, ihcRulesQueue, ihcDriftQueue, ihcAlertQueue, ihcDigestQueue, dmaIngestQueue, dqmQueue, signalMvRefreshQueue, airIngestionQueue } from './jobQueue';
+import type { GtmContainerSyncJobData, IhcRulesJobData, IhcDriftJobData, IhcAlertJobData, IhcDigestJobData, DQMJobData, AirIngestionJobData } from './jobQueue';
 import { runConfigSyncForConnection, getConnectionsDueForSync, runStatsSyncForConnection, getConnectionsDueForStatsSync, runStaleResyncForConnection, getConnectionsForStaleResync } from '@/services/reconciliation/sync/syncOrchestrator';
 import { executeRun } from '@/services/reconciliation/reconciliationRunner';
 import type { SyncJobData, StatsSyncJobData, StaleResyncJobData, ReconciliationJobData } from './jobQueue';
@@ -1265,3 +1265,52 @@ dqmQueue.add(
   { trigger: 'scheduled' },
   { repeat: { cron: '*/15 * * * *' }, jobId: 'dqm-15min' },
 ).catch((err) => logger.error({ err }, 'Failed to schedule DQM job'));
+
+// ── AIR Ingestion Worker ──────────────────────────────────────────────────────
+// Two job shapes (mirrors DQM fan-out pattern):
+//   1. Fan-out job  (org_id absent)  — discovers eligible orgs and enqueues children
+//   2. Per-org job  (org_id present) — runs ingestion for that single org
+//
+// Daily cron at 02:30 UTC (30 min after the nightly usage-summary/crawl window).
+// Manual trigger available via POST /api/insights/trigger (single org, rate-limited).
+
+airIngestionQueue.process(async (job) => {
+  const { trigger, org_id } = job.data as AirIngestionJobData;
+  const { runIngestionForOrg, getAirEligibleOrgIds } = await import('@/services/air/ingestion/ingestionOrchestrator');
+
+  if (org_id) {
+    logger.info({ orgId: org_id, trigger, jobId: job.id }, 'AIR ingestion: per-org job received');
+    await runIngestionForOrg(org_id);
+    return;
+  }
+
+  // Fan-out: enqueue one child job per eligible org
+  const orgIds = await getAirEligibleOrgIds();
+  // Floor to the current daily window for idempotent jobIds on retry
+  const dayWindow = Math.floor(Date.now() / (24 * 60 * 60 * 1000));
+
+  await Promise.all(
+    orgIds.map((id) =>
+      airIngestionQueue.add(
+        { trigger, org_id: id },
+        {
+          jobId:            `air-ingest:${id}:${dayWindow}`,
+          attempts:         2,
+          backoff:          { type: 'exponential', delay: 30_000 },
+          removeOnComplete: 25,
+          removeOnFail:     10,
+        },
+      ).catch((err) => logger.error({ err, orgId: id }, 'AIR: failed to enqueue per-org job')),
+    ),
+  );
+
+  logger.info({ count: orgIds.length, dayWindow }, 'AIR ingestion: fan-out enqueued per-org jobs');
+});
+
+logger.info('AIR ingestion worker registered');
+
+// Daily cron: 02:30 UTC — after nightly crawl/usage-summary jobs at 02:00.
+airIngestionQueue.add(
+  { trigger: 'scheduled' },
+  { repeat: { cron: '30 2 * * *' }, jobId: 'air-ingestion-daily' },
+).catch((err) => logger.error({ err }, 'Failed to schedule AIR ingestion job'));

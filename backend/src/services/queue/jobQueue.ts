@@ -539,6 +539,32 @@ signalMvRefreshQueue.on('failed', (job, err) => {
   logger.error({ jobId: job?.id, err: err.message }, 'Signal aggregates MV refresh failed');
 });
 
+// ── AIR Ingestion Queue ───────────────────────────────────────────────────────
+// Daily batch: pulls GA4 / Google Ads / Meta Ads metrics for AIR anomaly detection.
+// Fan-out job (no org_id) discovers eligible orgs and enqueues per-org children.
+// Only ID is in the payload — no credentials or PII.
+
+export interface AirIngestionJobData {
+  trigger: 'scheduled' | 'manual';
+  org_id?: string; // present for per-org child jobs and manual trigger
+}
+
+export const airIngestionQueue = new Bull<AirIngestionJobData>('air-ingestion', makeBullOpts({
+  attempts: 2,
+  backoff: { type: 'exponential', delay: 30_000 },
+  timeout: 10 * 60 * 1000, // 10-minute hard cap per org
+  removeOnComplete: 50,
+  removeOnFail: 25,
+}));
+
+airIngestionQueue.on('completed', (job) => {
+  logger.info({ jobId: job.id, orgId: job.data.org_id, trigger: job.data.trigger }, 'AIR ingestion job completed');
+});
+
+airIngestionQueue.on('failed', (job, err) => {
+  logger.error({ jobId: job?.id, orgId: job?.data?.org_id, err: err.message }, 'AIR ingestion job failed');
+});
+
 // ── DQM Queue ────────────────────────────────────────────────────────────────
 // Runs GTG path probe + DMA diagnostics polling for all active orgs hourly.
 
