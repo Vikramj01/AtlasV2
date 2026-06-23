@@ -28,6 +28,7 @@ import { ReadinessScore } from '@/components/health/ReadinessScore';
 import { PlatformAcceptanceTile } from '@/components/health/PlatformAcceptanceTile';
 import { ReauthBanner } from '@/components/health/ReauthBanner';
 import { DQMStatusPanel } from '@/components/health/DQMStatusPanel';
+import { InsightsFeedPanel } from '@/components/health/InsightsFeedPanel';
 import { SECTION_LABELS, LOW_HEALTH_CALLOUT, TOOLTIPS } from '@/lib/ui-copy';
 import { InfoTooltip } from '@/components/common/InfoTooltip';
 import { EmptyState } from '@/components/common/EmptyState';
@@ -265,6 +266,11 @@ export default function HealthDashboardPage() {
           )}
         </div>
         <ActiveAlertsFeed alerts={alerts} />
+      </section>
+
+      {/* ── Zone 2b: AIR Insights feed ────────────────────────────────────── */}
+      <section>
+        <InsightsFeedPanel />
       </section>
 
       {/* ── Zone 3: 30-day trend chart ─────────────────────────────────────── */}
