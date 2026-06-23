@@ -15,7 +15,8 @@ export type UsageEventType =
   | 'ai_report_ondemand'
   | 'ai_query_ondemand'
   | 'dma_ingest_event'
-  | 'dma_enricher_event';
+  | 'dma_enricher_event'
+  | 'ai_insight_generated';
 
 export interface UsageEventPayload {
   org_id: string;
