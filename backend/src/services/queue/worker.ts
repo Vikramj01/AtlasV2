@@ -1213,21 +1213,55 @@ signalMvRefreshQueue.add(
 ).catch((err) => logger.error({ err }, 'Failed to schedule signal aggregates MV refresh'));
 
 // ── DQM processor ──────────────────────────────────────────────────────────
+// Two job shapes:
+//   1. Fan-out job  (org_id absent)  — enqueues one child job per active org
+//   2. Per-org job  (org_id present) — runs DQM checks for that single org
+//
+// The fan-out runs every 15 minutes via a repeatable job. Child jobs use an
+// idempotent jobId (org + 15-min window) so Bull retries and overlapping
+// manual triggers don't double-write a check result for the same window.
 
 dqmQueue.process(async (job) => {
-  const { org_id } = job.data as DQMJobData;
-  const { runDQMForOrg, runDQMForAllActiveOrgs } = await import('@/services/dqm/dqmOrchestrator');
+  const { trigger, org_id } = job.data as DQMJobData;
+  const { runDQMForOrg, getActiveOrgIds } = await import('@/services/dqm/dqmOrchestrator');
+
   if (org_id) {
-    await runDQMForOrg(org_id);
-  } else {
-    await runDQMForAllActiveOrgs();
+    // Per-org child job — run directly
+    await runDQMForOrg(org_id, trigger);
+    return;
   }
+
+  // Fan-out: enqueue one child job per active org
+  const orgIds = await getActiveOrgIds();
+  // Floor to the current 15-min window so retries of the fan-out job
+  // produce the same child jobIds and are deduplicated by Bull.
+  const windowTs = Math.floor(Date.now() / (15 * 60 * 1000));
+
+  await Promise.all(
+    orgIds.map((id) =>
+      dqmQueue.add(
+        { trigger, org_id: id },
+        {
+          jobId:           `dqm-run:${id}:${windowTs}`,
+          attempts:        2,
+          backoff:         { type: 'fixed', delay: 60_000 },
+          removeOnComplete: 50,
+          removeOnFail:     25,
+        },
+      ).catch((err) => logger.error({ err, orgId: id }, 'DQM: failed to enqueue per-org job')),
+    ),
+  );
+
+  logger.info({ count: orgIds.length, windowTs }, 'DQM: fan-out enqueued per-org jobs');
 });
 
 logger.info('DQM worker registered');
 
-// Schedule hourly DQM run
+// Schedule DQM fan-out every 15 minutes.
+// Replaces the previous hourly job — if the old 'dqm-hourly' repeatable job
+// is still registered in Redis it will continue firing until Bull's repeat
+// registry is flushed (harmless: it just enqueues a fan-out which is idempotent).
 dqmQueue.add(
   { trigger: 'scheduled' },
-  { repeat: { cron: '0 * * * *' }, jobId: 'dqm-hourly' },
+  { repeat: { cron: '*/15 * * * *' }, jobId: 'dqm-15min' },
 ).catch((err) => logger.error({ err }, 'Failed to schedule DQM job'));
