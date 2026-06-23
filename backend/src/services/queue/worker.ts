@@ -1278,12 +1278,14 @@ airIngestionQueue.process(async (job) => {
   const { trigger, org_id } = job.data as AirIngestionJobData;
   const { runIngestionForOrg, getAirEligibleOrgIds } = await import('@/services/air/ingestion/ingestionOrchestrator');
   const { runAnomalyDetectionForOrg } = await import('@/services/air/anomalyDetector');
+  const { runCorrelationForOrg } = await import('@/services/air/correlationEngine');
 
   if (org_id) {
     logger.info({ orgId: org_id, trigger, jobId: job.id }, 'AIR ingestion: per-org job received');
     const date = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     await runIngestionForOrg(org_id, date);
     await runAnomalyDetectionForOrg(org_id, date);
+    await runCorrelationForOrg(org_id, date);
     return;
   }
 
