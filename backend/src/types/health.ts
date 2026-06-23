@@ -42,7 +42,9 @@ export type AlertType =
   | 'capi_not_configured'
   | 'recon_critical_finding'
   | 'recon_brief_misaligned'
-  | 'connection_expired';
+  | 'connection_expired'
+  | 'dqm_gtg'
+  | 'dqm_dma';
 
 export interface HealthAlert {
   id: string;
