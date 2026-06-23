@@ -4,10 +4,11 @@
 //
 // Active org definition for AIR: orgs on pro or agency plan with at least
 // one active platform_connection (google_ads, meta_ads, or ga4).
-// Meta and GA4 connectors land in Sprint 2 — their calls are stubs here.
 
 import { supabaseAdmin } from '@/services/database/supabase';
 import { ingestGoogleAds } from '@/services/air/ingestion/googleAdsConnector';
+import { ingestMetaAds } from '@/services/air/ingestion/metaAdsConnector';
+import { ingestGA4 } from '@/services/air/ingestion/ga4Connector';
 import logger from '@/utils/logger';
 
 // Returns org_ids eligible for AIR ingestion: pro/agency plan + active connections.
@@ -53,8 +54,12 @@ export async function runIngestionForOrg(
     ingestGoogleAds(orgId, date).catch((err) =>
       logger.error({ err: err instanceof Error ? err.message : String(err), orgId }, 'AIR/google_ads: ingestion failed'),
     ),
-    // Sprint 2: ingestMetaAds(orgId, date)
-    // Sprint 2: ingestGA4(orgId, date)
+    ingestMetaAds(orgId, date).catch((err) =>
+      logger.error({ err: err instanceof Error ? err.message : String(err), orgId }, 'AIR/meta_ads: ingestion failed'),
+    ),
+    ingestGA4(orgId, date).catch((err) =>
+      logger.error({ err: err instanceof Error ? err.message : String(err), orgId }, 'AIR/ga4: ingestion failed'),
+    ),
   ]);
 
   logger.info({ orgId }, 'AIR ingestion: complete');

@@ -11,17 +11,11 @@ import { supabaseAdmin } from '@/services/database/supabase';
 import { resolveTokens } from '@/services/connections/tokenManager';
 import { env } from '@/config/env';
 import logger from '@/utils/logger';
+import { AirMetricRow, yesterday, writeMetricRows } from '@/services/air/ingestion/airIngestionUtils';
+
+export type { AirMetricRow };
 
 const GADS_BASE = 'https://googleads.googleapis.com/v18';
-
-export interface AirMetricRow {
-  org_id: string;
-  source: 'google_ads';
-  metric_name: string;
-  dimension: string | null;
-  value: number;
-  snapshot_date: string; // YYYY-MM-DD
-}
 
 interface CampaignPerfRow {
   campaignId: string;
@@ -31,11 +25,6 @@ interface CampaignPerfRow {
   conversions: number;
   impressions: number;
   clicks: number;
-}
-
-function yesterday(): string {
-  const d = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  return d.toISOString().split('T')[0];
 }
 
 // Calls the Google Ads searchStream endpoint for one customer account.
@@ -167,23 +156,6 @@ export function buildMetricRows(
   if (totalCtr !== null) out.push({ org_id: orgId, source: 'google_ads', metric_name: 'ctr', dimension: null, value: totalCtr, snapshot_date: date });
 
   return out;
-}
-
-// Upserts rows into air_metric_snapshots. The UNIQUE constraint on
-// (org_id, source, metric_name, dimension, snapshot_date) makes this idempotent.
-async function writeMetricRows(rows: AirMetricRow[]): Promise<void> {
-  if (rows.length === 0) return;
-
-  const { error } = await (supabaseAdmin
-    .from('air_metric_snapshots') as unknown as {
-      upsert: (
-        rows: AirMetricRow[],
-        opts: { onConflict: string; ignoreDuplicates: boolean },
-      ) => Promise<{ error: { message: string } | null }>;
-    })
-    .upsert(rows, { onConflict: 'org_id,source,metric_name,dimension,snapshot_date', ignoreDuplicates: true });
-
-  if (error) throw new Error(`air_metric_snapshots upsert failed: ${error.message}`);
 }
 
 // Entry point called by the ingestion orchestrator.
