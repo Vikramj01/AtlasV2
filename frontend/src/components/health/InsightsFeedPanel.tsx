@@ -3,7 +3,7 @@
 // Unread insights are highlighted; dismissing removes them from the local list.
 
 import { useEffect, useState } from 'react';
-import { TrendingDown, TrendingUp, X, Sparkles } from 'lucide-react';
+import { TrendingDown, TrendingUp, X, Sparkles, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SeverityCard } from '@/components/common/SeverityCard';
 import type { SeverityLevel } from '@/components/common/SeverityCard';
@@ -157,9 +157,11 @@ function InsightCard({ insight, onDismiss, onRead }: InsightCardProps) {
 // ── Panel ─────────────────────────────────────────────────────────────────────
 
 export function InsightsFeedPanel() {
-  const [insights, setInsights] = useState<AirInsight[]>([]);
-  const [loading, setLoading]   = useState(true);
-  const [error, setError]       = useState(false);
+  const [insights, setInsights]   = useState<AirInsight[]>([]);
+  const [loading, setLoading]     = useState(true);
+  const [error, setError]         = useState(false);
+  const [triggering, setTriggering] = useState(false);
+  const [triggerMsg, setTriggerMsg] = useState<string | null>(null);
 
   useEffect(() => {
     insightsApi.getInsights()
@@ -172,6 +174,19 @@ export function InsightsFeedPanel() {
         setLoading(false);
       });
   }, []);
+
+  function handleTrigger() {
+    setTriggering(true);
+    setTriggerMsg(null);
+    insightsApi.trigger()
+      .then(({ data }) => {
+        setTriggerMsg(data.status === 'queued' ? 'Analysis queued — check back shortly.' : 'Analysis already running.');
+      })
+      .catch(() => {
+        setTriggerMsg('Failed to queue analysis.');
+      })
+      .finally(() => setTriggering(false));
+  }
 
   function handleDismiss(id: string) {
     setInsights((prev) => prev.filter((i) => i.id !== id));
@@ -198,7 +213,20 @@ export function InsightsFeedPanel() {
             {unreadCount}
           </span>
         )}
+        <button
+          type="button"
+          onClick={handleTrigger}
+          disabled={triggering}
+          className="ml-auto flex items-center gap-1 text-xs text-[#6B7280] hover:text-[#1B2A4A] disabled:opacity-50 transition-colors"
+          title="Run analysis now"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${triggering ? 'animate-spin' : ''}`} strokeWidth={1.5} />
+          {triggering ? 'Running…' : 'Run now'}
+        </button>
       </div>
+      {triggerMsg && (
+        <p className="text-xs text-[#6B7280] mb-3">{triggerMsg}</p>
+      )}
 
       {/* Loading */}
       {loading && (
