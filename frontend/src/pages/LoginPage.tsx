@@ -4,6 +4,55 @@ import type * as React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 
+function AuditMiniWidget({ navigate }: { navigate: ReturnType<typeof useNavigate> }) {
+  const [auditUrl, setAuditUrl] = useState('');
+  const [auditError, setAuditError] = useState('');
+
+  function handleAuditSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!auditUrl.trim()) return;
+    const normalised = auditUrl.startsWith('http') ? auditUrl : `https://${auditUrl}`;
+    try {
+      const parsed = new URL(normalised);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        setAuditError('URL must use http or https');
+        return;
+      }
+    } catch {
+      setAuditError('Please enter a valid website URL');
+      return;
+    }
+    setAuditError('');
+    navigate(`/audit?url=${encodeURIComponent(normalised)}`);
+  }
+
+  return (
+    <div className="glass-panel rounded-xl p-5 space-y-3">
+      <div>
+        <p className="text-white text-sm font-semibold">Free instant tag audit</p>
+        <p className="text-white/50 text-xs mt-0.5">Paste any URL — no login needed. Results in ~25s.</p>
+      </div>
+      <form onSubmit={handleAuditSubmit} className="flex gap-2">
+        <input
+          type="url"
+          placeholder="https://yoursite.com"
+          value={auditUrl}
+          onChange={e => { setAuditUrl(e.target.value); setAuditError(''); }}
+          className="flex-1 min-w-0 px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-white text-xs placeholder:text-white/30 focus:outline-none focus:ring-1 focus:ring-white/40"
+        />
+        <button
+          type="submit"
+          disabled={!auditUrl.trim()}
+          className="px-3 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-400 disabled:opacity-40 text-white text-xs font-semibold whitespace-nowrap transition-colors"
+        >
+          Scan →
+        </button>
+      </form>
+      {auditError && <p className="text-red-300 text-xs">{auditError}</p>}
+    </div>
+  );
+}
+
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
 
 type Mode = 'signin' | 'signup' | 'forgot';
@@ -137,16 +186,9 @@ export function LoginPage() {
               Audit, optimise, and validate your tracking across every channel.
             </p>
 
-            {/* Stats grid */}
-            <div className="grid grid-cols-2 gap-4 max-w-sm">
-              <div className="glass-panel rounded-xl p-5">
-                <div className="text-3xl font-bold text-white">99.9%</div>
-                <div className="text-white/50 text-sm mt-1">Signal accuracy</div>
-              </div>
-              <div className="glass-panel rounded-xl p-5">
-                <div className="text-3xl font-bold text-white">1.2M+</div>
-                <div className="text-white/50 text-sm mt-1">Events tracked</div>
-              </div>
+            {/* Audit widget */}
+            <div className="max-w-sm w-full">
+              <AuditMiniWidget navigate={navigate} />
             </div>
           </div>
 
@@ -164,6 +206,19 @@ export function LoginPage() {
           </div>
 
           <div className="w-full max-w-sm mx-auto">
+            {/* Mobile-only audit CTA */}
+            <div className="lg:hidden mb-6 rounded-xl border border-indigo-100 bg-indigo-50 p-4">
+              <p className="text-indigo-900 text-sm font-semibold">Try a free instant tag audit</p>
+              <p className="text-indigo-700 text-xs mt-0.5 mb-3">No login needed · Scored report in ~25s</p>
+              <button
+                type="button"
+                onClick={() => navigate('/audit')}
+                className="w-full rounded-lg py-2 px-4 text-white text-sm font-semibold bg-indigo-600 hover:bg-indigo-500 transition-colors"
+              >
+                Audit my site →
+              </button>
+            </div>
+
             {/* Heading */}
             <h3
               className="text-2xl font-bold mb-2"
