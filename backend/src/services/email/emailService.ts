@@ -267,6 +267,169 @@ export async function sendPasswordResetEmail(opts: {
   });
 }
 
+// ── Email 5: Public audit — lead notification to operator ─────────────────────
+
+/**
+ * Sent to OPERATOR_ALERT_EMAIL when a visitor submits their email on the
+ * public audit page. Fires immediately after the email is captured.
+ */
+export async function sendPublicAuditLeadNotification(opts: {
+  visitorEmail: string;
+  url: string;
+  score: number | null;
+  grade: string | null;
+  reportUrl: string;
+}): Promise<SendResult> {
+  if (!env.OPERATOR_ALERT_EMAIL) {
+    logger.warn('[emailService] OPERATOR_ALERT_EMAIL not set — lead notification skipped');
+    return { ok: false, error: 'OPERATOR_ALERT_EMAIL not configured' };
+  }
+
+  const scoreLabel = opts.score !== null ? `${opts.score}/100 (${opts.grade})` : 'Pending';
+
+  const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f9fafb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 20px;">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;border:1px solid #e5e7eb;overflow:hidden;">
+        <tr><td style="background:#1e40af;padding:24px 32px;">
+          <p style="margin:0;font-size:18px;font-weight:700;color:#ffffff;letter-spacing:-0.3px;">Atlas — New Lead</p>
+          <p style="margin:4px 0 0;font-size:12px;color:#93c5fd;">Public audit email capture</p>
+        </td></tr>
+        <tr><td style="padding:32px;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 24px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+            <tr style="background:#f9fafb;">
+              <td style="padding:10px 16px;font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid #e5e7eb;" colspan="2">Lead details</td>
+            </tr>
+            <tr><td style="padding:12px 16px;font-size:13px;color:#6b7280;width:120px;border-bottom:1px solid #f3f4f6;">Email</td>
+                <td style="padding:12px 16px;font-size:13px;font-weight:600;color:#111827;border-bottom:1px solid #f3f4f6;">${opts.visitorEmail}</td></tr>
+            <tr><td style="padding:12px 16px;font-size:13px;color:#6b7280;border-bottom:1px solid #f3f4f6;">Site audited</td>
+                <td style="padding:12px 16px;font-size:13px;color:#111827;border-bottom:1px solid #f3f4f6;word-break:break-all;">${opts.url}</td></tr>
+            <tr><td style="padding:12px 16px;font-size:13px;color:#6b7280;">Score</td>
+                <td style="padding:12px 16px;font-size:13px;font-weight:600;color:#111827;">${scoreLabel}</td></tr>
+          </table>
+          <table cellpadding="0" cellspacing="0">
+            <tr><td style="background:#1e40af;border-radius:8px;padding:12px 24px;">
+              <a href="${opts.reportUrl}" style="color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;">
+                View their report →
+              </a>
+            </td></tr>
+          </table>
+        </td></tr>
+        <tr><td style="padding:16px 32px;border-top:1px solid #f3f4f6;">
+          <p style="margin:0;font-size:11px;color:#d1d5db;text-align:center;">Atlas — atlas.vimi.digital</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`.trim();
+
+  return sendEmail({
+    to: env.OPERATOR_ALERT_EMAIL,
+    subject: `New lead: ${opts.visitorEmail} audited ${new URL(opts.url).hostname}`,
+    html,
+  });
+}
+
+// ── Email 6: Public audit — report delivery to visitor ───────────────────────
+
+/**
+ * Sent to the visitor after they submit their email on the public audit page.
+ * Delivers a summary of their results and a CTA to sign up for full access.
+ */
+export async function sendPublicAuditReportEmail(opts: {
+  to: string;
+  url: string;
+  score: number | null;
+  grade: string | null;
+  aiSummary: string | null;
+  reportUrl: string;
+  signupUrl: string;
+}): Promise<SendResult> {
+  const scoreLabel  = opts.score !== null ? `${opts.score}/100` : '—';
+  const gradeLabel  = opts.grade ?? '—';
+  const gradeColor  = opts.grade === 'A' ? '#166534' : opts.grade === 'B' ? '#1e40af' : opts.grade === 'C' ? '#92400e' : '#991b1b';
+  const hostname    = (() => { try { return new URL(opts.url).hostname; } catch { return opts.url; } })();
+  const summaryHtml = opts.aiSummary
+    ? `<p style="margin:0 0 24px;font-size:14px;color:#374151;line-height:1.7;background:#f9fafb;border-left:3px solid #1e40af;padding:12px 16px;border-radius:0 6px 6px 0;">${opts.aiSummary}</p>`
+    : '';
+
+  const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f9fafb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 20px;">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;border:1px solid #e5e7eb;overflow:hidden;">
+        <tr><td style="background:#1e40af;padding:24px 32px;">
+          <p style="margin:0;font-size:18px;font-weight:700;color:#ffffff;letter-spacing:-0.3px;">Atlas</p>
+          <p style="margin:4px 0 0;font-size:12px;color:#93c5fd;">Your tracking audit report</p>
+        </td></tr>
+        <tr><td style="padding:32px;">
+          <p style="margin:0 0 8px;font-size:15px;color:#374151;">Here are your results for <strong>${hostname}</strong>.</p>
+
+          <!-- Score badge -->
+          <table cellpadding="0" cellspacing="0" style="margin:20px 0 24px;">
+            <tr>
+              <td style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:16px 24px;text-align:center;">
+                <p style="margin:0 0 4px;font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;">Tracking health score</p>
+                <p style="margin:0;font-size:36px;font-weight:700;color:#111827;line-height:1;">${scoreLabel}</p>
+              </td>
+              <td style="width:16px;"></td>
+              <td style="background:${gradeColor};border-radius:10px;padding:16px 28px;text-align:center;">
+                <p style="margin:0 0 4px;font-size:12px;color:rgba(255,255,255,0.8);text-transform:uppercase;letter-spacing:0.05em;">Grade</p>
+                <p style="margin:0;font-size:36px;font-weight:700;color:#ffffff;line-height:1;">${gradeLabel}</p>
+              </td>
+            </tr>
+          </table>
+
+          ${summaryHtml}
+
+          <table cellpadding="0" cellspacing="0" style="margin:0 0 12px;">
+            <tr><td style="background:#1e40af;border-radius:8px;padding:12px 24px;">
+              <a href="${opts.reportUrl}" style="color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;">
+                View your full report →
+              </a>
+            </td></tr>
+          </table>
+          <p style="margin:0 0 24px;font-size:12px;color:#9ca3af;">Report link expires in 24 hours.</p>
+
+          <div style="background:#f0f7ff;border:1px solid #bfdbfe;border-radius:8px;padding:20px 24px;">
+            <p style="margin:0 0 8px;font-size:14px;font-weight:600;color:#1e40af;">Want to go deeper?</p>
+            <p style="margin:0 0 16px;font-size:13px;color:#374151;line-height:1.6;">
+              Atlas gives you a full signal health platform — journeys, CAPI monitoring, reconciliation
+              against Google Ads and Meta, and continuous drift detection. No more flying blind.
+            </p>
+            <table cellpadding="0" cellspacing="0">
+              <tr><td style="background:#1e40af;border-radius:8px;padding:10px 20px;">
+                <a href="${opts.signupUrl}" style="color:#ffffff;font-size:13px;font-weight:600;text-decoration:none;">
+                  Get full access →
+                </a>
+              </td></tr>
+            </table>
+          </div>
+        </td></tr>
+        <tr><td style="padding:16px 32px;border-top:1px solid #f3f4f6;">
+          <p style="margin:0;font-size:11px;color:#d1d5db;text-align:center;">Sent via Atlas — atlas.vimi.digital</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`.trim();
+
+  return sendEmail({
+    to: opts.to,
+    subject: `Your Atlas tracking audit for ${hostname} — score: ${scoreLabel}`,
+    html,
+  });
+}
+
 // ── Email 2: Marketer completion notification ─────────────────────────────────
 
 /**

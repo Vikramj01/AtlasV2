@@ -12,6 +12,8 @@ import crypto from 'crypto';
 import { supabaseAdmin } from '@/services/database/supabase';
 import { publicAuditQueue } from '@/services/queue/jobQueue';
 import { publicAuditHourlyLimiter, publicAuditDailyLimiter } from '@/api/middleware/publicAuditLimiter';
+import { sendPublicAuditLeadNotification, sendPublicAuditReportEmail } from '@/services/email/emailService';
+import { env } from '@/config/env';
 import logger from '@/utils/logger';
 
 export const publicAuditRouter = Router();
@@ -127,16 +129,41 @@ publicAuditRouter.post('/:token/email', async (req, res) => {
   const { token } = req.params;
   const { email } = parsed.data;
 
-  const { error } = await supabaseAdmin
+  const { data: run, error } = await supabaseAdmin
     .from('public_audit_runs')
     .update({ email })
     .eq('token', token)
-    .gt('expires_at', new Date().toISOString());
+    .gt('expires_at', new Date().toISOString())
+    .select('url, score, grade, ai_summary')
+    .single();
 
-  if (error) {
+  if (error || !run) {
     res.status(404).json({ error: 'Audit report not found or has expired.' });
     return;
   }
+
+  const reportUrl = `${env.FRONTEND_URL}/audit/results/${token}`;
+  const signupUrl = `${env.FRONTEND_URL}/login`;
+
+  // Fire both emails in parallel — neither failure should block the response
+  Promise.all([
+    sendPublicAuditLeadNotification({
+      visitorEmail: email,
+      url:          run.url,
+      score:        run.score ?? null,
+      grade:        run.grade ?? null,
+      reportUrl,
+    }),
+    sendPublicAuditReportEmail({
+      to:        email,
+      url:       run.url,
+      score:     run.score ?? null,
+      grade:     run.grade ?? null,
+      aiSummary: run.ai_summary ?? null,
+      reportUrl,
+      signupUrl,
+    }),
+  ]).catch((err) => logger.error({ err, token }, 'Public audit email dispatch failed'));
 
   res.json({ data: { ok: true } });
 });
