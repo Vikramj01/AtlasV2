@@ -565,6 +565,30 @@ airIngestionQueue.on('failed', (job, err) => {
   logger.error({ jobId: job?.id, orgId: job?.data?.org_id, err: err.message }, 'AIR ingestion job failed');
 });
 
+// ── Public Audit Queue ────────────────────────────────────────────────────────
+// Runs the no-login instant audit pipeline for a single homepage URL.
+// 60-second timeout (much lighter than the 10-minute planning queue).
+
+export interface PublicAuditJobData {
+  run_id: string;
+  url:    string;
+}
+
+export const publicAuditQueue = new Bull<PublicAuditJobData>('public-audit', makeBullOpts({
+  attempts:         1,
+  timeout:          60 * 1000,
+  removeOnComplete: 200,
+  removeOnFail:     100,
+}));
+
+publicAuditQueue.on('completed', (job) => {
+  logger.info({ jobId: job.id, runId: job.data.run_id }, 'Public audit job completed');
+});
+
+publicAuditQueue.on('failed', (job, err) => {
+  logger.error({ jobId: job?.id, runId: job?.data?.run_id, err: err.message }, 'Public audit job failed');
+});
+
 // ── DQM Queue ────────────────────────────────────────────────────────────────
 // Runs GTG path probe + DMA diagnostics polling for all active orgs hourly.
 
