@@ -27,28 +27,37 @@ function AuditMiniWidget({ navigate }: { navigate: ReturnType<typeof useNavigate
   }
 
   return (
-    <div className="glass-panel rounded-xl p-5 space-y-3">
-      <div>
-        <p className="text-white text-sm font-semibold">Free instant tag audit</p>
-        <p className="text-white/50 text-xs mt-0.5">Paste any URL — no login needed. Results in ~25s.</p>
+    <div className="glass-panel rounded-xl p-6 w-full">
+      <div className="flex items-center gap-6">
+        {/* Label */}
+        <div className="shrink-0">
+          <p className="text-white text-base font-bold leading-tight">Free instant<br />tag audit</p>
+          <p className="text-white/50 text-xs mt-1">No login needed</p>
+        </div>
+        {/* Form */}
+        <div className="flex-1 min-w-0 space-y-1.5">
+          <form onSubmit={handleAuditSubmit} className="flex gap-2">
+            <input
+              type="url"
+              placeholder="https://yoursite.com"
+              value={auditUrl}
+              onChange={e => { setAuditUrl(e.target.value); setAuditError(''); }}
+              className="flex-1 min-w-0 px-3 py-2.5 rounded-lg bg-white/10 border border-white/20 text-white text-sm placeholder:text-white/30 focus:outline-none focus:ring-1 focus:ring-white/40"
+            />
+            <button
+              type="submit"
+              disabled={!auditUrl.trim()}
+              className="px-4 py-2.5 rounded-lg bg-indigo-500 hover:bg-indigo-400 disabled:opacity-40 text-white text-sm font-semibold whitespace-nowrap transition-colors"
+            >
+              Scan →
+            </button>
+          </form>
+          {auditError
+            ? <p className="text-red-300 text-xs">{auditError}</p>
+            : <p className="text-white/30 text-xs">8 checks · results in ~25s</p>
+          }
+        </div>
       </div>
-      <form onSubmit={handleAuditSubmit} className="flex gap-2">
-        <input
-          type="url"
-          placeholder="https://yoursite.com"
-          value={auditUrl}
-          onChange={e => { setAuditUrl(e.target.value); setAuditError(''); }}
-          className="flex-1 min-w-0 px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-white text-xs placeholder:text-white/30 focus:outline-none focus:ring-1 focus:ring-white/40"
-        />
-        <button
-          type="submit"
-          disabled={!auditUrl.trim()}
-          className="px-3 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-400 disabled:opacity-40 text-white text-xs font-semibold whitespace-nowrap transition-colors"
-        >
-          Scan →
-        </button>
-      </form>
-      {auditError && <p className="text-red-300 text-xs">{auditError}</p>}
     </div>
   );
 }
@@ -181,13 +190,13 @@ export function LoginPage() {
             <h2 className="text-xl font-semibold text-white/70 mb-5">
               Signal Intelligence Platform
             </h2>
-            <p className="text-white/50 text-[15px] leading-relaxed max-w-md mb-12">
+            <p className="text-white/50 text-[15px] leading-relaxed max-w-md mb-8">
               Complete visibility into your marketing signal infrastructure.
               Audit, optimise, and validate your tracking across every channel.
             </p>
 
             {/* Audit widget */}
-            <div className="max-w-sm w-full">
+            <div className="w-full">
               <AuditMiniWidget navigate={navigate} />
             </div>
           </div>
