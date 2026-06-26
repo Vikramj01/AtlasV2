@@ -89,6 +89,7 @@ function setupStatus(steps: number): 'Healthy' | 'Needs attention' | 'Critical' 
 }
 
 export function HomePage() {
+  const navigate = useNavigate();
   const [firstName, setFirstName] = useState('');
   const [score, setScore] = useState<AtlasScore | null>(null);
   const [scoreLoading, setScoreLoading] = useState(true);
