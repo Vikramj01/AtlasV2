@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { publicAuditApi } from '@/lib/api/publicAuditApi';
@@ -16,18 +16,20 @@ const SCAN_STEPS = [
 ];
 
 export function PublicAuditPage() {
-  const navigate   = useNavigate();
+  const navigate        = useNavigate();
+  const [searchParams]  = useSearchParams();
   const [view, setView]             = useState<View>('idle');
-  const [url, setUrl]               = useState('');
+  const [url, setUrl]               = useState(() => searchParams.get('url') ?? '');
   const [urlError, setUrlError]     = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [token, setToken]           = useState('');
   const [scanStep, setScanStep]     = useState(0);
   const [run, setRun]               = useState<PublicAuditRun | null>(null);
   const [errorMsg, setErrorMsg]     = useState('');
-  const pollRef  = useRef<ReturnType<typeof setInterval> | null>(null);
-  const stepRef  = useRef<ReturnType<typeof setInterval> | null>(null);
-  const startRef = useRef<number>(0);
+  const pollRef       = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stepRef       = useRef<ReturnType<typeof setInterval> | null>(null);
+  const startRef      = useRef<number>(0);
+  const autoSubmitted = useRef(false);
 
   function clearTimers() {
     if (pollRef.current)  clearInterval(pollRef.current);
@@ -35,6 +37,17 @@ export function PublicAuditPage() {
   }
 
   useEffect(() => clearTimers, []);
+
+  // Auto-submit when a URL is passed via query param (e.g. from LoginPage)
+  useEffect(() => {
+    const prefilledUrl = searchParams.get('url');
+    if (prefilledUrl && !autoSubmitted.current) {
+      autoSubmitted.current = true;
+      const syntheticEvent = { preventDefault: () => {} } as React.FormEvent;
+      handleSubmit(syntheticEvent);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function validateUrl(raw: string): string | null {
     try {
