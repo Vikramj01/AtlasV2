@@ -167,10 +167,10 @@ app.use('/api/signal-events', signalEventsRouter);
 app.use('/api/tracking', trackingRouter);
 app.use('/api/share', deliverableShareRouter);
 app.use('/api/onboarding', onboardingRouter);
+app.use('/api/public/audit', publicAuditRouter);
 app.use('/api', enrichmentRouter);
 app.use('/api/slack', slackRouter);
 app.use('/api/insights', insightsRouter);
-app.use('/api/public/audit', publicAuditRouter);
 
 // ─── 404 handler ─────────────────────────────────────────────────────────────
 
