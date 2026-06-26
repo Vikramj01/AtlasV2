@@ -52,6 +52,8 @@ const SetupTrackingHubPage        = lazy(() => import('@/pages/SetupTrackingHubP
 const PublicDeliverableView       = lazy(() => import('@/pages/PublicDeliverableView').then(m => ({ default: m.PublicDeliverableView })));
 const GettingStartedPage          = lazy(() => import('@/pages/GettingStartedPage').then(m => ({ default: m.GettingStartedPage })));
 const HelpPage                    = lazy(() => import('@/pages/HelpPage').then(m => ({ default: m.HelpPage })));
+const PublicAuditPage             = lazy(() => import('@/pages/PublicAuditPage').then(m => ({ default: m.PublicAuditPage })));
+const PublicAuditResultsPage      = lazy(() => import('@/pages/PublicAuditResultsPage').then(m => ({ default: m.PublicAuditResultsPage })));
 
 const PageFallback = () => <SkeletonCard variant="page" />;
 
@@ -146,6 +148,8 @@ export default function App() {
             <Route path="/dev/:shareToken" element={<SectionErrorBoundary label="Developer portal"><DeveloperPortalPage /></SectionErrorBoundary>} />
             {/* Public deliverable share — no auth required */}
             <Route path="/share/:token" element={<PublicDeliverableView />} />
+            <Route path="/audit" element={<PublicAuditPage />} />
+            <Route path="/audit/results/:token" element={<PublicAuditResultsPage />} />
 
             {/* Catch-all */}
             <Route path="*" element={<Navigate to="/" replace />} />

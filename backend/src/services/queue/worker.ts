@@ -1,4 +1,4 @@
-import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue, crawlQueue, reconciliationSyncQueue, reconciliationRunQueue, reconciliationStatsQueue, reconciliationStaleResyncQueue, gtmContainerSyncQueue, ihcRulesQueue, ihcDriftQueue, ihcAlertQueue, ihcDigestQueue, dmaIngestQueue, dqmQueue, signalMvRefreshQueue, airIngestionQueue } from './jobQueue';
+import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue, crawlQueue, reconciliationSyncQueue, reconciliationRunQueue, reconciliationStatsQueue, reconciliationStaleResyncQueue, gtmContainerSyncQueue, ihcRulesQueue, ihcDriftQueue, ihcAlertQueue, ihcDigestQueue, dmaIngestQueue, dqmQueue, signalMvRefreshQueue, airIngestionQueue, publicAuditQueue } from './jobQueue';
 import type { GtmContainerSyncJobData, IhcRulesJobData, IhcDriftJobData, IhcAlertJobData, IhcDigestJobData, DQMJobData, AirIngestionJobData } from './jobQueue';
 import { runConfigSyncForConnection, getConnectionsDueForSync, runStatsSyncForConnection, getConnectionsDueForStatsSync, runStaleResyncForConnection, getConnectionsForStaleResync } from '@/services/reconciliation/sync/syncOrchestrator';
 import { executeRun } from '@/services/reconciliation/reconciliationRunner';
@@ -1321,3 +1321,14 @@ airIngestionQueue.add(
   { trigger: 'scheduled' },
   { repeat: { cron: '30 2 * * *' }, jobId: 'air-ingestion-daily' },
 ).catch((err) => logger.error({ err }, 'Failed to schedule AIR ingestion job'));
+
+// ── Public Audit worker ───────────────────────────────────────────────────────
+
+import { runPublicAudit } from '@/services/publicAudit/publicAuditRunner';
+
+publicAuditQueue.process(async (job) => {
+  logger.info({ runId: job.data.run_id, url: job.data.url, jobId: job.id }, 'Public audit job received');
+  await runPublicAudit(job.data.run_id, job.data.url);
+});
+
+logger.info('Public audit queue worker registered');

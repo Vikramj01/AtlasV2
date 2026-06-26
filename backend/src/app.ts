@@ -40,6 +40,7 @@ import { onboardingRouter } from '@/api/routes/onboarding';
 import { enrichmentRouter } from '@/api/routes/enrichment';
 import { slackRouter } from '@/api/routes/slack';
 import { insightsRouter } from '@/api/routes/insights';
+import { publicAuditRouter } from '@/api/routes/publicAudit';
 import logger from '@/utils/logger';
 import { env } from '@/config/env';
 
@@ -169,6 +170,7 @@ app.use('/api/onboarding', onboardingRouter);
 app.use('/api', enrichmentRouter);
 app.use('/api/slack', slackRouter);
 app.use('/api/insights', insightsRouter);
+app.use('/api/public/audit', publicAuditRouter);
 
 // ─── 404 handler ─────────────────────────────────────────────────────────────
 

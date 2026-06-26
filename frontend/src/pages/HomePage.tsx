@@ -89,6 +89,7 @@ function setupStatus(steps: number): 'Healthy' | 'Needs attention' | 'Critical' 
 }
 
 export function HomePage() {
+  const navigate = useNavigate();
   const [firstName, setFirstName] = useState('');
   const [score, setScore] = useState<AtlasScore | null>(null);
   const [scoreLoading, setScoreLoading] = useState(true);
@@ -132,6 +133,21 @@ export function HomePage() {
           {getTimeOfDayGreeting()}{firstName ? `, ${firstName}` : ''}.
         </h1>
         <p className="mt-1 text-body text-[#6B7280]">{getSubline()}</p>
+      </div>
+
+      {/* ── Free instant audit CTA ───────────────────────────────────────────── */}
+      <div className="flex items-center justify-between rounded-xl border border-indigo-200 bg-indigo-50 px-5 py-4">
+        <div>
+          <p className="font-semibold text-indigo-900 text-sm">Share a free instant audit with a client</p>
+          <p className="text-indigo-700 text-xs mt-0.5">No login required — paste their URL and get a scored tag health report in ~25s.</p>
+        </div>
+        <Button
+          size="sm"
+          onClick={() => navigate('/audit')}
+          className="bg-indigo-600 hover:bg-indigo-500 text-white whitespace-nowrap ml-4"
+        >
+          Free instant audit →
+        </Button>
       </div>
 
       {/* ── Recently locked brief ────────────────────────────────────────────── */}
