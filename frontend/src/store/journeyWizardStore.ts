@@ -30,6 +30,10 @@ interface JourneyWizardStore extends WizardState {
   // Step 1
   setBusinessType: (type: BusinessType) => void;
 
+  // Cross-domain tracking
+  secondaryDomains: string[];
+  setSecondaryDomains: (domains: string[]) => void;
+
   // Step 2 — stages
   addStage: (afterOrder: number) => void;
   removeStage: (stageId: string) => void;
@@ -65,7 +69,7 @@ interface JourneyWizardStore extends WizardState {
   reset: () => void;
 }
 
-const INITIAL_STATE: WizardState & { stageTiming: StageTimingMap; transportRoutes: Record<string, TransportRoute>; gtgPreflightDismissed: boolean } = {
+const INITIAL_STATE: WizardState & { stageTiming: StageTimingMap; transportRoutes: Record<string, TransportRoute>; gtgPreflightDismissed: boolean; secondaryDomains: string[] } = {
   currentStep: 1,
   businessType: null,
   stages: [],
@@ -74,6 +78,7 @@ const INITIAL_STATE: WizardState & { stageTiming: StageTimingMap; transportRoute
   stageTiming: {},
   transportRoutes: {},
   gtgPreflightDismissed: false,
+  secondaryDomains: [],
 };
 
 export const useJourneyWizardStore = create<JourneyWizardStore>((set, get) => ({
@@ -234,6 +239,10 @@ export const useJourneyWizardStore = create<JourneyWizardStore>((set, get) => ({
     set({ implementationFormat: format });
   },
 
+  setSecondaryDomains(domains) {
+    set({ secondaryDomains: domains });
+  },
+
   loadFromTemplate(template) {
     const stages: WizardStage[] = template.template_data.stages.map((s) => ({
       id: generateId(),
@@ -252,6 +261,6 @@ export const useJourneyWizardStore = create<JourneyWizardStore>((set, get) => ({
   },
 
   reset() {
-    set({ ...INITIAL_STATE, platforms: makeDefaultPlatforms(), stageTiming: {}, transportRoutes: {}, gtgPreflightDismissed: false });
+    set({ ...INITIAL_STATE, platforms: makeDefaultPlatforms(), stageTiming: {}, transportRoutes: {}, gtgPreflightDismissed: false, secondaryDomains: [] });
   },
 }));

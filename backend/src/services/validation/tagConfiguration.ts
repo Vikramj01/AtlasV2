@@ -1,5 +1,5 @@
 /**
- * Layer: tag_configuration (11 rules total — 7 in Phase A, 4 in Phase B)
+ * Layer: tag_configuration (12 rules total — 7 in Phase A, 5 in Phase B)
  *
  * Rules operate on GTMContainerSnapshot inside AuditData.gtmContainer.
  * Every rule returns status: 'skipped' when gtmContainer is absent.
@@ -701,6 +701,108 @@ export const FRAGILE_CSS_SELECTOR_TRIGGER = {
   },
 };
 
+// ── 5.12 GA4_CROSS_DOMAIN_LINKING_MISSING ────────────────────────────────────
+//
+// Fires when the container has a GA4 Config tag (gaawc) with no linked_domains
+// parameter AND the container also has click triggers or custom event triggers
+// whose names/conditions reference a different hostname — a reliable signal that
+// the site routes users across domains without a linker configured.
+//
+// Severity: high — silent session splits corrupt funnel data and attribution
+// without any visible error.
+
+function hasOutboundClickTrigger(auditData: AuditData): boolean {
+  const triggers = auditData.gtmContainer?.triggers ?? [];
+  return triggers.some((t) => {
+    // GTM "Click - Just Links" or "Click - All Elements" triggers that filter
+    // on a hostname condition are the canonical cross-domain trigger pattern.
+    const isClick = t.type === 'LINK_CLICK' || t.type === 'CLICK';
+    if (!isClick) return false;
+    const filters = [
+      ...(t.filter ?? []),
+      ...((t as Record<string, unknown>).autoEventFilter as typeof t.filter ?? []),
+    ];
+    return filters.some((f) => {
+      const params = f.parameter ?? [];
+      // Look for a hostname condition that differs from the typical "contains"
+      // the primary domain — presence is enough to signal cross-domain intent.
+      return params.some(
+        (p) => p.key === 'arg1' && typeof p.value === 'string' && p.value.includes('{{Click URL}}'),
+      );
+    });
+  });
+}
+
+export const GA4_CROSS_DOMAIN_LINKING_MISSING = {
+  rule_id: 'GA4_CROSS_DOMAIN_LINKING_MISSING',
+  validation_layer: 'tag_configuration' as const,
+  severity: 'high' as const,
+  affected_platforms: ['GA4'],
+
+  test(auditData: AuditData): ValidationResult {
+    if (!auditData.gtmContainer) return skippedResult(this.rule_id);
+
+    const ga4ConfigTags = auditData.gtmContainer.tags.filter((t) => t.type === 'gaawc');
+
+    if (ga4ConfigTags.length === 0) {
+      return {
+        rule_id: this.rule_id,
+        validation_layer: this.validation_layer,
+        status: 'skipped',
+        severity: this.severity,
+        technical_details: {
+          found: 'No GA4 Config tag (gaawc) present in container',
+          expected: 'A GA4 Config tag with linked_domains configured if cross-domain links exist',
+          evidence: ['Rule skipped — no GA4 Config tag found'],
+        },
+      };
+    }
+
+    const violations: string[] = [];
+
+    for (const tag of ga4ConfigTags) {
+      const linkedDomainsParam = tag.parameter?.find((p) => p.key === 'linked_domains');
+      const hasLinkedDomains =
+        linkedDomainsParam !== undefined &&
+        linkedDomainsParam.type === 'LIST' &&
+        Array.isArray(linkedDomainsParam.list) &&
+        linkedDomainsParam.list.length > 0;
+
+      if (!hasLinkedDomains && hasOutboundClickTrigger(auditData)) {
+        violations.push(
+          `"${tag.name}" (gaawc): no linked_domains configured but outbound click triggers are present — sessions will reset at the domain handoff`,
+        );
+      }
+    }
+
+    if (violations.length > 0) {
+      return {
+        rule_id: this.rule_id,
+        validation_layer: this.validation_layer,
+        status: 'fail',
+        severity: this.severity,
+        technical_details: {
+          found: `${violations.length} GA4 Config tag${violations.length > 1 ? 's' : ''} missing linked_domains`,
+          expected: 'GA4 Config tag lists all secondary domains in linked_domains so the client_id cookie is passed across the handoff',
+          evidence: violations,
+        },
+      };
+    }
+
+    return {
+      rule_id: this.rule_id,
+      validation_layer: this.validation_layer,
+      status: 'pass',
+      severity: this.severity,
+      technical_details: {
+        found: 'GA4 Config tag has linked_domains configured or no outbound click triggers detected',
+        expected: 'linked_domains present when outbound cross-domain links exist',
+        evidence: ['No cross-domain tracking gap detected'],
+      },
+    };
+  },
+};
+
 // ── Phase B rule registry ─────────────────────────────────────────────────────
 
 export const TAG_CONFIGURATION_RULES_PHASE_B = [
@@ -708,6 +810,7 @@ export const TAG_CONFIGURATION_RULES_PHASE_B = [
   CONSENT_TYPE_MISMATCH,
   DEFAULT_CONSENT_GRANTED_GLOBALLY,
   FRAGILE_CSS_SELECTOR_TRIGGER,
+  GA4_CROSS_DOMAIN_LINKING_MISSING,
 ];
 
 // ── Combined registry (all 11 tag_configuration rules) ───────────────────────

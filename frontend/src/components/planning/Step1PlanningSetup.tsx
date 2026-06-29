@@ -88,6 +88,8 @@ export function Step1PlanningSetup() {
   const [businessType, setBusinessType] = useState<BusinessType>(draftSetup.business_type ?? 'ecommerce');
   const [description, setDescription] = useState(draftSetup.business_description ?? '');
   const [platforms, setPlatforms] = useState<Platform[]>(draftSetup.selected_platforms ?? ['ga4', 'google_ads']);
+  const [secondaryDomains, setSecondaryDomains] = useState<string[]>(draftSetup.secondary_domains ?? []);
+  const [domainInput, setDomainInput] = useState('');
 
   // Client selector (org context)
   const { organisations, currentOrg } = useOrganisationStore();
@@ -167,6 +169,21 @@ export function Step1PlanningSetup() {
     setPlatforms((prev) => prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]);
   }
 
+  function addDomain() {
+    const trimmed = domainInput.trim().replace(/^https?:\/\//, '').replace(/\/$/, '');
+    if (!trimmed || secondaryDomains.includes(trimmed)) { setDomainInput(''); return; }
+    setSecondaryDomains((prev) => [...prev, trimmed]);
+    setDomainInput('');
+  }
+
+  function removeDomain(domain: string) {
+    setSecondaryDomains((prev) => prev.filter((d) => d !== domain));
+  }
+
+  function handleDomainKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Enter') { e.preventDefault(); addDomain(); }
+  }
+
   function handleContinue() {
     if (!validateUrl(url)) return;
     if (platforms.length === 0) return;
@@ -176,6 +193,7 @@ export function Step1PlanningSetup() {
       business_type: businessType,
       business_description: description || undefined,
       selected_platforms: platforms,
+      secondary_domains: secondaryDomains,
       client_id: selectedClientId || undefined,
     });
 
@@ -420,7 +438,7 @@ export function Step1PlanningSetup() {
       </div>
 
       {/* Description */}
-      <div className="mb-8 space-y-1.5">
+      <div className="mb-5 space-y-1.5">
         <Label htmlFor="description">
           Business description{' '}
           <span className="text-xs font-normal text-muted-foreground">(optional — helps AI tailor recommendations)</span>
@@ -432,6 +450,40 @@ export function Step1PlanningSetup() {
           rows={2}
           placeholder="e.g. We sell handmade jewellery via Shopify, targeting women 25–45."
         />
+      </div>
+
+      {/* Cross-domain tracking */}
+      <div className="mb-8 space-y-1.5">
+        <Label>
+          Secondary domains{' '}
+          <span className="text-xs font-normal text-muted-foreground">(optional — for cross-domain tracking)</span>
+        </Label>
+        <p className="text-xs text-muted-foreground">
+          If users move to a separate domain during this journey (e.g. a checkout subdomain), add those domains here. Atlas will configure GA4 cross-domain linking automatically.
+        </p>
+        <div className="flex gap-2">
+          <Input
+            type="text"
+            value={domainInput}
+            onChange={(e) => setDomainInput(e.target.value)}
+            onKeyDown={handleDomainKeyDown}
+            placeholder="checkout.example.com"
+            className="h-8 text-sm"
+          />
+          <Button type="button" size="sm" variant="outline" onClick={addDomain} className="shrink-0">
+            Add
+          </Button>
+        </div>
+        {secondaryDomains.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 pt-1">
+            {secondaryDomains.map((d) => (
+              <span key={d} className="flex items-center gap-1 rounded-full border border-[#1B2A4A]/30 bg-[#EEF1F7] px-2.5 py-0.5 text-xs font-medium text-[#1B2A4A]">
+                {d}
+                <button type="button" onClick={() => removeDomain(d)} className="ml-0.5 text-[#1B2A4A]/60 hover:text-[#1B2A4A]" aria-label={`Remove ${d}`}>×</button>
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="flex justify-end">
