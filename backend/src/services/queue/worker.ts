@@ -589,7 +589,12 @@ async function isCrawlDue(org_id: string, scans_per_month: number): Promise<bool
 // ── Reconciliation Sync Worker ────────────────────────────────────────────────
 
 reconciliationSyncQueue.process(3, async (job) => {
-  await runConfigSyncForConnection(job.data as SyncJobData);
+  const data = job.data as SyncJobData;
+  if (data.connectionId === '__scheduler__') {
+    logger.warn({ jobId: job.id }, 'Recon sync catch-all received __scheduler__ job — discarding');
+    return;
+  }
+  await runConfigSyncForConnection(data);
 });
 
 logger.info('Reconciliation sync queue worker registered');

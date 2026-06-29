@@ -162,7 +162,7 @@ async function runBrowserbaseScan(url: string, runId: string): Promise<BrowserSc
   page.on('request', req => networkRequests.push(req.url()));
 
   try {
-    await page.goto(url, { waitUntil: 'networkidle', timeout: 30_000 });
+    await page.goto(url, { waitUntil: 'load', timeout: 30_000 });
     await page.waitForTimeout(2000);
 
     // ── GTM ──────────────────────────────────────────────────────────────────

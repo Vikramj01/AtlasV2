@@ -280,9 +280,10 @@ export async function sendPublicAuditLeadNotification(opts: {
   grade: string | null;
   reportUrl: string;
 }): Promise<SendResult> {
-  if (!env.OPERATOR_ALERT_EMAIL) {
-    logger.warn('[emailService] OPERATOR_ALERT_EMAIL not set — lead notification skipped');
-    return { ok: false, error: 'OPERATOR_ALERT_EMAIL not configured' };
+  const notifyEmail = env.OPERATOR_ALERT_EMAIL || env.SUPER_ADMIN_EMAILS[0];
+  if (!notifyEmail) {
+    logger.warn('[emailService] No lead notification recipient — set OPERATOR_ALERT_EMAIL or SUPER_ADMIN_EMAILS');
+    return { ok: false, error: 'No notification recipient configured' };
   }
 
   const scoreLabel = opts.score !== null ? `${opts.score}/100 (${opts.grade})` : 'Pending';
@@ -329,7 +330,7 @@ export async function sendPublicAuditLeadNotification(opts: {
 </html>`.trim();
 
   return sendEmail({
-    to: env.OPERATOR_ALERT_EMAIL,
+    to: notifyEmail,
     subject: `New lead: ${opts.visitorEmail} audited ${new URL(opts.url).hostname}`,
     html,
   });
