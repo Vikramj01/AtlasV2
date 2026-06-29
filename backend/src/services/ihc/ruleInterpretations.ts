@@ -146,4 +146,14 @@ export const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
       'Either restore the DOM element with the expected selector, update the GTM trigger to match the current selector, or — preferably — switch to a data layer event trigger that is decoupled from the DOM structure.',
     estimated_effort: 'medium',
   },
+
+  GA4_CROSS_DOMAIN_LINKING_MISSING: {
+    title: 'GA4 Cross-Domain Linking Not Configured',
+    business_impact:
+      'When users cross from one domain to another (e.g. main site → checkout subdomain), GA4 cannot pass the client_id cookie across the handoff. The result is two separate sessions for what was a single user journey — funnel reports show a false drop-off at the domain boundary, attribution breaks, and conversion data that platforms like Google Ads and Meta use for bidding becomes unreliable.',
+    recommended_owner: 'Tag Manager Team',
+    fix_summary:
+      'Open the GA4 Config tag in GTM and add all secondary domains (e.g. checkout.example.com) to the "Domains to link" field under Configuration Settings. Simultaneously enable "Enable cross-domain linking" on the Google Ads Conversion Linker tag and add the same domains. After deploying, verify in GA4 DebugView that a single client_id persists across the domain handoff.',
+    estimated_effort: 'low',
+  },
 };
