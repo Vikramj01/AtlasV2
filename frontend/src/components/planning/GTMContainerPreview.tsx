@@ -39,6 +39,7 @@ interface GTMParameter {
   type: string;
   key: string;
   value?: string;
+  list?: Array<{ type: string; value?: string }>;
 }
 
 interface GTMContainer {
