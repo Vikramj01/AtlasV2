@@ -167,6 +167,9 @@ function bool(key: string, value: string): GTMParameter {
 function int(key: string, value: string): GTMParameter {
   return { type: 'INTEGER', key, value };
 }
+function list(key: string, items: string[]): GTMParameter {
+  return { type: 'LIST', key, list: items.map((v) => ({ type: 'TEMPLATE' as const, value: v })) };
+}
 
 function stub(accountId = '0', containerId = '0') {
   return {
@@ -288,7 +291,7 @@ export interface GTMPlatformIds {
 
 export function generateGTMContainer(
   recommendations: PlanningRecommendation[],
-  session: Pick<PlanningSession, 'business_type' | 'selected_platforms'>,
+  session: Pick<PlanningSession, 'business_type' | 'selected_platforms' | 'secondary_domains'>,
   platformIds?: GTMPlatformIds,
 ): GTMContainerJSON {
   const platforms = session.selected_platforms;
@@ -297,6 +300,7 @@ export function generateGTMContainer(
   const hasMeta        = platforms.includes('meta');
   const hasTikTok      = platforms.includes('tiktok');
   const hasLinkedIn    = platforms.includes('linkedin');
+  const secondaryDomains = session.secondary_domains ?? [];
 
   const tagIds   = new IdCounter();
   const trigIds  = new IdCounter();
@@ -848,6 +852,9 @@ export function generateGTMContainer(
         tmpl('measurementId', '{{CONST - GA4 Measurement ID}}'),
         bool('sendPageView', 'true'),
         bool('enableSendToServerContainer', 'false'),
+        ...(secondaryDomains.length > 0
+          ? [list('linked_domains', secondaryDomains)]
+          : []),
       ],
       firingTriggerId: [allPagesTrigId],
       tagFiringOption: 'oncePerEvent',
@@ -878,9 +885,12 @@ export function generateGTMContainer(
       name: 'Google Ads - Conversion Linker',
       type: 'gclidw',
       parameter: [
-        bool('enableCrossDomainLinking', 'false'),
-        bool('autoLinkDomains', 'false'),
+        bool('enableCrossDomainLinking', secondaryDomains.length > 0 ? 'true' : 'false'),
+        bool('autoLinkDomains', secondaryDomains.length > 0 ? 'true' : 'false'),
         bool('decorateFormsOption', 'false'),
+        ...(secondaryDomains.length > 0
+          ? [list('domains', secondaryDomains)]
+          : []),
       ],
       firingTriggerId: [allPagesTrigId],
       tagFiringOption: 'oncePerEvent',
