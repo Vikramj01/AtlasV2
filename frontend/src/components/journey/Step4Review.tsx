@@ -18,7 +18,7 @@ const NAVY = '#1B2A4A';
 
 export function Step4Review({ onBack }: Step4Props) {
   const navigate = useNavigate();
-  const { businessType, stages, platforms, implementationFormat, stageTiming, reset } = useJourneyWizardStore();
+  const { businessType, stages, platforms, implementationFormat, stageTiming, secondaryDomains, reset } = useJourneyWizardStore();
 
   const [loading, setLoading] = useState<'audit' | 'spec' | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -43,6 +43,7 @@ export function Step4Review({ onBack }: Step4Props) {
         name: `${businessType.replace('_', ' ')} Journey`,
         business_type: businessType,
         implementation_format: implementationFormat,
+        secondary_domains: secondaryDomains,
         stages: stages.map((s) => {
           const metadata: Record<string, unknown> = {};
           for (const actionKey of s.actions) {

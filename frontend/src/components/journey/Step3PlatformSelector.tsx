@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import type * as React from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,8 +17,25 @@ const FORMAT_OPTIONS: { value: ImplementationFormat; label: string; description:
 ];
 
 export function Step3PlatformSelector({ onNext, onBack }: Step3Props) {
-  const { platforms, implementationFormat, togglePlatform, setPlatformId, setImplementationFormat, canProceedFromStep } = useJourneyWizardStore();
+  const { platforms, implementationFormat, secondaryDomains, togglePlatform, setPlatformId, setImplementationFormat, setSecondaryDomains, canProceedFromStep } = useJourneyWizardStore();
   const canProceed = canProceedFromStep(3);
+
+  const [domainInput, setDomainInput] = useState('');
+
+  function addDomain() {
+    const trimmed = domainInput.trim().replace(/^https?:\/\//, '').replace(/\/$/, '');
+    if (!trimmed || secondaryDomains.includes(trimmed)) { setDomainInput(''); return; }
+    setSecondaryDomains([...secondaryDomains, trimmed]);
+    setDomainInput('');
+  }
+
+  function removeDomain(domain: string) {
+    setSecondaryDomains(secondaryDomains.filter((d) => d !== domain));
+  }
+
+  function handleDomainKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Enter') { e.preventDefault(); addDomain(); }
+  }
 
   return (
     <div>
@@ -93,6 +112,37 @@ export function Step3PlatformSelector({ onNext, onBack }: Step3Props) {
             </label>
           ))}
         </div>
+      </div>
+
+      {/* Cross-domain tracking */}
+      <div className="mt-8">
+        <h3 className="text-sm font-semibold">Cross-domain tracking</h3>
+        <p className="mt-1 text-xs text-muted-foreground">
+          If users move from this site to a separate domain during their journey (e.g. a checkout subdomain), add those domains here. Atlas will configure GA4 linked_domains and the Conversion Linker automatically.
+        </p>
+        <div className="mt-3 flex gap-2">
+          <Input
+            type="text"
+            value={domainInput}
+            onChange={(e) => setDomainInput(e.target.value)}
+            onKeyDown={handleDomainKeyDown}
+            placeholder="checkout.example.com"
+            className="h-8 text-sm"
+          />
+          <Button type="button" size="sm" variant="outline" onClick={addDomain} className="shrink-0">
+            Add
+          </Button>
+        </div>
+        {secondaryDomains.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {secondaryDomains.map((d) => (
+              <span key={d} className="flex items-center gap-1 rounded-full border border-[#1B2A4A]/30 bg-[#EEF1F7] px-2.5 py-0.5 text-xs font-medium text-[#1B2A4A]">
+                {d}
+                <button type="button" onClick={() => removeDomain(d)} className="ml-0.5 text-[#1B2A4A]/60 hover:text-[#1B2A4A]" aria-label={`Remove ${d}`}>×</button>
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="mt-8 flex gap-3">
