@@ -55,6 +55,7 @@ router.post('/:orgId/clients', async (req: Request, res: Response) => {
     const {
       name, website_url, business_type, notes, auto_detect,
       primary_conversion_objective, apply_pack_id, copy_signals_from_client_id,
+      secondary_domains,
     } = req.body as {
       name?: string;
       website_url?: string;
@@ -64,6 +65,7 @@ router.post('/:orgId/clients', async (req: Request, res: Response) => {
       primary_conversion_objective?: string;
       apply_pack_id?: string;
       copy_signals_from_client_id?: string;
+      secondary_domains?: string[];
     };
 
     if (!name || !website_url || !business_type) {
@@ -101,6 +103,7 @@ router.post('/:orgId/clients', async (req: Request, res: Response) => {
       primary_conversion_objective,
       template_source_client_id: copy_signals_from_client_id,
       template_source_pack_id: apply_pack_id,
+      secondary_domains: Array.isArray(secondary_domains) ? secondary_domains : [],
     });
 
     // Deploy packs from the starting point choice
