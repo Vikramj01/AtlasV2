@@ -34,6 +34,7 @@ export async function createClient(
       primary_conversion_objective: data.primary_conversion_objective ?? null,
       template_source_client_id: data.template_source_client_id ?? null,
       template_source_pack_id: data.template_source_pack_id ?? null,
+      secondary_domains: data.secondary_domains ?? [],
     })
     .select('*')
     .single();

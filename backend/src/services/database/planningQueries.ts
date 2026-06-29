@@ -31,6 +31,7 @@ export async function createSession(userId: string, input: CreateSessionInput): 
       business_type: input.business_type,
       business_description: input.business_description ?? null,
       selected_platforms: input.selected_platforms,
+      secondary_domains: input.secondary_domains ?? [],
       status: 'setup',
     })
     .select('*')

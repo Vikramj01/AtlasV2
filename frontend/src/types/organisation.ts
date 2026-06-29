@@ -38,6 +38,7 @@ export interface Client {
   primary_conversion_objective: string | null;
   template_source_client_id: string | null;
   template_source_pack_id: string | null;
+  secondary_domains: string[];
   status: ClientStatus;
   notes: string | null;
   created_at: string;

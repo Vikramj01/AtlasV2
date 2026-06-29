@@ -177,6 +177,7 @@ export interface PlanningSession {
   business_type: BusinessType;
   business_description?: string;
   selected_platforms: string[];
+  secondary_domains: string[];
   status: SessionStatus;
   error_message?: string;
   created_at: string;
@@ -272,6 +273,7 @@ export interface CreateSessionInput {
   business_type: BusinessType;
   business_description?: string;
   selected_platforms: string[];
+  secondary_domains?: string[];
   pages: Array<{ url: string; page_type?: string }>;
   client_id?: string;
 }

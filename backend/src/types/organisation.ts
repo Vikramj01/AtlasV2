@@ -40,6 +40,7 @@ export interface Client {
   primary_conversion_objective: string | null;
   template_source_client_id: string | null;
   template_source_pack_id: string | null;
+  secondary_domains: string[];
   status: ClientStatus;
   notes: string | null;
   created_at: string;
@@ -84,6 +85,7 @@ export interface CreateClientRequest {
   primary_conversion_objective?: string;
   apply_pack_id?: string;
   copy_signals_from_client_id?: string;
+  secondary_domains?: string[];
 }
 
 export interface UpdateClientRequest {
@@ -92,6 +94,7 @@ export interface UpdateClientRequest {
   business_type?: BusinessType;
   notes?: string;
   status?: ClientStatus;
+  secondary_domains?: string[];
 }
 
 export interface UpsertPlatformsRequest {
