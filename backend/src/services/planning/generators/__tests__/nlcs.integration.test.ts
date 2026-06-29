@@ -71,6 +71,7 @@ function makeSession(
     website_url: 'https://example.com',
     business_type: businessType,
     selected_platforms: platforms,
+    secondary_domains: [],
     status: 'outputs_ready',
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
