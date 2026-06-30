@@ -16,6 +16,7 @@ import { useTaxonomyStore } from '@/store/taxonomyStore';
 import { META_EVENT_SUGGESTIONS, META_STANDARD_EVENTS } from '@/lib/capi/adapters/meta';
 import { GOOGLE_EVENT_SUGGESTIONS, GOOGLE_STANDARD_EVENTS } from '@/lib/capi/adapters/google';
 import { LINKEDIN_EVENT_SUGGESTIONS, LINKEDIN_STANDARD_EVENTS } from '@/lib/capi/adapters/linkedin';
+import { AMAZON_EVENT_SUGGESTIONS, AMAZON_STANDARD_EVENTS } from '@/types/capi';
 import type { EventMapping } from '@/types/capi';
 import type { TaxonomyNode } from '@/types/taxonomy';
 
@@ -43,6 +44,12 @@ function getDefaultRows(provider: string): MappingRow[] {
     return [
       { key: 'default-lead', atlas_event: 'lead',        provider_event: 'LEAD', isCustom: false },
       { key: 'default-form', atlas_event: 'form_submit', provider_event: 'LEAD', isCustom: false },
+    ];
+  }
+  if (provider === 'amazon') {
+    return [
+      { key: 'default-purchase', atlas_event: 'purchase', provider_event: 'Purchase', isCustom: false },
+      { key: 'default-lead',     atlas_event: 'lead',     provider_event: 'Lead',     isCustom: false },
     ];
   }
   return [
@@ -80,18 +87,23 @@ export function MapEvents({ onNext, onBack }: MapEventsProps) {
 
   const isGoogle   = wizardDraft.provider === 'google';
   const isLinkedIn = wizardDraft.provider === 'linkedin';
+  const isAmazon   = wizardDraft.provider === 'amazon';
 
   const standardEvents: readonly string[] = isGoogle
     ? GOOGLE_STANDARD_EVENTS
     : isLinkedIn
       ? LINKEDIN_STANDARD_EVENTS
-      : META_STANDARD_EVENTS;
+      : isAmazon
+        ? AMAZON_STANDARD_EVENTS
+        : META_STANDARD_EVENTS;
 
   const eventSuggestions: Record<string, string> = isGoogle
     ? GOOGLE_EVENT_SUGGESTIONS
     : isLinkedIn
       ? LINKEDIN_EVENT_SUGGESTIONS
-      : META_EVENT_SUGGESTIONS;
+      : isAmazon
+        ? AMAZON_EVENT_SUGGESTIONS
+        : META_EVENT_SUGGESTIONS;
 
   const [rows, setRows] = useState<MappingRow[]>(() =>
     buildInitialRows(wizardDraft.event_mapping, standardEvents, wizardDraft.provider),

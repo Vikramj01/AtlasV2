@@ -31,7 +31,8 @@ import { applyIdentityConfig, applySignalEnrichment } from '@/services/enrichmen
 import { sendMetaEvents, checkUserParamCompleteness } from './metaDelivery';
 import { sendGoogleEvents } from './googleDelivery';
 import { sendLinkedInEvents } from './linkedinDelivery';
-import type { MetaCredentials, GoogleCredentials, LinkedInCredentials } from '@/types/capi';
+import { sendAmazonEvents } from './amazonDelivery';
+import type { MetaCredentials, GoogleCredentials, LinkedInCredentials, AmazonCredentials } from '@/types/capi';
 import logger from '@/utils/logger';
 
 // ── PII Hashing ───────────────────────────────────────────────────────────────
@@ -326,6 +327,15 @@ async function deliverToProvider(
         [identifiers],
         config.event_mapping,
         creds as LinkedInCredentials,
+        config.id,
+      );
+
+    case 'amazon':
+      return sendAmazonEvents(
+        [event],
+        [identifiers],
+        config.event_mapping,
+        creds as AmazonCredentials,
         config.id,
       );
 

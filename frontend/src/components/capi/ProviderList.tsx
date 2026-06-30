@@ -16,6 +16,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   tiktok:   'TikTok',
   linkedin: 'LinkedIn',
   snapchat: 'Snapchat',
+  amazon:   'Amazon Ads',
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -35,6 +36,7 @@ const ADDABLE_PROVIDERS: Array<{ value: CAPIProvider; label: string }> = [
   { value: 'meta',     label: 'Meta (Facebook)' },
   { value: 'google',   label: 'Data Manager (Google)' },
   { value: 'linkedin', label: 'LinkedIn' },
+  { value: 'amazon',   label: 'Amazon Ads' },
 ];
 
 export function ProviderList({ onAddProvider, onSelectProvider }: ProviderListProps) {

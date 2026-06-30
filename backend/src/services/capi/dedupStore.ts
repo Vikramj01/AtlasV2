@@ -4,6 +4,7 @@ import { env } from '@/config/env';
 const META_TTL_S     = 48 * 60 * 60;       // 48 hours — Meta dedup window
 const GOOGLE_TTL_S   = 90 * 24 * 60 * 60; // 90 days  — Google dedup window
 const LINKEDIN_TTL_S = 48 * 60 * 60;       // 48 hours — LinkedIn dedup window
+const AMAZON_TTL_S   = 24 * 60 * 60;       // 24 hours — Amazon dedup window
 
 function buildRedisClient(): Redis {
   const parsed = new URL(env.REDIS_URL);
@@ -41,6 +42,10 @@ function linkedinKey(providerId: string, eventId: string, eventName: string): st
   return `capi:linkedin:dedup:${providerId}:${eventId}:${eventName}`;
 }
 
+function amazonKey(providerId: string, identifier: string, eventName: string): string {
+  return `capi:amazon:dedup:${providerId}:${identifier}:${eventName}`;
+}
+
 export async function getMetaDedupEntry(
   providerId: string,
   fbclid: string | null,
@@ -71,8 +76,18 @@ export async function getLinkedInDedupEntry(
   return raw ? (JSON.parse(raw) as DedupEntry) : null;
 }
 
+export async function getAmazonDedupEntry(
+  providerId: string,
+  identifier: string | null,
+  eventName: string,
+): Promise<DedupEntry | null> {
+  if (!identifier) return null;
+  const raw = await dedupRedis.get(amazonKey(providerId, identifier, eventName));
+  return raw ? (JSON.parse(raw) as DedupEntry) : null;
+}
+
 export async function setDedupEntry(
-  provider: 'meta' | 'google' | 'linkedin',
+  provider: 'meta' | 'google' | 'linkedin' | 'amazon',
   providerId: string,
   identifier: string,
   eventName: string,
@@ -93,6 +108,10 @@ export async function setDedupEntry(
     case 'linkedin':
       key = linkedinKey(providerId, identifier, eventName);
       ttl = LINKEDIN_TTL_S;
+      break;
+    case 'amazon':
+      key = amazonKey(providerId, identifier, eventName);
+      ttl = AMAZON_TTL_S;
       break;
   }
 

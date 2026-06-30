@@ -9,7 +9,7 @@ import type * as React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useCAPIStore } from '@/store/capiStore';
-import type { CAPIAdapterName, MetaCredentials, GoogleCredentials, LinkedInCredentials } from '@/types/capi';
+import type { CAPIAdapterName, MetaCredentials, GoogleCredentials, LinkedInCredentials, AmazonCredentials } from '@/types/capi';
 
 // ── Google adapter decision tree ──────────────────────────────────────────────
 
@@ -564,6 +564,163 @@ function LinkedInConnectForm({ onNext }: ConnectAccountProps) {
   );
 }
 
+// ── Amazon form ───────────────────────────────────────────────────────────────
+
+function AmazonConnectForm({ onNext }: ConnectAccountProps) {
+  const { wizardDraft, setWizardDraft } = useCAPIStore();
+
+  const draft = wizardDraft.credentials as Partial<AmazonCredentials>;
+
+  const [profileId, setProfileId]       = useState(draft.profile_id    ?? '');
+  const [clientId, setClientId]         = useState(draft.client_id     ?? '');
+  const [clientSecret, setClientSecret] = useState(draft.client_secret ?? '');
+  const [accessToken, setAccessToken]   = useState(draft.access_token  ?? '');
+  const [refreshToken, setRefreshToken] = useState(draft.refresh_token ?? '');
+  const [entityId, setEntityId]         = useState(draft.entity_id     ?? '');
+  const [region, setRegion]             = useState<'NA' | 'EU' | 'FE'>(draft.region ?? 'NA');
+  const [showSecret, setShowSecret]     = useState(false);
+  const [showAccess, setShowAccess]     = useState(false);
+  const [showRefresh, setShowRefresh]   = useState(false);
+  const [errors, setErrors] = useState<{
+    profile_id?: string;
+    client_id?: string;
+    client_secret?: string;
+    access_token?: string;
+    refresh_token?: string;
+  }>({});
+
+  function validate(): boolean {
+    const next: typeof errors = {};
+    if (!profileId.trim())    next.profile_id    = 'Profile ID is required.';
+    if (!clientId.trim())     next.client_id     = 'Client ID is required.';
+    if (!clientSecret.trim()) next.client_secret = 'Client Secret is required.';
+    if (!accessToken.trim())  next.access_token  = 'Access Token is required.';
+    if (!refreshToken.trim()) next.refresh_token = 'Refresh Token is required.';
+    setErrors(next);
+    return Object.keys(next).length === 0;
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!validate()) return;
+    setWizardDraft({
+      credentials: {
+        profile_id:    profileId.trim(),
+        client_id:     clientId.trim(),
+        client_secret: clientSecret.trim(),
+        access_token:  accessToken.trim(),
+        refresh_token: refreshToken.trim(),
+        region,
+        ...(entityId.trim() ? { entity_id: entityId.trim() } : {}),
+      } satisfies AmazonCredentials,
+    });
+    onNext();
+  }
+
+  const inputClass = 'w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring';
+
+  function PasswordField({ id, label, value, onChange, show, setShow, error, hint }: {
+    id: string; label: string; value: string; onChange: (v: string) => void;
+    show: boolean; setShow: (v: boolean) => void; error?: string; hint?: string;
+  }) {
+    return (
+      <div className="space-y-1">
+        <label htmlFor={id} className="block text-sm font-medium">{label}</label>
+        <div className="relative">
+          <input id={id} type={show ? 'text' : 'password'} value={value}
+            onChange={(e) => onChange(e.target.value)} placeholder={`Enter ${label.toLowerCase()}`}
+            className={`${inputClass} pr-20`}
+          />
+          <button type="button" onClick={() => setShow(!show)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-foreground focus:outline-none">
+            {show ? 'Hide' : 'Show'}
+          </button>
+        </div>
+        {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+        {error && <p className="text-xs text-destructive">{error}</p>}
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={handleSubmit} noValidate className="space-y-5">
+      <div className="space-y-1">
+        <label htmlFor="amz_profile_id" className="block text-sm font-medium">Profile ID</label>
+        <input id="amz_profile_id" type="text" value={profileId}
+          onChange={(e) => setProfileId(e.target.value)} placeholder="1234567890"
+          className={inputClass}
+        />
+        <p className="text-xs text-muted-foreground">
+          Found in the Amazon Ads Console &rarr; Settings &rarr; your Profile ID.
+          Used as the <code className="font-mono">Amazon-Advertising-Api-Scope</code> header.
+        </p>
+        {errors.profile_id && <p className="text-xs text-destructive">{errors.profile_id}</p>}
+      </div>
+
+      <div className="space-y-1">
+        <label htmlFor="amz_region" className="block text-sm font-medium">API Region</label>
+        <select id="amz_region" value={region}
+          onChange={(e) => setRegion(e.target.value as 'NA' | 'EU' | 'FE')}
+          className={inputClass}>
+          <option value="NA">North America (NA)</option>
+          <option value="EU">Europe (EU)</option>
+          <option value="FE">Far East (FE)</option>
+        </select>
+        <p className="text-xs text-muted-foreground">Select the region matching your Amazon Ads account.</p>
+      </div>
+
+      <div className="space-y-1">
+        <label htmlFor="amz_client_id" className="block text-sm font-medium">Client ID</label>
+        <input id="amz_client_id" type="text" value={clientId}
+          onChange={(e) => setClientId(e.target.value)} placeholder="amzn1.application-oa2-client.xxx"
+          className={inputClass}
+        />
+        <p className="text-xs text-muted-foreground">
+          From your Amazon Developer Console &rarr; Security Profile &rarr; Web Settings.
+        </p>
+        {errors.client_id && <p className="text-xs text-destructive">{errors.client_id}</p>}
+      </div>
+
+      <PasswordField id="amz_client_secret" label="Client Secret" value={clientSecret}
+        onChange={setClientSecret} show={showSecret} setShow={setShowSecret}
+        error={errors.client_secret}
+        hint="From your Amazon Developer Console Security Profile." />
+
+      <PasswordField id="amz_access_token" label="Access Token" value={accessToken}
+        onChange={setAccessToken} show={showAccess} setShow={setShowAccess}
+        error={errors.access_token}
+        hint="Current OAuth 2.0 access token. Atlas refreshes this automatically using your refresh token." />
+
+      <PasswordField id="amz_refresh_token" label="Refresh Token" value={refreshToken}
+        onChange={setRefreshToken} show={showRefresh} setShow={setShowRefresh}
+        error={errors.refresh_token}
+        hint="Long-lived token used to obtain new access tokens without re-authentication." />
+
+      <div className="space-y-1">
+        <label htmlFor="amz_entity_id" className="block text-sm font-medium">
+          DSP Entity ID <span className="text-muted-foreground font-normal">(optional)</span>
+        </label>
+        <input id="amz_entity_id" type="text" value={entityId}
+          onChange={(e) => setEntityId(e.target.value)} placeholder="ENTITY1ABC2DEF3GHI"
+          className={inputClass}
+        />
+        <p className="text-xs text-muted-foreground">
+          Only required when sending conversions via Amazon DSP (not Sponsored Ads).
+        </p>
+      </div>
+
+      <div className="rounded-md bg-muted px-4 py-3 text-sm text-muted-foreground">
+        Generate OAuth tokens from the Amazon Developer Console using Login with Amazon (LWA).
+        Ensure your app has the <code className="font-mono">advertising::campaign_management</code> scope.
+      </div>
+
+      <div className="flex justify-end">
+        <Button type="submit">Next</Button>
+      </div>
+    </form>
+  );
+}
+
 // ── Container ─────────────────────────────────────────────────────────────────
 
 export function ConnectAccount({ onNext }: ConnectAccountProps) {
@@ -571,6 +728,7 @@ export function ConnectAccount({ onNext }: ConnectAccountProps) {
   const provider = wizardDraft.provider;
   const isGoogle   = provider === 'google';
   const isLinkedIn = provider === 'linkedin';
+  const isAmazon   = provider === 'amazon';
 
   const adapterLabel = GOOGLE_ADAPTER_OPTIONS.find((o) => o.name === wizardDraft.adapter_name)?.label;
 
@@ -578,7 +736,9 @@ export function ConnectAccount({ onNext }: ConnectAccountProps) {
     ? 'Connect your Google Ads account'
     : isLinkedIn
       ? 'Connect your LinkedIn account'
-      : 'Connect your Meta account';
+      : isAmazon
+        ? 'Connect your Amazon Ads account'
+        : 'Connect your Meta account';
 
   const subtitle = isGoogle
     ? adapterLabel
@@ -586,7 +746,9 @@ export function ConnectAccount({ onNext }: ConnectAccountProps) {
       : 'Step 1 of 5 — Choose your conversion type and provide your Google Ads credentials.'
     : isLinkedIn
       ? 'Step 1 of 5 — Provide your LinkedIn OAuth token and Conversion ID to get started.'
-      : 'Step 1 of 5 — Provide your Meta Pixel credentials to get started.';
+      : isAmazon
+        ? 'Step 1 of 5 — Provide your Amazon Ads OAuth credentials to get started.'
+        : 'Step 1 of 5 — Provide your Meta Pixel credentials to get started.';
 
   return (
     <Card>
@@ -597,6 +759,7 @@ export function ConnectAccount({ onNext }: ConnectAccountProps) {
       <CardContent>
         {isGoogle   ? <GoogleConnectForm   onNext={onNext} /> :
          isLinkedIn ? <LinkedInConnectForm onNext={onNext} /> :
+         isAmazon   ? <AmazonConnectForm   onNext={onNext} /> :
                       <MetaConnectForm     onNext={onNext} />}
       </CardContent>
     </Card>
