@@ -720,7 +720,7 @@ function hasOutboundClickTrigger(auditData: AuditData): boolean {
     if (!isClick) return false;
     const filters = [
       ...(t.filter ?? []),
-      ...((t as Record<string, unknown>).autoEventFilter as typeof t.filter ?? []),
+      ...((t as unknown as Record<string, unknown>).autoEventFilter as typeof t.filter ?? []),
     ];
     return filters.some((f) => {
       const params = f.parameter ?? [];
