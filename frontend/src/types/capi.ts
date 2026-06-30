@@ -7,7 +7,7 @@ import type { ConsentDecisions } from './consent';
 
 // --- Enums & Literals ---
 
-export type CAPIProvider = 'meta' | 'google' | 'tiktok' | 'linkedin' | 'snapchat';
+export type CAPIProvider = 'meta' | 'google' | 'tiktok' | 'linkedin' | 'snapchat' | 'amazon';
 
 // Canonical adapter name — includes S4 Google split names
 export type CAPIAdapterName =
@@ -17,7 +17,8 @@ export type CAPIAdapterName =
   | 'google_ec_leads'
   | 'google_offline'
   | 'tiktok'
-  | 'linkedin';
+  | 'linkedin'
+  | 'amazon';
 export type CAPIProviderStatus = 'draft' | 'testing' | 'active' | 'paused' | 'error' | 'reconnect_required';
 
 export type CAPIEventStatus =
@@ -96,11 +97,23 @@ export interface LinkedInCredentials {
   conversion_id: string;
 }
 
+export interface AmazonCredentials {
+  profile_id: string;          // Amazon Advertising profile ID — sent as Amazon-Advertising-Api-Scope header
+  client_id: string;
+  client_secret: string;
+  access_token: string;
+  refresh_token: string;
+  entity_id?: string;          // DSP advertiser entity ID (optional, for DSP-mode)
+  region?: 'NA' | 'EU' | 'FE'; // API region — defaults to NA
+  access_token_expires_at?: string; // ISO timestamp
+}
+
 export type ProviderCredentials =
   | MetaCredentials
   | GoogleCredentials
   | TikTokCredentials
-  | LinkedInCredentials;
+  | LinkedInCredentials
+  | AmazonCredentials;
 
 // --- Event Mapping ---
 
@@ -451,3 +464,58 @@ export interface GoogleUploadRequest {
   conversionAdjustments: GoogleConversionAdjustment[];
   partialFailure: boolean;
 }
+
+// --- Amazon-Specific Types ---
+
+export const AMAZON_STANDARD_EVENTS = [
+  'Purchase',
+  'Lead',
+  'SignUp',
+  'AddToCart',
+  'ViewContent',
+  'Search',
+  'Subscribe',
+  'Contact',
+  'Download',
+  'PageView',
+] as const;
+
+export type AmazonStandardEvent = typeof AMAZON_STANDARD_EVENTS[number];
+
+export interface AmazonConversionEvent {
+  name: string;
+  eventType: string;              // AmazonStandardEvent or custom string
+  eventSource: 'website' | 'mobile_app' | 'offline';
+  countryCode: string;            // ISO 3166-1 alpha-2 (raw, not hashed)
+  timestamp: string;              // ISO 8601
+  clientDedupeId?: string;
+  value?: { currencyCode: string; amount: number };
+  matchKeys: {
+    hashedEmail?: string;
+    hashedPhone?: string;
+    hashedFirstName?: string;
+    hashedLastName?: string;
+    hashedAddress?: string;
+    hashedCity?: string;
+    hashedState?: string;
+    hashedPostal?: string;
+    maid?: string;                // Raw Mobile Ad ID (not hashed)
+    externalId?: string;          // Raw external customer ID
+  };
+}
+
+export const AMAZON_EVENT_SUGGESTIONS: Record<string, string> = {
+  purchase:           'Purchase',
+  order_complete:     'Purchase',
+  lead:               'Lead',
+  form_submit:        'Lead',
+  demo_request:       'Lead',
+  sign_up:            'SignUp',
+  registration:       'SignUp',
+  add_to_cart:        'AddToCart',
+  page_view:          'PageView',
+  search:             'Search',
+  contact:            'Contact',
+  content_download:   'Download',
+  subscribe:          'Subscribe',
+};
