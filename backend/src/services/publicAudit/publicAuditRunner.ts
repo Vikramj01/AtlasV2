@@ -113,6 +113,63 @@ export async function runPublicAudit(runId: string, url: string): Promise<void> 
   }
 }
 
+// ── Consent banner handling ──────────────────────────────────────────────────
+//
+// Tries a list of known CMP "accept all" selectors, then falls back to a
+// text match (including common EU-language phrasing) against any clickable
+// element. Returns true if something was clicked.
+
+async function acceptCookieConsent(page: { evaluate<T>(fn: () => T): Promise<T> }): Promise<boolean> {
+  return page.evaluate(() => {
+    const knownSelectors = [
+      '#onetrust-accept-btn-handler',
+      '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll',
+      '#CybotCookiebotDialogBodyButtonAccept',
+      '.CybotCookiebotDialogBodyButton',
+      '#accept-cookie-consent',
+      '#cookie-consent-accept',
+      '#coiConsentBtn',
+      '[data-testid="uc-accept-all-button"]',
+      '.uc-btn-accept-banner',
+      '#didomi-notice-agree-button',
+      '.cm-btn-accept',
+      '.cc-btn.cc-allow',
+      '#cookie-law-info-bar .cli_action_button',
+      'button[data-cky-tag="accept-button"]',
+    ];
+
+    for (const sel of knownSelectors) {
+      const el = document.querySelector(sel) as HTMLElement | null;
+      if (el) {
+        el.click();
+        return true;
+      }
+    }
+
+    const textMatches = [
+      'accept all', 'accept all cookies', 'allow all', 'allow all cookies', 'i accept',
+      'godkänn alla', 'acceptera alla', // Swedish
+      'alle akzeptieren', // German
+      'tout accepter', // French
+      'accepteren alle', 'alles accepteren', // Dutch
+      'accetta tutti', // Italian
+      'aceptar todo', // Spanish
+    ];
+    const candidates = Array.from(
+      document.querySelectorAll('button, a[role="button"], [role="button"], input[type="button"]'),
+    );
+    for (const el of candidates) {
+      const text = (el.textContent || (el as HTMLInputElement).value || '').trim().toLowerCase();
+      if (textMatches.some(t => text === t || text.includes(t))) {
+        (el as HTMLElement).click();
+        return true;
+      }
+    }
+
+    return false;
+  });
+}
+
 // ── Browserbase scan ──────────────────────────────────────────────────────────
 
 interface BrowserScanResult {
@@ -163,7 +220,19 @@ async function runBrowserbaseScan(url: string, runId: string): Promise<BrowserSc
 
   try {
     await page.goto(url, { waitUntil: 'load', timeout: 30_000 });
-    await page.waitForTimeout(2000);
+
+    // Let the CMP banner render before we try to dismiss it.
+    await page.waitForTimeout(1500);
+
+    // Most GA4/Meta Pixel/Google Ads tags are gated behind a consent banner
+    // (correctly, under GDPR/CCPA) and never fire until the visitor accepts.
+    // Without clicking through, those tags look "not detected" even when
+    // they're installed and working. Accept the banner so gated tags get a
+    // chance to fire, then give them extra time to do so.
+    const consentAccepted = await acceptCookieConsent(page);
+    await page.waitForTimeout(consentAccepted ? 3500 : 2000);
+
+    logger.info({ runId, consentAccepted }, 'Public audit consent banner handling');
 
     // ── GTM ──────────────────────────────────────────────────────────────────
     const gtmIds: string[] = await page.evaluate(() => {
@@ -209,9 +278,18 @@ async function runBrowserbaseScan(url: string, runId: string): Promise<BrowserSc
     const duplicate_pixel = meta_pixel_ids.length > 1;
 
     // ── Google Ads ────────────────────────────────────────────────────────────
+    // Conversion-tracking hits (/pagead/conversion) only fire on a conversion
+    // completion page (e.g. order confirmation), which a homepage-only scan
+    // will never visit. Also match the site-wide remarketing/base-tag and
+    // gtag.js AW- config load, which fire on any page the Ads tag is present on.
     const google_ads_detected = networkRequests.some(u =>
       u.includes('googleadservices.com/pagead/conversion') ||
-      u.includes('google.com/pagead/conversion'),
+      u.includes('google.com/pagead/conversion') ||
+      u.includes('googleadservices.com/pagead/1p-conversion') ||
+      u.includes('googleadservices.com/pagead/viewthroughconversion') ||
+      u.includes('googleads.g.doubleclick.net') ||
+      u.includes('google.com/ads/ga-audiences') ||
+      /googletagmanager\.com\/gtag\/js\?id=AW-/.test(u),
     );
 
     // ── sGTM ─────────────────────────────────────────────────────────────────
@@ -230,7 +308,7 @@ async function runBrowserbaseScan(url: string, runId: string): Promise<BrowserSc
     });
 
     // ── Consent Mode ──────────────────────────────────────────────────────────
-    const consent_mode_detected: boolean = await page.evaluate(() => {
+    const consentModeInDataLayer: boolean = await page.evaluate(() => {
       // Look for gtag consent default call or dataLayer consent command
       const dl = (window as unknown as { dataLayer?: unknown[] }).dataLayer;
       if (Array.isArray(dl)) {
@@ -245,6 +323,12 @@ async function runBrowserbaseScan(url: string, runId: string): Promise<BrowserSc
       }
       return false;
     });
+    // Google appends a gcs= (Consent State) param to every gtag.js load and
+    // /collect hit once Consent Mode is configured, regardless of whether we
+    // caught the literal dataLayer push in time. Treat that as a reliable
+    // secondary signal.
+    const consentModeInRequests = networkRequests.some(u => /[?&]gcs=/.test(u));
+    const consent_mode_detected = consentModeInDataLayer || consentModeInRequests;
 
     return {
       gtm_detected,

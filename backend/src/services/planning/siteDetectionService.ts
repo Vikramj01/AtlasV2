@@ -151,6 +151,13 @@ function detectPlatform(
     return { name: 'webflow', indicators: ['Webflow script or data attribute detected'] };
   }
 
+  // Generic fallback: <meta name="generator"> covers everything else
+  // (Episerver/Optimizely, Umbraco, Sitecore, Drupal, custom frameworks, etc.)
+  const generatorMeta = $('meta[name="generator"]').attr('content')?.trim();
+  if (generatorMeta) {
+    return { name: generatorMeta, indicators: [`<meta name="generator"> tag: "${generatorMeta}"`] };
+  }
+
   return null;
 }
 
