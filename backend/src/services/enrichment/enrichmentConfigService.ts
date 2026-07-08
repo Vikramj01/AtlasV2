@@ -151,6 +151,11 @@ export function applySignalEnrichment(
   if (enrichmentConfig.dedup_config?.field) {
     const v = resolveFieldPath(rawEventData, enrichmentConfig.dedup_config.field);
     if (v !== undefined && v !== null) cd.order_id = String(v);
+  } else if (!cd.order_id) {
+    // No business order id configured — default to the canonical atlas
+    // event_id so order_id (Meta/Google/TikTok custom_data field) still
+    // traces back to the same business event across every destination.
+    cd.order_id = event.event_id;
   }
 
   // Content IDs

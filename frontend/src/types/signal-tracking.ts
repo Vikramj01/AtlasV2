@@ -2,6 +2,7 @@ export interface SignalEventRow {
   id: string;
   event_id: string | null;
   atlas_event_id: string;
+  native_id_field: string | null;
   event_name: string;
   destination: string;
   status: string;
@@ -10,6 +11,7 @@ export interface SignalEventRow {
   dedup_matched_at: string | null;
   match_quality_score: number | null;
   latency_ms: number | null;
+  retry_count: number;
   processed_at: string;
   delivered_at: string | null;
   error_code: string | null;
@@ -22,6 +24,13 @@ export interface SignalEventDetail extends SignalEventRow {
   response: Record<string, unknown> | null;
   consent_state: Record<string, unknown>;
   related_signals: SignalEventRow[];
+}
+
+// One canonical business event's fan-out across every destination it was
+// routed to — the "which platforms received this exact purchase" view.
+export interface SignalEventTrace {
+  atlas_event_id: string;
+  destinations: SignalEventRow[];
 }
 
 export interface SignalAggregates {

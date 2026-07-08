@@ -1,45 +1,11 @@
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { SkeletonCard } from '@/components/common/SkeletonCard';
+import { DESTINATION_LABELS, DESTINATION_COLORS, statusBadge, dedupBadge } from '@/lib/signalDisplay';
 import type { SignalEventRow } from '@/types/signal-tracking';
 
 // ── Display helpers ───────────────────────────────────────────────────────────
-
-const DESTINATION_LABELS: Record<string, string> = {
-  meta:     'Meta',
-  google:   'Google',
-  tiktok:   'TikTok',
-  linkedin: 'LinkedIn',
-  snapchat: 'Snapchat',
-};
-
-const DESTINATION_COLORS: Record<string, string> = {
-  meta:     'bg-blue-100 text-blue-800',
-  google:   'bg-red-100 text-red-800',
-  tiktok:   'bg-gray-100 text-gray-800',
-  linkedin: 'bg-sky-100 text-sky-800',
-  snapchat: 'bg-yellow-100 text-yellow-800',
-};
-
-function statusBadge(status: string) {
-  const success = status === 'delivered';
-  const failure = status === 'delivery_failed' || status === 'dead_letter';
-  const blocked = status === 'consent_blocked';
-
-  if (success) return <Badge className="border-0 bg-[#DCFCE7] text-[#166534] text-xs">Success</Badge>;
-  if (failure) return <Badge className="border-0 bg-[#FEE2E2] text-[#991B1B] text-xs">Failed</Badge>;
-  if (blocked) return <Badge className="border-0 bg-[#FEF3C7] text-[#92400E] text-xs">Blocked</Badge>;
-  return <Badge variant="outline" className="text-xs text-[#6B7280]">{status}</Badge>;
-}
-
-function dedupBadge(dedup: string | null) {
-  if (!dedup || dedup === 'not_applicable') return <span className="text-xs text-[#9CA3AF]">—</span>;
-  if (dedup === 'hit')  return <Badge className="border-0 bg-[#DCFCE7] text-[#166534] text-xs">Matched</Badge>;
-  if (dedup === 'miss') return <Badge className="border-0 bg-[#FEF3C7] text-[#92400E] text-xs">Unmatched</Badge>;
-  return <span className="text-xs text-[#6B7280]">{dedup}</span>;
-}
 
 function matchQualityCell(score: number | null) {
   if (score === null) return <span className="text-[#9CA3AF]">—</span>;

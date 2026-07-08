@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase';
-import type { SignalEventRow, SignalEventDetail, SignalAggregates, ExportJob } from '@/types/signal-tracking';
+import type { SignalEventRow, SignalEventDetail, SignalEventTrace, SignalAggregates, ExportJob } from '@/types/signal-tracking';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
 
@@ -34,6 +34,10 @@ interface AggregatesResponse {
 
 interface DetailResponse {
   data: SignalEventDetail;
+}
+
+interface TraceResponse {
+  data: SignalEventTrace;
 }
 
 interface ExportCreateResponse {
@@ -86,6 +90,9 @@ export const signalEventsApi = {
 
   detail: (event_id: string) =>
     apiFetch<DetailResponse>(`/api/signal-events/${encodeURIComponent(event_id)}`),
+
+  trace: (event_id: string) =>
+    apiFetch<TraceResponse>(`/api/signal-events/${encodeURIComponent(event_id)}/trace`),
 
   createExport: (body: { from: string; to: string; destinations?: string[]; event_names?: string[]; statuses?: string[] }) =>
     apiFetch<ExportCreateResponse>('/api/signal-events/export', {

@@ -147,9 +147,14 @@ export async function sendMetaEvents(
   // in both the GTM beacon and the server pipeline.
   const dedupResults = await Promise.all(
     events.map(async (e) => {
-      if (!providerId) return { entry: null, eventId: e.event_id || randomUUID() };
+      const canonicalId = e.event_id || randomUUID();
+      if (!providerId) return { entry: null, eventId: canonicalId };
       const entry = await getMetaDedupEntry(providerId, e.user_data.fbc ?? null, e.event_name);
-      return { entry, eventId: entry?.event_id ?? randomUUID() };
+      // A dedup hit means the browser beacon already sent an event_id for this
+      // fbc — reuse it so Meta's browser/server dedup matches. Otherwise, use
+      // the canonical atlas event_id (not a throwaway UUID) so the id sent to
+      // Meta traces back to the same business event as every other destination.
+      return { entry, eventId: entry?.event_id ?? canonicalId };
     }),
   );
 

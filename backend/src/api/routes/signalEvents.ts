@@ -17,6 +17,7 @@ import logger from '@/utils/logger';
 import {
   listSignalEvents,
   getSignalEventDetail,
+  getSignalEventTrace,
   getSignalAggregates,
   createExportJob,
   getExportJob,
@@ -176,9 +177,35 @@ signalEventsRouter.get('/export/:job_id', async (req: Request, res: Response): P
   }
 });
 
+// ── GET /api/signal-events/:event_id/trace ────────────────────────────────────
+// Returns every destination one canonical business event (atlas_event_id) was
+// routed to, so a single purchase's fan-out across Meta/Google/LinkedIn/etc.
+// can be verified end-to-end instead of just the single row a user clicked.
+// Registered before /:event_id — same ordering concern as /aggregates, /export/*.
+
+signalEventsRouter.get('/:event_id/trace', async (req: Request, res: Response): Promise<void> => {
+  const organization_id = req.user.id;
+  const { event_id } = req.params;
+
+  try {
+    logger.info({ organization_id, event_id }, 'Fetching signal event trace');
+    const trace = await getSignalEventTrace(organization_id, event_id);
+
+    if (!trace) {
+      res.status(404).json({ error: 'No trace found for this event' });
+      return;
+    }
+
+    res.json({ data: trace });
+  } catch (err) {
+    sendInternalError(res, err, 'signal-events-trace');
+  }
+});
+
 // ── GET /api/signal-events/:event_id ─────────────────────────────────────────
-// Registered last — matches any string not caught by /aggregates or /export/*.
-// Returns 404 (not 403) for cross-org events to prevent existence leaking.
+// Registered last — matches any string not caught by /aggregates, /export/*, or
+// /:event_id/trace. Returns 404 (not 403) for cross-org events to prevent
+// existence leaking.
 
 signalEventsRouter.get('/:event_id', async (req: Request, res: Response): Promise<void> => {
   const organization_id = req.user.id;

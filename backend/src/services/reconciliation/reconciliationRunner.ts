@@ -3,6 +3,7 @@ import { runConfigDiff } from './engine/configDiff';
 import { runAlignmentDiff } from './engine/alignmentDiff';
 import { runDeliveryDiff } from './engine/deliveryDiff';
 import { runVolumeDiff } from './engine/volumeDiff';
+import { runIdentityDiff } from './engine/identityDiff';
 import { finaliseRun } from './engine/findingWriter';
 import logger from '@/utils/logger';
 
@@ -80,6 +81,11 @@ export async function executeRun(job: ReconciliationJobData): Promise<void> {
     await runVolumeDiff(runId, clientId, briefId ?? null, organizationId).catch((err: Error) => {
       errors.push(`volume: ${err.message}`);
       logger.error({ runId, err: err.message }, 'Volume diff failed');
+    });
+
+    await runIdentityDiff(runId, clientId, briefId ?? null, organizationId).catch((err: Error) => {
+      errors.push(`identity: ${err.message}`);
+      logger.error({ runId, err: err.message }, 'Identity diff failed');
     });
 
     const status = errors.length === 0 ? 'succeeded' : 'partial';

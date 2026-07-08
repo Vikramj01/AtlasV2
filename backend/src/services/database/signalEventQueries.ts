@@ -35,6 +35,7 @@ export interface SignalEventRow {
   id: string;
   event_id: string | null;
   atlas_event_id: string;
+  native_id_field: string | null;
   event_name: string;
   destination: string;
   status: string;
@@ -43,11 +44,17 @@ export interface SignalEventRow {
   dedup_matched_at: string | null;
   match_quality_score: number | null;
   latency_ms: number | null;
+  retry_count: number;
   processed_at: string;
   delivered_at: string | null;
   error_code: string | null;
   error_message: string | null;
   provider_config_id: string;
+}
+
+export interface SignalEventTrace {
+  atlas_event_id: string;
+  destinations: SignalEventRow[];
 }
 
 export interface SignalEventDetail extends SignalEventRow {
@@ -116,6 +123,7 @@ function mapRow(raw: Record<string, unknown>): SignalEventRow {
     id:                  raw['id'] as string,
     event_id:            raw['event_id'] as string | null,
     atlas_event_id:      raw['atlas_event_id'] as string,
+    native_id_field:     (raw['native_id_field'] as string | null) ?? null,
     event_name:          raw['provider_event_name'] as string,
     destination:         provider?.provider ?? 'unknown',
     status:              raw['status'] as string,
@@ -124,6 +132,7 @@ function mapRow(raw: Record<string, unknown>): SignalEventRow {
     dedup_matched_at:    raw['dedup_matched_at'] as string | null,
     match_quality_score: raw['match_quality_score'] as number | null,
     latency_ms:          raw['latency_ms'] as number | null,
+    retry_count:         (raw['retry_count'] as number | null) ?? 0,
     processed_at:        raw['processed_at'] as string,
     delivered_at:        raw['delivered_at'] as string | null,
     error_code:          raw['error_code'] as string | null,
@@ -155,6 +164,7 @@ export async function listSignalEvents(params: ListSignalEventsParams): Promise<
       id,
       event_id,
       atlas_event_id,
+      native_id_field,
       provider_event_name,
       status,
       dedup_status,
@@ -162,6 +172,7 @@ export async function listSignalEvents(params: ListSignalEventsParams): Promise<
       dedup_matched_at,
       match_quality_score,
       latency_ms,
+      retry_count,
       processed_at,
       delivered_at,
       error_code,
@@ -230,6 +241,7 @@ export async function getSignalEventDetail(
       id,
       event_id,
       atlas_event_id,
+      native_id_field,
       provider_event_name,
       status,
       dedup_status,
@@ -237,6 +249,7 @@ export async function getSignalEventDetail(
       dedup_matched_at,
       match_quality_score,
       latency_ms,
+      retry_count,
       processed_at,
       delivered_at,
       error_code,
@@ -267,9 +280,9 @@ export async function getSignalEventDetail(
     const { data: relatedRaw, error: relErr } = await supabaseAdmin
       .from('capi_events')
       .select(`
-        id, event_id, atlas_event_id, provider_event_name, status,
+        id, event_id, atlas_event_id, native_id_field, provider_event_name, status,
         dedup_status, dedup_key, dedup_matched_at, match_quality_score,
-        latency_ms, processed_at, delivered_at, error_code, error_message,
+        latency_ms, retry_count, processed_at, delivered_at, error_code, error_message,
         provider_config_id, capi_providers!inner(provider)
       `)
       .eq('organization_id', organization_id)
@@ -292,6 +305,52 @@ export async function getSignalEventDetail(
     consent_state:  (raw['consent_state'] as Record<string, unknown>) ?? {},
     related_signals,
   };
+}
+
+// ── getSignalEventTrace ───────────────────────────────────────────────────────
+// Returns every destination a single canonical business event was routed to —
+// the full fan-out for one atlas_event_id, not just the one row a caller
+// happened to click into (see getSignalEventDetail, which intentionally
+// returns a single row for that use case).
+
+export async function getSignalEventTrace(
+  organization_id: string,
+  atlas_event_id: string,
+): Promise<SignalEventTrace | null> {
+  const { data, error } = await supabaseAdmin
+    .from('capi_events')
+    .select(`
+      id,
+      event_id,
+      atlas_event_id,
+      native_id_field,
+      provider_event_name,
+      status,
+      dedup_status,
+      dedup_key,
+      dedup_matched_at,
+      match_quality_score,
+      latency_ms,
+      retry_count,
+      processed_at,
+      delivered_at,
+      error_code,
+      error_message,
+      provider_config_id,
+      capi_providers!inner(provider)
+    `)
+    .eq('organization_id', organization_id)
+    .eq('atlas_event_id', atlas_event_id)
+    .order('processed_at', { ascending: true });
+
+  if (error) {
+    throw new Error(`Failed to fetch event trace: ${error.message}`);
+  }
+
+  const rows = ((data ?? []) as Record<string, unknown>[]).map(mapRow);
+  if (rows.length === 0) return null;
+
+  return { atlas_event_id, destinations: rows };
 }
 
 // ── getSignalAggregates ───────────────────────────────────────────────────────
