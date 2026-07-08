@@ -1,11 +1,12 @@
 import { useEffect, useCallback, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useParams, useNavigate } from 'react-router-dom';
 import { RefreshCw } from 'lucide-react';
 import { signalEventsApi } from '@/lib/api/signalEventsApi';
 import { slackApi } from '@/lib/api/slackApi';
 import { ShareToSlackButton } from '@/components/common/ShareToSlackButton';
 import { SignalFilterBar } from '@/components/signals/SignalFilterBar';
 import { SignalFlowTable } from '@/components/signals/SignalFlowTable';
+import { SignalTraceModal } from '@/components/signals/SignalTraceModal';
 import type { SignalEventRow, SignalFilters } from '@/types/signal-tracking';
 
 // ── Filter ↔ URL helpers ──────────────────────────────────────────────────────
@@ -50,6 +51,8 @@ function filtersToParams(f: SignalFilters): URLSearchParams {
 const POLL_INTERVAL_MS = 30_000;
 
 export function SignalTrackingDashboard() {
+  const { event_id } = useParams<{ event_id?: string }>();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [filters, setFilters]           = useState<SignalFilters>(() => filtersFromParams(searchParams));
   const [rows, setRows]                 = useState<SignalEventRow[]>([]);
@@ -207,6 +210,14 @@ export function SignalTrackingDashboard() {
           onLoadMore={() => { if (nextCursor) fetchPage(filters, nextCursor); }}
         />
       </div>
+
+      {/* Event trace modal — shown when navigated to /signal-tracking/:event_id */}
+      {event_id && (
+        <SignalTraceModal
+          eventId={event_id}
+          onClose={() => navigate({ pathname: '/signal-tracking', search: searchParams.toString() })}
+        />
+      )}
     </div>
   );
 }

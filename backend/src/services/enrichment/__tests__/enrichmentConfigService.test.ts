@@ -247,7 +247,7 @@ describe('applySignalEnrichment', () => {
     expect(result.custom_data.order_id).toBeUndefined();
   });
 
-  it('does not modify event when no configs set', () => {
+  it('does not modify value/currency/content_ids when their configs are unset', () => {
     const config = baseSignalEnrichmentConfig();
     config.value_config = null;
     config.currency_config = null;
@@ -255,7 +255,25 @@ describe('applySignalEnrichment', () => {
     config.content_config = null;
     const original = baseAtlasEvent();
     const result = applySignalEnrichment(original, rawData, config);
-    expect(result.custom_data).toEqual({});
+    expect(result.custom_data.value).toBeUndefined();
+    expect(result.custom_data.currency).toBeUndefined();
+    expect(result.custom_data.content_ids).toBeUndefined();
+  });
+
+  it('defaults order_id to the canonical event_id when dedup_config is unset', () => {
+    const config = baseSignalEnrichmentConfig();
+    config.dedup_config = null;
+    const original = baseAtlasEvent();
+    const result = applySignalEnrichment(original, rawData, config);
+    expect(result.custom_data.order_id).toBe(original.event_id);
+  });
+
+  it('does not override an already-set order_id when dedup_config is unset', () => {
+    const config = baseSignalEnrichmentConfig();
+    config.dedup_config = null;
+    const original = { ...baseAtlasEvent(), custom_data: { order_id: 'existing-order' } };
+    const result = applySignalEnrichment(original, rawData, config);
+    expect(result.custom_data.order_id).toBe('existing-order');
   });
 });
 

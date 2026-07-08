@@ -234,6 +234,8 @@ export interface CreateCAPIEventInput {
   dedup_status?: 'hit' | 'miss' | 'not_applicable' | null;
   dedup_key?: string | null;
   dedup_matched_at?: string | null;
+  // Canonical Event Identity: which platform-native field event_id was written into.
+  native_id_field?: string | null;
 }
 
 export async function createCAPIEvent(input: CreateCAPIEventInput): Promise<CAPIEvent> {

@@ -35,6 +35,16 @@ import { sendAmazonEvents } from './amazonDelivery';
 import type { MetaCredentials, GoogleCredentials, LinkedInCredentials, AmazonCredentials } from '@/types/capi';
 import logger from '@/utils/logger';
 
+// ── Canonical Event Identity ──────────────────────────────────────────────────
+
+// Which platform-native field the canonical atlas_event_id (or its dedup-store
+// override) is written into. No entry for providers with no native id concept.
+const NATIVE_ID_FIELD: Partial<Record<CAPIProvider, string>> = {
+  meta: 'event_id',
+  google: 'transactionId',
+  linkedin: 'eventId',
+};
+
 // ── PII Hashing ───────────────────────────────────────────────────────────────
 
 function sha256hex(input: string): string {
@@ -269,6 +279,7 @@ export async function processEvent(
     dedup_status: result.dedup_status ?? null,
     dedup_key: result.dedup_key ?? null,
     dedup_matched_at: result.dedup_matched_at ?? null,
+    native_id_field: result.event_id ? (NATIVE_ID_FIELD[provider] ?? null) : null,
   });
 
   // 7. Counters

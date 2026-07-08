@@ -12,7 +12,6 @@
  *   - validateOnly mode for test events
  */
 
-import { randomUUID } from 'crypto';
 import type {
   AtlasEvent,
   HashedIdentifier,
@@ -279,7 +278,11 @@ export async function sendGoogleEvents(
       const entry = providerId
         ? await getGoogleDedupEntry(providerId, gclid, e.event_name)
         : null;
-      const orderId = entry?.event_id ?? randomUUID();
+      // Reuse a prior gclid-keyed dedup entry's orderId when present; otherwise
+      // fall back to the canonical atlas event_id (not a throwaway UUID) so the
+      // transactionId sent to Google traces back to the same business event as
+      // every other destination.
+      const orderId = entry?.event_id ?? e.event_id;
       const dedupStatus: 'hit' | 'miss' = entry ? 'hit' : 'miss';
       const dedupKey =
         providerId && entry && gclid
@@ -326,8 +329,8 @@ export async function sendGoogleEvents(
   if (!ok) {
     const errMsg = (body as unknown as { error?: { message?: string; code?: number } }).error?.message ?? 'Google DMA API error';
     const errCode = (body as unknown as { error?: { code?: number } }).error?.code ?? 'DELIVERY_FAILED';
-    return events.map((e, i) => ({
-      event_id: e.event_id,
+    return events.map((_e, i) => ({
+      event_id: dedupResults[i].orderId,
       status: 'failed' as const,
       provider_response: body,
       error_code: String(errCode),
@@ -337,8 +340,8 @@ export async function sendGoogleEvents(
   }
 
   if (body.partialFailureError) {
-    return events.map((e, i) => ({
-      event_id: e.event_id,
+    return events.map((_e, i) => ({
+      event_id: dedupResults[i].orderId,
       status: 'failed' as const,
       provider_response: body,
       error_code: 'PARTIAL_FAILURE',
@@ -354,11 +357,11 @@ export async function sendGoogleEvents(
       .map((r) => [r.eventIndex, r.error!]),
   );
 
-  return events.map((e, i) => {
+  return events.map((_e, i) => {
     const err = errorMap.get(i);
     if (err) {
       return {
-        event_id: e.event_id,
+        event_id: dedupResults[i].orderId,
         status: 'failed' as const,
         provider_response: body,
         error_code: String(err.code),
@@ -367,7 +370,7 @@ export async function sendGoogleEvents(
       };
     }
     return {
-      event_id: e.event_id,
+      event_id: dedupResults[i].orderId,
       status: 'delivered' as const,
       provider_response: body,
       dedup_status: providerId ? dedupResults[i].dedup_status : undefined,

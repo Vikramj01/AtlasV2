@@ -4,6 +4,7 @@ export type FindingCode =
   | 'EVENT_NOT_RECEIVED'
   | 'CAPI_DEDUP_LOW'
   | 'EMQ_LOW'
+  | 'IDENTITY_NOT_PRESERVED'
   // Config (Phase 2)
   | 'ATTRIBUTION_MODEL_MISMATCH'
   | 'COUNTING_TYPE_MISMATCH'
@@ -52,6 +53,12 @@ export const FINDING_META: Record<FindingCode, FindingMeta> = {
     severity: 'warning',
     narrative: (ctx) => `Meta Event Match Quality for "${ctx.event_name}" is ${ctx.emq} (threshold: 6.0).`,
     remediation: () => 'Include more customer data parameters (email, phone, fbclid) in your CAPI events to improve match quality.',
+  },
+  IDENTITY_NOT_PRESERVED: {
+    dimension: 'delivery',
+    severity: 'warning',
+    narrative: (ctx) => `"${ctx.event_name}" delivered to ${ctx.platform} did not preserve canonical event identity for ${ctx.violation_count} of ${ctx.total_count} events over the last 7 days — the native id sent did not derive from the atlas_event_id, or retries were exhausted without confirmation.`,
+    remediation: () => 'Check the delivery adapter for this destination — it may be minting a fresh id instead of reusing atlas_event_id, or dead-lettering after retry exhaustion. This breaks cross-platform event tracing (the same business event should carry one identity to every destination).',
   },
   ATTRIBUTION_MODEL_MISMATCH: {
     dimension: 'config',
