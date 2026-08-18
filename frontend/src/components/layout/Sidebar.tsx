@@ -77,6 +77,10 @@ function orgNav(orgId: string, orgType: 'agency' | 'brand' = 'agency', primaryCl
     { label: 'Bid Signal Enricher',                 technicalLabel: 'bid_signal_enricher',                    to: '/integrations/enricher', Icon: Zap },
     { label: SECTION_LABELS.consentHub.primary,     technicalLabel: SECTION_LABELS.consentHub.technical,     to: '/consent',               Icon: ShieldCheck },
     { label: SECTION_LABELS.signalHealth.primary,   technicalLabel: SECTION_LABELS.signalHealth.technical,   to: '/health',                Icon: HeartPulse },
+    { label: SECTION_LABELS.conversionStrategyGate.primary, technicalLabel: SECTION_LABELS.conversionStrategyGate.technical, to: '/planning/strategy', Icon: Target },
+    { label: SECTION_LABELS.journeyBuilder.primary, technicalLabel: SECTION_LABELS.journeyBuilder.technical, to: '/journey/new',           Icon: CheckCircle },
+    { label: SECTION_LABELS.tagLibrary.primary,     technicalLabel: SECTION_LABELS.tagLibrary.technical,     to: '/signals',               Icon: Tag },
+    { label: SECTION_LABELS.platformConnections.primary, technicalLabel: SECTION_LABELS.platformConnections.technical, to: '/connections', Icon: Link2 },
     { label: 'Team & Settings',                                                                                   to: `/org/${orgId}/settings`, Icon: Settings },
   ];
 }
@@ -278,6 +282,9 @@ export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
         {activeOrgId ? (
           // Org context: grouped nav
           <>
+            <div className="mb-1 space-y-0.5">
+              <SidebarNavItem label="Home" to="/" Icon={Home} end />
+            </div>
             <p className="text-caption-upper px-3 pb-2 pt-2">
               {currentOrg?.name ?? 'Organisation'}
             </p>
