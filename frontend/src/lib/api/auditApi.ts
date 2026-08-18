@@ -85,4 +85,11 @@ export const auditApi = {
   delete(audit_id: string): Promise<{ deleted: boolean }> {
     return apiFetch(`/api/audits/${audit_id}`, { method: 'DELETE' });
   },
+
+  linkToClient(audit_id: string, client_id: string): Promise<{ audit_id: string; client_id: string | null }> {
+    return apiFetch(`/api/audits/${audit_id}/link-client`, {
+      method: 'PATCH',
+      body: JSON.stringify({ client_id }),
+    });
+  },
 };

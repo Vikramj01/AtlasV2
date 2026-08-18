@@ -107,4 +107,5 @@ export interface StartAuditInput {
   url_map: Record<string, string>;
   test_email?: string;
   test_phone?: string;
+  client_id?: string;
 }
