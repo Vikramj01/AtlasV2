@@ -12,7 +12,7 @@ Atlas is a marketing signal optimisation and tracking infrastructure platform fo
 - **AI Planning Mode** — Browserbase/Playwright site scan → Claude analysis → tagging recommendations, PII detection, GTM container + implementation guide. Implementation guide includes GCLID/UTM cookie capture, hidden form fields, CRM mapping, and Enhanced Conversions for Leads guidance. Approved recommendations save to the Signal Library via `POST /sessions/:id/save-to-library`.
 - **Signal Library** — Accessible at `/signals`. `signals` + `signal_packs` tables with system and org-scoped custom signals. Per-event specs, platform mappings, composable packs with deployment wizard.
 - **Signal Enrichment Configuration** — Per-client identity field mapping (`client_identity_configs`) and per-deployment signal field mapping (`signal_enrichment_configs`). Composite enrichment score (0–100, 50% identity / 50% signal average), Meta EMQ estimate, Google match rate estimate. 12-rule validation engine (IDENT_01–05, SIG_01–05, CROSS_01–02). Enrichment injected into CAPI pipeline as step 0a (non-fatal). GTM container generation includes identity DataLayer Variables. `IdentityConfigStep` embedded in ClientSetupWizard (step 4) and ClientDetailPage Enrichment tab. `SignalEnrichmentStep` embedded in DeploymentWizard (step 2). `capi_providers` extended with `identity_config_id`, `enrichment_score`, `enrichment_validated_at`.
-- **Conversion Strategy Gate** — Multi-objective wizard at `/planning/strategy`. Claude produces CONFIRM/AUGMENT/REPLACE verdicts with measurement governance tier (primary/secondary/suppression), platform-specific action types, and OCI nudge for CRM-stage events. PDF brief export + web view at `/strategy/briefs/:id`. Brief must be locked before site scan.
+- **Conversion Strategy Gate** — Multi-objective wizard at `/planning/strategy`. Claude produces CONFIRM/AUGMENT/REPLACE verdicts with measurement governance tier (primary/secondary/suppression), platform-specific action types, and OCI nudge for CRM-stage events. PDF brief export + web view at `/strategy/briefs/:id`. The brief nudge is enforced frontend-only as a dismissible banner (`StrategyGateGuard`) — the backend `strategyGate` middleware on `POST /api/planning/sessions` and client deploy is a pass-through, not a hard block.
 - **Platform Connections** — OAuth connections to Google Ads (manager/child/standalone), Meta, GA4, and GTM. Encrypted tokens (AES-256-GCM). Supports account discovery under manager connections.
 - **Platform Reconciliation** — Config + volume + delivery diff runs against connected platforms. Findings tracking with severity, tolerance config per client, daily event stats time-series. Triggered manually or post-brief-lock.
 - **Implementation Health Checks (IHC)** — GTM container snapshots (OAuth or manual upload), tag configuration rule checks, baseline management, drift detection across crawl runs, alert preferences.
@@ -23,7 +23,8 @@ Atlas is a marketing signal optimisation and tracking infrastructure platform fo
 - **Naming Conventions** — Org-level event/param naming rules with real-time validation and preview of how existing signals rename.
 - **Crawl Signal Extractor (CSE)** — Subscription-gated automated site scan discovering and health-scoring tracking signals. Results at `/crawl/:runId` with real-time polling. Crawl runs can be promoted to IHC baselines.
 - **Usage Logging & Operator Monitoring** — Per-org usage event logging, Browserbase nightly reconciliation, operator alerts via email/Slack.
-- **Audit Engine** — Headless browser journey simulation, gap classification, scored PDF reports.
+- **Audit Engine** — Headless browser journey simulation, gap classification, scored PDF reports. Entry point is `EvaluateSiteCard` on the Home page and Dashboard (compact URL + funnel-type quick form, client optional, "Advanced" toggle reveals the full `RunAuditForm` journey mapping). A bare-URL evaluation (no client selected) can be attached to an existing client afterward via `LinkToClientButton` on the report view (`PATCH /api/audits/:audit_id/link-client`); `audits.client_id` is nullable.
+- **Home Page** — Post-login landing at `/`, branches purely on organisation existence (`useOrganisations` hook): no org → `FirstTimeSetup` (create-workspace landing, using the shared `CreateOrgForm`); org exists → `ReturningUserLanding`'s two-option screen ("Evaluate a site" via `EvaluateSiteCard`, "Set up a new client" via `QuickClientIntake` — or "Continue tracking setup" for single-client brand orgs), plus a `StatsRow` (org metrics) and `RecentActivityFeed`, and a link out to the full `/dashboard`. `QuickClientIntake` is a slim name/URL/business-type form that creates the client and jumps straight to `/planning/new?client_id=X`; the full 6-step `ClientSetupWizard` stays available as "Advanced setup" on the client list. Styled with the "operator console" design system — Orbitron/Rajdhani/JetBrains Mono type (`font-display`/`font-heading`/`font-mono`) and a `console.*` Tailwind color namespace layered onto existing navy/severity tokens — also applied to Sidebar, TopBar, and OrgSwitcher.
 - **Health Dashboard** — Live health score (includes `platform_acceptance_score`, `gtg_active`, `dma_coverage_score`), alert feed, historical trend.
 - **Channel Insights** — Session ingestion + diagnostic engine mapping signal behaviour per channel.
 - **Consent Integration Hub** — JS consent banner + CMP sync (OneTrust, Cookiebot, Usercentrics). Google Consent Mode v2.
@@ -61,7 +62,7 @@ AtlasV2/
 ├── frontend/src/
 │   ├── components/
 │   │   ├── admin/        # Admin panels
-│   │   ├── audit/        # AuditHistoryTable, AuditProgressSteps, RunAuditForm, ReportPages/*
+│   │   ├── audit/        # AuditHistoryTable, AuditProgressSteps, RunAuditForm, LinkToClientButton, ReportPages/*
 │   │   ├── capi/         # ProviderList, SetupWizard, CAPIMonitoringDashboard, EMQEstimator
 │   │   │   ├── offline/  # OfflineConversionsTab, UploadArea, ValidationReview, UploadHistory
 │   │   │   └── steps/    # Realtime wizard steps
@@ -73,9 +74,11 @@ AtlasV2/
 │   │   ├── dashboard/    # Dashboard views
 │   │   ├── developer/    # Developer portal components
 │   │   ├── health/       # Health dashboard components
+│   │   ├── home/         # EvaluateSiteCard, NewClientCard, StatsRow, ReturningUserLanding, FirstTimeSetup
 │   │   ├── journey/      # JourneyWizard, StageCard, Step1–4
 │   │   ├── layout/       # AppLayout, ProtectedRoute, Sidebar, TopBar
-│   │   ├── organisation/ # ClientCard, ClientSetupWizard, MemberManagement, OrgSwitcher
+│   │   ├── organisation/ # ClientCard, ClientSetupWizard, MemberManagement, OrgSwitcher,
+│   │   │                 # CreateOrgForm, QuickClientIntake
 │   │   ├── planning/     # AnnotatedScreenshot, GTMContainerPreview, RecommendationCard, Step1–7
 │   │   ├── reconciliation/ # ReconciliationFindings, FindingCard, DiffViewer
 │   │   ├── enrichment/   # FieldMappingRow, EnrichmentScoreBadge, EnrichmentWarningBanner,
@@ -94,6 +97,7 @@ AtlasV2/
 │   │   ├── capi/         # adapters/ (meta, google, google-offline, linkedin, tiktok stub)
 │   │   ├── consent/      # banner-generator.ts, cmp-listeners.ts, consent-engine.ts, gcm-mapper.ts
 │   │   └── shared/       # crypto.ts
+│   ├── hooks/            # useOrganisations
 │   ├── pages/            # HomePage, LoginPage, DashboardPage, AdminPage,
 │   │                     # AuditProgressPage, ReportPage, GapReportPage,
 │   │                     # JourneyBuilderPage, JourneySpecPage,
@@ -175,6 +179,9 @@ planning_sessions  (id, user_id, site_url, business_type, status, created_at)
 planning_pages     (id, session_id, url, page_type, scan_status, page_capture, ai_analysis, created_at)
 planning_recommendations (id, session_id, page_id, element_reference, selector,
                            recommendation_type, event_name, action_type, approved, ...)
+-- audits table predates supabase/migrations/ (originally db/migrations/001_create_audit_tables.sql);
+-- client_id UUID (nullable, FK -> clients, ON DELETE SET NULL) added 20260818 so a bare-URL
+-- "Evaluate a site" run can be linked to a client after the fact
 
 -- Consent & CAPI (20260317)
 consent_configs, consent_records
@@ -292,7 +299,7 @@ health_snapshots   (+ platform_acceptance_score)
 | Route | File | Key endpoints |
 |---|---|---|
 | `/api/admin` | admin.ts | GET /me, /stats, /users; PATCH /users/:id/plan |
-| `/api/audit` | audits.ts | POST /start; GET /:id, /report, /gaps |
+| `/api/audit` | audits.ts | POST /start (optional `client_id`); GET /:id, /report, /gaps; PATCH /:audit_id/link-client |
 | `/api/billing` | billing.ts | POST /checkout, /portal, /webhook; GET /status |
 | `/api/capi` | capi.ts | CRUD providers + /activate, /test, /process |
 | `/api/channels` | channels.ts | GET /sessions, /diagnostics; POST /ingest-session |
@@ -334,6 +341,7 @@ health_snapshots   (+ platform_acceptance_score)
 9. **Migration guards** — `ALTER TABLE` on optional tables must be wrapped in `DO $$ IF EXISTS (SELECT FROM pg_tables ...) THEN ... END IF; END $$` to survive Supabase preview environments.
 10. **org_id resolution** — `req.user` carries only `id`, `email`, `plan`, `isSuperAdmin`. Resolve `organization_id` via `supabaseAdmin.from('profiles').select('organization_id').eq('id', userId)`. Note: some newer tables use `org_id` column (enricher_runs, dqm_*, audience_member_uploads) — match the column name used in that migration.
 11. **shadcn/ui registry** — if `npx shadcn add` fails, install the Radix primitive directly and create the component manually.
+12. **Strategy Gate is a frontend nudge, not a backend block** — the `strategyGate` middleware (`backend/src/api/middleware/strategyGate.ts`) is a pass-through on its existing routes (`POST /api/planning/sessions`, client deploy); the brief requirement is enforced only via the dismissible `StrategyGateGuard` banner in the frontend.
 
 ---
 
@@ -355,7 +363,7 @@ health_snapshots   (+ platform_acceptance_score)
 
 ## Active Development Branch
 
-`claude/gallant-davinci-oxBvs`
+`claude/update-claude-md-docs-pkekoq`
 
 ---
 
@@ -383,3 +391,4 @@ health_snapshots   (+ platform_acceptance_score)
 | LinkedIn CAPI | Full LinkedIn delivery (previously stub) |
 | Integration Tests | Backend route integration test suite (37 routes × test files) |
 | Signal Enrichment Configuration | signal_enrichment_configs + client_identity_configs tables (4 migrations); enrichmentConfigService (field resolution, applyIdentityConfig, applySignalEnrichment, scoring); 12-rule validation engine (enrichmentValidationRules); 8-endpoint enrichment route; enrichmentApi + enrichmentStore; FieldMappingRow, EnrichmentScoreBadge, EnrichmentWarningBanner, IdentityConfigStep, SignalEnrichmentStep components; IdentityConfigStep in ClientSetupWizard (step 4) + ClientDetailPage Enrichment tab; SignalEnrichmentStep in DeploymentWizard (step 2); CAPI pipeline enrichment injection (step 0a, non-fatal); GTM container identity DLV variables; 40 unit tests |
+| Home Redesign + Audit Engine Entry Point | Two-option HomePage (FirstTimeSetup / ReturningUserLanding) driven by new useOrganisations hook; EvaluateSiteCard as the Audit Engine's first real entry point (Dashboard + Home) with LinkToClientButton for after-the-fact client linking; audits.client_id migration + `PATCH /:audit_id/link-client`; QuickClientIntake slim client-creation flow into `/planning/new`; strategy gate softened to a backend pass-through matching the frontend nudge; org-context sidebar nav gaps fixed (Home link, Strategy Gate/Journey Builder/Signal Library/Platform Connections added to TOOLS group); "operator console" design-token system (Orbitron/Rajdhani/JetBrains Mono, `console.*` Tailwind palette) with Sidebar/TopBar/OrgSwitcher/Home reskin, StatsRow + RecentActivityFeed on Home |
