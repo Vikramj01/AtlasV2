@@ -13,6 +13,10 @@ export default {
     extend: {
       fontFamily: {
         sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', 'sans-serif'],
+        // ── "Operator console" type system (Home redesign) ──────────────────
+        display: ['Orbitron', 'sans-serif'],
+        heading: ['Rajdhani', 'sans-serif'],
+        mono:    ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
       },
       colors: {
         // ── shadcn/ui CSS-variable tokens (used by all shadcn components) ────
@@ -83,6 +87,33 @@ export default {
           info:     '#2E75B6',
           'info-bg': '#EFF6FF',
         },
+
+        // ── "Operator console" design system (Home redesign) ──────────────────
+        // Light-mode translation of the Atlas dark console reference mockup.
+        // Reuses existing navy/severity tokens above wherever they already
+        // cover the same role — this isn't a parallel palette, just the
+        // console mockup's structure mapped onto Atlas's existing colors.
+        console: {
+          bg:      '#F7F9FC',   // page background (vs. mockup's near-black page)
+          surface: '#FFFFFF',   // cards / sidebar / topbar (lighter than page, same relationship as the dark ref)
+          chip:    '#F3F4F6',   // recessed chip background (mockup's navy-800 role)
+          border:        '#E5E7EB', // = existing design-spec border
+          'border-strong': '#CDD4E5', // = navy-100
+          fg:         '#1A1A1A', // = existing design-spec text primary
+          'fg-muted':  '#6B7280', // = existing design-spec text secondary
+          'fg-subtle': '#9CA3AF',
+          'fg-disabled': '#D1D5DB',
+          primary: {
+            DEFAULT: '#1B2A4A', // = navy-500, existing brand primary
+            hover:   '#3E5A8F', // = navy-400
+            press:   '#162240', // = navy-600
+          },
+          green:  '#059669', // = severity.success
+          amber:  '#D97706', // = severity.warning
+          red:    '#DC2626', // = severity.critical
+          cyan:   '#0891B2',
+          violet: '#7C3AED', // matches the existing "Agency" plan-tag color in TopBar
+        },
       },
       borderRadius: {
         lg: 'var(--radius)',
@@ -120,6 +151,12 @@ export default {
       },
       backgroundSize: {
         shimmer: '200% 100%',
+      },
+      boxShadow: {
+        // Light-mode stand-in for the console mockup's neon button glow —
+        // a soft navy-tinted lift instead of a literal glow, since the
+        // bright neon glow reads as a rendering glitch on a white surface.
+        'console-glow': '0 0 0 1px rgba(27,42,74,0.15), 0 4px 12px rgba(27,42,74,0.10)',
       },
     },
   },
