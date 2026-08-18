@@ -7,6 +7,7 @@ import { clientApi } from '@/lib/api/organisationApi';
 import { useOrganisationStore } from '@/store/organisationStore';
 import { ClientCard } from '@/components/organisation/ClientCard';
 import { ClientSetupWizard } from '@/components/organisation/ClientSetupWizard';
+import { QuickClientIntake } from '@/components/organisation/QuickClientIntake';
 import { SkeletonCard } from '@/components/common/SkeletonCard';
 import type { ClientWithDetails, BusinessType, OrgClientSummary } from '@/types/organisation';
 
@@ -31,6 +32,7 @@ export function ClientListPage() {
   const [filterType, setFilterType] = useState<BusinessType | 'all'>('all');
   const [showFilters, setShowFilters] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
+  const [showQuickIntake, setShowQuickIntake] = useState(false);
 
   useEffect(() => {
     if (!orgId) return;
@@ -77,10 +79,15 @@ export function ClientListPage() {
     <div className="space-y-6 p-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold">Clients</h1>
-        <Button size="sm" className="gap-2" onClick={() => setShowWizard(true)}>
-          <Plus className="h-4 w-4" />
-          Add client
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" onClick={() => setShowWizard(true)}>
+            Advanced setup
+          </Button>
+          <Button size="sm" className="gap-2" onClick={() => setShowQuickIntake(true)}>
+            <Plus className="h-4 w-4" />
+            Add client
+          </Button>
+        </div>
       </div>
 
       {/* Summary stats */}
@@ -192,7 +199,7 @@ export function ClientListPage() {
               : 'No clients yet. Add your first client to get started.'}
           </p>
           {!search && filterType === 'all' && (
-            <Button size="sm" className="mt-4" onClick={() => setShowWizard(true)}>
+            <Button size="sm" className="mt-4" onClick={() => setShowQuickIntake(true)}>
               Add first client
             </Button>
           )}
@@ -215,6 +222,14 @@ export function ClientListPage() {
           orgId={orgId}
           onCreated={handleClientCreated}
           onClose={() => setShowWizard(false)}
+        />
+      )}
+
+      {orgId && (
+        <QuickClientIntake
+          orgId={orgId}
+          open={showQuickIntake}
+          onOpenChange={setShowQuickIntake}
         />
       )}
     </div>
