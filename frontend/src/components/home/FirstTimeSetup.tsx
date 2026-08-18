@@ -21,13 +21,13 @@ export function FirstTimeSetup() {
 
   return (
     <div className="mx-auto flex min-h-full max-w-md flex-col justify-center px-6 py-16">
-      <div className="mb-6 text-center">
-        <h1 className="text-xl font-bold">Welcome to Atlas</h1>
-        <p className="mt-1.5 text-sm text-muted-foreground">
+      <div className="mb-7 text-center">
+        <h1 className="font-display text-2xl font-bold tracking-tight text-console-fg">Welcome to Atlas</h1>
+        <p className="mt-2 text-sm text-console-fg-muted">
           Set up your workspace to get started.
         </p>
       </div>
-      <div className="rounded-xl border bg-background p-6">
+      <div className="rounded-[10px] border border-console-border bg-console-surface p-7">
         <CreateOrgForm onCreated={handleCreated} submitLabel="Get started" />
       </div>
     </div>

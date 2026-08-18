@@ -66,20 +66,20 @@ export function CreateOrgForm({ onCreated, onCancel, submitLabel = 'Create works
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-1.5">
-        <Label>Workspace type</Label>
+        <Label className="font-heading text-[13px] font-semibold text-console-fg-muted">Workspace type</Label>
         <div className="grid grid-cols-2 gap-2">
           {(['agency', 'brand'] as const).map((type) => (
             <button
               key={type}
               type="button"
               onClick={() => setOrgType(type)}
-              className={`rounded-lg border px-4 py-3 text-left text-sm transition-colors ${
+              className={`rounded-md border px-4 py-3 text-left text-sm transition-colors ${
                 orgType === type
-                  ? 'border-[#1B2A4A] bg-[#EEF1F7] font-medium text-[#1B2A4A]'
-                  : 'border-border text-muted-foreground hover:border-[#1B2A4A]/40'
+                  ? 'border-console-primary bg-console-primary/5 font-medium text-console-primary'
+                  : 'border-console-border text-console-fg-muted hover:border-console-primary/40'
               }`}
             >
-              <span className="font-medium block">
+              <span className="font-heading font-semibold block">
                 {type === 'agency' ? 'Agency' : 'In-house marketer'}
               </span>
               <span className="text-xs mt-0.5 block">
@@ -91,41 +91,50 @@ export function CreateOrgForm({ onCreated, onCancel, submitLabel = 'Create works
       </div>
 
       <div className="space-y-1.5">
-        <Label htmlFor="org-name">Workspace name</Label>
+        <Label htmlFor="org-name" className="font-heading text-[13px] font-semibold text-console-fg-muted">
+          Workspace name
+        </Label>
         <Input
           id="org-name"
           placeholder={orgType === 'brand' ? 'e.g. Acme Corp' : 'e.g. Spi3l Agency'}
           value={name}
           onChange={(e) => handleNameChange(e.target.value)}
           autoFocus={autoFocus}
+          className="border-console-border bg-console-chip text-console-fg focus-visible:ring-console-primary"
         />
       </div>
 
       {orgType === 'brand' && (
         <div className="space-y-1.5">
-          <Label htmlFor="org-website">Your website URL</Label>
+          <Label htmlFor="org-website" className="font-heading text-[13px] font-semibold text-console-fg-muted">
+            Your website URL
+          </Label>
           <Input
             id="org-website"
             type="url"
             placeholder="https://example.com"
             value={websiteUrl}
             onChange={(e) => setWebsiteUrl(e.target.value)}
+            className="border-console-border bg-console-chip font-mono text-[13px] text-console-fg focus-visible:ring-console-primary"
           />
         </div>
       )}
 
       <div className="space-y-1.5">
-        <Label htmlFor="org-slug">URL slug</Label>
+        <Label htmlFor="org-slug" className="font-heading text-[13px] font-semibold text-console-fg-muted">
+          URL slug
+        </Label>
         <Input
           id="org-slug"
           placeholder="e.g. acme-corp"
           value={slug}
           onChange={(e) => { setSlugTouched(true); setSlug(toSlug(e.target.value)); }}
+          className="border-console-border bg-console-chip font-mono text-[13px] text-console-fg focus-visible:ring-console-primary"
         />
-        <p className="text-xs text-muted-foreground">Lowercase letters, numbers and hyphens only.</p>
+        <p className="text-xs text-console-fg-subtle">Lowercase letters, numbers and hyphens only.</p>
       </div>
 
-      {error && <p className="text-xs text-red-600">{error}</p>}
+      {error && <p className="text-xs text-console-red">{error}</p>}
 
       <div className="flex justify-end gap-2 pt-2">
         {onCancel && (
@@ -136,7 +145,7 @@ export function CreateOrgForm({ onCreated, onCancel, submitLabel = 'Create works
         <Button
           type="submit"
           disabled={saving || !canSubmit}
-          className="bg-[#1B2A4A] text-white hover:bg-[#1B2A4A]/90"
+          className="bg-console-primary font-heading font-bold hover:bg-console-primary-hover disabled:shadow-none shadow-console-glow"
         >
           {saving ? 'Creating…' : submitLabel}
         </Button>
