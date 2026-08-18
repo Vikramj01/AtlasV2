@@ -54,21 +54,23 @@ export function EvaluateSiteCard() {
   }
 
   return (
-    <Card className="flex flex-col">
-      <CardHeader>
-        <div className="flex h-9 w-9 items-center justify-center rounded-md bg-[#1B2A4A]/10">
-          <Search className="h-4 w-4 text-[#1B2A4A]" />
+    <Card className="flex flex-col rounded-[10px] border-console-border bg-console-surface">
+      <CardHeader className="p-7">
+        <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-console-primary/20 bg-console-primary/10">
+          <Search className="h-[19px] w-[19px] text-console-primary" strokeWidth={1.75} />
         </div>
-        <CardTitle className="mt-2">Evaluate a site</CardTitle>
-        <CardDescription>
+        <CardTitle className="mt-2.5 font-heading text-xl font-bold text-console-fg">Evaluate a site</CardTitle>
+        <CardDescription className="text-console-fg-muted leading-relaxed">
           Scan any URL and get a scored gap report — no client setup required. Great for pitching a
           prospect or checking in on an existing client.
         </CardDescription>
       </CardHeader>
-      <CardContent className="flex flex-1 flex-col">
-        <form onSubmit={handleQuickSubmit} className="flex flex-1 flex-col gap-3">
+      <CardContent className="flex flex-1 flex-col p-7 pt-0">
+        <form onSubmit={handleQuickSubmit} className="flex flex-1 flex-col gap-4">
           <div className="space-y-1.5">
-            <Label htmlFor="evaluate-url">Website URL</Label>
+            <Label htmlFor="evaluate-url" className="font-heading text-[13px] font-semibold text-console-fg-muted">
+              Website URL
+            </Label>
             <Input
               id="evaluate-url"
               type="url"
@@ -76,12 +78,13 @@ export function EvaluateSiteCard() {
               placeholder="https://example.com"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
+              className="border-console-border bg-console-chip font-mono text-[13px] text-console-fg placeholder:text-console-fg-disabled focus-visible:ring-console-primary"
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Funnel type</Label>
+            <Label className="font-heading text-[13px] font-semibold text-console-fg-muted">Funnel type</Label>
             <Select value={funnelType} onValueChange={(v) => setFunnelType(v as FunnelType)}>
-              <SelectTrigger>
+              <SelectTrigger className="border-console-border bg-console-chip text-console-fg focus:ring-console-primary">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -97,7 +100,11 @@ export function EvaluateSiteCard() {
           )}
 
           <div className="mt-auto space-y-2 pt-2">
-            <Button type="submit" disabled={loading || !url.trim()} className="w-full bg-[#1B2A4A] hover:bg-[#1B2A4A]">
+            <Button
+              type="submit"
+              disabled={loading || !url.trim()}
+              className="w-full bg-console-primary font-heading font-bold hover:bg-console-primary-hover disabled:shadow-none shadow-console-glow"
+            >
               {loading ? 'Starting…' : 'Evaluate'}
             </Button>
             <Button
@@ -105,7 +112,7 @@ export function EvaluateSiteCard() {
               variant="ghost"
               size="sm"
               onClick={() => setShowAdvanced(true)}
-              className="w-full text-xs text-muted-foreground"
+              className="w-full font-heading text-xs font-semibold text-console-fg-muted"
             >
               Advanced — map the full journey
             </Button>

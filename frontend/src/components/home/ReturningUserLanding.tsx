@@ -32,21 +32,24 @@ export function ReturningUserLanding() {
   if (!currentOrg) return null;
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-12">
-      <div className="mb-8">
-        <h1 className="text-page-title">
+    <div className="mx-auto max-w-3xl px-6 py-14">
+      <div className="mb-9">
+        <p className="font-heading text-xs font-semibold uppercase tracking-[0.2em] text-console-primary">
+          {currentOrg.name} / Home
+        </p>
+        <h1 className="mt-2.5 font-display text-[40px] font-bold leading-none tracking-tight text-console-fg">
           {getTimeOfDayGreeting()}{firstName ? `, ${firstName}` : ''}.
         </h1>
-        <p className="mt-1 text-body text-[#6B7280]">What would you like to do?</p>
+        <p className="mt-2 text-base text-console-fg-muted">What would you like to do?</p>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
         <EvaluateSiteCard />
         <NewClientCard org={currentOrg} />
       </div>
 
-      <p className="mt-8 text-center text-xs text-muted-foreground">
-        Looking for something else? <Link to="/dashboard" className="font-medium text-[#1B2A4A] hover:underline">Go to your dashboard →</Link>
+      <p className="mt-8 text-center text-sm text-console-fg-subtle">
+        Looking for something else? <Link to="/dashboard" className="font-semibold text-console-primary hover:underline">Go to your dashboard →</Link>
       </p>
     </div>
   );
