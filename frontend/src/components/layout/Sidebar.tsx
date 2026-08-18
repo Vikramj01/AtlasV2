@@ -86,15 +86,20 @@ function orgNav(orgId: string, orgType: 'agency' | 'brand' = 'agency', primaryCl
 }
 
 // ── Shared nav item styles ────────────────────────────────────────────────────
+//
+// Active-state treatment follows the console reference: a light navy tint +
+// a 2px inset left accent bar, rather than a solid filled block — the one
+// "colored left border" pattern this design system permits, reserved for
+// this active-nav marker (and KPI stat cards, see StatCard).
 
 const NAV_BASE =
-  'group flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-100 w-full';
+  'group flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-heading font-medium transition-colors duration-100 w-full';
 
 const NAV_ACTIVE =
-  'bg-[#1B2A4A] text-white';
+  'bg-console-primary/[0.06] text-console-primary font-semibold shadow-[inset_2px_0_0_#1B2A4A]';
 
 const NAV_INACTIVE =
-  'text-[#6B7280] hover:bg-[#F9FAFB] hover:text-[#1A1A1A]';
+  'text-console-fg-muted hover:bg-console-chip hover:text-console-fg';
 
 // ── Nav item component ────────────────────────────────────────────────────────
 
@@ -109,20 +114,20 @@ function SidebarNavItem({ label, technicalLabel, to, Icon, end = false, step, do
         <>
           {step !== undefined ? (
             <span className={cn(
-              'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-bold mt-0.5 transition-colors',
+              'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border font-mono text-[10px] font-bold mt-0.5 transition-colors',
               isActive
-                ? 'border-white text-white bg-transparent'
+                ? 'border-console-primary text-console-primary bg-transparent'
                 : done
-                  ? 'border-emerald-500 bg-emerald-500 text-white'
-                  : 'border-[#9CA3AF] text-[#9CA3AF] group-hover:border-[#1A1A1A] group-hover:text-[#1A1A1A]',
+                  ? 'border-console-green bg-console-green text-white'
+                  : 'border-console-fg-disabled text-console-fg-subtle group-hover:border-console-fg group-hover:text-console-fg',
             )}>
               {done && !isActive ? '✓' : step}
             </span>
           ) : (
             <Icon
               className={cn(
-                'h-5 w-5 shrink-0 mt-0.5',
-                isActive ? 'text-white' : 'text-[#9CA3AF] group-hover:text-[#1A1A1A]',
+                'h-[17px] w-[17px] shrink-0 mt-0.5',
+                isActive ? 'text-console-primary' : 'text-console-fg-subtle group-hover:text-console-fg',
               )}
               strokeWidth={1.5}
             />
@@ -131,8 +136,8 @@ function SidebarNavItem({ label, technicalLabel, to, Icon, end = false, step, do
             <span className="leading-snug">{label}</span>
             {technicalLabel && (
               <span className={cn(
-                'text-[10px] leading-tight font-normal truncate',
-                isActive ? 'text-white/60' : 'text-[#9CA3AF]',
+                'text-[11px] leading-tight font-sans font-normal truncate',
+                isActive ? 'text-console-primary/60' : 'text-console-fg-subtle',
               )}>
                 {technicalLabel}
               </span>
@@ -178,10 +183,12 @@ function CollapsibleNavGroup({ label, storageKey, children }: CollapsibleNavGrou
         className="flex w-full items-center justify-between px-3 pb-1 pt-3 group"
         aria-expanded={open}
       >
-        <span className="text-caption-upper">{label}</span>
+        <span className="font-heading text-[11px] font-semibold uppercase tracking-[0.12em] text-console-fg-subtle">
+          {label}
+        </span>
         {open
-          ? <ChevronDown className="h-3 w-3 text-[#9CA3AF] group-hover:text-[#1A1A1A] transition-colors" />
-          : <ChevronRight className="h-3 w-3 text-[#9CA3AF] group-hover:text-[#1A1A1A] transition-colors" />
+          ? <ChevronDown className="h-3 w-3 text-console-fg-subtle group-hover:text-console-fg transition-colors" />
+          : <ChevronRight className="h-3 w-3 text-console-fg-subtle group-hover:text-console-fg transition-colors" />
         }
       </button>
       {open && <div className="space-y-0.5">{children}</div>}
@@ -246,33 +253,33 @@ export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
   return (
     <>
     <aside
-      className="flex h-full flex-col border-r border-[#E5E7EB] bg-white"
+      className="flex h-full flex-col border-r border-console-border bg-console-surface"
       style={{ width: 240, minWidth: 240 }}
     >
       {/* ── Logo ──────────────────────────────────────────────────────────── */}
-      <div className="border-b border-[#E5E7EB]">
+      <div className="border-b border-console-border px-5 pb-4 pt-5">
         <img
           src="/atlas_latest_logo.svg"
           alt="Atlas"
-          className="block w-full"
-          style={{ height: 64, objectFit: 'cover', objectPosition: 'center' }}
+          className="block h-[30px] w-auto"
+          style={{ objectFit: 'contain', objectPosition: 'left' }}
         />
       </div>
 
       {/* ── Workspace switcher ────────────────────────────────────────────── */}
       {organisations.length > 0 ? (
-        <div className="px-3 pt-3">
+        <div className="px-4 pt-4">
           <OrgSwitcher />
         </div>
       ) : (
-        <div className="px-3 pt-3">
+        <div className="px-4 pt-4">
           <button
             type="button"
             onClick={() => setCreateOrgOpen(true)}
-            className="flex w-full items-center gap-2 rounded-lg border border-dashed border-[#1B2A4A]/30 bg-[#EEF1F7]/60 px-3 py-2.5 text-sm text-[#1B2A4A] hover:bg-[#EEF1F7] transition-colors"
+            className="flex w-full items-center gap-2 rounded-md border border-dashed border-console-primary/30 bg-console-primary/[0.04] px-3 py-2.5 font-heading text-sm font-semibold text-console-primary hover:bg-console-primary/[0.08] transition-colors"
           >
             <Plus className="h-4 w-4 shrink-0" />
-            <span className="flex-1 text-left font-medium">Create workspace</span>
+            <span className="flex-1 text-left">Create workspace</span>
           </button>
         </div>
       )}
@@ -285,7 +292,7 @@ export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
             <div className="mb-1 space-y-0.5">
               <SidebarNavItem label="Home" to="/" Icon={Home} end />
             </div>
-            <p className="text-caption-upper px-3 pb-2 pt-2">
+            <p className="font-heading px-3 pb-2 pt-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-console-fg-subtle">
               {currentOrg?.name ?? 'Organisation'}
             </p>
             {(() => {
@@ -320,8 +327,8 @@ export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
               );
             })()}
             {activeClientId && (
-              <div className="mt-2 border-t border-[#E5E7EB] pt-2">
-                <p className="text-caption-upper px-3 pb-1 pt-1">This client</p>
+              <div className="mt-2 border-t border-console-border pt-2">
+                <p className="font-heading px-3 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-console-fg-subtle">This client</p>
                 <SidebarNavItem
                   label="Set up tracking"
                   to={`/clients/${activeClientId}/tracking`}
@@ -329,7 +336,7 @@ export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
                 />
               </div>
             )}
-            <div className="mt-3 border-t border-[#E5E7EB] pt-2">
+            <div className="mt-3 border-t border-console-border pt-2">
               <SidebarNavItem label="Help" to="/help" Icon={HelpCircle} />
             </div>
           </>
@@ -352,7 +359,7 @@ export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
               </CollapsibleNavGroup>
             ))}
             {/* Settings & Help — standalone below divider */}
-            <div className="mt-3 border-t border-[#E5E7EB] pt-2">
+            <div className="mt-3 border-t border-console-border pt-2">
               <SidebarNavItem label="Help" to="/help" Icon={HelpCircle} />
               <SidebarNavItem label="Settings" to="/settings" Icon={Settings} />
             </div>
@@ -362,11 +369,20 @@ export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
 
       {/* ── Admin section ─────────────────────────────────────────────────── */}
       {isAdmin && (
-        <div className="border-t border-[#E5E7EB] px-3 py-3">
-          <p className="text-caption-upper px-3 pb-2">Admin</p>
+        <div className="border-t border-console-border px-3 py-3">
+          <p className="font-heading px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-console-fg-subtle">Admin</p>
           <SidebarNavItem label="Platform Admin" to="/admin" Icon={ShieldAlert} />
         </div>
       )}
+
+      {/* ── Status footer ────────────────────────────────────────────────── */}
+      <div className="flex shrink-0 items-center gap-2 border-t border-console-border px-5 py-3.5">
+        <span className="relative flex h-1.5 w-1.5">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-console-green opacity-60" />
+          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-console-green" />
+        </span>
+        <span className="font-mono text-[11px] text-console-fg-subtle">All systems operational</span>
+      </div>
     </aside>
 
     <CreateOrgDialog open={createOrgOpen} onOpenChange={setCreateOrgOpen} />
