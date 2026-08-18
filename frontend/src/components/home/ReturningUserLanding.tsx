@@ -4,6 +4,8 @@ import { supabase } from '@/lib/supabase';
 import { useOrganisationStore } from '@/store/organisationStore';
 import { EvaluateSiteCard } from '@/components/home/EvaluateSiteCard';
 import { NewClientCard } from '@/components/home/NewClientCard';
+import { StatsRow } from '@/components/home/StatsRow';
+import { RecentActivityFeed } from '@/components/dashboard/RecentActivityFeed';
 
 function getTimeOfDayGreeting(): string {
   const h = new Date().getHours();
@@ -32,7 +34,7 @@ export function ReturningUserLanding() {
   if (!currentOrg) return null;
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-14">
+    <div className="mx-auto max-w-5xl px-6 py-14">
       <div className="mb-9">
         <p className="font-heading text-xs font-semibold uppercase tracking-[0.2em] text-console-primary">
           {currentOrg.name} / Home
@@ -46,6 +48,14 @@ export function ReturningUserLanding() {
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
         <EvaluateSiteCard />
         <NewClientCard org={currentOrg} />
+      </div>
+
+      <div className="mt-8">
+        <StatsRow />
+      </div>
+
+      <div className="mt-8">
+        <RecentActivityFeed />
       </div>
 
       <p className="mt-8 text-center text-sm text-console-fg-subtle">
