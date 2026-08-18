@@ -1,27 +1,11 @@
 import type { Request, Response, NextFunction } from 'express';
-import { supabaseAdmin } from '@/services/database/supabase';
 
 /**
- * strategyGate — rejects the request if no strategy brief exists for this user's org.
- * Applied to POST /api/planning/sessions, POST /api/journeys, POST /api/signal-packs/deploy.
+ * strategyGate — no longer blocks. The strategy brief nudge is enforced purely
+ * as a dismissible frontend banner (StrategyGateGuard); this middleware is kept
+ * as a pass-through on its existing routes so route wiring doesn't need to change.
+ * Applied to POST /api/planning/sessions, POST /api/journeys, POST client deploy.
  */
-export async function strategyGate(req: Request, res: Response, next: NextFunction): Promise<void> {
-  const userId = req.user?.id;
-  if (!userId) {
-    res.status(401).json({ error: 'Unauthorised' });
-    return;
-  }
-
-  const { data, error } = await supabaseAdmin
-    .from('strategy_briefs')
-    .select('id')
-    .eq('organization_id', userId)
-    .limit(1);
-
-  if (error || !data || data.length === 0) {
-    res.status(400).json({ error: 'Lock your conversion event first.' });
-    return;
-  }
-
+export async function strategyGate(_req: Request, _res: Response, next: NextFunction): Promise<void> {
   next();
 }

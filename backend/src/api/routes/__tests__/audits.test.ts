@@ -19,6 +19,21 @@ vi.mock('@/services/database/queries', () => ({
   listAudits: vi.fn(),
   deleteAudit: vi.fn(),
   getPreviousAuditScore: vi.fn(),
+  linkAuditToClient: vi.fn(),
+}));
+
+vi.mock('@/services/database/clientQueries', () => ({
+  getClient: vi.fn(),
+}));
+
+vi.mock('@/services/database/supabase', () => ({
+  supabaseAdmin: {
+    from: vi.fn(() => ({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { organization_id: 'org-001' }, error: null }),
+    })),
+  },
 }));
 
 vi.mock('@/services/database/journeyQueries', () => ({
@@ -56,6 +71,7 @@ vi.mock('@/config/env', () => ({
 
 import * as dbQueries from '@/services/database/queries';
 import * as journeyQueries from '@/services/database/journeyQueries';
+import * as clientQueries from '@/services/database/clientQueries';
 import { auditQueue } from '@/services/queue/jobQueue';
 import * as pdfGenerator from '@/services/export/pdfGenerator';
 import auditRouter from '../audits';
@@ -151,6 +167,37 @@ describe('POST /api/audits/start', () => {
     });
 
     expect(res.status).toBe(400);
+  });
+
+  it('creates a client-linked audit when a valid client_id is provided', async () => {
+    const clientId = '11111111-1111-1111-1111-111111111111';
+    vi.mocked(clientQueries.getClient).mockResolvedValue({ id: clientId } as any);
+    vi.mocked(dbQueries.createAudit).mockResolvedValue({ ...MOCK_AUDIT, client_id: clientId } as any);
+    vi.mocked(auditQueue.add as any).mockResolvedValue({ id: 'job-001' });
+
+    const res = await buildApp().post('/api/audits/start').send({
+      website_url: 'https://example.com',
+      funnel_type: 'ecommerce',
+      url_map: { homepage: 'https://example.com' },
+      client_id: clientId,
+    });
+
+    expect(res.status).toBe(202);
+    expect(dbQueries.createAudit).toHaveBeenCalledWith(expect.objectContaining({ client_id: clientId }));
+  });
+
+  it('returns 404 when client_id does not resolve to an accessible client', async () => {
+    vi.mocked(clientQueries.getClient).mockResolvedValue(null);
+
+    const res = await buildApp().post('/api/audits/start').send({
+      website_url: 'https://example.com',
+      funnel_type: 'ecommerce',
+      url_map: { homepage: 'https://example.com' },
+      client_id: '11111111-1111-1111-1111-111111111111',
+    });
+
+    expect(res.status).toBe(404);
+    expect(dbQueries.createAudit).not.toHaveBeenCalled();
   });
 
   it('queue payload does not contain test_email or test_phone (PII safety)', async () => {
@@ -376,5 +423,66 @@ describe('DELETE /api/audits/:audit_id', () => {
     const res = await buildApp().delete('/api/audits/audit-001');
 
     expect(res.status).toBe(403);
+  });
+});
+
+// ── PATCH /api/audits/:audit_id/link-client ───────────────────────────────────
+
+describe('PATCH /api/audits/:audit_id/link-client', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  const CLIENT_ID = '11111111-1111-1111-1111-111111111111';
+
+  it('links an existing audit to a client the user can access', async () => {
+    vi.mocked(dbQueries.getAudit).mockResolvedValue(MOCK_AUDIT as any);
+    vi.mocked(clientQueries.getClient).mockResolvedValue({ id: CLIENT_ID } as any);
+    vi.mocked(dbQueries.linkAuditToClient).mockResolvedValue({ ...MOCK_AUDIT, client_id: CLIENT_ID } as any);
+
+    const res = await buildApp()
+      .patch('/api/audits/audit-001/link-client')
+      .send({ client_id: CLIENT_ID });
+
+    expect(res.status).toBe(200);
+    expect(res.body.client_id).toBe(CLIENT_ID);
+    expect(dbQueries.linkAuditToClient).toHaveBeenCalledWith('audit-001', CLIENT_ID, 'u1');
+  });
+
+  it('returns 400 for a malformed client_id', async () => {
+    const res = await buildApp()
+      .patch('/api/audits/audit-001/link-client')
+      .send({ client_id: 'not-a-uuid' });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 404 when the audit does not exist', async () => {
+    vi.mocked(dbQueries.getAudit).mockResolvedValue(null);
+
+    const res = await buildApp()
+      .patch('/api/audits/audit-001/link-client')
+      .send({ client_id: CLIENT_ID });
+
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 403 when the audit belongs to another user', async () => {
+    vi.mocked(dbQueries.getAudit).mockResolvedValue({ ...MOCK_AUDIT, user_id: 'other-user' } as any);
+
+    const res = await buildApp()
+      .patch('/api/audits/audit-001/link-client')
+      .send({ client_id: CLIENT_ID });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 404 when the client is not accessible to the user', async () => {
+    vi.mocked(dbQueries.getAudit).mockResolvedValue(MOCK_AUDIT as any);
+    vi.mocked(clientQueries.getClient).mockResolvedValue(null);
+
+    const res = await buildApp()
+      .patch('/api/audits/audit-001/link-client')
+      .send({ client_id: CLIENT_ID });
+
+    expect(res.status).toBe(404);
   });
 });

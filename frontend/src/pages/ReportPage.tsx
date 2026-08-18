@@ -12,6 +12,7 @@ import { auditApi } from '@/lib/api/auditApi';
 import { slackApi } from '@/lib/api/slackApi';
 import { Button } from '@/components/ui/button';
 import { ShareToSlackButton } from '@/components/common/ShareToSlackButton';
+import { LinkToClientButton } from '@/components/audit/LinkToClientButton';
 
 export function ReportPage() {
   const { auditId } = useParams<{ auditId: string }>();
@@ -79,6 +80,7 @@ export function ReportPage() {
 
           {/* Export buttons */}
           <div className="flex flex-wrap items-center gap-2">
+            {auditId && <LinkToClientButton auditId={auditId} />}
             <Button
               variant="outline"
               size="sm"

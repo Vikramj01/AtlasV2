@@ -1,15 +1,27 @@
 import { Router, Request, Response } from 'express';
 import JSZip from 'jszip';
+import { z } from 'zod';
 import { authMiddleware } from '@/api/middleware/authMiddleware';
 import { auditLimiter } from '@/api/middleware/auditLimiter';
-import { createAudit, getAudit, getReport, listAudits, deleteAudit, getPreviousAuditScore } from '@/services/database/queries';
+import { createAudit, getAudit, getReport, listAudits, deleteAudit, getPreviousAuditScore, linkAuditToClient } from '@/services/database/queries';
+import { getClient } from '@/services/database/clientQueries';
 import { getJourneyWithDetails, getLatestSpec } from '@/services/database/journeyQueries';
 import { generatePDF } from '@/services/export/pdfGenerator';
 import { auditQueue } from '@/services/queue/jobQueue';
+import { supabaseAdmin } from '@/services/database/supabase';
 import type { FunnelType, Region } from '@/types/audit';
 import logger from '@/utils/logger';
 import { validateUrl, validateUrls } from '@/utils/urlValidator';
 import { sendInternalError } from '@/utils/apiError';
+
+async function resolveOrgId(userId: string): Promise<string | null> {
+  const { data } = await supabaseAdmin
+    .from('profiles')
+    .select('organization_id')
+    .eq('id', userId)
+    .single();
+  return (data as { organization_id: string | null } | null)?.organization_id ?? null;
+}
 
 interface AuthenticatedRequest extends Request {
   user: {
@@ -40,20 +52,25 @@ router.get('/', async (req: Request, res: Response) => {
 
 // ─── POST /api/audits/start ───────────────────────────────────────────────────
 
+const StartAuditSchema = z.object({
+  website_url: z.string().min(1),
+  funnel_type: z.enum(['ecommerce', 'saas', 'lead_gen']),
+  region: z.enum(['us', 'eu', 'global']).optional(),
+  url_map: z.record(z.string(), z.string()),
+  test_email: z.string().email().optional(),
+  test_phone: z.string().optional(),
+  client_id: z.string().uuid().optional(),
+});
+
 router.post('/start', auditLimiter, async (req: Request, res: Response) => {
   const { user } = req as AuthenticatedRequest;
-  const { website_url, funnel_type, region, url_map, test_email, test_phone } = req.body;
 
-  if (!website_url || !funnel_type || !url_map) {
-    res.status(400).json({ error: 'website_url, funnel_type, and url_map are required' });
+  const parsed = StartAuditSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid request body' });
     return;
   }
-
-  const validFunnelTypes: FunnelType[] = ['ecommerce', 'saas', 'lead_gen'];
-  if (!validFunnelTypes.includes(funnel_type)) {
-    res.status(400).json({ error: `funnel_type must be one of: ${validFunnelTypes.join(', ')}` });
-    return;
-  }
+  const { website_url, funnel_type, region, url_map, test_email, test_phone, client_id } = parsed.data;
 
   const websiteUrlResult = validateUrl(website_url);
   if (!websiteUrlResult.valid) {
@@ -61,21 +78,31 @@ router.post('/start', auditLimiter, async (req: Request, res: Response) => {
     return;
   }
 
-  const mapUrls = Object.values(url_map as Record<string, unknown>).filter((v) => typeof v === 'string');
+  const mapUrls = Object.values(url_map).filter((v) => typeof v === 'string');
   const mapUrlError = validateUrls(mapUrls);
   if (mapUrlError) {
     res.status(400).json({ error: `Invalid URL in url_map: ${mapUrlError}` });
     return;
   }
 
+  if (client_id) {
+    const orgId = await resolveOrgId(user.id);
+    const client = orgId ? await getClient(client_id, orgId) : null;
+    if (!client) {
+      res.status(404).json({ error: 'Client not found' });
+      return;
+    }
+  }
+
   try {
     const audit = await createAudit({
       user_id: user.id,
       website_url,
-      funnel_type: funnel_type as FunnelType,
-      region: (region ?? 'us') as Region,
+      funnel_type,
+      region: region ?? 'us',
       test_email,
       test_phone,
+      client_id,
     });
 
     await auditQueue.add({
@@ -176,6 +203,51 @@ router.get('/:audit_id/report', async (req: Request, res: Response) => {
     : null;
 
   res.json({ ...report, comparison });
+});
+
+// ─── PATCH /api/audits/:audit_id/link-client ─────────────────────────────────
+// Links a completed (or in-progress) evaluation to an existing client, so a
+// bare-URL "Evaluate a site" run can be attached to a client after the fact.
+
+const LinkClientSchema = z.object({
+  client_id: z.string().uuid(),
+});
+
+router.patch('/:audit_id/link-client', async (req: Request, res: Response) => {
+  const { user } = req as AuthenticatedRequest;
+  const { audit_id } = req.params;
+
+  const parsed = LinkClientSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'client_id is required' });
+    return;
+  }
+
+  const audit = await getAudit(audit_id);
+  if (!audit) {
+    res.status(404).json({ error: 'Audit not found' });
+    return;
+  }
+  if (audit.user_id !== user.id) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
+  const orgId = await resolveOrgId(user.id);
+  const client = orgId ? await getClient(parsed.data.client_id, orgId) : null;
+  if (!client) {
+    res.status(404).json({ error: 'Client not found' });
+    return;
+  }
+
+  try {
+    const updated = await linkAuditToClient(audit_id, parsed.data.client_id, user.id);
+    logger.info({ audit_id, client_id: parsed.data.client_id }, 'Audit linked to client');
+    res.json({ audit_id: updated.id, client_id: updated.client_id ?? null });
+  } catch (err) {
+    logger.error({ err, audit_id }, 'Failed to link audit to client');
+    res.status(500).json({ error: 'Failed to link audit to client' });
+  }
 });
 
 // ─── POST /api/audits/start-from-journey ─────────────────────────────────────

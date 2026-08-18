@@ -1,8 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Link } from 'react-router-dom';
 import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { AuditHistoryTable } from '@/components/audit/AuditHistoryTable';
 import type { AuditHistoryItem } from '@/components/audit/AuditHistoryTable';
 import { ScheduleList } from '@/components/audit/ScheduleList';
@@ -14,6 +12,7 @@ import { OnboardingChecklist } from '@/components/onboarding/OnboardingChecklist
 import { useOnboardingStore } from '@/store/onboardingStore';
 import { useOrganisationStore } from '@/store/organisationStore';
 import { ReturningUserDashboard } from '@/components/dashboard/ReturningUserDashboard';
+import { EvaluateSiteCard } from '@/components/home/EvaluateSiteCard';
 
 export function DashboardPage() {
   const { status: onboardingStatus, fetchStatus: fetchOnboarding } = useOnboardingStore();
@@ -97,20 +96,10 @@ export function DashboardPage() {
         </p>
       </div>
 
-      {/* CTA card */}
-      <Card className="border-[#1B2A4A]/20 bg-[#EEF1F7]">
-        <CardContent className="flex items-center justify-between p-6">
-          <div>
-            <h2 className="text-lg font-semibold">Audit your conversion tracking</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Define your funnel, select platforms, and Atlas will validate every signal.
-            </p>
-          </div>
-          <Button asChild className="ml-6 flex-shrink-0 bg-[#1B2A4A] hover:bg-[#1B2A4A]">
-            <Link to="/journey/new">New Audit</Link>
-          </Button>
-        </CardContent>
-      </Card>
+      {/* Evaluate CTA */}
+      <div className="max-w-md">
+        <EvaluateSiteCard />
+      </div>
 
       {/* Tab navigation */}
       <div className="flex items-center justify-between">
