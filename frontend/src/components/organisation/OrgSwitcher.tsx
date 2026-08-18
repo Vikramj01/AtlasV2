@@ -20,7 +20,7 @@ export function OrgSwitcher({ onSwitch }: Props) {
   const [open, setOpen] = useState(false);
 
   const label = currentOrg?.name ?? 'Personal';
-  const Icon = currentOrg ? Building2 : User;
+  const initial = (currentOrg?.name?.trim()[0] ?? 'P').toUpperCase();
 
   function handleSelect(org: typeof currentOrg) {
     setCurrentOrg(org);
@@ -34,15 +34,17 @@ export function OrgSwitcher({ onSwitch }: Props) {
   }
 
   return (
-    <div className="relative mb-4">
+    <div className="relative mb-2">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-2 rounded-lg border bg-background px-3 py-2 text-sm font-medium shadow-sm hover:bg-accent transition-colors"
+        className="flex w-full items-center gap-2 rounded-md border border-console-border bg-console-surface px-3 py-2.5 font-heading text-sm font-semibold text-console-fg hover:bg-console-chip transition-colors"
       >
-        <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-console-primary font-mono text-[10px] font-bold text-white">
+          {initial}
+        </span>
         <span className="flex-1 truncate text-left">{label}</span>
-        <ChevronDown className={cn('h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform', open && 'rotate-180')} />
+        <ChevronDown className={cn('h-3.5 w-3.5 shrink-0 text-console-fg-subtle transition-transform', open && 'rotate-180')} />
       </button>
 
       {open && (
