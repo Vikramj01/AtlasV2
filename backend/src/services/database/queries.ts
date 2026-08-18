@@ -10,6 +10,7 @@ export async function createAudit(data: {
   region: Region;
   test_email?: string;
   test_phone?: string;
+  client_id?: string;
 }): Promise<AuditRow> {
   const { data: row, error } = await supabaseAdmin
     .from('audits')
@@ -112,6 +113,19 @@ export async function deleteAudit(auditId: string, userId: string): Promise<void
   if (error) throw new Error(`Failed to delete audit: ${error.message}`);
 }
 
+export async function linkAuditToClient(auditId: string, clientId: string, userId: string): Promise<AuditRow> {
+  const { data, error } = await supabaseAdmin
+    .from('audits')
+    .update({ client_id: clientId })
+    .eq('id', auditId)
+    .eq('user_id', userId)
+    .select()
+    .single();
+
+  if (error) throw new Error(`Failed to link audit to client: ${error.message}`);
+  return data as AuditRow;
+}
+
 // ─── Audit list (with report scores joined) ───────────────────────────────────
 
 export interface AuditListItem {
@@ -121,6 +135,7 @@ export interface AuditListItem {
   status: AuditStatus;
   signal_health: number | null;
   attribution_risk: string | null;
+  client_id: string | null;
 }
 
 export async function listAudits(user_id: string): Promise<AuditListItem[]> {
@@ -131,6 +146,7 @@ export async function listAudits(user_id: string): Promise<AuditListItem[]> {
       website_url,
       created_at,
       status,
+      client_id,
       audit_reports (
         report_json
       )
@@ -151,6 +167,7 @@ export async function listAudits(user_id: string): Promise<AuditListItem[]> {
       status: row['status'] as AuditStatus,
       signal_health: report?.executive_summary?.scores?.conversion_signal_health ?? null,
       attribution_risk: report?.executive_summary?.scores?.attribution_risk_level ?? null,
+      client_id: (row['client_id'] as string | null) ?? null,
     };
   });
 }

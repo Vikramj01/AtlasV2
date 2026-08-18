@@ -268,4 +268,5 @@ export interface AuditRow {
   browserbase_session_id?: string;
   test_email?: string;
   test_phone?: string;
+  client_id?: string | null;
 }
