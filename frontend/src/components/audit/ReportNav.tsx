@@ -10,7 +10,8 @@ const PAGES: Page[] = [
   { id: 2, label: 'Journey Breakdown' },
   { id: 3, label: 'Platform Impact' },
   { id: 4, label: 'Issues & Fixes' },
-  { id: 5, label: 'Technical Appendix' },
+  { id: 5, label: 'Site Setup' },
+  { id: 6, label: 'Technical Appendix' },
 ];
 
 interface Props {

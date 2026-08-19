@@ -1,7 +1,7 @@
 /**
  * Data capture helpers — instrument a Playwright Page to collect:
  *   - window.dataLayer pushes
- *   - Outbound network requests (GA4, Meta, Google Ads, GTM, sGTM)
+ *   - Outbound network requests (GA4, Meta, Google Ads, GTM, sGTM, LinkedIn, TikTok, Microsoft UET)
  *   - Cookies and localStorage snapshots
  */
 import type { DataLayerEvent, NetworkRequest, CookieSnapshot, LocalStorageSnapshot } from '@/types/audit';
@@ -9,13 +9,21 @@ import type { DataLayerEvent, NetworkRequest, CookieSnapshot, LocalStorageSnapsh
 // URLs we want to capture (ad/analytics platforms)
 const TRACKED_URL_PATTERNS = [
   'analytics.google.com',
+  'google-analytics.com',
   'facebook.com/tr',
+  'connect.facebook.net',
   'google.com/pagead',
+  'googleadservices.com/pagead',
   'googleads.g.doubleclick.net',
   'googletagmanager.com',
+  'bat.bing.com',
+  'analytics.tiktok.com',
+  'snap.licdn.com',
+  'linkedin.com/px',
   'sgtm',
   'gtm-msr',
-  '.co/collect',
+  '/g/collect',
+  '/mp/collect',
 ];
 
 function shouldCaptureUrl(url: string): boolean {

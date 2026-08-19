@@ -15,6 +15,7 @@ import { runAllRules, runRulesForPlatforms } from '@/services/validation/engine'
 import { calculateScores } from '@/services/scoring/engine';
 import { interpretResults } from '@/services/interpretation/engine';
 import { generateReport } from '@/services/reporting/generator';
+import { buildSiteSetupSummary } from './siteSetupDetector';
 import type { JourneyStage, RuleStatus } from '@/types/audit';
 import { getJourneyStages } from '@/services/database/journeyQueries';
 import logger from '@/utils/logger';
@@ -165,9 +166,12 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
           }),
         }));
 
+        const combinedGtmScriptSrcs = stageCaptures.flatMap((c) => c.gtm_script_srcs ?? []);
+        const siteSetup = buildSiteSetupSummary(proxyAuditData, combinedGtmScriptSrcs);
+
         const scores = calculateScores(validationResults);
         const issues = interpretResults(validationResults);
-        const report = generateReport(proxyAuditData, scores, issues, validationResults, customJourneyStages);
+        const report = generateReport(proxyAuditData, scores, issues, validationResults, siteSetup, customJourneyStages);
         await saveReport(audit_id, report);
 
       } else {
@@ -188,9 +192,11 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
         await saveValidationResults(audit_id, validationResults);
         await updateAuditStatus(audit_id, 'running', { progress: 75 });
 
+        const siteSetup = buildSiteSetupSummary(auditData, (auditData.pageMetadata?.gtm_script_srcs as string[]) ?? []);
+
         const scores = calculateScores(validationResults);
         const issues = interpretResults(validationResults);
-        const report = generateReport(auditData, scores, issues, validationResults);
+        const report = generateReport(auditData, scores, issues, validationResults, siteSetup);
         await saveReport(audit_id, report);
       }
     } finally {

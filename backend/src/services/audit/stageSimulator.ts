@@ -26,6 +26,7 @@ export interface StageCapture {
   network_requests: NetworkRequest[];
   cookies: Record<string, string>;
   local_storage: Record<string, string>;
+  gtm_script_srcs: string[];
   errors: string[];
   skipped: boolean;        // true when no URL was provided
 }
@@ -110,6 +111,7 @@ export async function simulateJourneyFromSpec(
           network_requests: [],
           cookies: {},
           local_storage: {},
+          gtm_script_srcs: [],
           errors: [],
           skipped: true,
         });
@@ -131,6 +133,7 @@ export async function simulateJourneyFromSpec(
       const errors: string[] = [];
       let navigationSuccess = false;
       let actualUrl = urlToNavigate;
+      let stageGtmScriptSrcs: string[] = [];
       const startTime = Date.now();
 
       try {
@@ -148,6 +151,11 @@ export async function simulateJourneyFromSpec(
 
         // Collect dataLayer events from this page
         await flushDataLayer(page as Parameters<typeof flushDataLayer>[0], stageSinkDL, stage.stage_label);
+
+        // Collect <script src> values for live GTM container ID detection
+        stageGtmScriptSrcs = (await page
+          .evaluate(() => Array.from(document.querySelectorAll('script[src]')).map((s) => s.getAttribute('src') ?? ''))
+          .catch(() => [])) as string[];
 
         void response; // used only for side effect
       } catch (err) {
@@ -179,6 +187,7 @@ export async function simulateJourneyFromSpec(
         network_requests: stageSinkNet,
         cookies: cookieMap,
         local_storage: localStorage.entries,
+        gtm_script_srcs: stageGtmScriptSrcs,
         errors,
         skipped: false,
       });

@@ -12,10 +12,16 @@ interface Props {
 
 export function TechnicalAppendix({ report }: Props) {
   const [open, setOpen] = useState(false);
-  const { technical_appendix } = report;
+  const { technical_appendix, site_setup } = report;
   const results = technical_appendix.validation_results;
   const networkRequests = technical_appendix.raw_network_requests as Array<Record<string, unknown>>;
   const dataLayerEvents = technical_appendix.raw_datalayer_events as Array<Record<string, unknown>>;
+  const siteSetupEvidenceUrls = site_setup
+    ? [
+        ...site_setup.tags.flatMap((t) => t.evidence_urls.map((url) => ({ label: t.platform, url }))),
+        ...site_setup.possible_server_side_gtm.evidence_urls.map((url) => ({ label: 'possible_server_side_gtm', url })),
+      ]
+    : [];
 
   return (
     <div className="space-y-4">
@@ -109,6 +115,22 @@ export function TechnicalAppendix({ report }: Props) {
                       <div key={i} className="rounded-lg border bg-muted px-3 py-2 font-mono text-xs">
                         <span className="font-semibold">{String(ev['event'] ?? 'unknown')}</span>
                         {ev['step'] != null && <span className="ml-2 text-muted-foreground">@ {String(ev['step'])}</span>}
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {siteSetupEvidenceUrls.length > 0 && (
+                <section className="p-5">
+                  <h3 className="mb-3 text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                    Site Setup — Raw Signal Evidence ({siteSetupEvidenceUrls.length})
+                  </h3>
+                  <div className="space-y-2">
+                    {siteSetupEvidenceUrls.map((item, i) => (
+                      <div key={i} className="rounded-lg border bg-muted px-3 py-2 font-mono text-xs">
+                        <span className="font-semibold">{item.label}</span>{' '}
+                        <span className="text-muted-foreground">{item.url}</span>
                       </div>
                     ))}
                   </div>
