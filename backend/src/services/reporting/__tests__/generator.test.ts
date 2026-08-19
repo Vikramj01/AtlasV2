@@ -58,7 +58,7 @@ function makeSiteSetup(overrides?: Partial<SiteSetupSummary>): SiteSetupSummary 
     generated_at: new Date().toISOString(),
     datalayer_inventory: [],
     tags: [],
-    gtm_container: { detected: false, container_ids: [] },
+    gtm_container: { detected: false, container_ids: [], connected_container_id: null, ids_match: null },
     possible_server_side_gtm: {
       detected: false,
       confidence: 'low',

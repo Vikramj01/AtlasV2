@@ -87,13 +87,28 @@ export function SiteSetup({ report }: Props) {
             <DetectedBadge detected={gtm_container.detected} />
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-2">
           {gtm_container.detected ? (
             <p className="font-mono text-sm">{gtm_container.container_ids.join(', ')}</p>
           ) : (
             <p className="text-sm text-muted-foreground">
               No GTM container script was observed loading on the scanned pages.
             </p>
+          )}
+          {gtm_container.connected_container_id && (
+            <div className="flex flex-wrap items-center gap-2 border-t pt-2">
+              <span className="text-xs text-muted-foreground">
+                Connected container: <span className="font-mono">{gtm_container.connected_container_id}</span>
+              </span>
+              {gtm_container.ids_match === false && (
+                <Badge className="bg-red-100 text-red-700 hover:bg-red-100">
+                  Mismatch — live site loads a different container
+                </Badge>
+              )}
+              {gtm_container.ids_match === true && (
+                <Badge className="bg-green-100 text-green-700 hover:bg-green-100">Matches connected container</Badge>
+              )}
+            </div>
           )}
         </CardContent>
       </Card>

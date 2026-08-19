@@ -185,7 +185,12 @@ describe('buildSiteSetupSummary', () => {
       ['https://www.googletagmanager.com/gtm.js?id=GTM-XXXX'],
     );
 
-    expect(summary.gtm_container).toEqual({ detected: true, container_ids: ['GTM-XXXX'] });
+    expect(summary.gtm_container).toEqual({
+      detected: true,
+      container_ids: ['GTM-XXXX'],
+      connected_container_id: null,
+      ids_match: null,
+    });
     const ga4Tag = summary.tags.find((t) => t.platform === 'ga4');
     expect(ga4Tag?.detected).toBe(true);
     expect(ga4Tag?.ids).toEqual(['G-ABC123']);
@@ -201,5 +206,34 @@ describe('buildSiteSetupSummary', () => {
     );
     expect(summary.gtm_container.detected).toBe(false);
     expect(summary.tags.every((t) => !t.detected)).toBe(true);
+  });
+
+  it('flags ids_match true when the live-detected container matches the connected one', () => {
+    const summary = buildSiteSetupSummary(
+      { website_url: 'https://example.com', dataLayer: [], networkRequests: [] },
+      ['https://www.googletagmanager.com/gtm.js?id=GTM-XXXX'],
+      'GTM-XXXX',
+    );
+    expect(summary.gtm_container.connected_container_id).toBe('GTM-XXXX');
+    expect(summary.gtm_container.ids_match).toBe(true);
+  });
+
+  it('flags ids_match false when the live-detected container differs from the connected one', () => {
+    const summary = buildSiteSetupSummary(
+      { website_url: 'https://example.com', dataLayer: [], networkRequests: [] },
+      ['https://www.googletagmanager.com/gtm.js?id=GTM-YYYY'],
+      'GTM-XXXX',
+    );
+    expect(summary.gtm_container.connected_container_id).toBe('GTM-XXXX');
+    expect(summary.gtm_container.ids_match).toBe(false);
+  });
+
+  it('leaves ids_match null when no container is connected to compare against', () => {
+    const summary = buildSiteSetupSummary(
+      { website_url: 'https://example.com', dataLayer: [], networkRequests: [] },
+      ['https://www.googletagmanager.com/gtm.js?id=GTM-XXXX'],
+      null,
+    );
+    expect(summary.gtm_container.ids_match).toBeNull();
   });
 });

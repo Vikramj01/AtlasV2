@@ -90,6 +90,8 @@ export interface DetectedTagSignal {
 export interface DetectedGtmContainer {
   detected: boolean;
   container_ids: string[];
+  connected_container_id: string | null;
+  ids_match: boolean | null;
 }
 
 export type ServerSideGtmHeuristic =

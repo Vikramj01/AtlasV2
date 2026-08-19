@@ -159,6 +159,13 @@ export interface DetectedTagSignal {
 export interface DetectedGtmContainer {
   detected: boolean;
   container_ids: string[];
+  /** The client's connected GTM container (OAuth/manual upload), if one exists. */
+  connected_container_id: string | null;
+  /**
+   * true/false when a connected container exists and can be compared against what
+   * was live-detected; null when there's nothing connected to compare against.
+   */
+  ids_match: boolean | null;
 }
 
 export type ServerSideGtmHeuristic =

@@ -15,6 +15,7 @@ import { runAllRules, runRulesForPlatforms } from '@/services/validation/engine'
 import { calculateScores } from '@/services/scoring/engine';
 import { interpretResults } from '@/services/interpretation/engine';
 import { generateReport } from '@/services/reporting/generator';
+import { getConnectedGtmContainerId } from '@/services/database/gtmConnectionQueries';
 import { buildSiteSetupSummary } from './siteSetupDetector';
 import type { JourneyStage, RuleStatus } from '@/types/audit';
 import { getJourneyStages } from '@/services/database/journeyQueries';
@@ -41,6 +42,17 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
     const auditRow = await getAudit(audit_id);
     const test_email = auditRow?.test_email;
     const test_phone = auditRow?.test_phone;
+
+    // Resolve the client's connected GTM container ID, if any, for the Site
+    // Setup live-vs-connected mismatch check (non-fatal if it fails).
+    let connectedGtmContainerId: string | null = null;
+    if (auditRow?.client_id) {
+      try {
+        connectedGtmContainerId = await getConnectedGtmContainerId(auditRow.client_id);
+      } catch (err) {
+        logger.warn({ audit_id, err: err instanceof Error ? err.message : String(err) }, 'Failed to resolve connected GTM container');
+      }
+    }
 
     // Resolve org_id for usage logging (non-fatal if it fails).
     let orgId: string | undefined;
@@ -167,7 +179,7 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
         }));
 
         const combinedGtmScriptSrcs = stageCaptures.flatMap((c) => c.gtm_script_srcs ?? []);
-        const siteSetup = buildSiteSetupSummary(proxyAuditData, combinedGtmScriptSrcs);
+        const siteSetup = buildSiteSetupSummary(proxyAuditData, combinedGtmScriptSrcs, connectedGtmContainerId);
 
         const scores = calculateScores(validationResults);
         const issues = interpretResults(validationResults);
@@ -192,7 +204,7 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
         await saveValidationResults(audit_id, validationResults);
         await updateAuditStatus(audit_id, 'running', { progress: 75 });
 
-        const siteSetup = buildSiteSetupSummary(auditData, (auditData.pageMetadata?.gtm_script_srcs as string[]) ?? []);
+        const siteSetup = buildSiteSetupSummary(auditData, (auditData.pageMetadata?.gtm_script_srcs as string[]) ?? [], connectedGtmContainerId);
 
         const scores = calculateScores(validationResults);
         const issues = interpretResults(validationResults);
