@@ -7,6 +7,7 @@
 import type {
   AuditData,
   DataLayerEvent,
+  DetectedGtmContainer,
   DetectedTagPlatform,
   DetectedTagSignal,
   DataLayerEventInventoryEntry,
@@ -150,12 +151,31 @@ function toTagSignal(platform: DetectedTagPlatform, match: TagMatch): DetectedTa
 }
 
 /**
+ * Compare live-detected GTM container ID(s) against the client's connected
+ * container (OAuth/manual upload), if any. `ids_match` is null when there's
+ * nothing connected to compare against.
+ */
+function buildGtmContainerSignal(gtmIds: string[], connectedContainerId: string | null): DetectedGtmContainer {
+  return {
+    detected: gtmIds.length > 0,
+    container_ids: gtmIds,
+    connected_container_id: connectedContainerId,
+    ids_match: connectedContainerId === null ? null : gtmIds.includes(connectedContainerId),
+  };
+}
+
+/**
  * Assemble the full Site Setup summary from an audit's captured data plus
  * the GTM `<script src>` values collected live from the page during simulation.
+ *
+ * `connectedContainerId` is the client's connected GTM container (via
+ * getConnectedGtmContainerId), if the audit is associated with a client that
+ * has one connected — pass null when there's nothing to compare against.
  */
 export function buildSiteSetupSummary(
   auditData: Pick<AuditData, 'dataLayer' | 'networkRequests' | 'website_url'>,
   gtmScriptSrcs: string[],
+  connectedContainerId: string | null = null,
 ): SiteSetupSummary {
   const { dataLayer, networkRequests, website_url } = auditData;
   const hostname = safeHostname(website_url);
@@ -172,7 +192,7 @@ export function buildSiteSetupSummary(
       toTagSignal('tiktok_pixel', trackingSignals.detectTikTokPixel(networkRequests)),
       toTagSignal('microsoft_uet', trackingSignals.detectMicrosoftUet(networkRequests)),
     ],
-    gtm_container: { detected: gtmIds.length > 0, container_ids: gtmIds },
+    gtm_container: buildGtmContainerSignal(gtmIds, connectedContainerId),
     possible_server_side_gtm: detectPossibleServerSideGtm(networkRequests, hostname),
   };
 }
