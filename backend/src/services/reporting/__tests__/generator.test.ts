@@ -6,7 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import { generateReport } from '../generator';
 import { calculateScores } from '@/services/scoring/engine';
-import type { ValidationResult, AuditScores, ReportIssue, AuditData } from '@/types/audit';
+import type { ValidationResult, AuditScores, ReportIssue, AuditData, SiteSetupSummary } from '@/types/audit';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -53,6 +53,24 @@ function makeAuditData(overrides?: Partial<AuditData>): AuditData {
   };
 }
 
+function makeSiteSetup(overrides?: Partial<SiteSetupSummary>): SiteSetupSummary {
+  return {
+    generated_at: new Date().toISOString(),
+    datalayer_inventory: [],
+    tags: [],
+    gtm_container: { detected: false, container_ids: [] },
+    possible_server_side_gtm: {
+      detected: false,
+      confidence: 'low',
+      candidate_hosts: [],
+      matched_heuristics: [],
+      evidence_urls: [],
+      caveat: '',
+    },
+    ...overrides,
+  };
+}
+
 function makeIssue(rule_id: string): ReportIssue {
   return {
     rule_id,
@@ -69,7 +87,7 @@ function makeIssue(rule_id: string): ReportIssue {
 
 describe('generateReport — top-level structure', () => {
   it('returns all required top-level keys', () => {
-    const report = generateReport(makeAuditData(), makeScores(), [], []);
+    const report = generateReport(makeAuditData(), makeScores(), [], [], makeSiteSetup());
     expect(report).toHaveProperty('audit_id', 'audit-test-001');
     expect(report).toHaveProperty('generated_at');
     expect(report).toHaveProperty('executive_summary');
@@ -80,14 +98,14 @@ describe('generateReport — top-level structure', () => {
   });
 
   it('generated_at is a valid ISO 8601 string', () => {
-    const { generated_at } = generateReport(makeAuditData(), makeScores(), [], []);
+    const { generated_at } = generateReport(makeAuditData(), makeScores(), [], [], makeSiteSetup());
     expect(() => new Date(generated_at)).not.toThrow();
     expect(new Date(generated_at).toISOString()).toBe(generated_at);
   });
 
   it('passes issues through unchanged', () => {
     const issues = [makeIssue('GA4_PURCHASE_EVENT_FIRED'), makeIssue('TRANSACTION_ID_PRESENT')];
-    const { issues: out } = generateReport(makeAuditData(), makeScores(), issues, []);
+    const { issues: out } = generateReport(makeAuditData(), makeScores(), issues, [], makeSiteSetup());
     expect(out).toHaveLength(2);
     expect(out[0].rule_id).toBe('GA4_PURCHASE_EVENT_FIRED');
   });
@@ -97,7 +115,7 @@ describe('generateReport — top-level structure', () => {
       networkRequests: [{ url: 'https://analytics.google.com/g/collect', method: 'POST', headers: {}, timestamp: 1, step: 'confirmation' }],
       dataLayer: [{ event: 'purchase', timestamp: 1, step: 'confirmation' }],
     });
-    const report = generateReport(auditData, makeScores(), [], []);
+    const report = generateReport(auditData, makeScores(), [], [], makeSiteSetup());
     expect(report.technical_appendix.raw_network_requests).toHaveLength(1);
     expect(report.technical_appendix.raw_datalayer_events).toHaveLength(1);
     expect(report.technical_appendix.validation_results).toEqual([]);
@@ -105,7 +123,7 @@ describe('generateReport — top-level structure', () => {
 
   it('stores passed validation_results in technical_appendix', () => {
     const results = [makeResult('GA4_PURCHASE_EVENT_FIRED', 'pass')];
-    const report = generateReport(makeAuditData(), makeScores(), [], results);
+    const report = generateReport(makeAuditData(), makeScores(), [], results, makeSiteSetup());
     expect(report.technical_appendix.validation_results).toHaveLength(1);
     expect(report.technical_appendix.validation_results[0].rule_id).toBe('GA4_PURCHASE_EVENT_FIRED');
   });
@@ -116,7 +134,7 @@ describe('generateReport — top-level structure', () => {
 describe('generateReport — executive summary', () => {
   it('passes scores through to executive_summary', () => {
     const scores = makeScores({ conversion_signal_health: 42, attribution_risk_level: 'High' });
-    const { executive_summary } = generateReport(makeAuditData(), scores, [], []);
+    const { executive_summary } = generateReport(makeAuditData(), scores, [], [], makeSiteSetup());
     expect(executive_summary.scores.conversion_signal_health).toBe(42);
     expect(executive_summary.scores.attribution_risk_level).toBe('High');
   });
@@ -126,7 +144,7 @@ describe('generateReport — executive summary', () => {
       makeResult('GA4_PURCHASE_EVENT_FIRED', 'pass'),
       makeResult('TRANSACTION_ID_PRESENT', 'pass'),
     ];
-    const { executive_summary } = generateReport(makeAuditData(), makeScores(), [], results);
+    const { executive_summary } = generateReport(makeAuditData(), makeScores(), [], results, makeSiteSetup());
     expect(executive_summary.overall_status).toBe('healthy');
   });
 
@@ -136,12 +154,12 @@ describe('generateReport — executive summary', () => {
       makeResult('GTM_CONTAINER_LOADED', 'fail'),
       makeResult('DATALAYER_POPULATED', 'fail'),
     ];
-    const { executive_summary } = generateReport(makeAuditData(), makeScores(), [], results);
+    const { executive_summary } = generateReport(makeAuditData(), makeScores(), [], results, makeSiteSetup());
     expect(['critical', 'partially_broken']).toContain(executive_summary.overall_status);
   });
 
   it('business_summary is a non-empty string', () => {
-    const { executive_summary } = generateReport(makeAuditData(), makeScores(), [], []);
+    const { executive_summary } = generateReport(makeAuditData(), makeScores(), [], [], makeSiteSetup());
     expect(typeof executive_summary.business_summary).toBe('string');
     expect(executive_summary.business_summary.length).toBeGreaterThan(0);
   });
@@ -151,7 +169,7 @@ describe('generateReport — executive summary', () => {
 
 describe('generateReport — journey stages', () => {
   it('generates 5 stages for ecommerce funnel', () => {
-    const { journey_stages } = generateReport(makeAuditData({ funnel_type: 'ecommerce' }), makeScores(), [], []);
+    const { journey_stages } = generateReport(makeAuditData({ funnel_type: 'ecommerce' }), makeScores(), [], [], makeSiteSetup());
     expect(journey_stages).toHaveLength(5);
     const names = journey_stages.map((s) => s.stage);
     expect(names).toContain('Landing');
@@ -160,7 +178,7 @@ describe('generateReport — journey stages', () => {
   });
 
   it('generates 5 stages for saas funnel', () => {
-    const { journey_stages } = generateReport(makeAuditData({ funnel_type: 'saas' }), makeScores(), [], []);
+    const { journey_stages } = generateReport(makeAuditData({ funnel_type: 'saas' }), makeScores(), [], [], makeSiteSetup());
     expect(journey_stages).toHaveLength(5);
     const names = journey_stages.map((s) => s.stage);
     expect(names).toContain('Onboarding');
@@ -168,7 +186,7 @@ describe('generateReport — journey stages', () => {
   });
 
   it('generates 4 stages for lead_gen funnel', () => {
-    const { journey_stages } = generateReport(makeAuditData({ funnel_type: 'lead_gen' }), makeScores(), [], []);
+    const { journey_stages } = generateReport(makeAuditData({ funnel_type: 'lead_gen' }), makeScores(), [], [], makeSiteSetup());
     expect(journey_stages).toHaveLength(4);
     const names = journey_stages.map((s) => s.stage);
     expect(names).toContain('Form');
@@ -177,14 +195,14 @@ describe('generateReport — journey stages', () => {
 
   it('unknown funnel type falls back to ecommerce stages', () => {
     const auditData = makeAuditData({ funnel_type: 'unknown_type' as 'ecommerce' });
-    const { journey_stages } = generateReport(auditData, makeScores(), [], []);
+    const { journey_stages } = generateReport(auditData, makeScores(), [], [], makeSiteSetup());
     expect(journey_stages).toHaveLength(5);
   });
 
   it('stage status is "fail" when a stage rule fails', () => {
     // GTM_CONTAINER_LOADED is a Landing stage rule
     const results = [makeResult('GTM_CONTAINER_LOADED', 'fail', 'signal_initiation')];
-    const { journey_stages } = generateReport(makeAuditData(), makeScores(), [], results);
+    const { journey_stages } = generateReport(makeAuditData(), makeScores(), [], results, makeSiteSetup());
     const landing = journey_stages.find((s) => s.stage === 'Landing');
     expect(landing?.status).toBe('fail');
   });
@@ -197,14 +215,14 @@ describe('generateReport — journey stages', () => {
       makeResult('FBCLID_CAPTURED_AT_LANDING', 'pass'),
       makeResult('DATALAYER_POPULATED', 'pass', 'signal_initiation'),
     ];
-    const { journey_stages } = generateReport(makeAuditData(), makeScores(), [], results);
+    const { journey_stages } = generateReport(makeAuditData(), makeScores(), [], results, makeSiteSetup());
     const landing = journey_stages.find((s) => s.stage === 'Landing');
     expect(landing?.status).toBe('pass');
   });
 
   it('stage status is "warning" when a rule warns but none fail', () => {
     const results = [makeResult('GTM_CONTAINER_LOADED', 'warning', 'signal_initiation')];
-    const { journey_stages } = generateReport(makeAuditData(), makeScores(), [], results);
+    const { journey_stages } = generateReport(makeAuditData(), makeScores(), [], results, makeSiteSetup());
     const landing = journey_stages.find((s) => s.stage === 'Landing');
     expect(landing?.status).toBe('warning');
   });
@@ -214,14 +232,14 @@ describe('generateReport — journey stages', () => {
       makeResult('GTM_CONTAINER_LOADED', 'fail', 'signal_initiation'),
       makeResult('PAGE_VIEW_EVENT_FIRED', 'fail', 'signal_initiation'),
     ];
-    const { journey_stages } = generateReport(makeAuditData(), makeScores(), [], results);
+    const { journey_stages } = generateReport(makeAuditData(), makeScores(), [], results, makeSiteSetup());
     const landing = journey_stages.find((s) => s.stage === 'Landing');
     expect(landing?.issues.length).toBeGreaterThanOrEqual(2);
   });
 
   it('accepts custom journey stages via the optional parameter', () => {
     const custom = [{ stage: 'Custom Stage', status: 'pass' as const, issues: [] }];
-    const { journey_stages } = generateReport(makeAuditData(), makeScores(), [], [], custom);
+    const { journey_stages } = generateReport(makeAuditData(), makeScores(), [], [], makeSiteSetup(), custom);
     expect(journey_stages).toHaveLength(1);
     expect(journey_stages[0].stage).toBe('Custom Stage');
   });
@@ -231,12 +249,12 @@ describe('generateReport — journey stages', () => {
 
 describe('generateReport — platform breakdown', () => {
   it('returns exactly 5 platforms', () => {
-    const { platform_breakdown } = generateReport(makeAuditData(), makeScores(), [], []);
+    const { platform_breakdown } = generateReport(makeAuditData(), makeScores(), [], [], makeSiteSetup());
     expect(platform_breakdown).toHaveLength(5);
   });
 
   it('includes google_ads, meta_ads, ga4, gtm, sgtm', () => {
-    const { platform_breakdown } = generateReport(makeAuditData(), makeScores(), [], []);
+    const { platform_breakdown } = generateReport(makeAuditData(), makeScores(), [], [], makeSiteSetup());
     const platforms = platform_breakdown.map((p) => p.platform);
     expect(platforms).toContain('google_ads');
     expect(platforms).toContain('meta_ads');
@@ -251,7 +269,7 @@ describe('generateReport — platform breakdown', () => {
       makeResult('GTM_CONTAINER_LOADED', 'pass', 'signal_initiation'),
       makeResult('DATALAYER_POPULATED', 'pass', 'signal_initiation'),
     ];
-    const { platform_breakdown } = generateReport(makeAuditData(), makeScores(), [], results);
+    const { platform_breakdown } = generateReport(makeAuditData(), makeScores(), [], results, makeSiteSetup());
     const gtm = platform_breakdown.find((p) => p.platform === 'gtm');
     expect(gtm?.status).toBe('healthy');
     expect(gtm?.failed_rules).toHaveLength(0);
@@ -264,7 +282,7 @@ describe('generateReport — platform breakdown', () => {
       'PAGE_VIEW_EVENT_FIRED', 'TRANSACTION_ID_PRESENT', 'ITEMS_ARRAY_POPULATED',
     ];
     const results = ga4Rules.map((id) => makeResult(id, 'fail', 'signal_initiation'));
-    const { platform_breakdown } = generateReport(makeAuditData(), makeScores(), [], results);
+    const { platform_breakdown } = generateReport(makeAuditData(), makeScores(), [], results, makeSiteSetup());
     const ga4 = platform_breakdown.find((p) => p.platform === 'ga4');
     expect(ga4?.status).toBe('broken');
   });
@@ -279,20 +297,20 @@ describe('generateReport — platform breakdown', () => {
       makeResult('TRANSACTION_ID_PRESENT', 'pass'),
       makeResult('ITEMS_ARRAY_POPULATED', 'pass'),
     ];
-    const { platform_breakdown } = generateReport(makeAuditData(), makeScores(), [], results);
+    const { platform_breakdown } = generateReport(makeAuditData(), makeScores(), [], results, makeSiteSetup());
     const ga4 = platform_breakdown.find((p) => p.platform === 'ga4');
     expect(ga4?.status).toBe('at_risk');
   });
 
   it('failed_rules lists the rule IDs that failed for the platform', () => {
     const results = [makeResult('GTM_CONTAINER_LOADED', 'fail', 'signal_initiation')];
-    const { platform_breakdown } = generateReport(makeAuditData(), makeScores(), [], results);
+    const { platform_breakdown } = generateReport(makeAuditData(), makeScores(), [], results, makeSiteSetup());
     const gtm = platform_breakdown.find((p) => p.platform === 'gtm');
     expect(gtm?.failed_rules).toContain('GTM_CONTAINER_LOADED');
   });
 
   it('risk_explanation is a non-empty string for every platform', () => {
-    const { platform_breakdown } = generateReport(makeAuditData(), makeScores(), [], []);
+    const { platform_breakdown } = generateReport(makeAuditData(), makeScores(), [], [], makeSiteSetup());
     for (const p of platform_breakdown) {
       expect(typeof p.risk_explanation).toBe('string');
       expect(p.risk_explanation.length).toBeGreaterThan(0);
@@ -311,7 +329,7 @@ describe('generateReport — integration with scoring engine', () => {
       makeResult('GA4_PURCHASE_EVENT_FIRED', 'pass', 'signal_initiation'),
     ];
     const scores = calculateScores(results);
-    const report = generateReport(makeAuditData(), scores, [], results);
+    const report = generateReport(makeAuditData(), scores, [], results, makeSiteSetup());
     expect(report.executive_summary.scores).toEqual(scores);
   });
 });

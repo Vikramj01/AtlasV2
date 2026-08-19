@@ -11,6 +11,7 @@ import type {
   JourneyStage,
   PlatformBreakdown,
   RuleStatus,
+  SiteSetupSummary,
 } from '@/types/audit';
 import { generateBusinessSummary, determineOverallStatus } from '@/services/interpretation/engine';
 
@@ -120,6 +121,7 @@ export function generateReport(
   scores: AuditScores,
   issues: ReportIssue[],
   results: ValidationResult[],
+  siteSetup: SiteSetupSummary,
   customJourneyStages?: JourneyStage[],
 ): ReportJSON {
   const resultMap = new Map(results.map((r) => [r.rule_id, r]));
@@ -138,6 +140,7 @@ export function generateReport(
     journey_stages: customJourneyStages ?? buildJourneyStages(auditData.funnel_type, resultMap),
     platform_breakdown: buildPlatformBreakdown(resultMap),
     issues,
+    site_setup: siteSetup,
     technical_appendix: {
       validation_results: results,
       raw_network_requests: auditData.networkRequests,

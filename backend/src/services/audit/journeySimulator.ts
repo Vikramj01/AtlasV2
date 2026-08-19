@@ -73,6 +73,7 @@ export async function simulateJourney(
   const networkRequests: NetworkRequest[] = [];
   const cookieSnapshots: CookieSnapshot[] = [];
   const localStorageSnapshots: LocalStorageSnapshot[] = [];
+  const gtmScriptSrcs: string[] = [];
 
   const context = await browser.newContext({
     locale: 'en-US',
@@ -124,6 +125,12 @@ export async function simulateJourney(
       // Flush dataLayer events collected during this step
       await flushDataLayer(page as Parameters<typeof flushDataLayer>[0], dataLayer, step.name);
 
+      // Collect <script src> values for live GTM container ID detection
+      const stepScriptSrcs = await page
+        .evaluate(() => Array.from(document.querySelectorAll('script[src]')).map((s) => s.getAttribute('src') ?? ''))
+        .catch(() => []) as string[];
+      gtmScriptSrcs.push(...stepScriptSrcs);
+
       // Snapshot cookies and localStorage
       cookieSnapshots.push(await captureCookies(context, step.name));
       localStorageSnapshots.push(
@@ -166,6 +173,7 @@ export async function simulateJourney(
     cookies: mergedCookies,
     pageMetadata: {
       pixel_fbclid: hasFBPixelOnLanding,
+      gtm_script_srcs: gtmScriptSrcs,
     },
   };
 }

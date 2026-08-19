@@ -7,6 +7,7 @@ import { ExecutiveSummary } from '@/components/audit/ReportPages/ExecutiveSummar
 import { JourneyBreakdown } from '@/components/audit/ReportPages/JourneyBreakdown';
 import { PlatformImpact } from '@/components/audit/ReportPages/PlatformImpact';
 import { IssuesFixes } from '@/components/audit/ReportPages/IssuesFixes';
+import { SiteSetup } from '@/components/audit/ReportPages/SiteSetup';
 import { TechnicalAppendix } from '@/components/audit/ReportPages/TechnicalAppendix';
 import { auditApi } from '@/lib/api/auditApi';
 import { slackApi } from '@/lib/api/slackApi';
@@ -113,7 +114,8 @@ export function ReportPage() {
         {currentPage === 2 && <JourneyBreakdown report={report} />}
         {currentPage === 3 && <PlatformImpact report={report} />}
         {currentPage === 4 && <IssuesFixes report={report} />}
-        {currentPage === 5 && <TechnicalAppendix report={report} />}
+        {currentPage === 5 && <SiteSetup report={report} />}
+        {currentPage === 6 && <TechnicalAppendix report={report} />}
       </div>
     </div>
   );

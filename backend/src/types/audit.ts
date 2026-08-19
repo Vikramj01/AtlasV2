@@ -131,6 +131,58 @@ export interface CrawlSignalSnapshot {
   parameters: Record<string, unknown> | null;
 }
 
+// ─── Site Setup detection (informational, non-scored) ─────────────────────────
+
+export type DetectedTagPlatform =
+  | 'ga4'
+  | 'meta_pixel'
+  | 'google_ads'
+  | 'linkedin_insight'
+  | 'tiktok_pixel'
+  | 'microsoft_uet';
+
+export interface DataLayerEventInventoryEntry {
+  event_name: string;
+  occurrence_count: number;
+  parameter_keys: string[];
+  steps_seen: string[];
+}
+
+export interface DetectedTagSignal {
+  platform: DetectedTagPlatform;
+  detected: boolean;
+  ids: string[];
+  hit_count: number;
+  evidence_urls: string[];
+}
+
+export interface DetectedGtmContainer {
+  detected: boolean;
+  container_ids: string[];
+}
+
+export type ServerSideGtmHeuristic =
+  | 'domain_keyword'
+  | 'firstparty_measurement_protocol_shape'
+  | 'firstparty_capi_forward_shape';
+
+export interface PossibleServerSideGtm {
+  detected: boolean;
+  confidence: 'low' | 'medium';
+  candidate_hosts: string[];
+  matched_heuristics: ServerSideGtmHeuristic[];
+  evidence_urls: string[];
+  caveat: string;
+}
+
+export interface SiteSetupSummary {
+  generated_at: string;
+  datalayer_inventory: DataLayerEventInventoryEntry[];
+  tags: DetectedTagSignal[];
+  gtm_container: DetectedGtmContainer;
+  possible_server_side_gtm: PossibleServerSideGtm;
+}
+
 // ─── AuditData passed to validation engine ───────────────────────────────────
 
 export interface AuditData {
@@ -245,6 +297,7 @@ export interface ReportJSON {
   journey_stages: JourneyStage[];
   platform_breakdown: PlatformBreakdown[];
   issues: ReportIssue[];
+  site_setup: SiteSetupSummary;
   technical_appendix: {
     validation_results: ValidationResult[];
     raw_network_requests: NetworkRequest[];
