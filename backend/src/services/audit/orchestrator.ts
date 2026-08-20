@@ -17,6 +17,7 @@ import { interpretResults } from '@/services/interpretation/engine';
 import { generateReport } from '@/services/reporting/generator';
 import { getConnectedGtmContainerId } from '@/services/database/gtmConnectionQueries';
 import { buildSiteSetupSummary } from './siteSetupDetector';
+import { sanitizeForJsonb } from '@/utils/sanitizeJsonb';
 import type { JourneyStage, RuleStatus } from '@/types/audit';
 import { getJourneyStages } from '@/services/database/journeyQueries';
 import logger from '@/utils/logger';
@@ -115,7 +116,7 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
               journey_id: data.journey_id,
               stage_id: dbStage.id,
               stage_status: gapResult.stage_status,
-              gaps: gapResult.gaps,
+              gaps: sanitizeForJsonb(gapResult.gaps),
               raw_capture: null,
             });
             if (insertErr) logger.warn({ err: insertErr.message }, 'Failed to save gap result');

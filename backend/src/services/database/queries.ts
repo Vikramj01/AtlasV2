@@ -1,5 +1,6 @@
 import { supabaseAdmin } from './supabase';
 import type { AuditRow, AuditStatus, FunnelType, Region, ValidationResult, ReportJSON } from '@/types/audit';
+import { sanitizeForJsonb } from '@/utils/sanitizeJsonb';
 
 // ─── Audits ───────────────────────────────────────────────────────────────────
 
@@ -73,7 +74,7 @@ export async function saveValidationResults(
     rule_id: r.rule_id,
     status: r.status,
     severity: r.severity,
-    technical_details: r.technical_details,
+    technical_details: sanitizeForJsonb(r.technical_details),
   }));
 
   const { error } = await supabaseAdmin.from('audit_results').insert(rows);
@@ -85,7 +86,7 @@ export async function saveValidationResults(
 export async function saveReport(audit_id: string, report: ReportJSON): Promise<void> {
   const { error } = await supabaseAdmin
     .from('audit_reports')
-    .upsert({ audit_id, report_json: report });
+    .upsert({ audit_id, report_json: sanitizeForJsonb(report) });
 
   if (error) throw new Error(`Failed to save report: ${error.message}`);
 }
