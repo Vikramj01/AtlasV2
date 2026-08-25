@@ -57,11 +57,11 @@ function makeMinimalReport(overrides?: Partial<ReportJSON>): ReportJSON {
       { stage: 'Platforms', status: 'pass', issues: [] },
     ],
     platform_breakdown: [
-      { platform: 'ga4', status: 'healthy', risk_explanation: 'All GA4 checks passed.', failed_rules: [] },
-      { platform: 'google_ads', status: 'healthy', risk_explanation: 'All Google Ads checks passed.', failed_rules: [] },
-      { platform: 'meta_ads', status: 'healthy', risk_explanation: 'All Meta checks passed.', failed_rules: [] },
-      { platform: 'gtm', status: 'healthy', risk_explanation: 'GTM loaded correctly.', failed_rules: [] },
-      { platform: 'sgtm', status: 'healthy', risk_explanation: 'sGTM firing correctly.', failed_rules: [] },
+      { platform: 'ga4', status: 'healthy', risk_explanation: 'All GA4 checks passed.', failed_rules: [], failed_rule_details: [] },
+      { platform: 'google_ads', status: 'healthy', risk_explanation: 'All Google Ads checks passed.', failed_rules: [], failed_rule_details: [] },
+      { platform: 'meta_ads', status: 'healthy', risk_explanation: 'All Meta checks passed.', failed_rules: [], failed_rule_details: [] },
+      { platform: 'gtm', status: 'healthy', risk_explanation: 'GTM loaded correctly.', failed_rules: [], failed_rule_details: [] },
+      { platform: 'sgtm', status: 'healthy', risk_explanation: 'sGTM firing correctly.', failed_rules: [], failed_rule_details: [] },
     ],
     issues: [],
     technical_appendix: {
@@ -272,6 +272,7 @@ describe('generatePDF — platform breakdown variants', () => {
             'GA4_PURCHASE_EVENT_FIRED', 'DATALAYER_POPULATED', 'GTM_CONTAINER_LOADED',
             'PAGE_VIEW_EVENT_FIRED', 'TRANSACTION_ID_PRESENT', 'ITEMS_ARRAY_POPULATED',
           ],
+          failed_rule_details: [],
         },
       ],
     });

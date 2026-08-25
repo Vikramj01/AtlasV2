@@ -185,10 +185,13 @@ function StagePanel({ stage, onClose }: { stage: JourneyStage; onClose: () => vo
         </p>
       ) : (
         <ul className="space-y-2">
-          {stage.issues.map((issue, i) => (
-            <li key={i} className="flex items-start gap-2 text-sm text-[#6B7280]">
+          {stage.issues.map((issue) => (
+            <li key={issue.rule_id} className="flex items-start gap-2 text-sm text-[#6B7280]">
               <XCircle className="h-4 w-4 shrink-0 mt-0.5 text-[#DC2626]" strokeWidth={1.5} />
-              {issue}
+              <div>
+                <span>{issue.label}</span>
+                <span className="ml-2 font-mono text-[10px] text-[#9CA3AF]">{issue.rule_id}</span>
+              </div>
             </li>
           ))}
         </ul>

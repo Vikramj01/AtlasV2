@@ -1,12 +1,16 @@
 import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
+import { InfoTooltip } from '@/components/common/InfoTooltip';
 
 interface Props {
   title: string;
   value: string | number | null;
   description?: string;
+  /** Plain hover-text tooltip. Prefer tooltipEntry for new usage — it renders the richer what/why format. */
   tooltip?: string;
+  /** Richer label/what/why tooltip, rendered via InfoTooltip. Takes precedence over `tooltip` when both are given. */
+  tooltipEntry?: { label: string; what: string; why: string };
   valueColor?: 'green' | 'yellow' | 'red' | 'default';
   status?: 'Healthy' | 'Needs attention' | 'Critical';
   emptyState?: { copy: string; ctaLabel: string; ctaHref: string };
@@ -30,6 +34,7 @@ export function ScoreCard({
   value,
   description,
   tooltip,
+  tooltipEntry,
   valueColor = 'default',
   status,
   emptyState,
@@ -52,7 +57,9 @@ export function ScoreCard({
                 {status}
               </span>
             )}
-            {tooltip && (
+            {tooltipEntry ? (
+              <InfoTooltip entry={tooltipEntry} />
+            ) : tooltip ? (
               <span
                 title={tooltip}
                 className="cursor-help text-muted-foreground/40 hover:text-muted-foreground/60 select-none text-base leading-none"
@@ -60,7 +67,7 @@ export function ScoreCard({
               >
                 ⓘ
               </span>
-            )}
+            ) : null}
           </div>
         </div>
 

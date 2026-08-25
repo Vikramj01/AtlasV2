@@ -4,6 +4,7 @@
  */
 import PDFDocument from 'pdfkit';
 import type { ReportJSON } from '@/types/audit';
+import { getIssueHeadline } from '@/services/interpretation/engine';
 
 // ── Colour palette ─────────────────────────────────────────────────────────────
 const C = {
@@ -46,6 +47,14 @@ function statusColor(status: string): string {
 
 function formatLabel(s: string): string {
   return s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+// Banner sub-text needs to stay short, but a hard character-count slice can
+// cut a narrative sentence mid-word. Prefer the first full sentence; only
+// fall back to a hard slice if that sentence is itself too long.
+function bannerHeadline(text: string, maxLen = 100): string {
+  const firstSentence = text.match(/^.*?[.!?](?=\s|$)/)?.[0] ?? text;
+  return firstSentence.length > maxLen ? firstSentence.slice(0, maxLen - 3) + '…' : firstSentence;
 }
 
 // ── Main generator ─────────────────────────────────────────────────────────────
@@ -136,9 +145,7 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
     doc.fillColor(bannerColor).rect(LEFT, bannerY, CONTENT_W, 44).fill();
     doc.fillColor(C.white).fontSize(13).font('Helvetica-Bold')
       .text(formatLabel(overall_status), LEFT + 14, bannerY + 8);
-    const bannerSub = business_summary.length > 100
-      ? business_summary.slice(0, 97) + '…'
-      : business_summary;
+    const bannerSub = bannerHeadline(business_summary);
     doc.fillColor(C.white).fontSize(8.5).font('Helvetica')
       .text(bannerSub, LEFT + 14, bannerY + 28, { width: CONTENT_W - 28 });
     doc.y = bannerY + 54;
@@ -321,7 +328,7 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
       } else {
         stage.issues.forEach((issue) => {
           doc.fillColor(C.broken).fontSize(9).font('Helvetica')
-            .text(`\u2022  ${issue}`, LEFT + 26, doc.y, { width: CONTENT_W - 32 });
+            .text(`\u2022  ${issue.label}`, LEFT + 26, doc.y, { width: CONTENT_W - 32 });
           doc.moveDown(0.2);
         });
       }
@@ -361,7 +368,7 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
 
       if (hasFailedRules) {
         const ruleList = platform.failed_rules.slice(0, 4)
-          .map((r) => r.replace(/_/g, ' ')).join('  ·  ');
+          .map((r) => getIssueHeadline(r)).join('  ·  ');
         const overflow = platform.failed_rules.length > 4
           ? ` +${platform.failed_rules.length - 4} more` : '';
         doc.fillColor(C.broken).fontSize(8).font('Helvetica')
@@ -424,10 +431,10 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
           const issY = doc.y;
           doc.strokeColor(C.bgLight).lineWidth(1).rect(LEFT, issY, CONTENT_W, CARD_H).stroke();
           doc.fillColor(sevColor).rect(LEFT, issY, 4, CARD_H).fill();
-          doc.fillColor(C.mutedText).fontSize(8).font('Helvetica')
-            .text(issue.rule_id.replace(/_/g, ' '), LEFT + 14, issY + 8, { width: CONTENT_W - 20 });
+          // No raw rule_id caption here \u2014 this page is marketer-facing. The
+          // rule_id is still available in the Technical Appendix table.
           let pillX = LEFT + 14;
-          const pillY = issY + 21;
+          const pillY = issY + 8;
           pillX += pill(issue.severity.toUpperCase(), sevColor, pillX, pillY);
           pillX += pill(issue.recommended_owner, C.lightText, pillX, pillY);
           const effortColor = issue.estimated_effort === 'low' ? C.healthy
@@ -435,10 +442,10 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
           pill(`Effort: ${issue.estimated_effort}`, effortColor, pillX, pillY);
           const problem = issue.problem.length > 110 ? issue.problem.slice(0, 107) + '\u2026' : issue.problem;
           doc.fillColor(C.darkText).fontSize(9.5).font('Helvetica-Bold')
-            .text(problem, LEFT + 14, issY + 41, { width: CONTENT_W - 28 });
+            .text(problem, LEFT + 14, issY + 28, { width: CONTENT_W - 28 });
           const fix = issue.fix_summary.length > 120 ? issue.fix_summary.slice(0, 117) + '\u2026' : issue.fix_summary;
           doc.fillColor(C.midText).fontSize(9).font('Helvetica')
-            .text(`Fix: ${fix}`, LEFT + 14, issY + 62, { width: CONTENT_W - 28 });
+            .text(`Fix: ${fix}`, LEFT + 14, issY + 49, { width: CONTENT_W - 28 });
           doc.y = issY + CARD_H + 10;
         });
       };
@@ -486,9 +493,10 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
       doc.strokeColor(C.bgLight).lineWidth(1).rect(LEFT, issY, CONTENT_W, CARD_H).stroke();
       doc.fillColor(sevColor).rect(LEFT, issY, 4, CARD_H).fill();
 
-      // Issue number + rule name
+      // Issue number — no raw rule_id here; this page is marketer-facing and
+      // the rule_id is still available in the Technical Appendix table.
       doc.fillColor(C.mutedText).fontSize(8).font('Helvetica')
-        .text(`#${i + 1}  ${issue.rule_id.replace(/_/g, ' ')}`, LEFT + 14, issY + 8, { width: CONTENT_W - 20 });
+        .text(`#${i + 1}`, LEFT + 14, issY + 8, { width: CONTENT_W - 20 });
 
       // Pills row
       let pillX = LEFT + 14;

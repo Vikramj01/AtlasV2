@@ -280,10 +280,22 @@ export interface ReportIssue {
   estimated_effort: 'low' | 'medium' | 'high';
 }
 
+export interface JourneyStageIssue {
+  rule_id: string;
+  /** Plain-language headline for this issue (see getIssueHeadline in the interpretation engine). */
+  label: string;
+}
+
 export interface JourneyStage {
   stage: string;
   status: RuleStatus;
-  issues: string[];
+  issues: JourneyStageIssue[];
+}
+
+export interface PlatformFailedRuleDetail {
+  rule_id: string;
+  /** Full business-impact sentence(s) for this rule (see getIssueImpact in the interpretation engine). */
+  impact: string;
 }
 
 export interface PlatformBreakdown {
@@ -291,6 +303,7 @@ export interface PlatformBreakdown {
   status: 'healthy' | 'at_risk' | 'broken' | 'not_included';
   risk_explanation: string;
   failed_rules: string[];
+  failed_rule_details: PlatformFailedRuleDetail[];
 }
 
 export interface ReportJSON {

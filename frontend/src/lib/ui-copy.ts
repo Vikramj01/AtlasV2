@@ -208,6 +208,16 @@ export const TOOLTIPS = {
     what: 'A unique identifier Google Ads assigns to each ad click.',
     why: 'Matching your offline sales back to this ID is how Google Ads knows which clicks converted.',
   },
+  fbclid: {
+    label: 'Click ID (FBCLID)',
+    what: 'A unique identifier Meta assigns to each ad click, similar to Google’s GCLID.',
+    why: "Without it, Meta can't connect a purchase back to the ad that drove it.",
+  },
+  eventId: {
+    label: 'Event Deduplication ID',
+    what: 'A unique ID attached to a tracking event so the same conversion sent from both the browser and your server is recognised as one event.',
+    why: "Without it, the same sale can be counted twice — once client-side, once server-side — inflating your reported conversions.",
+  },
 
   // Audit Engine
   auditRun: {
@@ -219,6 +229,28 @@ export const TOOLTIPS = {
     label: 'Gap Classification',
     what: 'How a missing or broken tracking event is categorised by where it falls in the customer journey.',
     why: 'Higher-funnel gaps are less critical; lower-funnel gaps (checkout, purchase) directly affect conversion reporting.',
+  },
+
+  // Audit Report — Executive Summary scores
+  conversionSignalHealth: {
+    label: 'Conversion Signal Health',
+    what: 'The percentage of tracking checks that passed for this audit — higher is better.',
+    why: 'A lower score means ad platforms are missing conversion data they need to report and optimise accurately.',
+  },
+  attributionRisk: {
+    label: 'Attribution Risk',
+    what: 'The likelihood that ad click IDs (like gclid or fbclid) are being lost before a conversion is recorded — lower is better.',
+    why: 'Lost click IDs mean a real ad-driven sale gets reported as if it came from nowhere, understating campaign performance.',
+  },
+  optimizationStrength: {
+    label: 'Optimization Strength',
+    what: 'How much user data (email, phone, user ID) is available for ad platforms to improve targeting and bidding — higher is better.',
+    why: "With weak signal strength, ad platforms have less to work with when deciding who to show your ads to.",
+  },
+  dataConsistency: {
+    label: 'Data Consistency',
+    what: 'How consistently the same conversion event is recorded between your website and your server-side tracking — higher is better.',
+    why: 'Inconsistent data causes duplicate or missing conversions, which distorts reported ROAS.',
   },
 } satisfies Record<string, { label: string; what: string; why: string }>;
 

@@ -1,6 +1,6 @@
 import { StatusBanner } from '@/components/common/StatusBanner';
 import { ScoreCard } from '@/components/common/ScoreCard';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { TOOLTIPS } from '@/lib/ui-copy';
 import type { ReportJSON } from '@/types/audit';
 
 function scoreColor(score: number): 'green' | 'yellow' | 'red' {
@@ -56,7 +56,7 @@ export function ExecutiveSummary({ report }: Props) {
               ? 'Most signals are reaching ad platforms, but key data is missing.'
               : 'Significant gaps are preventing accurate conversion tracking.'
           }
-          tooltip="Percentage of the 26 signal checks that passed."
+          tooltipEntry={TOOLTIPS.conversionSignalHealth}
         />
         <ScoreCard
           title="Attribution Risk"
@@ -66,8 +66,8 @@ export function ExecutiveSummary({ report }: Props) {
             : scores.attribution_risk_level === 'Medium' ? 'yellow'
             : 'red'
           }
-          description="Likelihood that ad click IDs are being lost before conversion."
-          tooltip="Based on gclid, fbclid, and transaction ID capture."
+          description="Likelihood that ad click IDs are being lost before conversion. Low is best."
+          tooltipEntry={TOOLTIPS.attributionRisk}
         />
         <ScoreCard
           title="Optimization Strength"
@@ -77,8 +77,8 @@ export function ExecutiveSummary({ report }: Props) {
             : scores.optimization_strength === 'Moderate' ? 'yellow'
             : 'red'
           }
-          description="How much user data is available to improve ad performance."
-          tooltip="Based on email, phone, and user ID capture for enhanced matching."
+          description="How much user data is available to improve ad performance. Strong is best."
+          tooltipEntry={TOOLTIPS.optimizationStrength}
         />
         <ScoreCard
           title="Data Consistency"
@@ -88,21 +88,10 @@ export function ExecutiveSummary({ report }: Props) {
             : scores.data_consistency_score === 'Medium' ? 'yellow'
             : 'red'
           }
-          description="Consistency of event deduplication between browser and server."
-          tooltip="Checks event_id consistency between client and server-side GTM."
+          description="Consistency of event deduplication between browser and server. High is best."
+          tooltipEntry={TOOLTIPS.dataConsistency}
         />
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">What This Means for Your Performance</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            {executive_summary.business_summary}
-          </p>
-        </CardContent>
-      </Card>
 
       {executive_summary.overall_status === 'healthy' && (
         <div className="rounded-xl border border-green-200 bg-green-50 p-5 text-center">

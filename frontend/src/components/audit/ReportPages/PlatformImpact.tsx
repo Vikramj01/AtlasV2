@@ -2,13 +2,27 @@ import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
+import { InfoTooltip } from '@/components/common/InfoTooltip';
+import { TOOLTIPS } from '@/lib/ui-copy';
 import type { ReportJSON, PlatformBreakdown, ValidationResult } from '@/types/audit';
 import { PLATFORM_LABELS } from '@/utils/languageMap';
 
+// Jargon terms explained on hover for rules that reference them directly —
+// shown on passing rows, which otherwise carry no explanatory affordance at all.
+const JARGON_TOOLTIP_BY_RULE: Record<string, (typeof TOOLTIPS)[keyof typeof TOOLTIPS]> = {
+  GCLID_CAPTURED_AT_LANDING: TOOLTIPS.gclid,
+  GCLID_PERSISTS_TO_CONVERSION: TOOLTIPS.gclid,
+  FBCLID_CAPTURED_AT_LANDING: TOOLTIPS.fbclid,
+  FBCLID_PERSISTS_TO_CONVERSION: TOOLTIPS.fbclid,
+  EVENT_ID_GENERATED: TOOLTIPS.eventId,
+  EVENT_ID_CONSISTENCY_CLIENT_TO_SERVER: TOOLTIPS.eventId,
+};
+
 const PLATFORM_STATUS_CONFIG = {
-  healthy:  { badge: 'bg-green-100 text-green-700 hover:bg-green-100',  label: 'Healthy' },
-  at_risk:  { badge: 'bg-yellow-100 text-yellow-700 hover:bg-yellow-100', label: 'At Risk' },
-  broken:   { badge: 'bg-red-100 text-red-700 hover:bg-red-100',         label: 'Broken' },
+  healthy:       { badge: 'bg-green-100 text-green-700 hover:bg-green-100',  label: 'Healthy' },
+  at_risk:       { badge: 'bg-yellow-100 text-yellow-700 hover:bg-yellow-100', label: 'At Risk' },
+  broken:        { badge: 'bg-red-100 text-red-700 hover:bg-red-100',         label: 'Broken' },
+  not_included:  { badge: 'bg-muted text-muted-foreground hover:bg-muted',    label: 'Not Included' },
 };
 
 const RULE_LABELS: Record<string, { pass: string; fail: string }> = {
@@ -70,6 +84,7 @@ function PlatformCard({ platform, validationResults }: PlatformCardProps) {
 
   const ruleIds = platformRuleMap[platform.platform] ?? [];
   const resultMap = new Map(validationResults.map((r) => [r.rule_id, r]));
+  const impactMap = new Map(platform.failed_rule_details.map((d) => [d.rule_id, d.impact]));
 
   return (
     <Card>
@@ -91,6 +106,7 @@ function PlatformCard({ platform, validationResults }: PlatformCardProps) {
               const pass = result.status === 'pass';
               const warn = result.status === 'warning';
               const usePassLabel = pass || warn;
+              const impact = impactMap.get(ruleId);
 
               return (
                 <li key={ruleId} className="flex items-center gap-2.5 text-sm">
@@ -108,6 +124,17 @@ function PlatformCard({ platform, validationResults }: PlatformCardProps) {
                       ? (usePassLabel ? RULE_LABELS[ruleId].pass : RULE_LABELS[ruleId].fail)
                       : ruleId}
                   </span>
+                  {impact ? (
+                    <InfoTooltip
+                      entry={{
+                        label: RULE_LABELS[ruleId]?.fail ?? ruleId,
+                        what: impact,
+                        why: 'See "Issues & Fixes" below for the recommended fix.',
+                      }}
+                    />
+                  ) : JARGON_TOOLTIP_BY_RULE[ruleId] ? (
+                    <InfoTooltip entry={JARGON_TOOLTIP_BY_RULE[ruleId]} />
+                  ) : null}
                 </li>
               );
             })}
