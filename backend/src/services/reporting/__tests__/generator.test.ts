@@ -309,6 +309,21 @@ describe('generateReport — platform breakdown', () => {
     expect(gtm?.failed_rules).toContain('GTM_CONTAINER_LOADED');
   });
 
+  it('failed_rule_details carries a plain-language impact sentence per failed rule', () => {
+    const results = [makeResult('GTM_CONTAINER_LOADED', 'fail', 'signal_initiation')];
+    const { platform_breakdown } = generateReport(makeAuditData(), makeScores(), [], results, makeSiteSetup());
+    const gtm = platform_breakdown.find((p) => p.platform === 'gtm');
+    expect(gtm?.failed_rule_details).toHaveLength(1);
+    expect(gtm?.failed_rule_details[0].rule_id).toBe('GTM_CONTAINER_LOADED');
+    expect(gtm?.failed_rule_details[0].impact).toContain('backbone of all your tracking');
+  });
+
+  it('failed_rule_details is empty when a platform has no failures', () => {
+    const { platform_breakdown } = generateReport(makeAuditData(), makeScores(), [], [], makeSiteSetup());
+    const gtm = platform_breakdown.find((p) => p.platform === 'gtm');
+    expect(gtm?.failed_rule_details).toEqual([]);
+  });
+
   it('risk_explanation is a non-empty string for every platform', () => {
     const { platform_breakdown } = generateReport(makeAuditData(), makeScores(), [], [], makeSiteSetup());
     for (const p of platform_breakdown) {

@@ -7,6 +7,8 @@ import type { ValidationResult, ReportIssue, Severity } from '@/types/audit';
 
 interface RuleInterpretation {
   rule_id: string;
+  /** Purpose-written, one-sentence hook for the marketer-facing issue card — picks the most business-relevant clause from business_impact rather than mechanically using its first sentence. */
+  headline: string;
   business_impact: string;
   affected_platforms: string[];
   severity: Severity;
@@ -18,6 +20,7 @@ interface RuleInterpretation {
 const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
   GA4_PURCHASE_EVENT_FIRED: {
     rule_id: 'GA4_PURCHASE_EVENT_FIRED',
+    headline: "Google Analytics can't see your purchases — your entire dashboard is blind to conversions.",
     business_impact: 'Google Analytics is not tracking your conversions. Your entire analytics dashboard is blind to purchases. This breaks all conversion reporting, funnel analysis, and revenue attribution.',
     affected_platforms: ['GA4'],
     severity: 'critical',
@@ -27,6 +30,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
   },
   META_PIXEL_PURCHASE_EVENT_FIRED: {
     rule_id: 'META_PIXEL_PURCHASE_EVENT_FIRED',
+    headline: "Meta Ads can't track purchases from your campaigns — you're flying blind on ROI.",
     business_impact: "Meta Ads cannot track purchases from your campaigns. You're flying completely blind on campaign performance. Meta cannot optimize or report ROI.",
     affected_platforms: ['Meta Ads'],
     severity: 'critical',
@@ -36,6 +40,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
   },
   GOOGLE_ADS_CONVERSION_EVENT_FIRED: {
     rule_id: 'GOOGLE_ADS_CONVERSION_EVENT_FIRED',
+    headline: "Google Ads can't count conversions from your ad clicks, so Smart Bidding can't optimize and your ROAS data is broken.",
     business_impact: 'Google Ads cannot count conversions from your ad clicks. Smart bidding cannot optimize. Your ROAS data is completely broken.',
     affected_platforms: ['Google Ads'],
     severity: 'critical',
@@ -45,6 +50,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
   },
   SGTM_SERVER_EVENT_FIRED: {
     rule_id: 'SGTM_SERVER_EVENT_FIRED',
+    headline: "Server-side tracking isn't active — conversions are likely being counted twice.",
     business_impact: "Server-side tracking is not active. You're missing automated deduplication and conversions are likely being counted twice.",
     affected_platforms: ['sGTM', 'GA4 Measurement Protocol'],
     severity: 'high',
@@ -54,6 +60,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
   },
   DATALAYER_POPULATED: {
     rule_id: 'DATALAYER_POPULATED',
+    headline: "Your GTM has no data to work with — this is the foundation, and nothing else can track without it.",
     business_impact: 'Your GTM has no data to work with. All conversion tracking will fail. This is the foundation — without it, nothing else works.',
     affected_platforms: ['All'],
     severity: 'critical',
@@ -63,6 +70,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
   },
   GTM_CONTAINER_LOADED: {
     rule_id: 'GTM_CONTAINER_LOADED',
+    headline: "Google Tag Manager isn't loading — nothing tracks at all without it.",
     business_impact: 'Google Tag Manager is not loading. GTM is the backbone of all your tracking — without it, nothing tracks at all.',
     affected_platforms: ['GTM', 'GA4', 'Meta', 'Google Ads'],
     severity: 'critical',
@@ -72,6 +80,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
   },
   PAGE_VIEW_EVENT_FIRED: {
     rule_id: 'PAGE_VIEW_EVENT_FIRED',
+    headline: "GA4 isn't tracking page views, so your funnel analysis is broken.",
     business_impact: 'GA4 is not tracking page views. Your funnel analysis is broken.',
     affected_platforms: ['GA4', 'GTM'],
     severity: 'high',
@@ -81,6 +90,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
   },
   ADD_TO_CART_EVENT_FIRED: {
     rule_id: 'ADD_TO_CART_EVENT_FIRED',
+    headline: "Meta and Google can't build lookalike audiences from cart abandoners without this signal.",
     business_impact: "You cannot optimize for add-to-cart behavior. Meta and Google cannot build lookalike audiences from cart abandoners.",
     affected_platforms: ['GA4', 'Meta', 'Google Ads'],
     severity: 'medium',
@@ -90,6 +100,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
   },
   TRANSACTION_ID_PRESENT: {
     rule_id: 'TRANSACTION_ID_PRESENT',
+    headline: 'Without a transaction ID, conversions can\'t be deduplicated — expect conversion counts inflated 2–3x.',
     business_impact: "Conversions cannot be deduplicated. You'll see inflated conversion counts (likely 2–3x too high) and artificial double-billing across platforms.",
     affected_platforms: ['GA4', 'Google Ads', 'Meta', 'sGTM'],
     severity: 'critical',
@@ -99,6 +110,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
   },
   VALUE_PARAMETER_PRESENT: {
     rule_id: 'VALUE_PARAMETER_PRESENT',
+    headline: "No revenue value is being sent, so ROAS can't be tracked and Smart Bidding has nothing to optimize for.",
     business_impact: 'Cannot track ROAS or revenue impact. Smart bidding has no value to optimize for.',
     affected_platforms: ['GA4', 'Google Ads', 'Meta', 'sGTM'],
     severity: 'critical',
@@ -108,6 +120,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
   },
   CURRENCY_PARAMETER_PRESENT: {
     rule_id: 'CURRENCY_PARAMETER_PRESENT',
+    headline: 'Multi-currency revenue reports will be wrong.',
     business_impact: 'Multi-currency revenue reports will be wrong.',
     affected_platforms: ['GA4', 'Google Ads'],
     severity: 'high',
@@ -117,6 +130,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
   },
   GCLID_CAPTURED_AT_LANDING: {
     rule_id: 'GCLID_CAPTURED_AT_LANDING',
+    headline: "Google Ads can't attribute conversions to ad clicks — attribution is broken.",
     business_impact: 'Google Ads cannot attribute conversions to ad clicks. Attribution is completely broken.',
     affected_platforms: ['Google Ads'],
     severity: 'critical',
@@ -126,6 +140,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
   },
   FBCLID_CAPTURED_AT_LANDING: {
     rule_id: 'FBCLID_CAPTURED_AT_LANDING',
+    headline: "Meta can't attribute conversions to ad clicks. Campaign performance data is wrong.",
     business_impact: 'Meta cannot attribute conversions to ad clicks. Campaign performance data is wrong.',
     affected_platforms: ['Meta Ads'],
     severity: 'critical',
@@ -135,6 +150,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
   },
   EVENT_ID_GENERATED: {
     rule_id: 'EVENT_ID_GENERATED',
+    headline: "Client and server events can't be deduplicated — conversion counts will be doubled.",
     business_impact: 'Client and server events cannot be deduplicated. Conversion counts will be doubled.',
     affected_platforms: ['GA4', 'Meta', 'sGTM'],
     severity: 'high',
@@ -144,6 +160,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
   },
   EMAIL_CAPTURED_FOR_ENHANCED_CONVERSIONS: {
     rule_id: 'EMAIL_CAPTURED_FOR_ENHANCED_CONVERSIONS',
+    headline: "Enhanced Conversions can't match users here — expect match rate to drop below 30%.",
     business_impact: 'Enhanced Conversions cannot match users. Your match rate drops below 30%.',
     affected_platforms: ['Google Ads', 'Meta CAPI'],
     severity: 'high',
@@ -153,6 +170,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
   },
   PHONE_CAPTURED_FOR_CAPI: {
     rule_id: 'PHONE_CAPTURED_FOR_CAPI',
+    headline: 'Meta Conversions API match rate drops 20–30%.',
     business_impact: 'Meta Conversions API match rate drops 20–30%.',
     affected_platforms: ['Meta CAPI'],
     severity: 'medium',
@@ -162,6 +180,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
   },
   ITEMS_ARRAY_POPULATED: {
     rule_id: 'ITEMS_ARRAY_POPULATED',
+    headline: "You can't do product-level analysis — ROI by SKU is blind.",
     business_impact: 'Cannot do product-level analysis. ROI by SKU is blind.',
     affected_platforms: ['GA4', 'Meta'],
     severity: 'medium',
@@ -171,6 +190,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
   },
   USER_ID_PRESENT: {
     rule_id: 'USER_ID_PRESENT',
+    headline: "You can't track repeat customers — repeat purchase rate and LTV are wrong.",
     business_impact: 'Cannot track repeat customers. Repeat purchase rate and LTV are wrong.',
     affected_platforms: ['GA4', 'sGTM'],
     severity: 'high',
@@ -180,6 +200,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
   },
   COUPON_CAPTURED_IF_USED: {
     rule_id: 'COUPON_CAPTURED_IF_USED',
+    headline: 'Cannot measure coupon effectiveness or optimize discount strategy.',
     business_impact: 'Cannot measure coupon effectiveness or optimize discount strategy.',
     affected_platforms: ['GA4', 'Meta'],
     severity: 'low',
@@ -189,6 +210,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
   },
   SHIPPING_CAPTURED: {
     rule_id: 'SHIPPING_CAPTURED',
+    headline: 'Cannot analyze margin impact of shipping costs.',
     business_impact: 'Cannot analyze margin impact of shipping costs.',
     affected_platforms: ['GA4', 'Meta'],
     severity: 'low',
@@ -198,6 +220,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
   },
   GCLID_PERSISTS_TO_CONVERSION: {
     rule_id: 'GCLID_PERSISTS_TO_CONVERSION',
+    headline: 'Google Ads loses attribution for this conversion — each lost click ID is one more unattributed sale.',
     business_impact: 'Google Ads loses attribution data for this conversion. Each lost gclid = one more unattributed sale.',
     affected_platforms: ['Google Ads'],
     severity: 'critical',
@@ -207,6 +230,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
   },
   FBCLID_PERSISTS_TO_CONVERSION: {
     rule_id: 'FBCLID_PERSISTS_TO_CONVERSION',
+    headline: 'Meta loses user matching here — conversion tracking can drop to a 0% match rate.',
     business_impact: 'Meta loses user matching. Conversion tracking fails or has 0% match rate.',
     affected_platforms: ['Meta Ads'],
     severity: 'critical',
@@ -216,6 +240,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
   },
   TRANSACTION_ID_MATCHES_ORDER_SYSTEM: {
     rule_id: 'TRANSACTION_ID_MATCHES_ORDER_SYSTEM',
+    headline: "Conversion data can't be reconciled with actual revenue — your reports and real business metrics don't match.",
     business_impact: "Cannot reconcile conversion data with actual revenue. Your reports and real business metrics don't match.",
     affected_platforms: ['All'],
     severity: 'high',
@@ -225,6 +250,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
   },
   EVENT_ID_CONSISTENCY_CLIENT_TO_SERVER: {
     rule_id: 'EVENT_ID_CONSISTENCY_CLIENT_TO_SERVER',
+    headline: 'Deduplication fails between client and server — your ROAS is inflated by 2–3x.',
     business_impact: 'Deduplication fails. Conversion counts double. Your ROAS is inflated by 2–3x.',
     affected_platforms: ['sGTM', 'GA4', 'Meta CAPI'],
     severity: 'high',
@@ -234,6 +260,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
   },
   USER_DATA_NORMALIZED_CONSISTENTLY: {
     rule_id: 'USER_DATA_NORMALIZED_CONSISTENTLY',
+    headline: 'Match rates drop 30–50% — Enhanced Conversions fail to match the same user across events.',
     business_impact: 'Match rates drop 30–50%. Enhanced Conversions fail to match the same user across events.',
     affected_platforms: ['Meta CAPI', 'Google Ads Enhanced Conversions'],
     severity: 'medium',
@@ -243,6 +270,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
   },
   PII_PROPERLY_HASHED: {
     rule_id: 'PII_PROPERLY_HASHED',
+    headline: 'Plaintext PII is being sent — this may violate GDPR and CCPA.',
     business_impact: 'Privacy and compliance risk. Sending plaintext PII may violate GDPR and CCPA.',
     affected_platforms: ['Meta CAPI', 'Google Ads Enhanced Conversions'],
     severity: 'high',
@@ -257,6 +285,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
 
   CUSTOM_HTML_TAG_DETECTED: {
     rule_id: 'CUSTOM_HTML_TAG_DETECTED',
+    headline: "This custom HTML tag bypasses GTM's safety checks and is a future maintenance liability.",
     business_impact: 'Custom HTML tags bypass GTM template safety, cannot be governed centrally, and frequently contain copy-pasted legacy code. Each one is a future maintenance and audit liability — they break silently, resist version control, and make consent enforcement harder.',
     affected_platforms: ['All'],
     severity: 'medium',
@@ -267,6 +296,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
 
   CUSTOM_HTML_TAG_BYPASSES_CONSENT: {
     rule_id: 'CUSTOM_HTML_TAG_BYPASSES_CONSENT',
+    headline: 'A custom HTML tag is firing without consent gating — a direct GDPR/ePrivacy compliance violation.',
     business_impact: 'A custom HTML tag is sending tracking events without consent gating. This is a compliance violation under GDPR, ePrivacy, UAE PDPL, and similar regulations. Your ad accounts and customer trust are at direct risk. Regulators treat ungated marketing pixels as evidence of willful non-compliance.',
     affected_platforms: ['All'],
     severity: 'critical',
@@ -277,6 +307,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
 
   CUSTOM_HTML_TAG_HARDCODES_CONVERSION_DATA: {
     rule_id: 'CUSTOM_HTML_TAG_HARDCODES_CONVERSION_DATA',
+    headline: 'A custom HTML tag has hardcoded conversion values — every conversion gets the same number, distorting Smart Bidding and ROAS.',
     business_impact: 'A custom HTML tag contains hardcoded conversion IDs, pixel IDs, or value/currency literals. These never adapt to runtime context — every conversion gets the same hardcoded value, distorting Smart Bidding and ROAS reporting. Hardcoded IDs also create maintenance debt when account structures change.',
     affected_platforms: ['Google Ads', 'Meta Ads', 'GA4'],
     severity: 'high',
@@ -287,6 +318,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
 
   HARDCODED_VALUE_IN_TAG_CONFIG: {
     rule_id: 'HARDCODED_VALUE_IN_TAG_CONFIG',
+    headline: "A conversion tag's value is hardcoded — Smart Bidding is training on a flat number instead of real revenue.",
     business_impact: 'A conversion tag has the value parameter set as a literal number rather than a dataLayer variable. Smart Bidding and tROAS will train on this flat value, distorting bids and ROAS reporting across every campaign. Most common cause: a test value left in production after development.',
     affected_platforms: ['Google Ads', 'Meta Ads', 'GA4', 'sGTM'],
     severity: 'critical',
@@ -297,6 +329,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
 
   HARDCODED_CURRENCY_IN_TAG_CONFIG: {
     rule_id: 'HARDCODED_CURRENCY_IN_TAG_CONFIG',
+    headline: "A conversion tag's currency is hardcoded — if it ever stops matching the real transaction currency, conversions will be misvalued.",
     business_impact: "A conversion tag has currency set as a literal string. If this doesn't match the site's actual transaction currency, ad platforms will misvalue conversions (e.g. 100 SGD treated as 100 AED). Even if currently correct, this is fragile to future expansion or currency changes.",
     affected_platforms: ['Google Ads', 'Meta Ads', 'GA4'],
     severity: 'high',
@@ -307,6 +340,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
 
   HARDCODED_TRANSACTION_ID_IN_TAG_CONFIG: {
     rule_id: 'HARDCODED_TRANSACTION_ID_IN_TAG_CONFIG',
+    headline: 'Transaction ID is hardcoded — deduplication collapses and conversions silently drop to about one per day.',
     business_impact: 'Transaction ID is hardcoded. This collapses deduplication completely — every purchase carries the same ID, causing all but one to be discarded by GA4 and ad platforms with dedup logic. Conversions silently drop to approximately one per day regardless of real purchase volume.',
     affected_platforms: ['All'],
     severity: 'critical',
@@ -317,6 +351,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
 
   DUPLICATE_TAG_CONFIGURATION: {
     rule_id: 'DUPLICATE_TAG_CONFIGURATION',
+    headline: "Multiple tags are firing the same conversion — you're double-counting and ROAS appears inflated.",
     business_impact: 'Multiple tags are firing the same conversion event for the same destination. Conversions are being counted multiple times. ROAS appears inflated, and algorithms are training on phantom volume. This is one of the most common causes of over-reporting in Google Ads and Meta Ads.',
     affected_platforms: ['Google Ads', 'Meta Ads', 'GA4'],
     severity: 'critical',
@@ -330,6 +365,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
 
   CONSENT_SETTINGS_MISSING_ON_MARKETING_TAG: {
     rule_id: 'CONSENT_SETTINGS_MISSING_ON_MARKETING_TAG',
+    headline: 'A marketing tag has no consent requirements configured — it fires regardless of what the user consented to.',
     business_impact: 'One or more marketing tags have no consent requirements configured in GTM. These tags will fire regardless of what the user consented to, breaching GDPR, ePrivacy, and equivalent regulations. Ad platforms can suspend accounts for consent violations detected during audits.',
     affected_platforms: ['All'],
     severity: 'critical',
@@ -340,6 +376,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
 
   CONSENT_TYPE_MISMATCH: {
     rule_id: 'CONSENT_TYPE_MISMATCH',
+    headline: "A marketing tag's consent settings are incomplete — it can still fire after a user opts out.",
     business_impact: 'A marketing tag has consent settings configured, but the listed consent types are incomplete. Missing consent type requirements means the tag can fire even when the user has denied the relevant consent signal — for example, a Google Ads tag without ad_user_data will send unhashed user data after the user opted out of personalised ads.',
     affected_platforms: ['All'],
     severity: 'critical',
@@ -350,6 +387,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
 
   DEFAULT_CONSENT_GRANTED_GLOBALLY: {
     rule_id: 'DEFAULT_CONSENT_GRANTED_GLOBALLY',
+    headline: 'Consent defaults to "granted" before the user interacts with the banner — a textbook GDPR opt-in violation.',
     business_impact: 'Either no Consent Mode initialisation tag was found, or the consent tag defaults a sensitive consent type (ad_storage, ad_user_data, analytics_storage) to "granted" before the user has interacted with the consent banner. This is a textbook GDPR opt-in violation. Regulators across the EU and UK have issued substantial fines for exactly this configuration.',
     affected_platforms: ['All'],
     severity: 'critical',
@@ -360,6 +398,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
 
   FRAGILE_CSS_SELECTOR_TRIGGER: {
     rule_id: 'FRAGILE_CSS_SELECTOR_TRIGGER',
+    headline: 'This conversion tag fires on a CSS selector — any front-end redesign can silently break it with no alert.',
     business_impact: 'One or more conversion tags fire based on CSS selector or element visibility triggers. These triggers bind conversion tracking to the visual implementation of the page — any front-end refactor, A/B test, or framework upgrade can silently break conversion tracking with no error or alert. CSS selectors are the leading cause of tracking loss during site redesigns.',
     affected_platforms: ['All'],
     severity: 'medium',
@@ -373,6 +412,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
 
   SELECTOR_NOT_FOUND_ON_LIVE_SITE: {
     rule_id: 'SELECTOR_NOT_FOUND_ON_LIVE_SITE',
+    headline: "This tag's CSS selector no longer matches anything on the live site — the trigger is dead and conversions have stopped firing.",
     business_impact: 'A CSS selector trigger that controls a conversion tag is no longer matching elements on the live site. The trigger is dead — conversions dependent on it have stopped firing. This is the most common failure mode after a front-end redesign, framework upgrade, or A/B test that renames classes. Loss is usually silent and discovered only through revenue decline.',
     affected_platforms: ['All'],
     severity: 'critical',
@@ -383,6 +423,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
 
   TAG_FIRING_REGRESSION_VS_BASELINE: {
     rule_id: 'TAG_FIRING_REGRESSION_VS_BASELINE',
+    headline: 'A signal that used to fire is now missing — Smart Bidding is training on incomplete data as a result.',
     business_impact: 'A signal that fired successfully in the baseline crawl is now missing or degraded. This indicates a tracking regression — the tag may have been paused, its trigger broke, or a page change prevented it from firing. Missed conversions mean Smart Bidding trains on incomplete data, platform algorithms underallocate budget, and attribution shows a false drop.',
     affected_platforms: ['All'],
     severity: 'critical',
@@ -393,6 +434,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
 
   TAG_PAYLOAD_REGRESSION_VS_BASELINE: {
     rule_id: 'TAG_PAYLOAD_REGRESSION_VS_BASELINE',
+    headline: 'This signal is still firing, but key fields (value, currency, IDs) have gone missing from the payload — bidding is now working off bad data.',
     business_impact: "A signal is still firing but key payload fields — conversion value, currency, transaction ID, event ID, or user data — have changed from populated to missing. The tag is technically live but the data reaching the platform is degraded. Value-based bidding will receive incorrect signals, deduplication may break, and Enhanced Conversions will lose the user data needed to improve match rates.",
     affected_platforms: ['All'],
     severity: 'high',
@@ -401,6 +443,26 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
     estimated_effort: 'medium',
   },
 };
+
+/**
+ * Plain-language one-liner for a rule_id, for surfaces (e.g. journey stage
+ * issue lists) that need marketer-facing text without pulling in the full
+ * interpretation dict. Falls back to a title-cased version of the rule_id
+ * for anything not in RULE_INTERPRETATIONS.
+ */
+export function getIssueHeadline(ruleId: string): string {
+  return RULE_INTERPRETATIONS[ruleId]?.headline ?? ruleId.replace(/_/g, ' ');
+}
+
+/**
+ * Full business-impact sentence(s) for a rule_id, for surfaces (e.g. the
+ * Platform Impact "so what" line) that need the fuller explanation rather
+ * than just the headline. Falls back to the headline for anything not in
+ * RULE_INTERPRETATIONS.
+ */
+export function getIssueImpact(ruleId: string): string {
+  return RULE_INTERPRETATIONS[ruleId]?.business_impact ?? getIssueHeadline(ruleId);
+}
 
 export function interpretResults(results: ValidationResult[]): ReportIssue[] {
   return results
@@ -423,7 +485,7 @@ export function interpretResults(results: ValidationResult[]): ReportIssue[] {
         rule_id: r.rule_id,
         validation_layer: r.validation_layer,
         severity: r.severity,
-        problem: interp.business_impact.split('.')[0] + '.',  // First sentence as problem
+        problem: interp.headline ?? interp.business_impact.split('.')[0] + '.',
         why_it_matters: interp.business_impact,
         recommended_owner: interp.recommended_owner,
         fix_summary: interp.fix_summary,
@@ -432,32 +494,75 @@ export function interpretResults(results: ValidationResult[]): ReportIssue[] {
     });
 }
 
+const SEVERITY_RANK: Record<Severity, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+
+/**
+ * Ranks failed-rule interpretations for the executive summary: worst
+ * severity first, then broadest platform impact as a tiebreaker within a
+ * severity band. Capped at the top 3 — enough to name specifics without
+ * turning the summary into a list.
+ */
+function rankIssuesForSummary(rules: RuleInterpretation[]): RuleInterpretation[] {
+  return [...rules]
+    .sort((a, b) => {
+      const sevDiff = SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity];
+      if (sevDiff !== 0) return sevDiff;
+      return b.affected_platforms.length - a.affected_platforms.length;
+    })
+    .slice(0, 3);
+}
+
+interface SeverityCounts {
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+}
+
+/**
+ * Renders a coherent narrative from the ranked, highest-priority issues —
+ * deliberately template-based rather than an LLM call, so the wording is
+ * deterministic and reviewable like the rest of this engine.
+ */
+function renderSummary(rankedRules: RuleInterpretation[], counts: SeverityCounts): string {
+  const total = counts.critical + counts.high + counts.medium + counts.low;
+  if (total === 0) return 'All conversion signals are operating normally.';
+
+  const [top, second] = rankedRules;
+
+  if (counts.critical > 0) {
+    const criticalPlural = counts.critical > 1 ? 's' : '';
+    let summary = `Your tracking has ${counts.critical} critical issue${criticalPlural}. The most urgent: ${top.business_impact}`;
+    if (second && second.severity === 'critical') {
+      summary += ` Also affecting results: ${second.business_impact}`;
+    }
+    summary += ' Fix this first — it has the biggest impact on ad spend efficiency and reporting accuracy.';
+    if (counts.high > 0) {
+      summary += ` ${counts.high} additional high-priority issue${counts.high > 1 ? 's' : ''} should be addressed next.`;
+    }
+    return summary;
+  }
+
+  if (counts.high > 0) {
+    const highPlural = counts.high > 1 ? 's' : '';
+    const verb = counts.high > 1 ? 'are' : 'is';
+    return `Your tracking is mostly working, but ${counts.high} high-priority issue${highPlural} ${verb} reducing optimization effectiveness. Most significant: ${top.business_impact}`;
+  }
+
+  // Only medium/low severity issues remain.
+  const minorPlural = total > 1 ? 's' : '';
+  return `${total} minor issue${minorPlural} detected: ${top.business_impact} This has limited impact but is worth fixing when convenient.`;
+}
+
 export function generateBusinessSummary(failedRuleIds: string[]): string {
   const rules = failedRuleIds.map((id) => RULE_INTERPRETATIONS[id]).filter(Boolean);
-  if (rules.length === 0) return 'All conversion signals are operating normally.';
-
-  const criticalCount = rules.filter((r) => r.severity === 'critical').length;
-  const highCount = rules.filter((r) => r.severity === 'high').length;
-  let summary = '';
-
-  if (criticalCount > 0) {
-    summary += `${criticalCount} critical issue${criticalCount > 1 ? 's' : ''} detected: `;
-    const impacts = rules
-      .filter((r) => r.severity === 'critical')
-      .map((r) => r.business_impact.split('.')[0])
-      .slice(0, 2);
-    summary += impacts.join('. ') + '. ';
-  }
-
-  if (highCount > 0) {
-    summary += `${highCount} high-priority issue${highCount > 1 ? 's' : ''} also present that reduce optimization effectiveness.`;
-  }
-
-  if (criticalCount === 0 && highCount === 0) {
-    summary += `${rules.length} minor issue${rules.length > 1 ? 's' : ''} detected that may slightly reduce reporting accuracy.`;
-  }
-
-  return summary.trim();
+  const counts: SeverityCounts = {
+    critical: rules.filter((r) => r.severity === 'critical').length,
+    high: rules.filter((r) => r.severity === 'high').length,
+    medium: rules.filter((r) => r.severity === 'medium').length,
+    low: rules.filter((r) => r.severity === 'low').length,
+  };
+  return renderSummary(rankIssuesForSummary(rules), counts);
 }
 
 export function determineOverallStatus(

@@ -13,7 +13,7 @@ import type {
   RuleStatus,
   SiteSetupSummary,
 } from '@/types/audit';
-import { generateBusinessSummary, determineOverallStatus } from '@/services/interpretation/engine';
+import { generateBusinessSummary, determineOverallStatus, getIssueHeadline, getIssueImpact } from '@/services/interpretation/engine';
 
 // ─── Journey stage mapping ─────────────────────────────────────────────────────
 
@@ -79,9 +79,10 @@ function buildJourneyStages(funnelType: string, resultMap: Map<string, Validatio
     }
     const failedRules = stageResults.filter((r) => r.status === 'fail' || r.status === 'warning');
     const status = worstStatus(stageResults.map((r) => r.status));
-    const issues = failedRules.map(
-      (r) => `${r.rule_id.replace(/_/g, ' ')} — ${r.technical_details.found}`,
-    );
+    const issues = failedRules.map((r) => ({
+      rule_id: r.rule_id,
+      label: getIssueHeadline(r.rule_id),
+    }));
     return { stage, status, issues };
   });
 }
@@ -97,6 +98,7 @@ function buildPlatformBreakdown(resultMap: Map<string, ValidationResult>): Platf
         status: 'not_included' as const,
         risk_explanation: 'Not included in this scan — no checks were run for this platform.',
         failed_rules: [],
+        failed_rule_details: [],
       };
     }
 
@@ -110,7 +112,17 @@ function buildPlatformBreakdown(resultMap: Map<string, ValidationResult>): Platf
       failCount === 0
         ? `All ${totalCount} checks passed.`
         : `${failCount} of ${totalCount} checks failed. ${PLATFORM_RISK_MESSAGES[platform] ?? ''}`;
-    return { platform, status: platformStatus, risk_explanation: riskExplanation, failed_rules: failedRules };
+    const failedRuleDetails = failedRules.map((ruleId) => ({
+      rule_id: ruleId,
+      impact: getIssueImpact(ruleId),
+    }));
+    return {
+      platform,
+      status: platformStatus,
+      risk_explanation: riskExplanation,
+      failed_rules: failedRules,
+      failed_rule_details: failedRuleDetails,
+    };
   });
 }
 

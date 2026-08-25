@@ -22,15 +22,6 @@ import type { JourneyStage, RuleStatus } from '@/types/audit';
 import { getJourneyStages } from '@/services/database/journeyQueries';
 import logger from '@/utils/logger';
 
-const PLATFORM_LABELS: Record<string, string> = {
-  google_ads: 'Google Ads',
-  meta_ads: 'Meta Ads',
-  meta: 'Meta',
-  ga4: 'GA4',
-  gtm: 'GTM',
-  sgtm: 'Server-side GTM',
-};
-
 export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
   const { audit_id } = data;
 
@@ -172,11 +163,13 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
         const customJourneyStages: JourneyStage[] = stageGaps.map((sg) => ({
           stage: sg.stage_label,
           status: stageStatusMap[sg.stage_status] ?? 'not_run',
-          issues: sg.gaps.map((g) => {
-            const eventLabel = g.action_key.replace(/_/g, ' ').toUpperCase();
-            const platformLabel = g.platform ? ` [${PLATFORM_LABELS[g.platform] ?? g.platform.replace('_', ' ').toUpperCase()}]` : '';
-            return `${eventLabel}${platformLabel} — ${g.business_impact}`;
-          }),
+          // business_impact is already a full plain-language sentence (see
+          // gapClassifier.ts) — use it directly as the label rather than
+          // prefixing a raw action_key/platform token soup.
+          issues: sg.gaps.map((g) => ({
+            rule_id: `${g.action_key}_${g.platform}_${g.sub_type}`.toUpperCase(),
+            label: g.business_impact,
+          })),
         }));
 
         const combinedGtmScriptSrcs = stageCaptures.flatMap((c) => c.gtm_script_srcs ?? []);
