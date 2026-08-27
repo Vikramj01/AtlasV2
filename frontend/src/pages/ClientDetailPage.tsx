@@ -14,6 +14,7 @@ import { SetupTrackingHubPage } from '@/pages/SetupTrackingHubPage';
 import { EnrichmentScoreBadge } from '@/components/enrichment/EnrichmentScoreBadge';
 import { EnrichmentWarningBanner } from '@/components/enrichment/EnrichmentWarningBanner';
 import { IdentityConfigStep } from '@/components/enrichment/IdentityConfigStep';
+import { CampaignSignalValidatorTab } from '@/components/campaignSignalValidator/CampaignSignalValidatorTab';
 import type { ClientWithDetails, ClientDeployment, ClientOutput } from '@/types/organisation';
 import type { StrategyBriefRecord } from '@/types/strategy';
 import type { ClientIdentityConfig, ClientEnrichmentScore, SaveIdentityConfigRequest } from '@/types/enrichment';
@@ -172,6 +173,7 @@ export function ClientDetailPage() {
             <MapPin className="h-3.5 w-3.5" />
             Set up tracking
           </TabsTrigger>
+          <TabsTrigger value="signal-validator">Signal Validator</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6 mt-4">
@@ -427,6 +429,12 @@ export function ClientDetailPage() {
         <TabsContent value="tracking" className="mt-0 -mx-6">
           {/* Render hub inline, passing clientId via URL param override */}
           {clientId && <SetupTrackingHubPage />}
+        </TabsContent>
+
+        <TabsContent value="signal-validator" className="mt-4">
+          {clientId && client && (
+            <CampaignSignalValidatorTab clientId={clientId} websiteUrl={client.website_url} />
+          )}
         </TabsContent>
       </Tabs>
 

@@ -54,6 +54,8 @@ const GettingStartedPage          = lazy(() => import('@/pages/GettingStartedPag
 const HelpPage                    = lazy(() => import('@/pages/HelpPage').then(m => ({ default: m.HelpPage })));
 const PublicAuditPage             = lazy(() => import('@/pages/PublicAuditPage').then(m => ({ default: m.PublicAuditPage })));
 const PublicAuditResultsPage      = lazy(() => import('@/pages/PublicAuditResultsPage').then(m => ({ default: m.PublicAuditResultsPage })));
+const CampaignSignalValidatorLandingPage = lazy(() => import('@/pages/CampaignSignalValidatorLandingPage').then(m => ({ default: m.CampaignSignalValidatorLandingPage })));
+const CampaignSignalValidatorResultPage  = lazy(() => import('@/pages/CampaignSignalValidatorResultPage').then(m => ({ default: m.CampaignSignalValidatorResultPage })));
 
 const PageFallback = () => <SkeletonCard variant="page" />;
 
@@ -150,6 +152,9 @@ export default function App() {
             <Route path="/share/:token" element={<PublicDeliverableView />} />
             <Route path="/audit" element={<PublicAuditPage />} />
             <Route path="/audit/results/:token" element={<PublicAuditResultsPage />} />
+            {/* Campaign Signal Validator standalone product — public, no auth required */}
+            <Route path="/tools/campaign-signal-validator" element={<CampaignSignalValidatorLandingPage />} />
+            <Route path="/tools/campaign-signal-validator/result/:sessionId" element={<CampaignSignalValidatorResultPage />} />
 
             {/* Catch-all */}
             <Route path="*" element={<Navigate to="/" replace />} />

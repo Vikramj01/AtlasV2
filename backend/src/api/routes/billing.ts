@@ -19,6 +19,7 @@ import {
   syncSubscriptionToProfile,
   markProfilePastDue,
 } from '@/services/stripe/subscriptionService';
+import { fulfilSignalValidatorPurchase } from '@/services/campaignSignalValidator/checkoutService';
 import { authMiddleware } from '@/api/middleware/authMiddleware';
 import { env } from '@/config/env';
 import logger from '@/utils/logger';
@@ -154,6 +155,8 @@ router.post('/webhook', async (req: Request, res: Response) => {
             session.subscription as string,
           );
           await syncSubscriptionToProfile(subscription);
+        } else if (session.mode === 'payment' && session.metadata?.product === 'campaign_signal_validator') {
+          await fulfilSignalValidatorPurchase(session.id);
         }
         break;
       }

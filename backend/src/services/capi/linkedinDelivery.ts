@@ -29,7 +29,11 @@ import { getLinkedInDedupEntry } from './dedupStore';
 import logger from '@/utils/logger';
 
 const LINKEDIN_API_BASE = 'https://api.linkedin.com';
-const LINKEDIN_VERSION  = '202501';
+// LinkedIn sunsets Marketing API versions roughly annually — 202507 is already
+// sunset as of Aug 2026. Bump this on a recurring basis (see M1/M3 in
+// ATLAS_CONVERSION_SIGNAL_LAYER_SPRINT_PLAN.md); do not let it go stale silently,
+// since the failure mode is underreporting, not an obvious outage.
+const LINKEDIN_VERSION  = '202608';
 
 // ── Local payload types ───────────────────────────────────────────────────────
 

@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useOrganisationStore } from '@/store/organisationStore';
 import { EvaluateSiteCard } from '@/components/home/EvaluateSiteCard';
 import { NewClientCard } from '@/components/home/NewClientCard';
+import { CampaignSignalValidatorPromo } from '@/components/home/CampaignSignalValidatorPromo';
 import { StatsRow } from '@/components/home/StatsRow';
 import { RecentActivityFeed } from '@/components/dashboard/RecentActivityFeed';
 
@@ -48,6 +49,10 @@ export function ReturningUserLanding() {
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
         <EvaluateSiteCard />
         <NewClientCard org={currentOrg} />
+      </div>
+
+      <div className="mt-5">
+        <CampaignSignalValidatorPromo />
       </div>
 
       <div className="mt-8">

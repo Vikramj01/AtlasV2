@@ -3,6 +3,7 @@
 import { probeGTGPath, saveGTGCheck } from './gtgProbe';
 import { pollDMADiagnostics, upsertDMAPollState, updateDMABackoff, getDMAPollState } from './dmaPolling';
 import { evaluateGTGAlert, evaluateDMAAlert } from './dqmAlertEvaluator';
+import { sendDQMAlertNotification } from './dqmAlertDelivery';
 import {
   getAlertByType,
   createAlert,
@@ -78,6 +79,10 @@ async function applyAlertDecision(
 
   if (decision.decision === 'open') {
     await createAlert(orgId, alertType, decision.severity!, decision.title, decision.message, null, null);
+    // Fire-and-forget: sendDQMAlertNotification never throws, so this never
+    // blocks or fails the orchestrator run — the alert is already durably
+    // recorded in health_alerts above regardless of delivery outcome.
+    void sendDQMAlertNotification(orgId, alertType, decision.severity!, decision.title, decision.message);
     return 'open';
   }
 

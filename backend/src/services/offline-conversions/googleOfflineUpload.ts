@@ -33,7 +33,12 @@ import logger from '@/utils/logger';
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const DMA_BASE_URL = 'https://datamanager.googleapis.com/v1';
-// GAQL search stays on the Google Ads REST API (metadata lookup, not ingestion)
+// GAQL search stays on the Google Ads REST API (metadata lookup, not ingestion).
+// Google Ads API versions deprecate on a rolling ~annual cadence, same as
+// LinkedIn's (see LINKEDIN_VERSION in linkedinDelivery.ts). Not urgent today —
+// this is a read-only conversion-action lookup, not the ingestion path — but
+// track it on the same recurring version-currency check (M1/M3 in
+// ATLAS_CONVERSION_SIGNAL_LAYER_SPRINT_PLAN.md) rather than letting it drift.
 const GOOGLE_ADS_API_VERSION = 'v17';
 const GOOGLE_ADS_API_BASE = 'https://googleads.googleapis.com';
 const BATCH_SIZE = 2_000;
