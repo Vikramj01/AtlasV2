@@ -9,7 +9,7 @@ import type * as React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useCAPIStore } from '@/store/capiStore';
-import type { CAPIAdapterName, MetaCredentials, GoogleCredentials, LinkedInCredentials, AmazonCredentials, TikTokCredentials } from '@/types/capi';
+import type { CAPIAdapterName, MetaCredentials, GoogleCredentials, LinkedInCredentials, AmazonCredentials, TikTokCredentials, MicrosoftCredentials, OpenAICredentials } from '@/types/capi';
 
 // ── Google adapter decision tree ──────────────────────────────────────────────
 
@@ -827,15 +827,274 @@ function TikTokConnectForm({ onNext }: ConnectAccountProps) {
   );
 }
 
+// ── Microsoft form ───────────────────────────────────────────────────────────
+
+function MicrosoftConnectForm({ onNext }: ConnectAccountProps) {
+  const { wizardDraft, setWizardDraft } = useCAPIStore();
+
+  const draft = wizardDraft.credentials as Partial<MicrosoftCredentials>;
+
+  const [customerId, setCustomerId]           = useState(draft.customer_id       ?? '');
+  const [accountId, setAccountId]             = useState(draft.account_id        ?? '');
+  const [developerToken, setDeveloperToken]   = useState(draft.developer_token   ?? '');
+  const [oauthAccessToken, setOauthAccessToken]   = useState(draft.oauth_access_token  ?? '');
+  const [oauthRefreshToken, setOauthRefreshToken] = useState(draft.oauth_refresh_token ?? '');
+  const [uetTagId, setUetTagId]               = useState(draft.uet_tag_id        ?? '');
+  const [conversionGoalId, setConversionGoalId] = useState(draft.conversion_goal_id ?? '');
+  const [showDevToken, setShowDevToken]       = useState(false);
+  const [showAccess, setShowAccess]           = useState(false);
+  const [showRefresh, setShowRefresh]         = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  function validate(): boolean {
+    const next: Record<string, string> = {};
+    if (!customerId.trim())       next.customer_id       = 'Customer ID is required.';
+    if (!accountId.trim())        next.account_id        = 'Account ID is required.';
+    if (!developerToken.trim())   next.developer_token   = 'Developer Token is required.';
+    if (!oauthAccessToken.trim()) next.oauth_access_token = 'OAuth Access Token is required.';
+    if (!oauthRefreshToken.trim()) next.oauth_refresh_token = 'OAuth Refresh Token is required.';
+    if (!uetTagId.trim())         next.uet_tag_id        = 'UET Tag ID is required.';
+    if (!conversionGoalId.trim()) next.conversion_goal_id = 'Conversion Goal ID is required.';
+    setErrors(next);
+    return Object.keys(next).length === 0;
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!validate()) return;
+    setWizardDraft({
+      credentials: {
+        customer_id: customerId.trim(),
+        account_id: accountId.trim(),
+        developer_token: developerToken.trim(),
+        oauth_access_token: oauthAccessToken.trim(),
+        oauth_refresh_token: oauthRefreshToken.trim(),
+        uet_tag_id: uetTagId.trim(),
+        conversion_goal_id: conversionGoalId.trim(),
+      } satisfies MicrosoftCredentials,
+    });
+    onNext();
+  }
+
+  const inputClass = 'w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring';
+
+  function PasswordField({ id, label, value, onChange, show, setShow, error }: {
+    id: string; label: string; value: string; onChange: (v: string) => void;
+    show: boolean; setShow: (v: boolean) => void; error?: string;
+  }) {
+    return (
+      <div className="space-y-1">
+        <label htmlFor={id} className="block text-sm font-medium">{label}</label>
+        <div className="relative">
+          <input id={id} type={show ? 'text' : 'password'} value={value}
+            onChange={(e) => onChange(e.target.value)} placeholder={`Enter ${label.toLowerCase()}`}
+            className={`${inputClass} pr-20`}
+          />
+          <button type="button" onClick={() => setShow(!show)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-foreground focus:outline-none">
+            {show ? 'Hide' : 'Show'}
+          </button>
+        </div>
+        {error && <p className="text-xs text-destructive">{error}</p>}
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={handleSubmit} noValidate className="space-y-5">
+      <div className="space-y-1">
+        <label htmlFor="ms_customer_id" className="block text-sm font-medium">Customer ID (CID)</label>
+        <input id="ms_customer_id" type="text" value={customerId}
+          onChange={(e) => setCustomerId(e.target.value)} placeholder="123456789"
+          className={inputClass}
+        />
+        {errors.customer_id && <p className="text-xs text-destructive">{errors.customer_id}</p>}
+      </div>
+
+      <div className="space-y-1">
+        <label htmlFor="ms_account_id" className="block text-sm font-medium">Account ID</label>
+        <input id="ms_account_id" type="text" value={accountId}
+          onChange={(e) => setAccountId(e.target.value)} placeholder="987654321"
+          className={inputClass}
+        />
+        {errors.account_id && <p className="text-xs text-destructive">{errors.account_id}</p>}
+      </div>
+
+      <PasswordField id="ms_developer_token" label="Developer Token" value={developerToken}
+        onChange={setDeveloperToken} show={showDevToken} setShow={setShowDevToken}
+        error={errors.developer_token} />
+
+      <PasswordField id="ms_oauth_access_token" label="OAuth Access Token" value={oauthAccessToken}
+        onChange={setOauthAccessToken} show={showAccess} setShow={setShowAccess}
+        error={errors.oauth_access_token} />
+
+      <PasswordField id="ms_oauth_refresh_token" label="OAuth Refresh Token" value={oauthRefreshToken}
+        onChange={setOauthRefreshToken} show={showRefresh} setShow={setShowRefresh}
+        error={errors.oauth_refresh_token} />
+
+      <div className="space-y-1">
+        <label htmlFor="ms_uet_tag_id" className="block text-sm font-medium">UET Tag ID</label>
+        <input id="ms_uet_tag_id" type="text" value={uetTagId}
+          onChange={(e) => setUetTagId(e.target.value)} placeholder="12345678"
+          className={inputClass}
+        />
+        <p className="text-xs text-muted-foreground">
+          Found in Microsoft Advertising &rarr; Tools &rarr; UET Tags.
+        </p>
+        {errors.uet_tag_id && <p className="text-xs text-destructive">{errors.uet_tag_id}</p>}
+      </div>
+
+      <div className="space-y-1">
+        <label htmlFor="ms_conversion_goal_id" className="block text-sm font-medium">Conversion Goal ID</label>
+        <input id="ms_conversion_goal_id" type="text" value={conversionGoalId}
+          onChange={(e) => setConversionGoalId(e.target.value)} placeholder="87654321"
+          className={inputClass}
+        />
+        {errors.conversion_goal_id && <p className="text-xs text-destructive">{errors.conversion_goal_id}</p>}
+      </div>
+
+      <div className="rounded-md bg-muted px-4 py-3 text-sm text-muted-foreground">
+        Microsoft's Conversions API entered beta on 17 Aug 2026 — access may still require an
+        allowlist request from your Microsoft Advertising account rep.
+      </div>
+
+      <div className="flex justify-end">
+        <Button type="submit">Next</Button>
+      </div>
+    </form>
+  );
+}
+
+// ── OpenAI / OAIQ form ───────────────────────────────────────────────────────
+
+const OPPREF_SNIPPET = `// Add to your landing page <head> — captures OAIQ's oppref click reference
+// and stores it in a first-party cookie for 720 hours (30 days).
+(function () {
+  const params = new URLSearchParams(window.location.search);
+  const oppref = params.get('oppref');
+  if (oppref) {
+    document.cookie = '__oppref=' + oppref + '; path=/; max-age=2592000; SameSite=Lax';
+  }
+})();`;
+
+function OpenAIConnectForm({ onNext }: ConnectAccountProps) {
+  const { wizardDraft, setWizardDraft } = useCAPIStore();
+
+  const draft = wizardDraft.credentials as Partial<OpenAICredentials>;
+
+  const [publisherId, setPublisherId] = useState(draft.publisher_id ?? '');
+  const [apiKey, setApiKey]           = useState(draft.api_key ?? '');
+  const [showKey, setShowKey]         = useState(false);
+  const [copied, setCopied]           = useState(false);
+  const [errors, setErrors] = useState<{ publisher_id?: string; api_key?: string }>({});
+
+  function validate(): boolean {
+    const next: typeof errors = {};
+    if (!publisherId.trim()) next.publisher_id = 'Publisher ID is required.';
+    if (!apiKey.trim())      next.api_key      = 'API Key is required.';
+    setErrors(next);
+    return Object.keys(next).length === 0;
+  }
+
+  function handleCopy() {
+    navigator.clipboard.writeText(OPPREF_SNIPPET).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!validate()) return;
+    setWizardDraft({
+      credentials: {
+        publisher_id: publisherId.trim(),
+        api_key: apiKey.trim(),
+      } satisfies OpenAICredentials,
+    });
+    onNext();
+  }
+
+  return (
+    <form onSubmit={handleSubmit} noValidate className="space-y-5">
+      <div className="space-y-1">
+        <label htmlFor="oaiq_publisher_id" className="block text-sm font-medium">Publisher ID</label>
+        <input
+          id="oaiq_publisher_id"
+          type="text"
+          value={publisherId}
+          onChange={(e) => setPublisherId(e.target.value)}
+          placeholder="pub_1a2b3c4d"
+          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+        />
+        {errors.publisher_id && <p className="text-xs text-destructive">{errors.publisher_id}</p>}
+      </div>
+
+      <div className="space-y-1">
+        <label htmlFor="oaiq_api_key" className="block text-sm font-medium">API Key</label>
+        <div className="relative">
+          <input
+            id="oaiq_api_key"
+            type={showKey ? 'text' : 'password'}
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder="Enter your OAIQ Conversions API key"
+            className="w-full rounded-md border border-input bg-background px-3 py-2 pr-20 text-sm shadow-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+          />
+          <button
+            type="button"
+            onClick={() => setShowKey((v) => !v)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-foreground focus:outline-none"
+          >
+            {showKey ? 'Hide' : 'Show'}
+          </button>
+        </div>
+        {errors.api_key && <p className="text-xs text-destructive">{errors.api_key}</p>}
+      </div>
+
+      <div className="space-y-1.5 rounded-md border border-border p-4">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-medium">oppref capture snippet</p>
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="text-xs font-medium text-muted-foreground hover:text-foreground focus:outline-none"
+          >
+            {copied ? 'Copied ✓' : 'Copy'}
+          </button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Add this to every landing page to capture OAIQ's first-party <code className="font-mono">__oppref</code>{' '}
+          click reference (720-hour / 30-day cookie lifetime).
+        </p>
+        <pre className="overflow-x-auto rounded-md bg-muted px-3 py-3 text-xs leading-relaxed font-mono whitespace-pre">
+          {OPPREF_SNIPPET}
+        </pre>
+      </div>
+
+      <div className="rounded-md bg-muted px-4 py-3 text-sm text-muted-foreground">
+        Instrumentation and event-ID dedup only — Atlas does not build or market incrementality/MMM
+        features for OAIQ, since the platform has no multi-day attribution windows or lift studies.
+      </div>
+
+      <div className="flex justify-end">
+        <Button type="submit">Next</Button>
+      </div>
+    </form>
+  );
+}
+
 // ── Container ─────────────────────────────────────────────────────────────────
 
 export function ConnectAccount({ onNext }: ConnectAccountProps) {
   const { wizardDraft } = useCAPIStore();
   const provider = wizardDraft.provider;
-  const isGoogle   = provider === 'google';
-  const isLinkedIn = provider === 'linkedin';
-  const isAmazon   = provider === 'amazon';
-  const isTikTok   = provider === 'tiktok';
+  const isGoogle    = provider === 'google';
+  const isLinkedIn  = provider === 'linkedin';
+  const isAmazon    = provider === 'amazon';
+  const isTikTok    = provider === 'tiktok';
+  const isMicrosoft = provider === 'microsoft';
+  const isOpenAI    = provider === 'openai';
 
   const adapterLabel = GOOGLE_ADAPTER_OPTIONS.find((o) => o.name === wizardDraft.adapter_name)?.label;
 
@@ -847,7 +1106,11 @@ export function ConnectAccount({ onNext }: ConnectAccountProps) {
         ? 'Connect your Amazon Ads account'
         : isTikTok
           ? 'Connect your TikTok account'
-          : 'Connect your Meta account';
+          : isMicrosoft
+            ? 'Connect your Microsoft Advertising account'
+            : isOpenAI
+              ? 'Connect your OpenAI / ChatGPT (OAIQ) account'
+              : 'Connect your Meta account';
 
   const subtitle = isGoogle
     ? adapterLabel
@@ -859,7 +1122,11 @@ export function ConnectAccount({ onNext }: ConnectAccountProps) {
         ? 'Step 1 of 5 — Provide your Amazon Ads OAuth credentials to get started.'
         : isTikTok
           ? 'Step 1 of 5 — Provide your TikTok Pixel Code and Events API access token to get started.'
-          : 'Step 1 of 5 — Provide your Meta Pixel credentials to get started.';
+          : isMicrosoft
+            ? 'Step 1 of 5 — Provide your Microsoft Advertising UET and Conversions API credentials to get started.'
+            : isOpenAI
+              ? 'Step 1 of 5 — Provide your OAIQ publisher credentials and add the oppref capture snippet.'
+              : 'Step 1 of 5 — Provide your Meta Pixel credentials to get started.';
 
   return (
     <Card>
@@ -868,11 +1135,13 @@ export function ConnectAccount({ onNext }: ConnectAccountProps) {
         <p className="text-sm text-muted-foreground mt-1">{subtitle}</p>
       </CardHeader>
       <CardContent>
-        {isGoogle   ? <GoogleConnectForm   onNext={onNext} /> :
-         isLinkedIn ? <LinkedInConnectForm onNext={onNext} /> :
-         isAmazon   ? <AmazonConnectForm   onNext={onNext} /> :
-         isTikTok   ? <TikTokConnectForm   onNext={onNext} /> :
-                      <MetaConnectForm     onNext={onNext} />}
+        {isGoogle    ? <GoogleConnectForm    onNext={onNext} /> :
+         isLinkedIn  ? <LinkedInConnectForm  onNext={onNext} /> :
+         isAmazon    ? <AmazonConnectForm    onNext={onNext} /> :
+         isTikTok    ? <TikTokConnectForm    onNext={onNext} /> :
+         isMicrosoft ? <MicrosoftConnectForm onNext={onNext} /> :
+         isOpenAI    ? <OpenAIConnectForm    onNext={onNext} /> :
+                       <MetaConnectForm      onNext={onNext} />}
       </CardContent>
     </Card>
   );

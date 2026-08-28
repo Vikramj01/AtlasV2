@@ -2,7 +2,7 @@ import { supabaseAdmin } from '@/services/database/supabase';
 
 export interface AirMetricRow {
   org_id: string;
-  source: 'google_ads' | 'meta_ads' | 'ga4';
+  source: 'google_ads' | 'meta_ads' | 'ga4' | 'linkedin_ads';
   metric_name: string;
   dimension: string | null;
   value: number;

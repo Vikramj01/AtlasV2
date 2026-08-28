@@ -1,5 +1,5 @@
 export type AirSeverity = 'low' | 'medium' | 'high';
-export type AirSource   = 'google_ads' | 'meta_ads' | 'ga4';
+export type AirSource   = 'google_ads' | 'meta_ads' | 'ga4' | 'linkedin_ads';
 export type InsightStatus = 'unread' | 'read' | 'dismissed';
 
 export interface AirAnomaly {

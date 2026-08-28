@@ -116,7 +116,7 @@ reconciliationRouter.get(
 // ── GET /api/reconciliation/runs/:id/findings ─────────────────────────────────
 
 const FindingsQuerySchema = z.object({
-  dimension: z.enum(['delivery', 'config', 'alignment', 'volume']).optional(),
+  dimension: z.enum(['delivery', 'config', 'alignment', 'volume', 'discontinuity']).optional(),
   severity: z.enum(['info', 'warning', 'error', 'critical']).optional(),
   platform: z.string().optional(),
   resolved: z.enum(['true', 'false']).optional(),

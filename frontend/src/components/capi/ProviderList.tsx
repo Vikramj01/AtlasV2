@@ -11,12 +11,14 @@ import { Card, CardContent } from '@/components/ui/card';
 import type { CAPIProvider, CAPIProviderConfig } from '@/types/capi';
 
 const PROVIDER_LABELS: Record<string, string> = {
-  meta:     'Meta (Facebook)',
-  google:   'Data Manager (Google)',
-  tiktok:   'TikTok',
-  linkedin: 'LinkedIn',
-  snapchat: 'Snapchat',
-  amazon:   'Amazon Ads',
+  meta:      'Meta (Facebook)',
+  google:    'Data Manager (Google)',
+  tiktok:    'TikTok',
+  linkedin:  'LinkedIn',
+  snapchat:  'Snapchat',
+  amazon:    'Amazon Ads',
+  microsoft: 'Microsoft Advertising',
+  openai:    'OpenAI / ChatGPT (OAIQ)',
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -33,11 +35,13 @@ interface ProviderListProps {
 }
 
 const ADDABLE_PROVIDERS: Array<{ value: CAPIProvider; label: string }> = [
-  { value: 'meta',     label: 'Meta (Facebook)' },
-  { value: 'google',   label: 'Data Manager (Google)' },
-  { value: 'linkedin', label: 'LinkedIn' },
-  { value: 'amazon',   label: 'Amazon Ads' },
-  { value: 'tiktok',   label: 'TikTok' },
+  { value: 'meta',      label: 'Meta (Facebook)' },
+  { value: 'google',    label: 'Data Manager (Google)' },
+  { value: 'linkedin',  label: 'LinkedIn' },
+  { value: 'amazon',    label: 'Amazon Ads' },
+  { value: 'tiktok',    label: 'TikTok' },
+  { value: 'microsoft', label: 'Microsoft Advertising' },
+  { value: 'openai',    label: 'OpenAI / ChatGPT (OAIQ)' },
 ];
 
 export function ProviderList({ onAddProvider, onSelectProvider }: ProviderListProps) {

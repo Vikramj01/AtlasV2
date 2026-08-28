@@ -35,6 +35,8 @@ import { validateGoogleCredentials, sendGoogleTestEvent } from '@/services/capi/
 import { validateLinkedInCredentials, sendLinkedInTestEvent, listLinkedInConversions } from '@/services/capi/linkedinDelivery';
 import { validateAmazonCredentials, sendAmazonTestEvent } from '@/services/capi/amazonDelivery';
 import { validateTikTokCredentials, sendTikTokTestEvent } from '@/services/capi/tiktokDelivery';
+import { validateMicrosoftCredentials, sendMicrosoftTestEvent } from '@/services/capi/microsoftDelivery';
+import { validateOpenAICredentials, sendOpenAITestEvent } from '@/services/capi/openaiDelivery';
 import { processEvent } from '@/services/capi/pipeline';
 import { setDedupEntry } from '@/services/capi/dedupStore';
 import { ingestCustomerMatchBatch } from '@/services/capi/customerMatch';
@@ -51,6 +53,8 @@ import type {
   LinkedInCredentials,
   AmazonCredentials,
   TikTokCredentials,
+  MicrosoftCredentials,
+  OpenAICredentials,
   HashedIdentifier,
 } from '@/types/capi';
 
@@ -110,6 +114,10 @@ capiRouter.post('/browser-event', async (req: Request, res: Response): Promise<v
     // TikTok has no ttclid capture yet either — deduplicate on event_id
     if (provider.provider === 'tiktok') {
       writes.push(setDedupEntry('tiktok', provider.id, event_id, event_name, entry));
+    }
+    // OAIQ has no oppref capture yet either — deduplicate on event_id
+    if (provider.provider === 'openai') {
+      writes.push(setDedupEntry('openai', provider.id, event_id, event_name, entry));
     }
     await Promise.all(writes);
 
@@ -181,6 +189,18 @@ capiRouter.post('/providers', planGuard('pro'), async (req: Request, res: Respon
     const validation = await validateTikTokCredentials(body.credentials as TikTokCredentials).catch(() => ({ valid: false, error: 'Validation request failed' }));
     if (!validation.valid) {
       res.status(400).json({ error: 'INVALID_CREDENTIALS', message: validation.error ?? 'TikTok credential validation failed' });
+      return;
+    }
+  } else if (body.provider === 'microsoft') {
+    const validation = await validateMicrosoftCredentials(body.credentials as MicrosoftCredentials).catch(() => ({ valid: false, error: 'Validation request failed' }));
+    if (!validation.valid) {
+      res.status(400).json({ error: 'INVALID_CREDENTIALS', message: validation.error ?? 'Microsoft credential validation failed' });
+      return;
+    }
+  } else if (body.provider === 'openai') {
+    const validation = await validateOpenAICredentials(body.credentials as OpenAICredentials).catch(() => ({ valid: false, error: 'Validation request failed' }));
+    if (!validation.valid) {
+      res.status(400).json({ error: 'INVALID_CREDENTIALS', message: validation.error ?? 'OpenAI credential validation failed' });
       return;
     }
   }
@@ -341,6 +361,14 @@ capiRouter.post('/providers/:id/test', async (req: Request, res: Response): Prom
         }
         if (provider.provider === 'tiktok') {
           const result = await sendTikTokTestEvent(event, [], mapping, creds as TikTokCredentials, provider.test_event_code ?? undefined);
+          return { event_name: event.event_name, ...result };
+        }
+        if (provider.provider === 'microsoft') {
+          const result = await sendMicrosoftTestEvent(event, [], mapping, creds as MicrosoftCredentials);
+          return { event_name: event.event_name, ...result };
+        }
+        if (provider.provider === 'openai') {
+          const result = await sendOpenAITestEvent(event, [], mapping, creds as OpenAICredentials);
           return { event_name: event.event_name, ...result };
         }
         return { event_name: event.event_name, status: 'failed' as const, provider_response: null, error: 'Provider not supported for testing yet' };
