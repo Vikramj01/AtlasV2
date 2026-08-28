@@ -32,7 +32,7 @@ BEGIN
     PERFORM cron.schedule(
       'public-audit-runs-ttl-cleanup',
       '30 3 * * *',
-      $$DELETE FROM public_audit_runs WHERE expires_at < now()$$
+      $sql$DELETE FROM public_audit_runs WHERE expires_at < now()$sql$
     );
   END IF;
 END;
