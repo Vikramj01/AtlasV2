@@ -84,6 +84,13 @@ export function SignalLibraryPage() {
     setActiveCategories(new Set());
   }
 
+  // ── Deprecated signals are hidden by default so the library reflects
+  // current platform state; a toggle reveals them for reference. ─────────────
+  const [showDeprecated, setShowDeprecated] = useState(false);
+  const deprecatedCount = signals.filter(
+    (s) => s.deprecated_at && new Date(s.deprecated_at) <= new Date(),
+  ).length;
+
   // ── Data loading ───────────────────────────────────────────────────────────
   async function handleExport() {
     setExporting(true);
@@ -135,7 +142,9 @@ export function SignalLibraryPage() {
       s.description.toLowerCase().includes(search.toLowerCase());
     const matchesCategory =
       activeCategories.size === 0 || activeCategories.has(s.category);
-    return matchesSearch && matchesCategory;
+    const isDeprecated = !!s.deprecated_at && new Date(s.deprecated_at) <= new Date();
+    const matchesDeprecation = showDeprecated || !isDeprecated;
+    return matchesSearch && matchesCategory && matchesDeprecation;
   });
 
   const grouped = CATEGORY_ORDER.reduce<Record<string, Signal[]>>((acc, cat) => {
@@ -268,6 +277,25 @@ export function SignalLibraryPage() {
                 </button>
               );
             })}
+
+            {deprecatedCount > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowDeprecated((v) => !v)}
+                className="rounded-full border px-3 py-1 text-xs font-medium transition-colors"
+                style={
+                  showDeprecated
+                    ? { backgroundColor: NAVY, borderColor: NAVY, color: '#fff' }
+                    : { backgroundColor: '#fff', borderColor: '#E5E7EB', color: '#6B7280' }
+                }
+                title="Show deprecated signals"
+              >
+                Show deprecated
+                <span className="ml-1.5 text-[10px]" style={{ opacity: showDeprecated ? 0.75 : 0.5 }}>
+                  {deprecatedCount}
+                </span>
+              </button>
+            )}
           </div>
         ) : (
           /* Tree view: show signal count summary and convention gear */

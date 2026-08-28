@@ -9,7 +9,7 @@ import type * as React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useCAPIStore } from '@/store/capiStore';
-import type { CAPIAdapterName, MetaCredentials, GoogleCredentials, LinkedInCredentials, AmazonCredentials } from '@/types/capi';
+import type { CAPIAdapterName, MetaCredentials, GoogleCredentials, LinkedInCredentials, AmazonCredentials, TikTokCredentials } from '@/types/capi';
 
 // ── Google adapter decision tree ──────────────────────────────────────────────
 
@@ -721,6 +721,112 @@ function AmazonConnectForm({ onNext }: ConnectAccountProps) {
   );
 }
 
+// ── TikTok form ───────────────────────────────────────────────────────────────
+
+function TikTokConnectForm({ onNext }: ConnectAccountProps) {
+  const { wizardDraft, setWizardDraft } = useCAPIStore();
+
+  const draft = wizardDraft.credentials as Partial<TikTokCredentials>;
+
+  const [pixelId, setPixelId]         = useState(draft.pixel_id    ?? '');
+  const [accessToken, setAccessToken] = useState(draft.access_token ?? '');
+  const [testEventCode, setTestEventCode] = useState(wizardDraft.test_event_code ?? '');
+  const [showToken, setShowToken]     = useState(false);
+  const [errors, setErrors] = useState<{ pixel_id?: string; access_token?: string }>({});
+
+  function validate(): boolean {
+    const next: typeof errors = {};
+    if (!pixelId.trim())     next.pixel_id    = 'Pixel Code is required.';
+    if (!accessToken.trim()) next.access_token = 'Access Token is required.';
+    setErrors(next);
+    return Object.keys(next).length === 0;
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!validate()) return;
+    setWizardDraft({
+      credentials: {
+        pixel_id:     pixelId.trim(),
+        access_token: accessToken.trim(),
+      } satisfies TikTokCredentials,
+      test_event_code: testEventCode.trim(),
+    });
+    onNext();
+  }
+
+  return (
+    <form onSubmit={handleSubmit} noValidate className="space-y-5">
+      <div className="space-y-1">
+        <label htmlFor="tt_pixel_id" className="block text-sm font-medium">Pixel Code</label>
+        <input
+          id="tt_pixel_id"
+          type="text"
+          value={pixelId}
+          onChange={(e) => setPixelId(e.target.value)}
+          placeholder="C4A1B2C3D4E5F6G7H8I9"
+          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+        />
+        <p className="text-xs text-muted-foreground">
+          Found in TikTok Events Manager &rarr; your Pixel &rarr; Pixel Code.
+        </p>
+        {errors.pixel_id && <p className="text-xs text-destructive">{errors.pixel_id}</p>}
+      </div>
+
+      <div className="space-y-1">
+        <label htmlFor="tt_access_token" className="block text-sm font-medium">Access Token</label>
+        <div className="relative">
+          <input
+            id="tt_access_token"
+            type={showToken ? 'text' : 'password'}
+            value={accessToken}
+            onChange={(e) => setAccessToken(e.target.value)}
+            placeholder="Enter your TikTok Events API access token"
+            className="w-full rounded-md border border-input bg-background px-3 py-2 pr-20 text-sm shadow-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+          />
+          <button
+            type="button"
+            onClick={() => setShowToken((v) => !v)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-foreground focus:outline-none"
+          >
+            {showToken ? 'Hide' : 'Show'}
+          </button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Generated from TikTok Events Manager &rarr; your Pixel &rarr; Settings &rarr; Generate Access Token.
+        </p>
+        {errors.access_token && <p className="text-xs text-destructive">{errors.access_token}</p>}
+      </div>
+
+      <div className="space-y-1">
+        <label htmlFor="tt_test_event_code" className="block text-sm font-medium">
+          Test Event Code <span className="text-muted-foreground font-normal">(optional)</span>
+        </label>
+        <input
+          id="tt_test_event_code"
+          type="text"
+          value={testEventCode}
+          onChange={(e) => setTestEventCode(e.target.value)}
+          placeholder="TEST12345"
+          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+        />
+        <p className="text-xs text-muted-foreground">
+          Found in TikTok Events Manager &rarr; Test Events tab. When set, test events route there instead of live reporting.
+        </p>
+      </div>
+
+      <div className="rounded-md bg-muted px-4 py-3 text-sm text-muted-foreground">
+        Events are delivered server-side via the TikTok Events API — no client-side pixel firing
+        is required for conversion tracking.
+      </div>
+
+      <div className="flex justify-end">
+        <Button type="submit">Next</Button>
+      </div>
+    </form>
+  );
+}
+
 // ── Container ─────────────────────────────────────────────────────────────────
 
 export function ConnectAccount({ onNext }: ConnectAccountProps) {
@@ -729,6 +835,7 @@ export function ConnectAccount({ onNext }: ConnectAccountProps) {
   const isGoogle   = provider === 'google';
   const isLinkedIn = provider === 'linkedin';
   const isAmazon   = provider === 'amazon';
+  const isTikTok   = provider === 'tiktok';
 
   const adapterLabel = GOOGLE_ADAPTER_OPTIONS.find((o) => o.name === wizardDraft.adapter_name)?.label;
 
@@ -738,7 +845,9 @@ export function ConnectAccount({ onNext }: ConnectAccountProps) {
       ? 'Connect your LinkedIn account'
       : isAmazon
         ? 'Connect your Amazon Ads account'
-        : 'Connect your Meta account';
+        : isTikTok
+          ? 'Connect your TikTok account'
+          : 'Connect your Meta account';
 
   const subtitle = isGoogle
     ? adapterLabel
@@ -748,7 +857,9 @@ export function ConnectAccount({ onNext }: ConnectAccountProps) {
       ? 'Step 1 of 5 — Provide your LinkedIn OAuth token and Conversion ID to get started.'
       : isAmazon
         ? 'Step 1 of 5 — Provide your Amazon Ads OAuth credentials to get started.'
-        : 'Step 1 of 5 — Provide your Meta Pixel credentials to get started.';
+        : isTikTok
+          ? 'Step 1 of 5 — Provide your TikTok Pixel Code and Events API access token to get started.'
+          : 'Step 1 of 5 — Provide your Meta Pixel credentials to get started.';
 
   return (
     <Card>
@@ -760,6 +871,7 @@ export function ConnectAccount({ onNext }: ConnectAccountProps) {
         {isGoogle   ? <GoogleConnectForm   onNext={onNext} /> :
          isLinkedIn ? <LinkedInConnectForm onNext={onNext} /> :
          isAmazon   ? <AmazonConnectForm   onNext={onNext} /> :
+         isTikTok   ? <TikTokConnectForm   onNext={onNext} /> :
                       <MetaConnectForm     onNext={onNext} />}
       </CardContent>
     </Card>

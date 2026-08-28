@@ -32,7 +32,8 @@ import { sendMetaEvents, checkUserParamCompleteness } from './metaDelivery';
 import { sendGoogleEvents } from './googleDelivery';
 import { sendLinkedInEvents } from './linkedinDelivery';
 import { sendAmazonEvents } from './amazonDelivery';
-import type { MetaCredentials, GoogleCredentials, LinkedInCredentials, AmazonCredentials } from '@/types/capi';
+import { sendTikTokEvents } from './tiktokDelivery';
+import type { MetaCredentials, GoogleCredentials, LinkedInCredentials, AmazonCredentials, TikTokCredentials } from '@/types/capi';
 import logger from '@/utils/logger';
 
 // ── Canonical Event Identity ──────────────────────────────────────────────────
@@ -43,6 +44,7 @@ const NATIVE_ID_FIELD: Partial<Record<CAPIProvider, string>> = {
   meta: 'event_id',
   google: 'transactionId',
   linkedin: 'eventId',
+  tiktok: 'event_id',
 };
 
 // ── PII Hashing ───────────────────────────────────────────────────────────────
@@ -347,6 +349,15 @@ async function deliverToProvider(
         [identifiers],
         config.event_mapping,
         creds as AmazonCredentials,
+        config.id,
+      );
+
+    case 'tiktok':
+      return sendTikTokEvents(
+        [event],
+        [identifiers],
+        config.event_mapping,
+        creds as TikTokCredentials,
         config.id,
       );
 

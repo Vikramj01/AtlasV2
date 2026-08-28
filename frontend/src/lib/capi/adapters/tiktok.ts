@@ -61,7 +61,7 @@ export interface TikTokEventPayload {
 export const TIKTOK_STANDARD_EVENTS = [
   'Purchase', 'InitiateCheckout', 'AddToCart', 'ViewContent',
   'Search', 'AddPaymentInfo', 'Subscribe', 'Registration',
-  'Contact', 'SubmitForm', 'Download', 'PageView',
+  'Contact', 'SubmitForm', 'Lead', 'Download', 'PageView',
 ] as const;
 
 export type TikTokStandardEvent = typeof TIKTOK_STANDARD_EVENTS[number];
@@ -78,8 +78,8 @@ export const TIKTOK_EVENT_SUGGESTIONS: Record<string, TikTokStandardEvent> = {
   subscribe:         'Subscribe',
   sign_up:           'Registration',
   registration:      'Registration',
-  form_submit:       'SubmitForm',
-  lead:              'SubmitForm',
+  form_submit:       'Lead',
+  lead:              'Lead',
   page_view:         'PageView',
 };
 

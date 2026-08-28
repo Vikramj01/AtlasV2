@@ -28,6 +28,9 @@ export interface Signal {
   optional_params: ParamSpec[];
   platform_mappings: Record<string, PlatformEventMapping>;
   version: number;
+  valid_from: string;
+  deprecated_at: string | null;
+  superseded_by_signal_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -44,6 +47,8 @@ export interface SignalPack {
   version: number;
   signals_count: number;
   signal_keys?: string[];
+  valid_from: string;
+  deprecated_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -133,6 +138,8 @@ export interface UpdateSignalRequest {
   required_params?: ParamSpec[];
   optional_params?: ParamSpec[];
   platform_mappings?: Record<string, PlatformEventMapping>;
+  deprecated_at?: string | null;
+  superseded_by_signal_id?: string | null;
 }
 
 export interface CreatePackRequest {

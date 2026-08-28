@@ -7,6 +7,29 @@ import { SignalToPlatformPreview } from '@/components/signals/SignalToPlatformPr
 import { SignalHealthChecks } from '@/components/signals/SignalHealthChecks';
 import type { Signal } from '@/types/signal';
 
+// ── Validity window helpers ─────────────────────────────────────────────────
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function SunsetBadge({ signal }: { signal: Signal }) {
+  if (!signal.deprecated_at) return null;
+  const isPast = new Date(signal.deprecated_at) <= new Date();
+  return (
+    <Badge
+      variant={isPast ? 'destructive' : 'outline'}
+      className="text-[10px] shrink-0"
+      title={
+        isPast
+          ? `Deprecated ${formatDate(signal.deprecated_at)}${signal.superseded_by_signal_id ? ' — see replacement signal' : ''}`
+          : `Sunsets ${formatDate(signal.deprecated_at)}${signal.superseded_by_signal_id ? ' — a replacement signal is already available' : ''}`
+      }
+    >
+      {isPast ? 'Deprecated' : `Sunsets ${formatDate(signal.deprecated_at)}`}
+    </Badge>
+  );
+}
+
 const PLATFORM_LABELS: Record<string, string> = {
   ga4:        'GA4',
   meta:       'Meta',
@@ -104,6 +127,7 @@ function GridCard({ signal, onEdit, onDelete, onAddToPack }: Props) {
               {signal.is_system && (
                 <Badge variant="secondary" className="text-[10px] shrink-0">System</Badge>
               )}
+              <SunsetBadge signal={signal} />
             </div>
             <code className="text-[10px] text-[#9CA3AF]">{signal.key}</code>
           </div>
@@ -213,6 +237,7 @@ function ListRow({ signal, className, onEdit, onDelete, onAddToPack }: Props) {
           {signal.is_system && (
             <Badge variant="secondary" className="text-[10px] shrink-0">System</Badge>
           )}
+          <SunsetBadge signal={signal} />
         </div>
         <code className="text-[10px] text-[#9CA3AF]">{signal.key}</code>
       </div>

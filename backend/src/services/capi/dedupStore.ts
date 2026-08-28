@@ -5,6 +5,7 @@ const META_TTL_S     = 48 * 60 * 60;       // 48 hours — Meta dedup window
 const GOOGLE_TTL_S   = 90 * 24 * 60 * 60; // 90 days  — Google dedup window
 const LINKEDIN_TTL_S = 48 * 60 * 60;       // 48 hours — LinkedIn dedup window
 const AMAZON_TTL_S   = 24 * 60 * 60;       // 24 hours — Amazon dedup window
+const TIKTOK_TTL_S   = 7 * 24 * 60 * 60;   // 7 days   — TikTok dedup window
 
 function buildRedisClient(): Redis {
   const parsed = new URL(env.REDIS_URL);
@@ -44,6 +45,10 @@ function linkedinKey(providerId: string, eventId: string, eventName: string): st
 
 function amazonKey(providerId: string, identifier: string, eventName: string): string {
   return `capi:amazon:dedup:${providerId}:${identifier}:${eventName}`;
+}
+
+function tiktokKey(providerId: string, eventId: string, eventName: string): string {
+  return `capi:tiktok:dedup:${providerId}:${eventId}:${eventName}`;
 }
 
 export async function getMetaDedupEntry(
@@ -86,8 +91,18 @@ export async function getAmazonDedupEntry(
   return raw ? (JSON.parse(raw) as DedupEntry) : null;
 }
 
+export async function getTikTokDedupEntry(
+  providerId: string,
+  eventId: string | null,
+  eventName: string,
+): Promise<DedupEntry | null> {
+  if (!eventId) return null;
+  const raw = await dedupRedis.get(tiktokKey(providerId, eventId, eventName));
+  return raw ? (JSON.parse(raw) as DedupEntry) : null;
+}
+
 export async function setDedupEntry(
-  provider: 'meta' | 'google' | 'linkedin' | 'amazon',
+  provider: 'meta' | 'google' | 'linkedin' | 'amazon' | 'tiktok',
   providerId: string,
   identifier: string,
   eventName: string,
@@ -112,6 +127,10 @@ export async function setDedupEntry(
     case 'amazon':
       key = amazonKey(providerId, identifier, eventName);
       ttl = AMAZON_TTL_S;
+      break;
+    case 'tiktok':
+      key = tiktokKey(providerId, identifier, eventName);
+      ttl = TIKTOK_TTL_S;
       break;
   }
 
