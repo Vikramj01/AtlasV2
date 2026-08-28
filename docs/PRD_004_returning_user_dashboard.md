@@ -53,7 +53,7 @@ The dashboard answers three questions in one view:
 
 ## 4. Migration
 
-**File:** `supabase/migrations/20260701_004_returning_user_dashboard.sql`
+**File:** `supabase/migrations/20260701004_returning_user_dashboard.sql`
 
 > Replace `20260701` with the actual next sequential date.
 

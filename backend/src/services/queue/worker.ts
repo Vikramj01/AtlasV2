@@ -1198,7 +1198,7 @@ logger.info('DMA ingest worker registered');
 // ── Signal Aggregates MV Refresh Worker ──────────────────────────────────────
 // Calls refresh_signal_aggregates_daily() via supabaseAdmin.rpc() every 5 min.
 // CONCURRENT refresh requires the unique index on the view to already exist
-// (created in migration 20260620_001_signal_tracking_dashboard.sql).
+// (created in migration 20260620001_signal_tracking_dashboard.sql).
 
 signalMvRefreshQueue.process(async (_job) => {
   logger.info('Signal aggregates MV refresh job received');
@@ -1263,13 +1263,27 @@ dqmQueue.process(async (job) => {
 logger.info('DQM worker registered');
 
 // Schedule DQM fan-out every 15 minutes.
-// Replaces the previous hourly job — if the old 'dqm-hourly' repeatable job
-// is still registered in Redis it will continue firing until Bull's repeat
-// registry is flushed (harmless: it just enqueues a fan-out which is idempotent).
+// Replaces the previous hourly job.
 dqmQueue.add(
   { trigger: 'scheduled' },
   { repeat: { cron: '*/15 * * * *' }, jobId: 'dqm-15min' },
 ).catch((err) => logger.error({ err }, 'Failed to schedule DQM job'));
+
+// D1 cleanup (ATLAS_CONVERSION_SIGNAL_LAYER_SPRINT_PLAN.md): the old
+// 'dqm-hourly' repeatable job was replaced by the */15 cron above but was
+// never explicitly removed from Redis, so it may still be firing redundant
+// (harmless) fan-outs. Look it up by key rather than guessing its original
+// cron expression, and remove it if still registered. Idempotent — a no-op
+// once it's gone.
+dqmQueue.getRepeatableJobs()
+  .then((jobs) => Promise.all(
+    jobs
+      .filter((j) => j.id === 'dqm-hourly' || j.name === 'dqm-hourly')
+      .map((j) => dqmQueue.removeRepeatableByKey(j.key).then(
+        () => logger.info({ key: j.key }, 'DQM: removed stale dqm-hourly repeatable job'),
+      )),
+  ))
+  .catch((err) => logger.error({ err }, 'DQM: failed to check for stale dqm-hourly repeatable job'));
 
 // ── AIR Ingestion Worker ──────────────────────────────────────────────────────
 // Two job shapes (mirrors DQM fan-out pattern):

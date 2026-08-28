@@ -247,9 +247,9 @@
 
 | Spec item | Status | Evidence | Notes |
 |---|---|---|---|
-| gtm_container_connections, gtm_container_snapshots tables | ✅ Shipped | `20260610_002_implementation_health.sql:14–73` | OAuth + manual upload; versioned snapshots |
+| gtm_container_connections, gtm_container_snapshots tables | ✅ Shipped | `20260610002_implementation_health.sql:14–73` | OAuth + manual upload; versioned snapshots |
 | audit_findings table (rule_id, validation_layer, severity, evidence JSONB) | ✅ Shipped | Migration lines 154–175 | |
-| ihc_alert_preferences + ihc_alert_log | ✅ Shipped | `20260610` + `20260615_001_ihc_alerts.sql` | Batching, digest dedup |
+| ihc_alert_preferences + ihc_alert_log | ✅ Shipped | `20260610` + `20260615002_ihc_alerts.sql` | Batching, digest dedup |
 | 11 tag_configuration rules | ✅ Shipped | `backend/src/services/validation/tagConfiguration.ts` | |
 | 3 implementation_drift rules | ✅ Shipped | `backend/src/services/validation/implementationDrift.ts` | Compares against baseline |
 | Rule contract (rule_id, layer, severity, affected_platforms, fix_summary, test) | ✅ Shipped | Both rule files | |

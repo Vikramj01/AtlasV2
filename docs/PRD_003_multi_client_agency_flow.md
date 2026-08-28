@@ -53,7 +53,7 @@ This PRD adds three connected features:
 
 ## 4. Migration
 
-**File:** `supabase/migrations/20260701_003_multi_client_agency.sql`
+**File:** `supabase/migrations/20260701003_multi_client_agency.sql`
 
 > Replace `20260701` with the actual next sequential date from migration history.
 

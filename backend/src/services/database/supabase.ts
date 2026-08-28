@@ -86,6 +86,34 @@ export async function getStrategyBriefSignedUrl(storagePath: string): Promise<st
   return data.signedUrl;
 }
 
+// ── Campaign Signal Validator PDF storage ───────────────────────────────────
+
+/**
+ * Upload a Campaign Signal Validator report PDF to the private
+ * `signal-validator-reports` bucket. Path: {runId}.pdf
+ */
+export async function uploadSignalValidatorPdf(runId: string, buffer: Buffer): Promise<string> {
+  const path = `${runId}.pdf`;
+  const { error } = await supabaseAdmin.storage
+    .from('signal-validator-reports')
+    .upload(path, buffer, { contentType: 'application/pdf', upsert: true });
+  if (error) throw new Error(`PDF upload failed: ${error.message}`);
+  return path;
+}
+
+/**
+ * Create a 1-hour signed URL for a Campaign Signal Validator report PDF.
+ */
+export async function getSignalValidatorPdfSignedUrl(storagePath: string): Promise<string> {
+  const { data, error } = await supabaseAdmin.storage
+    .from('signal-validator-reports')
+    .createSignedUrl(storagePath, 3600);
+  if (error || !data?.signedUrl) {
+    throw new Error(`Failed to create signed URL: ${error?.message ?? 'no URL returned'}`);
+  }
+  return data.signedUrl;
+}
+
 export async function getScreenshotSignedUrl(storagePath: string): Promise<string> {
   console.log('[screenshot] createSignedUrl path:', storagePath);
 

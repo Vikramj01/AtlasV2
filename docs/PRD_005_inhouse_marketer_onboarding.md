@@ -56,7 +56,7 @@ This is implemented as a variant of the existing onboarding and layout component
 
 ## 4. Migration
 
-**File:** `supabase/migrations/20260701_005_inhouse_onboarding.sql`
+**File:** `supabase/migrations/20260701005_inhouse_onboarding.sql`
 
 > Replace `20260701` with the actual next sequential date.
 

@@ -2013,7 +2013,7 @@ END $$;
 
 
 -- ============================================================
--- MIGRATION: 20260610_002_implementation_health.sql
+-- MIGRATION: 20260610002_implementation_health.sql
 -- ============================================================
 
 -- Implementation Health Checks (IHC) — Sprint A1
@@ -2289,7 +2289,7 @@ $$;
 
 
 -- ============================================================
--- MIGRATION: 20260611_001_ihc_drift_consecutive_count.sql
+-- MIGRATION: 20260611002_ihc_drift_consecutive_count.sql
 -- ============================================================
 
 -- IHC Sprint C — add consecutive_fail_count to audit_findings
@@ -2316,7 +2316,7 @@ $$;
 
 
 -- ============================================================
--- MIGRATION: 20260615_001_ihc_alerts.sql
+-- MIGRATION: 20260615002_ihc_alerts.sql
 -- ============================================================
 
 -- Phase E: IHC alert tracking

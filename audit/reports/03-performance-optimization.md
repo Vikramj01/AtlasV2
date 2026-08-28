@@ -77,7 +77,7 @@ const ReconciliationRunDetailPage = React.lazy(() => import('@/pages/Reconciliat
 | `detected_signals` | `(crawl_page_id)` | Joining signals to pages in crawl detail view | `20260530_001_crawl_signal_extractor.sql` |
 | `offline_conversion_rows` | `(organization_id, status)` | `bulkUpdateRowStatuses()` — batch status filter | `20260406_001_offline_conversion_tables.sql` |
 | `reconciliation_findings` | `(organization_id, resolved_at)` | Filtering unresolved findings | `20260607002_reconciliation_core.sql` |
-| `audit_findings` | `(organization_id, created_at)` | Time-series IHC queries | `20260610_002_implementation_health.sql` |
+| `audit_findings` | `(organization_id, created_at)` | Time-series IHC queries | `20260610002_implementation_health.sql` |
 | `capi_events` | `(organization_id, status)` partial on `status IN ('pending','processing')` | Queue processing queries | `20260317_001_consent_and_capi_tables.sql` |
 
 **Proposed fix:** Single additive migration (no data changes, no RLS changes). See PR `[perf][P2] Add missing indexes`.  

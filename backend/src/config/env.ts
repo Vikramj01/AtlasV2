@@ -54,6 +54,10 @@ export const env = {
   // Agency: Stripe dashboard → Products → Agency plan → Price ID
   STRIPE_PRICE_PRO: optional('STRIPE_PRICE_PRO', ''),
   STRIPE_PRICE_AGENCY: optional('STRIPE_PRICE_AGENCY', ''),
+  // Campaign Signal Validator standalone product (B9) — a one-time purchase,
+  // not a Stripe dashboard Price ID, since price_data is built inline.
+  // PRD range is $500-800; defaults to $650 (midpoint). Override per-deployment.
+  SIGNAL_VALIDATOR_PRICE_CENTS: parseInt(optional('SIGNAL_VALIDATOR_PRICE_CENTS', '65000'), 10),
 
   // CAPI credential encryption — 32-byte hex key (64 hex chars = 256 bits)
   // Generate: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
