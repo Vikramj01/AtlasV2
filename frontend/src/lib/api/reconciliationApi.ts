@@ -46,7 +46,7 @@ export interface ReconciliationFinding {
   brief_id: string | null;
   objective_id: string | null;
   platform: string;
-  dimension: 'delivery' | 'config' | 'alignment' | 'volume';
+  dimension: 'delivery' | 'config' | 'alignment' | 'volume' | 'discontinuity';
   severity: 'info' | 'warning' | 'error' | 'critical';
   finding_code: string;
   expected: Record<string, unknown> | null;

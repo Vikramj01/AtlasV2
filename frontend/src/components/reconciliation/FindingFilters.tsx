@@ -5,7 +5,7 @@ interface FindingFiltersProps {
   onChange: (filters: FindingFilters) => void;
 }
 
-const DIMENSIONS = ['delivery', 'config', 'alignment', 'volume'] as const;
+const DIMENSIONS = ['delivery', 'config', 'alignment', 'volume', 'discontinuity'] as const;
 const SEVERITIES = ['critical', 'error', 'warning', 'info'] as const;
 const PLATFORMS = [
   { value: 'google_ads', label: 'Google Ads' },

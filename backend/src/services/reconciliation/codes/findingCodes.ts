@@ -17,9 +17,11 @@ export type FindingCode =
   | 'SUPPRESSION_USED_AS_PRIMARY'
   // Volume (Phase 3)
   | 'VOLUME_DELTA_EXCEEDED'
-  | 'GA4_VOLUME_DIVERGENCE';
+  | 'GA4_VOLUME_DIVERGENCE'
+  // Discontinuity (Phase 3, B10)
+  | 'KNOWN_PLATFORM_DISCONTINUITY';
 
-export type FindingDimension = 'delivery' | 'config' | 'alignment' | 'volume';
+export type FindingDimension = 'delivery' | 'config' | 'alignment' | 'volume' | 'discontinuity';
 export type FindingSeverity = 'info' | 'warning' | 'error' | 'critical';
 
 interface FindingMeta {
@@ -119,6 +121,12 @@ export const FINDING_META: Record<FindingCode, FindingMeta> = {
     severity: 'info',
     narrative: (ctx) => `GA4 recorded ${ctx.ga4_count} "${ctx.event_name}" events on ${ctx.event_date} vs ${ctx.platform_count} recorded by ${ctx.platform} (${ctx.delta_pct}% divergence).`,
     remediation: () => 'Review cross-channel attribution and consent mode configuration. Some divergence is normal due to ITP/Safari restrictions.',
+  },
+  KNOWN_PLATFORM_DISCONTINUITY: {
+    dimension: 'discontinuity',
+    severity: 'info',
+    narrative: (ctx) => `${ctx.platform} had a known reporting change — "${ctx.title}"${ctx.effective_date ? ` (effective ${ctx.effective_date})` : ''}. ${ctx.description}`,
+    remediation: () => 'Any volume or alignment drift on this platform around this change may reflect the platform-side redefinition rather than a delivery or tagging problem — check this finding before troubleshooting other findings on the same platform.',
   },
 };
 

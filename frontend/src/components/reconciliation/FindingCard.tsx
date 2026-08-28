@@ -11,10 +11,11 @@ const SEVERITY_CONFIG = {
 } as const;
 
 const DIMENSION_LABELS: Record<string, string> = {
-  delivery:  'Delivery',
-  config:    'Config',
-  alignment: 'Alignment',
-  volume:    'Volume',
+  delivery:     'Delivery',
+  config:       'Config',
+  alignment:    'Alignment',
+  volume:       'Volume',
+  discontinuity: 'Known Change',
 };
 
 const PLATFORM_LABELS: Record<string, string> = {

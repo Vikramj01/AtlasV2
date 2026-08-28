@@ -7,7 +7,7 @@ import type { ConsentDecisions } from './consent';
 
 // --- Enums & Literals ---
 
-export type CAPIProvider = 'meta' | 'google' | 'tiktok' | 'linkedin' | 'snapchat' | 'amazon';
+export type CAPIProvider = 'meta' | 'google' | 'tiktok' | 'linkedin' | 'snapchat' | 'amazon' | 'microsoft' | 'openai';
 
 // Canonical adapter name — includes S4 Google split names
 export type CAPIAdapterName =
@@ -18,7 +18,9 @@ export type CAPIAdapterName =
   | 'google_offline'
   | 'tiktok'
   | 'linkedin'
-  | 'amazon';
+  | 'amazon'
+  | 'microsoft'
+  | 'openai';
 export type CAPIProviderStatus = 'draft' | 'testing' | 'active' | 'paused' | 'error' | 'reconnect_required';
 
 export type CAPIEventStatus =
@@ -123,12 +125,30 @@ export interface AmazonCredentials {
   access_token_expires_at?: string; // ISO timestamp
 }
 
+export interface MicrosoftCredentials {
+  customer_id: string;          // Microsoft Advertising Customer ID (CID)
+  account_id: string;           // Microsoft Advertising Account ID
+  developer_token: string;
+  oauth_access_token: string;
+  oauth_refresh_token: string;
+  uet_tag_id: string;           // UET tag ID the conversion goal belongs to
+  conversion_goal_id: string;
+  access_token_expires_at?: string; // ISO timestamp
+}
+
+export interface OpenAICredentials {
+  publisher_id: string;         // OAIQ publisher/advertiser identifier
+  api_key: string;              // Server-side Conversions API key
+}
+
 export type ProviderCredentials =
   | MetaCredentials
   | GoogleCredentials
   | TikTokCredentials
   | LinkedInCredentials
-  | AmazonCredentials;
+  | AmazonCredentials
+  | MicrosoftCredentials
+  | OpenAICredentials;
 
 // --- Event Mapping ---
 

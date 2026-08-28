@@ -147,7 +147,7 @@ export async function ingestMetaAds(orgId: string, date = yesterday()): Promise<
     .from('platform_connections')
     .select('id, account_id')
     .eq('organization_id', orgId)
-    .eq('platform', 'meta_ads')
+    .eq('platform', 'meta')
     .in('status', ['active', 'connected']);
 
   if (connErr) throw new Error(`Failed to query platform_connections: ${connErr.message}`);

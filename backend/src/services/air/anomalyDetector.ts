@@ -24,7 +24,7 @@ const SEVERITY_THRESHOLDS = { high: 50, medium: 30, low: 15 } as const;
 
 export interface AnomalyRow {
   org_id: string;
-  source: 'google_ads' | 'meta_ads' | 'ga4';
+  source: 'google_ads' | 'meta_ads' | 'ga4' | 'linkedin_ads';
   metric_name: string;
   dimension: string | null;
   detected_date: string;

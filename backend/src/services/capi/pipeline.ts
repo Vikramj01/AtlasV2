@@ -33,7 +33,9 @@ import { sendGoogleEvents } from './googleDelivery';
 import { sendLinkedInEvents } from './linkedinDelivery';
 import { sendAmazonEvents } from './amazonDelivery';
 import { sendTikTokEvents } from './tiktokDelivery';
-import type { MetaCredentials, GoogleCredentials, LinkedInCredentials, AmazonCredentials, TikTokCredentials } from '@/types/capi';
+import { sendMicrosoftEvents } from './microsoftDelivery';
+import { sendOpenAIEvents } from './openaiDelivery';
+import type { MetaCredentials, GoogleCredentials, LinkedInCredentials, AmazonCredentials, TikTokCredentials, MicrosoftCredentials, OpenAICredentials } from '@/types/capi';
 import logger from '@/utils/logger';
 
 // ── Canonical Event Identity ──────────────────────────────────────────────────
@@ -45,6 +47,8 @@ const NATIVE_ID_FIELD: Partial<Record<CAPIProvider, string>> = {
   google: 'transactionId',
   linkedin: 'eventId',
   tiktok: 'event_id',
+  microsoft: 'clientDedupeId',
+  openai: 'event_id',
 };
 
 // ── PII Hashing ───────────────────────────────────────────────────────────────
@@ -358,6 +362,24 @@ async function deliverToProvider(
         [identifiers],
         config.event_mapping,
         creds as TikTokCredentials,
+        config.id,
+      );
+
+    case 'microsoft':
+      return sendMicrosoftEvents(
+        [event],
+        [identifiers],
+        config.event_mapping,
+        creds as MicrosoftCredentials,
+        config.id,
+      );
+
+    case 'openai':
+      return sendOpenAIEvents(
+        [event],
+        [identifiers],
+        config.event_mapping,
+        creds as OpenAICredentials,
         config.id,
       );
 

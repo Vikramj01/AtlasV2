@@ -19,9 +19,10 @@ const SEVERITY_CARD: Record<AirSeverity, SeverityLevel> = {
 };
 
 const SOURCE_LABEL: Record<AirSource, string> = {
-  google_ads: 'Google Ads',
-  meta_ads:   'Meta Ads',
-  ga4:        'GA4',
+  google_ads:   'Google Ads',
+  meta_ads:     'Meta Ads',
+  ga4:          'GA4',
+  linkedin_ads: 'LinkedIn Ads',
 };
 
 const METRIC_LABEL: Record<string, string> = {

@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '@/services/database/supabase';
 import { runConfigDiff } from './engine/configDiff';
+import { runDiscontinuityDiff } from './engine/discontinuityDiff';
 import { runAlignmentDiff } from './engine/alignmentDiff';
 import { runDeliveryDiff } from './engine/deliveryDiff';
 import { runVolumeDiff } from './engine/volumeDiff';
@@ -58,6 +59,14 @@ export async function executeRun(job: ReconciliationJobData): Promise<void> {
   const errors: string[] = [];
 
   try {
+    // Discontinuity diff runs first, before volume/alignment write their own
+    // findings, so a discontinuity-shaped drift reads as annotated context
+    // rather than an unexplained anomaly.
+    await runDiscontinuityDiff(runId, clientId, organizationId).catch((err: Error) => {
+      errors.push(`discontinuity: ${err.message}`);
+      logger.error({ runId, err: err.message }, 'Discontinuity diff failed');
+    });
+
     if (briefId) {
       // Config diff: compare brief recommendations vs platform conversion action setup
       await runConfigDiff(runId, clientId, briefId, organizationId).catch((err: Error) => {

@@ -6,6 +6,8 @@ const GOOGLE_TTL_S   = 90 * 24 * 60 * 60; // 90 days  — Google dedup window
 const LINKEDIN_TTL_S = 48 * 60 * 60;       // 48 hours — LinkedIn dedup window
 const AMAZON_TTL_S   = 24 * 60 * 60;       // 24 hours — Amazon dedup window
 const TIKTOK_TTL_S   = 7 * 24 * 60 * 60;   // 7 days   — TikTok dedup window
+const MICROSOFT_TTL_S = 90 * 24 * 60 * 60; // 90 days  — Microsoft dedup window (mirrors Google Enhanced Conversions)
+const OPENAI_TTL_S    = 30 * 24 * 60 * 60; // 30 days  — OAIQ dedup window
 
 function buildRedisClient(): Redis {
   const parsed = new URL(env.REDIS_URL);
@@ -49,6 +51,14 @@ function amazonKey(providerId: string, identifier: string, eventName: string): s
 
 function tiktokKey(providerId: string, eventId: string, eventName: string): string {
   return `capi:tiktok:dedup:${providerId}:${eventId}:${eventName}`;
+}
+
+function microsoftKey(providerId: string, identifier: string, eventName: string): string {
+  return `capi:microsoft:dedup:${providerId}:${identifier}:${eventName}`;
+}
+
+function openaiKey(providerId: string, eventId: string, eventName: string): string {
+  return `capi:openai:dedup:${providerId}:${eventId}:${eventName}`;
 }
 
 export async function getMetaDedupEntry(
@@ -101,8 +111,28 @@ export async function getTikTokDedupEntry(
   return raw ? (JSON.parse(raw) as DedupEntry) : null;
 }
 
+export async function getMicrosoftDedupEntry(
+  providerId: string,
+  identifier: string | null,
+  eventName: string,
+): Promise<DedupEntry | null> {
+  if (!identifier) return null;
+  const raw = await dedupRedis.get(microsoftKey(providerId, identifier, eventName));
+  return raw ? (JSON.parse(raw) as DedupEntry) : null;
+}
+
+export async function getOpenAIDedupEntry(
+  providerId: string,
+  eventId: string | null,
+  eventName: string,
+): Promise<DedupEntry | null> {
+  if (!eventId) return null;
+  const raw = await dedupRedis.get(openaiKey(providerId, eventId, eventName));
+  return raw ? (JSON.parse(raw) as DedupEntry) : null;
+}
+
 export async function setDedupEntry(
-  provider: 'meta' | 'google' | 'linkedin' | 'amazon' | 'tiktok',
+  provider: 'meta' | 'google' | 'linkedin' | 'amazon' | 'tiktok' | 'microsoft' | 'openai',
   providerId: string,
   identifier: string,
   eventName: string,
@@ -131,6 +161,14 @@ export async function setDedupEntry(
     case 'tiktok':
       key = tiktokKey(providerId, identifier, eventName);
       ttl = TIKTOK_TTL_S;
+      break;
+    case 'microsoft':
+      key = microsoftKey(providerId, identifier, eventName);
+      ttl = MICROSOFT_TTL_S;
+      break;
+    case 'openai':
+      key = openaiKey(providerId, identifier, eventName);
+      ttl = OPENAI_TTL_S;
       break;
   }
 
