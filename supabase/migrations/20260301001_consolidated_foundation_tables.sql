@@ -137,6 +137,26 @@ CREATE TABLE IF NOT EXISTS public.organisations (
 CREATE INDEX IF NOT EXISTS organisations_owner_id_idx ON public.organisations (owner_id);
 CREATE INDEX IF NOT EXISTS organisations_slug_idx     ON public.organisations (slug);
 
+-- ── organisation_members ──────────────────────────────────────────────────────
+-- Created here, before any policy on organisations references it — the
+-- original source script created it after those policies, which fails on a
+-- true from-scratch replay ("relation organisation_members does not exist"),
+-- masked before now only because it was never actually run against an empty
+-- database in one pass.
+
+CREATE TABLE IF NOT EXISTS public.organisation_members (
+  id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  organisation_id  UUID        NOT NULL REFERENCES public.organisations(id) ON DELETE CASCADE,
+  user_id          UUID        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  role             TEXT        NOT NULL DEFAULT 'member'
+                               CHECK (role IN ('owner', 'admin', 'member')),
+  invited_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  accepted_at      TIMESTAMPTZ,
+  UNIQUE (organisation_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS organisation_members_user_id_idx ON public.organisation_members (user_id);
+
 ALTER TABLE public.organisations ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "org_owner_all" ON public.organisations;
@@ -158,21 +178,6 @@ DROP TRIGGER IF EXISTS trg_organisations_updated ON public.organisations;
 CREATE TRIGGER trg_organisations_updated
   BEFORE UPDATE ON public.organisations
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
-
--- ── organisation_members ──────────────────────────────────────────────────────
-
-CREATE TABLE IF NOT EXISTS public.organisation_members (
-  id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  organisation_id  UUID        NOT NULL REFERENCES public.organisations(id) ON DELETE CASCADE,
-  user_id          UUID        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  role             TEXT        NOT NULL DEFAULT 'member'
-                               CHECK (role IN ('owner', 'admin', 'member')),
-  invited_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-  accepted_at      TIMESTAMPTZ,
-  UNIQUE (organisation_id, user_id)
-);
-
-CREATE INDEX IF NOT EXISTS organisation_members_user_id_idx ON public.organisation_members (user_id);
 
 ALTER TABLE public.organisation_members ENABLE ROW LEVEL SECURITY;
 
