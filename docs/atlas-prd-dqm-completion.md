@@ -13,7 +13,7 @@ DQM core monitoring is functional (~70% complete). Built and working:
 
 | Layer | Status |
 |---|---|
-| DB schema (`dqm_gtg_checks`, `dqm_dma_poll_state`, migration `20260615_001_dqm_tables.sql`, RLS) | ✅ |
+| DB schema (`dqm_gtg_checks`, `dqm_dma_poll_state`, migration `20260615001_dqm_tables.sql`, RLS) | ✅ |
 | GTG probe service (`backend/src/services/dqm/gtgProbe.ts`) | ✅ |
 | DMA poll service (`backend/src/services/dqm/dmaPolling.ts`) | ✅ |
 | Orchestrator (`backend/src/services/dqm/dqmOrchestrator.ts`) | ✅ |

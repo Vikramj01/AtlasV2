@@ -1198,7 +1198,7 @@ logger.info('DMA ingest worker registered');
 // ── Signal Aggregates MV Refresh Worker ──────────────────────────────────────
 // Calls refresh_signal_aggregates_daily() via supabaseAdmin.rpc() every 5 min.
 // CONCURRENT refresh requires the unique index on the view to already exist
-// (created in migration 20260620_001_signal_tracking_dashboard.sql).
+// (created in migration 20260620001_signal_tracking_dashboard.sql).
 
 signalMvRefreshQueue.process(async (_job) => {
   logger.info('Signal aggregates MV refresh job received');

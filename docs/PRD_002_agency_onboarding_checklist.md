@@ -49,7 +49,7 @@ The checklist surfaces on `DashboardPage` immediately after signup, tracks compl
 
 ## 4. Migration
 
-**File:** `supabase/migrations/20260701_002_onboarding_checklist.sql`
+**File:** `supabase/migrations/20260701002_onboarding_checklist.sql`
 
 > Use the actual next sequential date. If PRD-001 migration runs first on the same day, use `20260701_002`.
 
