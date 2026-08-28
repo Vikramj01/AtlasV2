@@ -381,7 +381,7 @@ CREATE TABLE IF NOT EXISTS public.signal_packs (
   organisation_id UUID        REFERENCES auth.users(id) ON DELETE CASCADE,
   name            TEXT        NOT NULL,
   description     TEXT,
-  business_type   TEXT        NOT NULL,
+  business_type   TEXT,       -- nullable: system starter packs (20260701002_onboarding_checklist.sql seed) have none
   is_system       BOOLEAN     NOT NULL DEFAULT false,
   version         INTEGER     NOT NULL DEFAULT 1,
   signals_count   INTEGER     NOT NULL DEFAULT 0,
