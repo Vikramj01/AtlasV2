@@ -37,6 +37,7 @@ const ADDABLE_PROVIDERS: Array<{ value: CAPIProvider; label: string }> = [
   { value: 'google',   label: 'Data Manager (Google)' },
   { value: 'linkedin', label: 'LinkedIn' },
   { value: 'amazon',   label: 'Amazon Ads' },
+  { value: 'tiktok',   label: 'TikTok' },
 ];
 
 export function ProviderList({ onAddProvider, onSelectProvider }: ProviderListProps) {

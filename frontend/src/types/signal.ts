@@ -28,6 +28,9 @@ export interface Signal {
   taxonomy_event_id: string | null;
   taxonomy_path: string | null;
   version: number;
+  valid_from: string;
+  deprecated_at: string | null;
+  superseded_by_signal_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -44,6 +47,8 @@ export interface SignalPack {
   version: number;
   signals_count: number;
   signal_keys?: string[];
+  valid_from: string;
+  deprecated_at: string | null;
   created_at: string;
   updated_at: string;
   client_count?: number;
