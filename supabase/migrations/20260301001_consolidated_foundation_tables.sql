@@ -54,7 +54,10 @@ CREATE TABLE IF NOT EXISTS public.profiles (
                                         CHECK (role IN ('user', 'admin')),
   plan                      TEXT        NOT NULL DEFAULT 'free'
                                         CHECK (plan IN ('free', 'pro', 'agency')),
-  organisation_id           UUID,       -- soft ref; populated when user joins an org
+  organization_id           UUID,       -- soft ref (American spelling — confirmed by every later
+                                        -- migration and 20260702_001_fix_profiles_organization_id.sql,
+                                        -- unlike the organisations/organisation_members tables below,
+                                        -- which are British); populated when user joins an org
   stripe_customer_id        TEXT        UNIQUE,
   stripe_subscription_id    TEXT        UNIQUE,
   subscription_status       TEXT        NOT NULL DEFAULT 'inactive'
@@ -67,7 +70,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   updated_at                TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS profiles_organisation_id_idx      ON public.profiles (organisation_id);
+CREATE INDEX IF NOT EXISTS profiles_organization_id_idx      ON public.profiles (organization_id);
 CREATE INDEX IF NOT EXISTS profiles_stripe_customer_id_idx   ON public.profiles (stripe_customer_id);
 CREATE INDEX IF NOT EXISTS profiles_stripe_subscription_id_idx ON public.profiles (stripe_subscription_id);
 
