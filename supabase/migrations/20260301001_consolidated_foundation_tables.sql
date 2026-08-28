@@ -1,39 +1,50 @@
 -- ============================================================
--- CONSOLIDATED MISSING MIGRATIONS
--- Atlas V2 — base tables not created by any numbered migration file
+-- Consolidated foundation tables
 --
--- NOTE: this content is now also tracked as a proper numbered migration —
--- supabase/migrations/20260301001_consolidated_foundation_tables.sql —
--- so `supabase db push` / a fresh Supabase Preview branch picks it up
--- automatically. This script is kept as a standalone reference for manually
--- bootstrapping a project via the SQL editor without running migrations at
--- all; the numbered migration is the source of truth going forward.
+-- Ported from supabase/scripts/CONSOLIDATED_MISSING_MIGRATIONS.sql, which
+-- was written for one-time manual execution in the Supabase SQL editor and
+-- was never tracked as a numbered migration. That gap meant a *fresh*
+-- Supabase Preview branch (which only replays supabase/migrations/ from
+-- scratch) always failed once it hit anything referencing profiles,
+-- organisations, clients, signals, audits, etc. — first surfaced on PR #342
+-- ("relation public.profiles does not exist" inside 20260615002_ihc_alerts.sql).
 --
--- Run this script once in the Supabase SQL editor on a fresh project
--- (or any project that is missing these tables).
+-- Dated before every other tracked migration (20260317 is the previous
+-- earliest) since these are genuinely foundational tables that predate this
+-- repo's supabase/migrations/ directory — several existing migrations say
+-- so directly ("profiles is not created by a migration", "audits table
+-- predates supabase/migrations/").
 --
--- Source: reconstructed from backend/src/services/database/*,
---         backend/src/types/*, and the guards embedded in numbered
---         migration files (20260405, 20260409, 20260410, etc.).
+-- Idempotent throughout (CREATE TABLE/INDEX IF NOT EXISTS, DROP POLICY/
+-- TRIGGER IF EXISTS before recreating) — safe to run against a project that
+-- already has these tables from the manual script; every statement no-ops.
+--
+-- One change from the source script: planning_recommendations does NOT
+-- inline taxonomy_event_id/taxonomy_path here, because that FK targets
+-- event_taxonomy, which isn't created until 20260410_001_event_taxonomy.sql
+-- — a table from a later migration doesn't exist yet at this point in a
+-- fresh replay. 20260411_001_planning_rec_taxonomy.sql already has a
+-- guarded ALTER TABLE ... IF EXISTS for exactly this column pair, written
+-- assuming planning_recommendations already exists — which it now will,
+-- from this migration — so it adds them correctly once event_taxonomy is
+-- also in place, instead of duplicating that logic here out of order.
 --
 -- Order:
 --   1. profiles                (auth scaffold + Stripe columns)
 --   2. organisations + organisation_members
---   3. clients + client_platforms + client_pages
---   4. signals + signal_packs + signal_pack_signals + deployments + client_outputs
+--   3. clients + client_platforms + client_pages + client_outputs
+--   4. signals + signal_packs + signal_pack_signals + deployments
 --   5. audits + audit_results + audit_reports
 --   6. scheduled_audits
 --   7. health_scores + health_snapshots + health_alerts
---   8. planning_sessions + planning_pages + planning_recommendations + planning_outputs
+--   8. planning_sessions + planning_pages + planning_recommendations
+--      + planning_outputs + tracking_plan_versions
 --   9. developer_shares + implementation_progress
 -- ============================================================
 
 
 -- ============================================================
 -- SECTION 1: profiles
--- Source: inferred from 20260405_001_fix_user_deletion_cascade.sql
---         (profiles FK fix) + 20260409_001_stripe_subscriptions.sql
---         (Stripe columns) + authMiddleware / adminQueries usage
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS public.profiles (
@@ -110,8 +121,6 @@ CREATE TRIGGER trg_profiles_updated
 
 -- ============================================================
 -- SECTION 2: organisations + organisation_members
--- Source: backend/src/services/database/orgQueries.ts
---         backend/src/types/organisation.ts
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS public.organisations (
@@ -179,9 +188,7 @@ CREATE POLICY "org_members_isolation"
 
 
 -- ============================================================
--- SECTION 3: clients + client_platforms + client_pages
--- Source: backend/src/services/database/clientQueries.ts
---         backend/src/types/organisation.ts
+-- SECTION 3: clients + client_platforms + client_pages + client_outputs
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS public.clients (
@@ -283,8 +290,6 @@ CREATE POLICY "client_pages_org_isolation"
   );
 
 -- ── client_outputs ────────────────────────────────────────────────────────────
--- Source: backend/src/types/signal.ts (ClientOutput interface)
---         20260427_001_remove_walkeros.sql (constraint guard references client_outputs)
 
 CREATE TABLE IF NOT EXISTS public.client_outputs (
   id                 UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -317,9 +322,6 @@ CREATE POLICY "client_outputs_org_isolation"
 
 -- ============================================================
 -- SECTION 4: signals + signal_packs + signal_pack_signals + deployments
--- Source: backend/src/services/database/signalQueries.ts
---         backend/src/types/signal.ts
---         20260410_001_event_taxonomy.sql (adds taxonomy_event_id to signals)
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS public.signals (
@@ -336,7 +338,7 @@ CREATE TABLE IF NOT EXISTS public.signals (
   required_params        JSONB       NOT NULL DEFAULT '[]',
   optional_params        JSONB       NOT NULL DEFAULT '[]',
   platform_mappings      JSONB       NOT NULL DEFAULT '{}',
-  taxonomy_event_id      UUID,       -- FK added by 20260410; kept here to avoid duplicate ALTER
+  taxonomy_event_id      UUID,       -- FK added by 20260410_001_event_taxonomy.sql; kept here to avoid duplicate ALTER
   taxonomy_path          TEXT,
   version                INTEGER     NOT NULL DEFAULT 1,
   created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -458,8 +460,6 @@ CREATE POLICY "deployments_org_isolation"
 
 -- ============================================================
 -- SECTION 5: audits + audit_results + audit_reports
--- Source: backend/src/services/database/queries.ts
---         frontend/src/types/audit.ts
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS public.audits (
@@ -542,8 +542,6 @@ ALTER TABLE public.audit_reports ADD COLUMN IF NOT EXISTS user_id UUID REFERENCE
 
 -- ============================================================
 -- SECTION 6: scheduled_audits
--- Source: backend/src/services/database/scheduleQueries.ts
---         backend/src/types/schedule.ts
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS public.scheduled_audits (
@@ -586,9 +584,6 @@ CREATE TRIGGER trg_scheduled_audits_updated
 
 -- ============================================================
 -- SECTION 7: health_scores + health_snapshots + health_alerts
--- Source: backend/src/services/database/healthQueries.ts
---         backend/src/types/health.ts
---         20260609001_phase4_health_extensions.sql (adds platform_acceptance_score)
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS public.health_scores (
@@ -675,11 +670,7 @@ CREATE POLICY "health_alerts_owner"
 -- ============================================================
 -- SECTION 8: planning_sessions + planning_pages
 --            + planning_recommendations + planning_outputs
--- Source: backend/src/services/database/planningQueries.ts
---         backend/src/types/planning.ts
---         20260411_001_planning_rec_taxonomy.sql (taxonomy columns on recommendations)
---         20260428_001_tracking_plan_versions.sql (tracking_plan_versions)
---         20260427_001_remove_walkeros.sql (output_type constraint)
+--            + tracking_plan_versions
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS public.planning_sessions (
@@ -753,9 +744,9 @@ CREATE POLICY "planning_pages_owner"
   );
 
 -- ── planning_recommendations ──────────────────────────────────────────────────
--- taxonomy_event_id and taxonomy_path are included here directly
--- (normally added by 20260411_001_planning_rec_taxonomy.sql via ALTER TABLE;
---  including inline here means the ALTER in that file becomes a no-op).
+-- taxonomy_event_id/taxonomy_path are intentionally NOT included here — see
+-- the file header. 20260411_001_planning_rec_taxonomy.sql adds them once
+-- event_taxonomy exists (20260410_001_event_taxonomy.sql).
 
 CREATE TABLE IF NOT EXISTS public.planning_recommendations (
   id                    UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -778,15 +769,11 @@ CREATE TABLE IF NOT EXISTS public.planning_recommendations (
   modified_config       JSONB,
   decided_at            TIMESTAMPTZ,
   source                TEXT        NOT NULL DEFAULT 'ai' CHECK (source IN ('ai', 'manual')),
-  taxonomy_event_id     UUID        REFERENCES public.event_taxonomy(id) ON DELETE SET NULL,
-  taxonomy_path         TEXT,
   created_at            TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS planning_recommendations_page_id_idx         ON public.planning_recommendations (page_id);
 CREATE INDEX IF NOT EXISTS planning_recommendations_user_decision_idx   ON public.planning_recommendations (user_decision);
-CREATE INDEX IF NOT EXISTS idx_planning_rec_taxonomy_event_id           ON public.planning_recommendations (taxonomy_event_id)
-  WHERE taxonomy_event_id IS NOT NULL;
 
 ALTER TABLE public.planning_recommendations ENABLE ROW LEVEL SECURITY;
 
@@ -831,8 +818,6 @@ CREATE POLICY "planning_outputs_owner"
   );
 
 -- ── tracking_plan_versions ────────────────────────────────────────────────────
--- Source: 20260428_001_tracking_plan_versions.sql (normally guarded;
---         created inline here because planning_sessions now exists above)
 
 CREATE TABLE IF NOT EXISTS public.tracking_plan_versions (
   id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -861,7 +846,6 @@ CREATE POLICY "Users access own session versions"
 
 -- ============================================================
 -- SECTION 9: developer_shares + implementation_progress
--- Source: backend/src/services/database/developerQueries.ts
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS public.developer_shares (
