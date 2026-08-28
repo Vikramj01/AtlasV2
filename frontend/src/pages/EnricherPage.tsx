@@ -1,8 +1,9 @@
 /**
  * EnricherPage — /integrations/enricher
  *
- * Bid Signal Enricher: push first-party audience data to multiple Google
- * destinations (Google Ads, GA4, DV360, CM360) in a single call.
+ * Bid Signal Enricher: push first-party audience data to multiple
+ * destinations — Google (Google Ads, GA4, DV360, CM360) and LinkedIn Matched
+ * Audiences (B7) — in a single call.
  */
 
 import { useState, useEffect, type ReactElement } from 'react';
@@ -25,13 +26,14 @@ type OperationType = 'CREATE' | 'REMOVE';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const DEST_TYPES: DestType[] = ['GOOGLE_ADS', 'GA4', 'DV360', 'CM360'];
+const DEST_TYPES: DestType[] = ['GOOGLE_ADS', 'GA4', 'DV360', 'CM360', 'LINKEDIN_MATCHED_AUDIENCE'];
 
 const DEST_LABELS: Record<DestType, string> = {
   GOOGLE_ADS: 'Google Ads',
   GA4: 'GA4',
   DV360: 'DV360',
   CM360: 'CM360',
+  LINKEDIN_MATCHED_AUDIENCE: 'LinkedIn Matched Audiences',
 };
 
 function idLabel(type: DestType): string {
@@ -40,6 +42,7 @@ function idLabel(type: DestType): string {
     case 'GA4':        return 'Property ID';
     case 'DV360':      return 'Advertiser ID';
     case 'CM360':      return 'Advertiser ID';
+    case 'LINKEDIN_MATCHED_AUDIENCE': return 'Audience (DMP Segment) ID';
   }
 }
 
@@ -49,6 +52,7 @@ function destToPayload(row: DestinationRow): EnricherDestination {
     case 'GA4':        return { type: row.type, propertyId: row.id };
     case 'DV360':      return { type: row.type, advertiserId: row.id };
     case 'CM360':      return { type: row.type, advertiserId: row.id };
+    case 'LINKEDIN_MATCHED_AUDIENCE': return { type: row.type, audienceId: row.id };
   }
 }
 

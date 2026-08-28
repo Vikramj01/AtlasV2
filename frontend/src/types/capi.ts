@@ -91,10 +91,25 @@ export interface TikTokCredentials {
   access_token: string;
 }
 
+export type LinkedInConversionRuleType =
+  | 'STANDARD'
+  | 'MAX_QUALIFIED_LEAD'
+  | 'MARKETING_QUALIFIED_LEAD'
+  | 'SALES_QUALIFIED_LEAD';
+
+export type LinkedInConversionOwnershipType = 'OWNER' | 'CONVERSION_SHARING';
+
+export interface LinkedInConversionRoute {
+  conversion_id: string;
+  rule_type: LinkedInConversionRuleType;
+  event_names: string[];
+}
+
 export interface LinkedInCredentials {
   account_id: string;
   access_token: string;
-  conversion_id: string;
+  conversion_id: string; // default/fallback conversion — unchanged behaviour when no routes match
+  conversion_routes?: LinkedInConversionRoute[];
 }
 
 export interface AmazonCredentials {

@@ -32,7 +32,7 @@ import {
 import { safeDecryptCredentials } from '@/services/capi/credentials';
 import { validateMetaCredentials, sendMetaTestEvent, formatMetaEvent } from '@/services/capi/metaDelivery';
 import { validateGoogleCredentials, sendGoogleTestEvent } from '@/services/capi/googleDelivery';
-import { validateLinkedInCredentials, sendLinkedInTestEvent } from '@/services/capi/linkedinDelivery';
+import { validateLinkedInCredentials, sendLinkedInTestEvent, listLinkedInConversions } from '@/services/capi/linkedinDelivery';
 import { validateAmazonCredentials, sendAmazonTestEvent } from '@/services/capi/amazonDelivery';
 import { processEvent } from '@/services/capi/pipeline';
 import { setDedupEntry } from '@/services/capi/dedupStore';
@@ -339,6 +339,28 @@ capiRouter.post('/providers/:id/test', async (req: Request, res: Response): Prom
     res.json({ results });
   } catch (err) {
     sendInternalError(res, err, 'Failed to test CAPI provider');
+  }
+});
+
+// ── GET /api/capi/providers/:id/linkedin/conversions ──────────────────────────
+// Multi-account conversion discovery (B8) — powers a conversion picker so a
+// user can select an existing qualified-lead conversion instead of hand-
+// typing a conversion_id, and see conversions shared to this account.
+
+capiRouter.get('/providers/:id/linkedin/conversions', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const provider = await getProvider(req.params.id, req.user.id);
+    if (!provider) { res.status(404).json({ error: 'PROVIDER_NOT_FOUND' }); return; }
+    if (provider.provider !== 'linkedin') {
+      res.status(400).json({ error: 'NOT_LINKEDIN_PROVIDER', message: 'This endpoint only applies to LinkedIn providers' });
+      return;
+    }
+
+    const creds = safeDecryptCredentials(provider.credentials) as LinkedInCredentials;
+    const conversions = await listLinkedInConversions(creds);
+    res.json({ data: conversions });
+  } catch (err) {
+    sendInternalError(res, err, 'Failed to discover LinkedIn conversions');
   }
 });
 

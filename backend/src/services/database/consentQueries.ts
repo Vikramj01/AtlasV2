@@ -78,6 +78,7 @@ export interface CreateConsentConfigInput {
   cmp_config?: CMPConfig | null;
   gcm_enabled?: boolean;
   gcm_mapping?: GCMMapping;
+  gpc_hard_block?: boolean;
 }
 
 export async function createConsentConfig(input: CreateConsentConfigInput): Promise<ConsentConfig> {
@@ -93,6 +94,7 @@ export async function createConsentConfig(input: CreateConsentConfigInput): Prom
       cmp_config: input.cmp_config ?? null,
       gcm_enabled: input.gcm_enabled ?? true,
       gcm_mapping: input.gcm_mapping ?? DEFAULT_GCM_MAPPING,
+      gpc_hard_block: input.gpc_hard_block ?? true,
     })
     .select('*')
     .single();
@@ -126,6 +128,7 @@ export async function upsertConsentConfig(input: CreateConsentConfigInput): Prom
         cmp_config: input.cmp_config ?? null,
         gcm_enabled: input.gcm_enabled ?? true,
         gcm_mapping: input.gcm_mapping ?? DEFAULT_GCM_MAPPING,
+        gpc_hard_block: input.gpc_hard_block ?? true,
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'project_id' }

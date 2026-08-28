@@ -9,7 +9,7 @@ export type ConsentState = 'granted' | 'denied' | 'pending' | 'not_required';
 export type ConsentCategory = 'analytics' | 'marketing' | 'personalisation' | 'functional';
 export type ConsentMode = 'builtin' | 'onetrust' | 'cookiebot' | 'usercentrics';
 export type ConsentRegulation = 'gdpr' | 'ccpa' | 'custom';
-export type ConsentSource = ConsentMode | 'api';
+export type ConsentSource = ConsentMode | 'api' | 'gpc';
 export type BannerPosition = 'bottom_bar' | 'modal' | 'corner';
 
 // --- Google Consent Mode v2 ---
@@ -84,6 +84,11 @@ export interface ConsentConfig {
   cmp_config: CMPConfig | null;
   gcm_enabled: boolean;
   gcm_mapping: GCMMapping;
+  // B1 (ATLAS_CONVERSION_SIGNAL_LAYER_SPRINT_PLAN.md): hard-block the banner
+  // re-prompt once GPC is detected (default true) vs. still letting the
+  // visitor explicitly opt back in. Honouring GPC's initial denial is not
+  // optional either way -- this only controls the re-prompt behaviour.
+  gpc_hard_block: boolean;
   created_at: string;
   updated_at: string;
 }
