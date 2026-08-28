@@ -74,6 +74,11 @@ function buildScript(config: ConsentConfig, apiBaseUrl: string): string {
     rejectBtn: JSON.stringify(copy.reject_button),
     manageLink: JSON.stringify(copy.manage_link),
     gcmEnabled: config.gcm_enabled,
+    // B1 (ATLAS_CONVERSION_SIGNAL_LAYER_SPRINT_PLAN.md): hard-block the banner
+    // re-prompt once GPC is detected (default) vs. still offering explicit
+    // opt-in afterward. Honouring GPC itself is not optional either way —
+    // this only controls whether the banner can still appear.
+    gpcHardBlock: config.gpc_hard_block ?? true,
   };
 
   return `
@@ -86,6 +91,7 @@ function buildScript(config: ConsentConfig, apiBaseUrl: string): string {
   var POSITION   = ${cfg.position};
   var TTL_DAYS   = ${cfg.ttlDays};
   var GCM_ENABLED = ${cfg.gcmEnabled};
+  var GPC_HARD_BLOCK = ${cfg.gpcHardBlock};
   var STORAGE_KEY = 'atlas_consent';
   var VID_KEY     = 'atlas_vid';
 
@@ -132,6 +138,21 @@ function buildScript(config: ConsentConfig, apiBaseUrl: string): string {
   function applyGCM(gcmState) {
     if (!GCM_ENABLED || typeof gtag !== 'function') return;
     gtag('consent', 'update', gcmState);
+  }
+
+  // ── GPC (Global Privacy Control) detection ──────────────────────────────────
+  // Required to be honoured programmatically since 1 Jan 2026 across 12 US
+  // states. Read fresh on every page load — it's a live browser/extension
+  // signal, not a stored preference, so it always takes priority over any
+  // saved local decision (including a stale "accept all" from before the
+  // visitor enabled GPC).
+  var gpcDetected = !!(navigator.globalPrivacyControl === true || navigator.globalPrivacyControl === '1');
+
+  if (gpcDetected) {
+    handleDecision({ analytics: 'denied', marketing: 'denied', personalisation: 'denied', functional: 'granted' }, 'gpc');
+    if (GPC_HARD_BLOCK) return; // no re-prompt while GPC is active (org default)
+    renderBanner(); // soft mode — still let the visitor explicitly opt back in
+    return;
   }
 
   var saved = loadSaved();
@@ -194,7 +215,8 @@ function buildScript(config: ConsentConfig, apiBaseUrl: string): string {
   }
 
   // ── Handle decision ─────────────────────────────────────────────────────────
-  function handleDecision(decisions) {
+  function handleDecision(decisions, source) {
+    source = source || 'builtin';
     var visitorId = getVisitorId();
     var consentId = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString();
 
@@ -236,7 +258,7 @@ function buildScript(config: ConsentConfig, apiBaseUrl: string): string {
         visitor_id: visitorId,
         consent_id: consentId,
         decisions: decisions,
-        source: 'builtin',
+        source: source,
         user_agent: navigator.userAgent
       })
     }).catch(function () {}); // silent fail — local state already persisted
@@ -282,9 +304,11 @@ ${minified}
 
 ### What this does
 1. Sets Google Consent Mode v2 default signals (deny-all, privacy-first)
-2. Checks for a prior consent decision (stored in localStorage)
-3. If found → immediately updates GCM signals — no banner shown
-4. If not found → renders the consent banner
+2. Checks for Global Privacy Control (GPC) on every page load — if detected,
+   auto-denies marketing/personalisation${config.gpc_hard_block === false ? ' but still shows the banner so the visitor can explicitly opt back in' : ' and, by default, never re-prompts while GPC stays active'}
+3. Otherwise checks for a prior consent decision (stored in localStorage)
+4. If found → immediately updates GCM signals — no banner shown
+5. If not found → renders the consent banner
 
 ### Requirements
 - Replace any placeholder API URL with your Atlas backend URL

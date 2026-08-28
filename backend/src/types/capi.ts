@@ -91,10 +91,38 @@ export interface TikTokCredentials {
   access_token: string;
 }
 
+// Conversion rule types shipped through LinkedIn's 2026 API versions (B8):
+// MAX_QUALIFIED_LEAD (Feb 2026, v202602), MARKETING_QUALIFIED_LEAD/
+// SALES_QUALIFIED_LEAD (Aug 2026, v202608). 'STANDARD' covers everything that
+// predates qualified-lead bidding.
+export type LinkedInConversionRuleType =
+  | 'STANDARD'
+  | 'MAX_QUALIFIED_LEAD'
+  | 'MARKETING_QUALIFIED_LEAD'
+  | 'SALES_QUALIFIED_LEAD';
+
+// A client's LinkedIn ad account may own a conversion, or have one shared to
+// it in a multi-account/agency setup — surfaced by the conversion discovery
+// endpoint (listLinkedInConversions) so an agency managing several accounts
+// can tell which conversions are theirs vs. shared.
+export type LinkedInConversionOwnershipType = 'OWNER' | 'CONVERSION_SHARING';
+
+// Routes specific Atlas event names to a non-default LinkedIn conversion —
+// this is how a qualified-lead conversion type (e.g. MQL vs SQL) gets used:
+// map the CRM-stage event that represents "became an MQL" to a conversion_id
+// whose LinkedIn-side rule type is MARKETING_QUALIFIED_LEAD, distinct from
+// the default/standard conversion every other event falls back to.
+export interface LinkedInConversionRoute {
+  conversion_id: string;
+  rule_type: LinkedInConversionRuleType;
+  event_names: string[];
+}
+
 export interface LinkedInCredentials {
   account_id: string;
   access_token: string;
-  conversion_id: string;
+  conversion_id: string; // default/fallback conversion — unchanged behaviour when no routes match
+  conversion_routes?: LinkedInConversionRoute[];
 }
 
 export interface AmazonCredentials {

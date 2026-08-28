@@ -10,10 +10,11 @@ import { supabase } from '@/lib/supabase';
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
 
 export interface EnricherDestination {
-  type: 'GOOGLE_ADS' | 'GA4' | 'DV360' | 'CM360';
+  type: 'GOOGLE_ADS' | 'GA4' | 'DV360' | 'CM360' | 'LINKEDIN_MATCHED_AUDIENCE';
   customerId?: string;
   propertyId?: string;
   advertiserId?: string;
+  audienceId?: string; // LINKEDIN_MATCHED_AUDIENCE — target DMP Segment ID
 }
 
 export interface EnricherRun {

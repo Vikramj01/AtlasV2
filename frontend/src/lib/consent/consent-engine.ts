@@ -149,6 +149,7 @@ export async function recordConsent(
   config: ConsentConfig,
   decisions: ConsentDecisions,
   visitorId: string,
+  source: RecordConsentRequest['source'] = 'builtin',
 ): Promise<RecordConsentResponse> {
   const consentId = generateConsentId();
   const gcmState = config.gcm_enabled
@@ -160,7 +161,7 @@ export async function recordConsent(
     visitor_id: visitorId,
     consent_id: consentId,
     decisions,
-    source: 'builtin',
+    source,
     user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
   };
 
@@ -203,20 +204,45 @@ export async function fetchConsentState(
   return res.json() as Promise<GetConsentResponse>;
 }
 
+// ── GPC (Global Privacy Control) ────────────────────────────────────────────
+
+/**
+ * Detect Global Privacy Control — required to be honoured programmatically
+ * since 1 Jan 2026 across 12 US states. Read fresh on every call (never
+ * cache the result): it's a live browser/extension signal, not a stored
+ * preference, so it can flip between page loads.
+ */
+export function detectGPC(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const gpc = (navigator as Navigator & { globalPrivacyControl?: boolean | string }).globalPrivacyControl;
+  return gpc === true || gpc === '1';
+}
+
 // ── Initialisation helper ─────────────────────────────────────────────────────
 
 /**
  * Initialise the consent engine on page load.
  *
- * 1. If a valid local snapshot exists → push GCM default and return it.
- * 2. Otherwise → push all-denied GCM default (privacy-first).
+ * 1. If GPC is detected → force marketing/personalisation denied and report
+ *    gpcDetected so the caller records it (source: 'gpc') and, per
+ *    config.gpc_hard_block, can skip rendering the banner entirely — GPC
+ *    always takes priority over any locally saved snapshot, since it must be
+ *    honoured on every visit while active, not just the first.
+ * 2. Else if a valid local snapshot exists → push GCM default and return it.
+ * 3. Otherwise → push all-denied GCM default (privacy-first).
  *
  * Call this as early as possible in the page lifecycle, before any ad tags load.
  */
 export function initConsentEngine(
   projectId: string,
   config: ConsentConfig | null,
-): { decisions: ConsentDecisions | null; gcm_state: GCMState; hasPriorConsent: boolean } {
+): {
+  decisions: ConsentDecisions | null;
+  gcm_state: GCMState;
+  hasPriorConsent: boolean;
+  gpcDetected: boolean;
+  suppressBanner: boolean;
+} {
   const allDenied: GCMState = {
     analytics_storage: 'denied',
     ad_storage: 'denied',
@@ -227,10 +253,34 @@ export function initConsentEngine(
     security_storage: 'granted',
   };
 
+  if (detectGPC()) {
+    const gpcDecisions: ConsentDecisions = {
+      analytics: 'denied',
+      marketing: 'denied',
+      personalisation: 'denied',
+      functional: 'granted',
+    };
+    const gpcGCM = config ? buildGCMState(gpcDecisions, config.gcm_mapping) : allDenied;
+    pushGCMDefault(gpcGCM);
+    return {
+      decisions: gpcDecisions,
+      gcm_state: gpcGCM,
+      hasPriorConsent: false,
+      gpcDetected: true,
+      suppressBanner: config?.gpc_hard_block ?? true,
+    };
+  }
+
   const local = loadConsentLocally(projectId);
   if (local) {
     pushGCMDefault(local.gcm_state);
-    return { decisions: local.decisions, gcm_state: local.gcm_state, hasPriorConsent: true };
+    return {
+      decisions: local.decisions,
+      gcm_state: local.gcm_state,
+      hasPriorConsent: true,
+      gpcDetected: false,
+      suppressBanner: true,
+    };
   }
 
   // No prior consent — set restrictive defaults
@@ -239,7 +289,7 @@ export function initConsentEngine(
     : allDenied;
 
   pushGCMDefault(defaultGCM);
-  return { decisions: null, gcm_state: defaultGCM, hasPriorConsent: false };
+  return { decisions: null, gcm_state: defaultGCM, hasPriorConsent: false, gpcDetected: false, suppressBanner: false };
 }
 
 // ── Utility ───────────────────────────────────────────────────────────────────

@@ -15,18 +15,24 @@
  *   https://learn.microsoft.com/en-us/linkedin/marketing/integrations/ads-reporting/conversions-api
  */
 
-import { randomUUID } from 'crypto';
+import { randomUUID, createHash } from 'crypto';
 import type {
   AtlasEvent,
   HashedIdentifier,
   EventMapping,
   LinkedInCredentials,
+  LinkedInConversionRuleType,
+  LinkedInConversionOwnershipType,
   TestResult,
   DeliveryResult,
   ValidationResult,
 } from '@/types/capi';
 import { getLinkedInDedupEntry } from './dedupStore';
 import logger from '@/utils/logger';
+
+function sha256hex(input: string): string {
+  return createHash('sha256').update(input, 'utf8').digest('hex');
+}
 
 const LINKEDIN_API_BASE = 'https://api.linkedin.com';
 // LinkedIn sunsets Marketing API versions roughly annually — 202507 is already
@@ -41,7 +47,14 @@ type LinkedInUserId =
   | { idType: 'SHA256_EMAIL'; idValue: string }
   | { idType: 'LINKEDIN_FIRST_PARTY_ADS_TRACKING_UUID'; idValue: string }
   | { idType: 'ACXIOM_ID'; idValue: string }
-  | { idType: 'ORACLE_MOAT_ID'; idValue: string };
+  | { idType: 'ORACLE_MOAT_ID'; idValue: string }
+  // Added by LinkedIn in 2026 (B8, ATLAS_CONVERSION_SIGNAL_LAYER_SPRINT_PLAN.md):
+  // PLAINTEXT_IP_ADDRESS (May), SHA256_IP_ADDRESS (Jul). Atlas sends the hashed
+  // variant by default, consistent with the SHA-256 PII hashing used across
+  // every other CAPI provider — see formatLinkedInEvent().
+  | { idType: 'SHA256_IP_ADDRESS'; idValue: string }
+  | { idType: 'PLAINTEXT_IP_ADDRESS'; idValue: string }
+  | { idType: 'GOOGLE_AID'; idValue: string };
 
 interface LinkedInConversionEvent {
   conversion: string;           // URN: "urn:lla:llaPartnerConversion:{id}"
@@ -87,6 +100,28 @@ function linkedInHeaders(accessToken: string): Record<string, string> {
   };
 }
 
+// ── Conversion routing ────────────────────────────────────────────────────────
+
+/**
+ * Resolve which LinkedIn conversion_id an event should post against.
+ *
+ * LinkedIn's "conversion type" (STANDARD vs. the 2026 qualified-lead rule
+ * types) is a property of the Conversion resource itself, configured in
+ * Campaign Manager — not a per-event field. So routing a qualified-lead
+ * event to the right conversion means picking a different conversion_id,
+ * not setting a type on the payload. conversion_routes (B8) maps specific
+ * Atlas event names to a non-default conversion; anything unmatched falls
+ * back to creds.conversion_id, so existing single-conversion configs are
+ * unaffected.
+ */
+function resolveConversionId(
+  creds: Pick<LinkedInCredentials, 'conversion_id' | 'conversion_routes'>,
+  eventName: string,
+): string {
+  const route = creds.conversion_routes?.find((r) => r.event_names.includes(eventName));
+  return route?.conversion_id ?? creds.conversion_id;
+}
+
 // ── Payload formatting ────────────────────────────────────────────────────────
 
 /**
@@ -97,12 +132,18 @@ function linkedInHeaders(accessToken: string): Record<string, string> {
  *   - userInfo.firstName / lastName use hashed fn/ln identifiers.
  *   - userInfo.countryCode is the raw ISO-3166-1 alpha-2 code (NOT hashed) taken
  *     from event.user_data.country, since LinkedIn expects a plaintext country code.
+ *   - client_ip_address (event.user_data), if present, is sent as SHA256_IP_ADDRESS —
+ *     hashed rather than PLAINTEXT_IP_ADDRESS, consistent with the SHA-256 PII
+ *     hashing standard used across every other CAPI provider in this pipeline.
+ *   - conversion_id is resolved per-event via creds.conversion_routes (B8) so a
+ *     qualified-lead event can target a different LinkedIn conversion than the
+ *     account's default.
  */
 export function formatLinkedInEvent(
   event: AtlasEvent,
   mapping: EventMapping,
   identifiers: HashedIdentifier[],
-  conversionId: string,
+  creds: Pick<LinkedInCredentials, 'conversion_id' | 'conversion_routes'>,
   eventId: string,
 ): LinkedInConversionEvent {
   const userIds: LinkedInUserId[] = [];
@@ -122,6 +163,11 @@ export function formatLinkedInEvent(
     }
   }
 
+  const rawIp = event.user_data.client_ip_address?.trim();
+  if (rawIp) {
+    userIds.push({ idType: 'SHA256_IP_ADDRESS', idValue: sha256hex(rawIp) });
+  }
+
   // countryCode is NOT hashed — use raw event value, normalised to 2-char uppercase ISO code
   const rawCountry = event.user_data.country?.trim().slice(0, 2).toUpperCase();
   if (rawCountry) {
@@ -129,7 +175,7 @@ export function formatLinkedInEvent(
   }
 
   const conversionEvent: LinkedInConversionEvent = {
-    conversion: buildConversionUrn(conversionId),
+    conversion: buildConversionUrn(resolveConversionId(creds, event.event_name)),
     conversionHappenedAt: event.event_time * 1000, // seconds → ms
     eventId,
     user: {
@@ -185,7 +231,7 @@ export async function sendLinkedInEvents(
       e,
       mappingFor(e.event_name),
       identifiersPerEvent[i] ?? [],
-      creds.conversion_id,
+      creds,
       dedupResults[i].eventId,
     ),
   );
@@ -283,7 +329,7 @@ export async function sendLinkedInTestEvent(
     event,
     mapping,
     identifiers,
-    creds.conversion_id,
+    creds,
     testEventId,
   );
 
@@ -360,4 +406,70 @@ export async function validateLinkedInCredentials(
   } catch (err) {
     return { valid: false, error: err instanceof Error ? err.message : 'Network error' };
   }
+}
+
+// ── Conversion discovery (multi-account, B8) ────────────────────────────────
+
+export interface LinkedInConversionSummary {
+  conversion_id: string;
+  name: string;
+  rule_type: LinkedInConversionRuleType;
+  ownership_type: LinkedInConversionOwnershipType;
+  account: string; // sponsored-account URN this conversion belongs to
+}
+
+interface LinkedInConversionsListResponse {
+  elements?: Array<{
+    id: number | string;
+    name?: string;
+    type?: string;
+    conversionOwnershipTypes?: string[];
+    account?: string;
+  }>;
+}
+
+/**
+ * Discover LinkedIn Conversions available to an ad account — including ones
+ * shared to it rather than owned by it (conversionOwnershipTypes), the
+ * multi-account discovery piece of B8. Powers a conversion picker in the
+ * frontend so a user can select an existing qualified-lead conversion
+ * (MAX_QUALIFIED_LEAD / MARKETING_QUALIFIED_LEAD / SALES_QUALIFIED_LEAD)
+ * instead of hand-typing a conversion_id.
+ *
+ * NOTE: LinkedIn's Conversions Management API response shape for the 2026
+ * conversion-sharing fields postdates this code's reference documentation —
+ * field names here (`type`, `conversionOwnershipTypes`, `account`) are our
+ * best-effort mapping and should be verified against LinkedIn's current API
+ * reference before this ships. Unknown `type` values fall back to 'STANDARD'
+ * and unknown ownership values are passed through as 'OWNER' rather than
+ * throwing, so a schema drift degrades gracefully instead of breaking
+ * discovery entirely.
+ */
+export async function listLinkedInConversions(
+  creds: Pick<LinkedInCredentials, 'access_token' | 'account_id'>,
+): Promise<LinkedInConversionSummary[]> {
+  const accountUrn = `urn:li:sponsoredAccount:${creds.account_id}`;
+  const url = `${LINKEDIN_API_BASE}/rest/conversions?q=account&account=${encodeURIComponent(accountUrn)}`;
+
+  const res = await fetch(url, { headers: linkedInHeaders(creds.access_token) });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { message?: string };
+    throw new Error(body.message ?? `LinkedIn conversion discovery failed (HTTP ${res.status})`);
+  }
+
+  const body = await res.json() as LinkedInConversionsListResponse;
+  const knownRuleTypes: LinkedInConversionRuleType[] =
+    ['STANDARD', 'MAX_QUALIFIED_LEAD', 'MARKETING_QUALIFIED_LEAD', 'SALES_QUALIFIED_LEAD'];
+
+  return (body.elements ?? []).map((el) => ({
+    conversion_id: String(el.id),
+    name: el.name ?? `Conversion ${el.id}`,
+    rule_type: knownRuleTypes.includes(el.type as LinkedInConversionRuleType)
+      ? el.type as LinkedInConversionRuleType
+      : 'STANDARD',
+    ownership_type: (el.conversionOwnershipTypes?.includes('CONVERSION_SHARING')
+      ? 'CONVERSION_SHARING'
+      : 'OWNER') as LinkedInConversionOwnershipType,
+    account: el.account ?? accountUrn,
+  }));
 }

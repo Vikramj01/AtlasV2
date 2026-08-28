@@ -25,10 +25,11 @@ const RunSchema = z.object({
   destinations: z
     .array(
       z.object({
-        type: z.enum(['GOOGLE_ADS', 'GA4', 'DV360', 'CM360']),
+        type: z.enum(['GOOGLE_ADS', 'GA4', 'DV360', 'CM360', 'LINKEDIN_MATCHED_AUDIENCE']),
         customerId: z.string().optional(),
         propertyId: z.string().optional(),
         advertiserId: z.string().optional(),
+        audienceId: z.string().optional(),
       }),
     )
     .min(1),

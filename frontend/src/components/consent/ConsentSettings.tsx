@@ -71,6 +71,7 @@ export function ConsentSettings() {
   const [mode, setMode] = useState<ConsentMode>('builtin');
   const [regulation, setRegulation] = useState<ConsentRegulation>('gdpr');
   const [gcmEnabled, setGcmEnabled] = useState(true);
+  const [gpcHardBlock, setGpcHardBlock] = useState(true);
   const [banner, setBanner] = useState<BannerConfig>(DEFAULT_BANNER);
   const [categories, setCategories] = useState<ConsentCategoryConfig[]>([]);
   const [saving, setSaving] = useState(false);
@@ -114,6 +115,7 @@ export function ConsentSettings() {
     setMode(cfg.mode);
     setRegulation(cfg.regulation);
     setGcmEnabled(cfg.gcm_enabled);
+    setGpcHardBlock(cfg.gpc_hard_block ?? true);
     setBanner(cfg.banner_config ?? DEFAULT_BANNER);
     setCategories(cfg.categories);
     setCmpMode(cfg.mode);
@@ -132,6 +134,7 @@ export function ConsentSettings() {
         mode,
         regulation,
         gcm_enabled: gcmEnabled,
+        gpc_hard_block: gpcHardBlock,
         banner_config: banner,
         categories,
       });
@@ -158,6 +161,7 @@ export function ConsentSettings() {
         mode: newMode,
         regulation,
         gcm_enabled: gcmEnabled,
+        gpc_hard_block: gpcHardBlock,
         banner_config: banner,
         categories,
         cmp_config: newCmpConfig,
@@ -197,6 +201,7 @@ export function ConsentSettings() {
       banner_config: banner,
       cmp_config: null,
       gcm_enabled: gcmEnabled,
+      gpc_hard_block: gpcHardBlock,
       gcm_mapping: {
         analytics:       ['analytics_storage', 'functionality_storage'],
         marketing:       ['ad_storage', 'ad_user_data', 'ad_personalization'],
@@ -293,6 +298,18 @@ export function ConsentSettings() {
                 />
                 <label htmlFor="gcm-toggle" className="text-sm font-medium">
                   Enable Google Consent Mode v2
+                </label>
+              </div>
+              <div className="flex items-center gap-3">
+                <input
+                  id="gpc-hard-block-toggle"
+                  type="checkbox"
+                  checked={gpcHardBlock}
+                  onChange={(e) => setGpcHardBlock(e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300"
+                />
+                <label htmlFor="gpc-hard-block-toggle" className="text-sm font-medium">
+                  Never re-prompt after Global Privacy Control (GPC) denies consent
                 </label>
               </div>
             </CardContent>
