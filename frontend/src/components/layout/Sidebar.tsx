@@ -21,7 +21,21 @@ import type { Organisation } from '@/types/organisation';
 
 // ── Nav data ──────────────────────────────────────────────────────────────────
 
-type NavItemDef = { label: string; technicalLabel?: string; to: string; Icon: LucideIcon; end?: boolean; step?: number; stepKey?: string };
+type OrgNavGroup = 'WORKSPACE' | 'ENGINE' | 'LIBRARY' | 'IMPLEMENTATION' | 'TRACKING' | 'ADVANCED' | 'PRIVACY';
+
+type NavItemDef = { label: string; technicalLabel?: string; to: string; Icon: LucideIcon; end?: boolean; step?: number; stepKey?: string; group?: OrgNavGroup };
+
+// Org-context nav groups, in display order — mirrors the canonical grouping
+// from the Stitch "operator console" redesign mockups.
+const ORG_NAV_GROUPS: { label: OrgNavGroup; storageKey: string }[] = [
+  { label: 'WORKSPACE',      storageKey: 'atlas.sidebar.org.workspace' },
+  { label: 'ENGINE',         storageKey: 'atlas.sidebar.org.engine' },
+  { label: 'LIBRARY',        storageKey: 'atlas.sidebar.org.library' },
+  { label: 'IMPLEMENTATION', storageKey: 'atlas.sidebar.org.implementation' },
+  { label: 'TRACKING',       storageKey: 'atlas.sidebar.org.tracking' },
+  { label: 'ADVANCED',       storageKey: 'atlas.sidebar.org.advanced' },
+  { label: 'PRIVACY',        storageKey: 'atlas.sidebar.org.privacy' },
+];
 
 const PERSONAL_NAV_GROUPS: { label: string; items: NavItemDef[] }[] = [
   {
@@ -59,29 +73,42 @@ function orgNav(orgId: string, orgType: 'agency' | 'brand' = 'agency', primaryCl
   const isBrand = orgType === 'brand';
 
   const clientsItem: NavItemDef = isBrand && primaryClientId
-    ? { label: 'My Tracking', to: `/clients/${primaryClientId}/tracking`, Icon: MapPin }
-    : { label: 'Clients', to: `/org/${orgId}/clients`, Icon: Building2 };
+    ? { label: 'My Tracking', to: `/clients/${primaryClientId}/tracking`, Icon: MapPin, group: 'WORKSPACE' }
+    : { label: 'Clients', to: `/org/${orgId}/clients`, Icon: Building2, group: 'WORKSPACE' };
 
   return [
-    { label: 'Overview',                                                                                          to: `/org/${orgId}`,          Icon: Home },
+    // ── Workspace ──────────────────────────────────────────────────────────
+    { label: 'Overview',                                                                                          to: `/org/${orgId}`,          Icon: Home, group: 'WORKSPACE' },
     clientsItem,
     ...(isBrand ? [] : [
-      { label: 'Data Manager', to: `/org/${orgId}/data-manager`, Icon: BarChart2 } as NavItemDef,
-      { label: 'Tracking Map', to: `/org/${orgId}/signals`,      Icon: MapPin }    as NavItemDef,
-      { label: 'Templates',    to: `/org/${orgId}/packs`,        Icon: LayoutGrid } as NavItemDef,
+      { label: 'Data Manager', to: `/org/${orgId}/data-manager`, Icon: BarChart2, group: 'WORKSPACE' } as NavItemDef,
+      { label: 'Tracking Map', to: `/org/${orgId}/signals`,      Icon: MapPin,    group: 'WORKSPACE' } as NavItemDef,
     ]),
-    { label: SECTION_LABELS.planningMode.primary,   technicalLabel: SECTION_LABELS.planningMode.technical,   to: '/planning',              Icon: MapPin },
-    { label: SECTION_LABELS.auditEngine.primary,    technicalLabel: SECTION_LABELS.auditEngine.technical,    to: '/dashboard',             Icon: Clock },
-    { label: SECTION_LABELS.channelInsights.primary,technicalLabel: SECTION_LABELS.channelInsights.technical,to: '/channels',              Icon: GitBranch },
-    { label: SECTION_LABELS.capi.primary,           technicalLabel: SECTION_LABELS.capi.technical,           to: '/integrations/capi',     Icon: Activity },
-    { label: 'Bid Signal Enricher',                 technicalLabel: 'bid_signal_enricher',                    to: '/integrations/enricher', Icon: Zap },
-    { label: SECTION_LABELS.consentHub.primary,     technicalLabel: SECTION_LABELS.consentHub.technical,     to: '/consent',               Icon: ShieldCheck },
-    { label: SECTION_LABELS.signalHealth.primary,   technicalLabel: SECTION_LABELS.signalHealth.technical,   to: '/health',                Icon: HeartPulse },
-    { label: SECTION_LABELS.conversionStrategyGate.primary, technicalLabel: SECTION_LABELS.conversionStrategyGate.technical, to: '/planning/strategy', Icon: Target },
-    { label: SECTION_LABELS.journeyBuilder.primary, technicalLabel: SECTION_LABELS.journeyBuilder.technical, to: '/journey/new',           Icon: CheckCircle },
-    { label: SECTION_LABELS.tagLibrary.primary,     technicalLabel: SECTION_LABELS.tagLibrary.technical,     to: '/signals',               Icon: Tag },
-    { label: SECTION_LABELS.platformConnections.primary, technicalLabel: SECTION_LABELS.platformConnections.technical, to: '/connections', Icon: Link2 },
-    { label: 'Team & Settings',                                                                                   to: `/org/${orgId}/settings`, Icon: Settings },
+    // ── Engine ─────────────────────────────────────────────────────────────
+    { label: SECTION_LABELS.planningMode.primary,   technicalLabel: SECTION_LABELS.planningMode.technical,   to: '/planning',              Icon: MapPin,      group: 'ENGINE' },
+    { label: SECTION_LABELS.journeyBuilder.primary, technicalLabel: SECTION_LABELS.journeyBuilder.technical, to: '/journey/new',           Icon: CheckCircle, group: 'ENGINE' },
+    { label: SECTION_LABELS.auditEngine.primary,    technicalLabel: SECTION_LABELS.auditEngine.technical,    to: '/dashboard',             Icon: Clock,       group: 'ENGINE' },
+    // ── Library ────────────────────────────────────────────────────────────
+    { label: SECTION_LABELS.tagLibrary.primary,     technicalLabel: SECTION_LABELS.tagLibrary.technical,     to: '/signals',               Icon: Tag,         group: 'LIBRARY' },
+    ...(isBrand ? [] : [
+      { label: 'Templates', to: `/org/${orgId}/packs`, Icon: LayoutGrid, group: 'LIBRARY' } as NavItemDef,
+    ]),
+    // ── Implementation ─────────────────────────────────────────────────────
+    { label: SECTION_LABELS.conversionStrategyGate.primary,    technicalLabel: SECTION_LABELS.conversionStrategyGate.technical,    to: '/planning/strategy', Icon: Target, group: 'IMPLEMENTATION' },
+    { label: SECTION_LABELS.platformConnections.primary,       technicalLabel: SECTION_LABELS.platformConnections.technical,       to: '/connections',       Icon: Link2,  group: 'IMPLEMENTATION' },
+    // ── Tracking ───────────────────────────────────────────────────────────
+    { label: SECTION_LABELS.signalTracking.primary, technicalLabel: SECTION_LABELS.signalTracking.technical, to: '/signal-tracking',                Icon: Activity,       group: 'TRACKING' },
+    { label: SECTION_LABELS.reconciliation.primary, technicalLabel: SECTION_LABELS.reconciliation.technical, to: '/reconciliation',                 Icon: ArrowLeftRight, group: 'TRACKING' },
+    { label: 'Implementation Health',                                                                        to: '/settings/implementation-health', Icon: HeartPulse,     group: 'TRACKING' },
+    { label: SECTION_LABELS.signalHealth.primary,   technicalLabel: SECTION_LABELS.signalHealth.technical,   to: '/health',                         Icon: HeartPulse,     group: 'TRACKING' },
+    // ── Advanced ───────────────────────────────────────────────────────────
+    { label: 'Bid Signal Enricher',                 technicalLabel: 'bid_signal_enricher',                    to: '/integrations/enricher', Icon: Zap, group: 'ADVANCED' },
+    // ── Privacy ────────────────────────────────────────────────────────────
+    { label: SECTION_LABELS.consentHub.primary,      technicalLabel: SECTION_LABELS.consentHub.technical,      to: '/consent',           Icon: ShieldCheck, group: 'PRIVACY' },
+    { label: SECTION_LABELS.capi.primary,            technicalLabel: SECTION_LABELS.capi.technical,            to: '/integrations/capi', Icon: Activity,    group: 'PRIVACY' },
+    { label: SECTION_LABELS.channelInsights.primary, technicalLabel: SECTION_LABELS.channelInsights.technical, to: '/channels',          Icon: GitBranch,   group: 'PRIVACY' },
+    // ── Trailing (rendered separately, not part of a collapsible group) ───
+    { label: 'Team & Settings', to: `/org/${orgId}/settings`, Icon: Settings },
   ];
 }
 
@@ -298,28 +325,18 @@ export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
             {(() => {
               const allOrgItems = orgNav(activeOrgId, currentOrg?.org_type, currentOrg?.primary_client_id);
               const teamItem = allOrgItems[allOrgItems.length - 1];
-              const workspacePrefixes = [
-                `/org/${activeOrgId}`,
-                `/org/${activeOrgId}/clients`,
-                `/clients/`,
-                `/org/${activeOrgId}/data-manager`,
-                `/org/${activeOrgId}/signals`,
-                `/org/${activeOrgId}/packs`,
-              ];
-              const workspaceOrgItems = allOrgItems.filter(i =>
-                workspacePrefixes.some(prefix => i.to.startsWith(prefix))
-              );
-              const toolsOrgItems = allOrgItems.filter(i =>
-                !workspaceOrgItems.includes(i) && i !== teamItem
-              );
+              const groupedItems = allOrgItems.filter(i => i !== teamItem);
               return (
                 <>
-                  <CollapsibleNavGroup label="WORKSPACE" storageKey="atlas.sidebar.org.workspace">
-                    {workspaceOrgItems.map(item => <SidebarNavItem key={item.to} {...item} />)}
-                  </CollapsibleNavGroup>
-                  <CollapsibleNavGroup label="TOOLS" storageKey="atlas.sidebar.org.tools">
-                    {toolsOrgItems.map(item => <SidebarNavItem key={item.to} {...item} />)}
-                  </CollapsibleNavGroup>
+                  {ORG_NAV_GROUPS.map(({ label, storageKey }) => {
+                    const items = groupedItems.filter(i => i.group === label);
+                    if (items.length === 0) return null;
+                    return (
+                      <CollapsibleNavGroup key={label} label={label} storageKey={storageKey}>
+                        {items.map(item => <SidebarNavItem key={item.to} {...item} />)}
+                      </CollapsibleNavGroup>
+                    );
+                  })}
                   <div className="space-y-0.5">
                     <SidebarNavItem {...teamItem} />
                   </div>

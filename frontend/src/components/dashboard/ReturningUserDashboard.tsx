@@ -28,7 +28,7 @@ export function ReturningUserDashboard() {
   if (summaryLoadState === 'error' || !summary) {
     return (
       <div className="mx-auto max-w-5xl px-6 py-8">
-        <p className="text-sm text-muted-foreground">Failed to load dashboard. Please refresh.</p>
+        <p className="text-sm text-console-fg-muted">Failed to load dashboard. Please refresh.</p>
       </div>
     );
   }
@@ -45,7 +45,7 @@ export function ReturningUserDashboard() {
       <OrgMetricsStrip metrics={summary.org_metrics} />
 
       <section className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+        <h2 className="font-heading text-xs font-semibold uppercase tracking-[0.1em] text-console-fg-subtle">
           Alerts
         </h2>
         <AlertFeed
@@ -56,11 +56,11 @@ export function ReturningUserDashboard() {
 
       <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+          <h2 className="font-heading text-xs font-semibold uppercase tracking-[0.1em] text-console-fg-subtle">
             Clients
           </h2>
           {summary.clients.length > 0 && (
-            <span className="text-xs text-muted-foreground">
+            <span className="font-mono text-xs text-console-fg-subtle">
               {summary.clients.length} active
             </span>
           )}

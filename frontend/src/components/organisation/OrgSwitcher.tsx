@@ -48,21 +48,21 @@ export function OrgSwitcher({ onSwitch }: Props) {
       </button>
 
       {open && (
-        <div className="absolute top-full z-50 mt-1 w-full rounded-lg border bg-popover shadow-lg">
+        <div className="absolute top-full z-50 mt-1 w-full rounded-lg border border-console-border bg-console-surface shadow-console-glow">
           {/* Personal workspace */}
           <button
             type="button"
             onClick={() => handleSelect(null)}
             className={cn(
-              'flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent rounded-t-lg',
-              !currentOrg && 'bg-primary/10 text-primary font-medium',
+              'flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-console-fg hover:bg-console-chip rounded-t-lg',
+              !currentOrg && 'bg-console-primary/[0.06] text-console-primary font-semibold',
             )}
           >
             <User className="h-3.5 w-3.5 shrink-0" />
             Personal
           </button>
 
-          {organisations.length > 0 && <div className="mx-3 my-1 border-t" />}
+          {organisations.length > 0 && <div className="mx-3 my-1 border-t border-console-border" />}
 
           {/* Org workspaces */}
           {organisations.map((org) => (
@@ -71,8 +71,8 @@ export function OrgSwitcher({ onSwitch }: Props) {
               type="button"
               onClick={() => handleSelect(org)}
               className={cn(
-                'flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-accent',
-                currentOrg?.id === org.id && 'bg-primary/10 text-primary font-medium',
+                'flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-console-fg hover:bg-console-chip',
+                currentOrg?.id === org.id && 'bg-console-primary/[0.06] text-console-primary font-semibold',
               )}
             >
               <Building2 className="h-3.5 w-3.5 shrink-0" />
@@ -81,11 +81,11 @@ export function OrgSwitcher({ onSwitch }: Props) {
           ))}
 
           {/* Create org */}
-          <div className="mx-3 my-1 border-t" />
+          <div className="mx-3 my-1 border-t border-console-border" />
           <Link
             to="/settings?tab=org"
             onClick={() => setOpen(false)}
-            className="flex w-full items-center gap-2 rounded-b-lg px-3 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+            className="flex w-full items-center gap-2 rounded-b-lg px-3 py-2 text-sm text-console-fg-muted hover:bg-console-chip hover:text-console-fg"
           >
             <Plus className="h-3.5 w-3.5" />
             New organisation
