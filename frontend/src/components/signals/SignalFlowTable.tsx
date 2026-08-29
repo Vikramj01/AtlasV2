@@ -8,17 +8,17 @@ import type { SignalEventRow } from '@/types/signal-tracking';
 // ── Display helpers ───────────────────────────────────────────────────────────
 
 function matchQualityCell(score: number | null) {
-  if (score === null) return <span className="text-[#9CA3AF]">—</span>;
-  const color = score < 5 ? 'text-[#DC2626]' : score < 7 ? 'text-[#D97706]' : 'text-[#16A34A]';
-  return <span className={cn('font-medium tabular-nums', color)}>{score.toFixed(1)}</span>;
+  if (score === null) return <span className="text-console-fg-disabled">—</span>;
+  const color = score < 5 ? 'text-console-red' : score < 7 ? 'text-console-amber' : 'text-console-green';
+  return <span className={cn('font-mono font-medium tabular-nums', color)}>{score.toFixed(1)}</span>;
 }
 
 function latencyCell(ms: number | null, p95: number | null) {
-  if (ms === null) return <span className="text-[#9CA3AF]">—</span>;
+  if (ms === null) return <span className="text-console-fg-disabled">—</span>;
   const isOutlier = p95 !== null && ms > p95;
   const isHigh    = ms > 2000;
-  const color = (isOutlier || isHigh) ? 'text-[#DC2626]' : ms > 500 ? 'text-[#D97706]' : 'text-[#374151]';
-  return <span className={cn('tabular-nums', color)}>{ms.toLocaleString()}ms</span>;
+  const color = (isOutlier || isHigh) ? 'text-console-red' : ms > 500 ? 'text-console-amber' : 'text-console-fg-muted';
+  return <span className={cn('font-mono tabular-nums', color)}>{ms.toLocaleString()}ms</span>;
 }
 
 function formatTimestamp(iso: string): string {
@@ -59,8 +59,8 @@ export function SignalFlowTable({ rows, isLoading, hasMore, p95LatencyMs, onLoad
   if (!isLoading && rows.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center">
-        <p className="text-sm font-medium text-[#374151]">No signals in this time range</p>
-        <p className="mt-1 text-xs text-[#6B7280]">Adjust the filters or time range to find events.</p>
+        <p className="text-sm font-medium text-console-fg-muted">No signals in this time range</p>
+        <p className="mt-1 text-xs text-console-fg-subtle">Adjust the filters or time range to find events.</p>
       </div>
     );
   }
@@ -69,15 +69,15 @@ export function SignalFlowTable({ rows, isLoading, hasMore, p95LatencyMs, onLoad
     <div className="overflow-x-auto">
       <table className="w-full border-collapse text-sm" role="grid" aria-label="Signal flow">
         <thead>
-          <tr className="border-b border-[#E5E7EB] bg-[#F9FAFB]">
-            <th scope="col" className="px-4 py-2.5 text-left text-xs font-semibold text-[#6B7280] whitespace-nowrap">Timestamp</th>
-            <th scope="col" className="px-4 py-2.5 text-left text-xs font-semibold text-[#6B7280]">Destination</th>
-            <th scope="col" className="px-4 py-2.5 text-left text-xs font-semibold text-[#6B7280]">Event</th>
-            <th scope="col" className="px-4 py-2.5 text-left text-xs font-semibold text-[#6B7280]">Event ID</th>
-            <th scope="col" className="px-4 py-2.5 text-left text-xs font-semibold text-[#6B7280]">Status</th>
-            <th scope="col" className="px-4 py-2.5 text-left text-xs font-semibold text-[#6B7280]">Dedup</th>
-            <th scope="col" className="px-4 py-2.5 text-left text-xs font-semibold text-[#6B7280]">Match Quality</th>
-            <th scope="col" className="px-4 py-2.5 text-left text-xs font-semibold text-[#6B7280]">Latency</th>
+          <tr className="border-b border-console-border bg-console-chip">
+            <th scope="col" className="px-4 py-2.5 text-left font-heading text-xs font-semibold uppercase tracking-wide text-console-fg-subtle whitespace-nowrap">Timestamp</th>
+            <th scope="col" className="px-4 py-2.5 text-left font-heading text-xs font-semibold uppercase tracking-wide text-console-fg-subtle">Destination</th>
+            <th scope="col" className="px-4 py-2.5 text-left font-heading text-xs font-semibold uppercase tracking-wide text-console-fg-subtle">Event</th>
+            <th scope="col" className="px-4 py-2.5 text-left font-heading text-xs font-semibold uppercase tracking-wide text-console-fg-subtle">Event ID</th>
+            <th scope="col" className="px-4 py-2.5 text-left font-heading text-xs font-semibold uppercase tracking-wide text-console-fg-subtle">Status</th>
+            <th scope="col" className="px-4 py-2.5 text-left font-heading text-xs font-semibold uppercase tracking-wide text-console-fg-subtle">Dedup</th>
+            <th scope="col" className="px-4 py-2.5 text-left font-heading text-xs font-semibold uppercase tracking-wide text-console-fg-subtle">Match Quality</th>
+            <th scope="col" className="px-4 py-2.5 text-left font-heading text-xs font-semibold uppercase tracking-wide text-console-fg-subtle">Latency</th>
           </tr>
         </thead>
         <tbody>
@@ -89,23 +89,23 @@ export function SignalFlowTable({ rows, isLoading, hasMore, p95LatencyMs, onLoad
                 tabIndex={0}
                 onClick={() => navigate(`/signal-tracking/${encodeURIComponent(eventId)}`)}
                 onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/signal-tracking/${encodeURIComponent(eventId)}`); }}
-                className="border-b border-[#F3F4F6] hover:bg-[#F9FAFB] cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1B2A4A] focus-visible:ring-inset"
+                className="border-b border-console-border hover:bg-console-chip cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-console-primary focus-visible:ring-inset"
                 aria-label={`Signal ${eventId}, ${row.event_name}, ${row.destination}, ${row.status}`}
               >
-                <td className="px-4 py-2.5 text-xs text-[#374151] whitespace-nowrap font-mono">
+                <td className="px-4 py-2.5 text-xs text-console-fg-muted whitespace-nowrap font-mono">
                   {formatTimestamp(row.processed_at)}
                 </td>
                 <td className="px-4 py-2.5">
                   <span className={cn(
                     'inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium',
-                    DESTINATION_COLORS[row.destination] ?? 'bg-gray-100 text-gray-800',
+                    DESTINATION_COLORS[row.destination] ?? 'bg-console-chip text-console-fg-muted',
                   )}>
                     {DESTINATION_LABELS[row.destination] ?? row.destination}
                   </span>
                 </td>
-                <td className="px-4 py-2.5 text-xs text-[#374151] font-medium">{row.event_name}</td>
+                <td className="px-4 py-2.5 text-xs text-console-fg font-medium">{row.event_name}</td>
                 <td className="px-4 py-2.5">
-                  <span className="font-mono text-xs text-[#1B2A4A] underline decoration-dotted">
+                  <span className="font-mono text-xs text-console-primary underline decoration-dotted">
                     {eventId.length > 16 ? `${eventId.slice(0, 16)}…` : eventId}
                   </span>
                 </td>
@@ -122,11 +122,11 @@ export function SignalFlowTable({ rows, isLoading, hasMore, p95LatencyMs, onLoad
       {/* Load more / spinner */}
       <div className="flex justify-center py-4">
         {isLoading ? (
-          <div className="h-5 w-5 rounded-full border-2 border-[#1B2A4A] border-t-transparent animate-spin" aria-label="Loading more signals" />
+          <div className="h-5 w-5 rounded-full border-2 border-console-primary border-t-transparent animate-spin" aria-label="Loading more signals" />
         ) : hasMore ? (
           <Button variant="outline" size="sm" onClick={onLoadMore}>Load more</Button>
         ) : rows.length > 0 ? (
-          <p className="text-xs text-[#9CA3AF]">All signals loaded</p>
+          <p className="text-xs text-console-fg-disabled">All signals loaded</p>
         ) : null}
       </div>
     </div>
