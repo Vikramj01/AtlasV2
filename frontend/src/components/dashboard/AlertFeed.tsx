@@ -10,11 +10,11 @@ const SEVERITY_CONFIG: Record<
   DashboardAlertItem['severity'],
   { Icon: typeof AlertTriangle; color: string; badge: string }
 > = {
-  critical: { Icon: AlertCircle,   color: 'text-red-600',    badge: 'bg-red-100 text-red-700 border-red-200' },
-  high:     { Icon: AlertTriangle, color: 'text-amber-600',  badge: 'bg-amber-100 text-amber-700 border-amber-200' },
-  medium:   { Icon: AlertTriangle, color: 'text-yellow-600', badge: 'bg-yellow-50 text-yellow-700 border-yellow-200' },
-  low:      { Icon: Info,          color: 'text-blue-500',   badge: 'bg-blue-50 text-blue-700 border-blue-200' },
-  info:     { Icon: Info,          color: 'text-muted-foreground', badge: 'bg-muted text-muted-foreground border-border' },
+  critical: { Icon: AlertCircle,   color: 'text-console-red',       badge: 'bg-console-red/10 text-console-red border-console-red/20' },
+  high:     { Icon: AlertTriangle, color: 'text-console-amber',     badge: 'bg-console-amber/10 text-console-amber border-console-amber/20' },
+  medium:   { Icon: AlertTriangle, color: 'text-console-amber/80',  badge: 'bg-console-amber/[0.06] text-console-amber/80 border-console-amber/15' },
+  low:      { Icon: Info,          color: 'text-console-cyan',      badge: 'bg-console-cyan/10 text-console-cyan border-console-cyan/20' },
+  info:     { Icon: Info,          color: 'text-console-fg-subtle', badge: 'bg-console-chip text-console-fg-subtle border-console-border' },
 };
 
 interface AlertRowProps {
@@ -31,15 +31,15 @@ function AlertRow({ alert, onReview }: AlertRowProps) {
       className={cn(
         'flex items-start gap-3 rounded-lg border px-4 py-3 transition-opacity',
         alert.is_reviewed ? 'opacity-50' : '',
-        alert.is_new && !alert.is_reviewed ? 'border-amber-200 bg-amber-50/40' : 'border-border bg-white',
+        alert.is_new && !alert.is_reviewed ? 'border-console-amber/30 bg-console-amber/[0.04]' : 'border-console-border bg-console-surface',
       )}
     >
       <Icon className={cn('h-4 w-4 mt-0.5 shrink-0', cfg.color)} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-sm font-medium text-foreground">{alert.title}</span>
+          <span className="text-sm font-medium text-console-fg">{alert.title}</span>
           {alert.is_new && !alert.is_reviewed && (
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-700 bg-amber-100 rounded px-1.5 py-0.5">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-console-amber bg-console-amber/10 rounded px-1.5 py-0.5">
               New
             </span>
           )}
@@ -47,26 +47,26 @@ function AlertRow({ alert, onReview }: AlertRowProps) {
             {alert.severity}
           </Badge>
           {alert.client_name && (
-            <span className="text-xs text-muted-foreground">{alert.client_name}</span>
+            <span className="text-xs text-console-fg-subtle">{alert.client_name}</span>
           )}
         </div>
-        <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{alert.description}</p>
+        <p className="mt-0.5 text-xs text-console-fg-subtle line-clamp-2">{alert.description}</p>
       </div>
       <div className="flex items-center gap-2 shrink-0">
         {!alert.is_reviewed && (
           <button
             type="button"
             onClick={onReview}
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+            className="flex items-center gap-1 text-xs text-console-fg-subtle hover:text-console-fg"
             title="Mark as reviewed"
           >
             <Eye className="h-3.5 w-3.5" />
           </button>
         )}
-        {alert.is_reviewed && <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />}
+        {alert.is_reviewed && <CheckCircle2 className="h-3.5 w-3.5 text-console-green" />}
         <Link
           to={alert.action_url}
-          className="flex items-center text-muted-foreground hover:text-foreground"
+          className="flex items-center text-console-fg-subtle hover:text-console-fg"
         >
           <ChevronRight className="h-4 w-4" />
         </Link>
@@ -87,10 +87,10 @@ export function AlertFeed({ alerts, onReview }: AlertFeedProps) {
 
   if (alerts.length === 0) {
     return (
-      <div className="rounded-xl border border-green-100 bg-green-50/50 px-4 py-6 text-center">
-        <CheckCircle2 className="mx-auto h-6 w-6 text-green-500 mb-2" />
-        <p className="text-sm font-medium text-green-800">No open alerts</p>
-        <p className="text-xs text-green-700 mt-0.5">Everything looks healthy since your last visit.</p>
+      <div className="rounded-xl border border-console-green/20 bg-console-green/[0.04] px-4 py-6 text-center">
+        <CheckCircle2 className="mx-auto h-6 w-6 text-console-green mb-2" />
+        <p className="text-sm font-medium text-console-green">No open alerts</p>
+        <p className="text-xs text-console-green/80 mt-0.5">Everything looks healthy since your last visit.</p>
       </div>
     );
   }
@@ -111,7 +111,7 @@ export function AlertFeed({ alerts, onReview }: AlertFeedProps) {
         <Button
           variant="ghost"
           size="sm"
-          className="w-full text-muted-foreground"
+          className="w-full text-console-fg-muted"
           onClick={() => setShowAll(true)}
         >
           Show {hidden} more alert{hidden !== 1 ? 's' : ''}

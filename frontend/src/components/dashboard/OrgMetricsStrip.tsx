@@ -1,20 +1,21 @@
+import { cn } from '@/lib/utils';
 import type { OrgMetrics } from '@/types/dashboard';
 
 interface MetricTileProps {
   label: string;
   value: string | number;
-  sub?: string;
-  highlight?: boolean;
+  colorClass: string;
 }
 
-function MetricTile({ label, value, sub, highlight }: MetricTileProps) {
+// Mirrors Home's StatsRow StatCard styling — same underlying org_metrics,
+// same "operator console" stat-tile treatment (left accent bar, mono value).
+function MetricTile({ label, value, colorClass }: MetricTileProps) {
   return (
-    <div className="flex flex-col gap-0.5 rounded-xl border bg-white px-4 py-3 flex-1 min-w-0">
-      <span className="text-xs text-muted-foreground font-medium truncate">{label}</span>
-      <span className={`text-2xl font-bold tabular-nums ${highlight ? 'text-red-600' : 'text-foreground'}`}>
-        {value}
-      </span>
-      {sub && <span className="text-[11px] text-muted-foreground">{sub}</span>}
+    <div className={cn('rounded-lg border border-console-border border-l-2 bg-console-surface px-5 py-[18px] flex-1 min-w-0', colorClass)}>
+      <div className="font-heading text-xs font-semibold uppercase tracking-[0.1em] text-console-fg-subtle truncate">
+        {label}
+      </div>
+      <div className="mt-2 font-mono text-[26px] font-semibold text-console-fg">{value}</div>
     </div>
   );
 }
@@ -34,23 +35,27 @@ export function OrgMetricsStrip({ metrics }: OrgMetricsStripProps) {
       <MetricTile
         label="Active clients"
         value={metrics.total_clients}
+        colorClass="border-l-console-primary"
       />
       <MetricTile
         label="Signals monitored"
         value={metrics.total_signals_monitored}
+        colorClass="border-l-console-cyan"
       />
       <MetricTile
         label="CAPI events (24h)"
         value={metrics.capi_events_24h.toLocaleString()}
+        colorClass="border-l-console-violet"
       />
       <MetricTile
         label="Avg match quality (7d)"
         value={matchQuality}
+        colorClass="border-l-console-green"
       />
       <MetricTile
         label="Clients with issues"
         value={metrics.clients_with_issues}
-        highlight={metrics.clients_with_issues > 0}
+        colorClass={metrics.clients_with_issues > 0 ? 'border-l-console-red' : 'border-l-console-green'}
       />
     </div>
   );
