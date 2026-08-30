@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { CheckCircle2, AlertTriangle, AlertCircle, HelpCircle, ChevronRight, Plug } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { DashboardClientSummaryItem } from '@/types/dashboard';
 
 const HEALTH_CONFIG: Record<
@@ -13,12 +15,23 @@ const HEALTH_CONFIG: Record<
   unknown:  { Icon: HelpCircle,    color: 'text-console-fg-disabled',  label: 'Not set up' },
 };
 
+type SortBy = 'issues' | 'name';
+
+function sortClients(clients: DashboardClientSummaryItem[], sortBy: SortBy): DashboardClientSummaryItem[] {
+  return [...clients].sort((a, b) => {
+    if (sortBy === 'name') return a.name.localeCompare(b.name);
+    return b.open_findings_count - a.open_findings_count || a.name.localeCompare(b.name);
+  });
+}
+
 interface ClientHealthListProps {
   clients: DashboardClientSummaryItem[];
   orgId: string;
 }
 
 export function ClientHealthList({ clients, orgId }: ClientHealthListProps) {
+  const [sortBy, setSortBy] = useState<SortBy>('issues');
+
   if (clients.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-console-border px-4 py-6 text-center">
@@ -33,9 +46,25 @@ export function ClientHealthList({ clients, orgId }: ClientHealthListProps) {
     );
   }
 
+  const sortedClients = sortClients(clients, sortBy);
+
   return (
     <div className="space-y-2">
-      {clients.map((client) => {
+      <div className="flex items-center justify-end gap-2">
+        <label htmlFor="client-health-sort" className="text-xs text-console-fg-subtle">
+          Sort by
+        </label>
+        <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortBy)}>
+          <SelectTrigger id="client-health-sort" className="h-7 w-[150px] text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="issues">Most issues first</SelectItem>
+            <SelectItem value="name">A–Z</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      {sortedClients.map((client) => {
         const { Icon, color, label } = HEALTH_CONFIG[client.health_level];
 
         return (
