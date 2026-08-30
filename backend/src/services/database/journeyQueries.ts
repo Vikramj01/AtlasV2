@@ -22,6 +22,7 @@ export async function createJourney(userId: string, data: CreateJourneyRequest):
       name: data.name || 'Untitled Journey',
       business_type: data.business_type,
       implementation_format: data.implementation_format || 'gtm',
+      secondary_domains: data.secondary_domains ?? [],
     })
     .select('*')
     .single();

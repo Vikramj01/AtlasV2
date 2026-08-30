@@ -81,6 +81,7 @@ export interface Journey {
   status: JourneyStatus;
   implementation_format: ImplementationFormat;
   source_planning_session_id: string | null;
+  secondary_domains: string[];
   created_at: string;
   updated_at: string;
 }
@@ -168,6 +169,7 @@ export interface CreateJourneyRequest {
   name?: string;
   business_type: BusinessType;
   implementation_format?: ImplementationFormat;
+  secondary_domains?: string[];
   stages?: Array<Omit<JourneyStage, 'id' | 'journey_id' | 'created_at' | 'updated_at'>>;
   platforms?: Array<Pick<JourneyPlatform, 'platform' | 'is_active' | 'measurement_id' | 'config'>>;
 }
@@ -178,6 +180,7 @@ export interface UpdateJourneyRequest {
   status?: JourneyStatus;
   implementation_format?: ImplementationFormat;
   source_planning_session_id?: string | null;
+  secondary_domains?: string[];
 }
 
 export interface UpsertStageRequest {
@@ -258,6 +261,8 @@ export interface GTMStageOutput {
 export interface GTMDataLayerOutput {
   stages: GTMStageOutput[];
   global_setup: string;
+  /** Present only when secondary_domains is set — cross-domain configuration guidance + the Meta fbclid link-decorator snippet. */
+  cross_domain_setup?: string;
 }
 
 // Journey definition used by generators
@@ -266,6 +271,7 @@ export interface JourneyDefinition {
   name: string;
   business_type: BusinessType;
   implementation_format: ImplementationFormat;
+  secondary_domains: string[];
   stages: JourneyStage[];
 }
 

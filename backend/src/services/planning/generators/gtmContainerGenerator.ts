@@ -31,6 +31,7 @@ import {
   renderStandardEventAliasTag,
   dlvPathForParam,
 } from './renderer/gtm.renderer';
+import { buildMetaCrossDomainDecoratorScript } from '../../../utils/metaCrossDomainLinker';
 
 // ── GTM type interfaces ──────────────────────────────────────────────────────
 
@@ -169,16 +170,6 @@ function int(key: string, value: string): GTMParameter {
 }
 function list(key: string, items: string[]): GTMParameter {
   return { type: 'LIST', key, list: items.map((v) => ({ type: 'TEMPLATE' as const, value: v })) };
-}
-
-/**
- * JSON-serialize a value for embedding inside an inline `<script>` block.
- * Escapes `<` so a user-supplied string (e.g. a secondary domain) containing
- * `</script>` can't prematurely close the tag when the container is imported
- * and rendered in a browser.
- */
-function jsonForInlineScript(value: unknown): string {
-  return JSON.stringify(value).replace(/</g, '\\u003c');
 }
 
 function stub(accountId = '0', containerId = '0') {
@@ -979,36 +970,7 @@ src="https://www.facebook.com/tr?id={{CONST - Meta Pixel ID}}&ev=PageView&noscri
       name: 'Atlas — Meta Cross-Domain Link Decorator',
       type: 'html',
       parameter: [
-        tmpl('html', `<script>
-(function() {
-  try {
-    var secondaryDomains = ${jsonForInlineScript(secondaryDomains)};
-    function getFbclid() {
-      var match = document.cookie.match(/(^| )_fbc=([^;]+)/);
-      if (match) {
-        var parts = decodeURIComponent(match[2]).split('.');
-        var last = parts[parts.length - 1];
-        if (last) return last;
-      }
-      var params = new URLSearchParams(window.location.search);
-      return params.get('fbclid');
-    }
-    document.addEventListener('click', function(evt) {
-      var link = evt.target && evt.target.closest ? evt.target.closest('a[href]') : null;
-      if (!link) return;
-      var url;
-      try { url = new URL(link.href, window.location.href); } catch (e) { return; }
-      var host = url.hostname.replace(/^www\\./, '');
-      if (secondaryDomains.indexOf(host) === -1) return;
-      if (url.searchParams.has('fbclid')) return;
-      var fbclid = getFbclid();
-      if (!fbclid) return;
-      url.searchParams.set('fbclid', fbclid);
-      link.setAttribute('href', url.toString());
-    }, true);
-  } catch (e) {}
-})();
-</script>`),
+        tmpl('html', buildMetaCrossDomainDecoratorScript(secondaryDomains)),
         bool('supportDocumentWrite', 'false'),
       ],
       firingTriggerId: [allPagesTrigId],

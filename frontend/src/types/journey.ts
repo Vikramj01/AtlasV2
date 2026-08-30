@@ -13,6 +13,7 @@ export interface Journey {
   business_type: BusinessType;
   status: JourneyStatus;
   implementation_format: ImplementationFormat;
+  secondary_domains: string[];
   created_at: string;
   updated_at: string;
 }

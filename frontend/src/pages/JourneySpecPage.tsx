@@ -124,6 +124,7 @@ export function JourneySpecPage() {
 
   const gtmSpec = specs.gtm as {
     global_setup?: string;
+    cross_domain_setup?: string;
     stages?: Array<{ stage_order: number; stage_label: string; sample_url?: string; code_snippet: string }>;
   } | null | undefined;
 
@@ -209,10 +210,18 @@ export function JourneySpecPage() {
             <p className="text-xs text-muted-foreground italic">GTM container snippet not generated.</p>
           )}
 
+          {gtmSpec?.cross_domain_setup && (
+            <CodeBlock
+              label="Step 2 — Cross-Domain Tracking Setup (add to every domain in this journey)"
+              filename="gtm-cross-domain.txt"
+              code={gtmSpec.cross_domain_setup}
+            />
+          )}
+
           {(gtmSpec?.stages ?? []).length > 0 ? (
             <>
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                Step 2 — Per-page dataLayer events
+                Step {gtmSpec?.cross_domain_setup ? '3' : '2'} — Per-page dataLayer events
               </p>
               {(gtmSpec?.stages ?? []).map((stage, i) => (
                 <CodeBlock
