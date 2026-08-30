@@ -284,13 +284,13 @@ export function Sidebar({ isAdmin = false }: { isAdmin?: boolean }) {
       style={{ width: 240, minWidth: 240 }}
     >
       {/* ── Logo ──────────────────────────────────────────────────────────── */}
-      <div className="border-b border-console-border px-5 pb-4 pt-5">
+      <div className="flex items-center gap-2 border-b border-console-border px-5 pb-4 pt-5">
         <img
           src="/atlas_latest_logo.svg"
           alt="Atlas"
-          className="block h-[30px] w-auto"
-          style={{ objectFit: 'contain', objectPosition: 'left' }}
+          className="h-7 w-7 shrink-0"
         />
+        <span className="font-display text-lg font-black tracking-tighter text-console-primary">ATLAS</span>
       </div>
 
       {/* ── Workspace switcher ────────────────────────────────────────────── */}
