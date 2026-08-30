@@ -42,8 +42,8 @@ function MultiSelectDropdown({ label, options, selected, onChange, displayLabel 
         className={cn(
           'flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium transition-colors',
           selected.length > 0
-            ? 'border-[#1B2A4A] bg-[#1B2A4A] text-white'
-            : 'border-[#E5E7EB] bg-white text-[#374151] hover:border-[#9CA3AF]',
+            ? 'border-console-primary bg-console-primary text-white'
+            : 'border-console-border bg-console-surface text-console-fg-muted hover:border-console-fg-subtle',
         )}
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -68,7 +68,7 @@ function MultiSelectDropdown({ label, options, selected, onChange, displayLabel 
           role="listbox"
           aria-multiselectable="true"
           aria-label={label}
-          className="absolute top-full left-0 mt-1 z-20 min-w-[160px] rounded-md border border-[#E5E7EB] bg-white shadow-md py-1"
+          className="absolute top-full left-0 mt-1 z-20 min-w-[160px] rounded-md border border-console-border bg-console-surface shadow-console-glow py-1"
         >
           {options.map((opt) => (
             <button
@@ -76,11 +76,11 @@ function MultiSelectDropdown({ label, options, selected, onChange, displayLabel 
               role="option"
               aria-selected={selected.includes(opt)}
               onClick={() => toggle(opt)}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-[#374151] hover:bg-[#F9FAFB]"
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-console-fg-muted hover:bg-console-chip"
             >
               <span className={cn(
                 'flex h-4 w-4 shrink-0 items-center justify-center rounded border',
-                selected.includes(opt) ? 'border-[#1B2A4A] bg-[#1B2A4A]' : 'border-[#D1D5DB]',
+                selected.includes(opt) ? 'border-console-primary bg-console-primary' : 'border-console-fg-disabled',
               )}>
                 {selected.includes(opt) && (
                   <svg className="h-2.5 w-2.5 text-white" fill="none" viewBox="0 0 10 10">
@@ -144,21 +144,21 @@ interface Props {
 export function SignalFilterBar({ filters, eventNameOptions, onChange }: Props) {
   return (
     <div
-      className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b border-[#E5E7EB] bg-white px-6 py-3"
+      className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b border-console-border bg-console-surface px-6 py-3"
       aria-label="Signal filters"
     >
       {/* Time range presets */}
-      <div className="flex items-center gap-1 rounded-md border border-[#E5E7EB] p-0.5">
+      <div className="flex items-center gap-1 rounded-md border border-console-border p-0.5">
         {RANGE_PRESETS.map(({ label, value }) => (
           <button
             key={value}
             onClick={() => onChange({ range: value })}
             aria-pressed={filters.range === value}
             className={cn(
-              'rounded px-2.5 py-1 text-xs font-medium transition-colors',
+              'rounded px-2.5 py-1 text-xs font-medium transition-colors font-mono',
               filters.range === value
-                ? 'bg-[#1B2A4A] text-white'
-                : 'text-[#6B7280] hover:text-[#374151]',
+                ? 'bg-console-primary text-white'
+                : 'text-console-fg-muted hover:text-console-fg',
             )}
           >
             {label}
@@ -166,7 +166,7 @@ export function SignalFilterBar({ filters, eventNameOptions, onChange }: Props) 
         ))}
       </div>
 
-      <div className="h-5 w-px bg-[#E5E7EB]" aria-hidden />
+      <div className="h-5 w-px bg-console-border" aria-hidden />
 
       <MultiSelectDropdown
         label="Destination"
@@ -203,7 +203,7 @@ export function SignalFilterBar({ filters, eventNameOptions, onChange }: Props) 
       {(filters.destinations.length > 0 || filters.event_names.length > 0 || filters.statuses.length > 0 || filters.dedup_statuses.length > 0) && (
         <button
           onClick={() => onChange({ destinations: [], event_names: [], statuses: [], dedup_statuses: [] })}
-          className="text-xs text-[#6B7280] underline hover:text-[#374151]"
+          className="text-xs text-console-fg-subtle underline hover:text-console-fg"
         >
           Clear filters
         </button>

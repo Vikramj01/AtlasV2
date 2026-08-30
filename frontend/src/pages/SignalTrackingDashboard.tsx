@@ -6,8 +6,9 @@ import { slackApi } from '@/lib/api/slackApi';
 import { ShareToSlackButton } from '@/components/common/ShareToSlackButton';
 import { SignalFilterBar } from '@/components/signals/SignalFilterBar';
 import { SignalFlowTable } from '@/components/signals/SignalFlowTable';
+import { SignalAggregateCards } from '@/components/signals/SignalAggregateCards';
 import { SignalTraceModal } from '@/components/signals/SignalTraceModal';
-import type { SignalEventRow, SignalFilters } from '@/types/signal-tracking';
+import type { SignalAggregates, SignalEventRow, SignalFilters } from '@/types/signal-tracking';
 
 // ── Filter ↔ URL helpers ──────────────────────────────────────────────────────
 
@@ -60,7 +61,7 @@ export function SignalTrackingDashboard() {
   const [isLoading, setIsLoading]       = useState(false);
   const [isAppending, setIsAppending]   = useState(false);
   const [error, setError]               = useState<string | null>(null);
-  const [p95, setP95]                   = useState<number | null>(null);
+  const [aggregates, setAggregates]     = useState<SignalAggregates | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -101,7 +102,7 @@ export function SignalTrackingDashboard() {
         setRows((prev) => [...prev, ...listRes.data]);
       }
       setNextCursor(listRes.next_cursor);
-      if (aggRes) setP95(aggRes.data.p95_latency_ms);
+      if (aggRes) setAggregates(aggRes.data);
       setLastRefreshed(new Date());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load signals');
@@ -160,24 +161,24 @@ export function SignalTrackingDashboard() {
   return (
     <div className="flex flex-col min-h-0">
       {/* Page header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-[#E5E7EB]">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-console-border">
         <div>
-          <h1 className="text-lg font-semibold text-[#1A1A1A]">Signal Tracking</h1>
-          <p className="text-xs text-[#6B7280] mt-0.5">Real-time view of outbound conversion signals</p>
+          <h1 className="font-display text-lg text-console-fg">Signal Tracking</h1>
+          <p className="text-xs text-console-fg-subtle mt-0.5">Real-time view of outbound conversion signals</p>
         </div>
         <div className="flex items-center gap-3">
           <ShareToSlackButton
             onShare={(destinationId) => slackApi.shareSignals(destinationId).then(() => undefined)}
           />
           {lastRefreshed && (
-            <span className="text-xs text-[#9CA3AF]">
+            <span className="font-mono text-xs text-console-fg-disabled">
               Updated {lastRefreshed.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
             </span>
           )}
           <button
             onClick={() => fetchPage(filters)}
             disabled={isLoading}
-            className="flex items-center gap-1.5 rounded-md border border-[#E5E7EB] bg-white px-3 py-1.5 text-xs font-medium text-[#374151] hover:border-[#9CA3AF] disabled:opacity-50 transition-colors"
+            className="flex items-center gap-1.5 rounded-md border border-console-border bg-console-surface px-3 py-1.5 text-xs font-medium text-console-fg-muted hover:border-console-fg-subtle disabled:opacity-50 transition-colors"
             aria-label="Refresh signals"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
@@ -185,6 +186,9 @@ export function SignalTrackingDashboard() {
           </button>
         </div>
       </div>
+
+      {/* Aggregate stat cards */}
+      <SignalAggregateCards aggregates={aggregates} />
 
       {/* Filter bar */}
       <SignalFilterBar
@@ -195,8 +199,8 @@ export function SignalTrackingDashboard() {
 
       {/* Error state */}
       {error && (
-        <div className="mx-6 mt-4 rounded-md border border-[#FEE2E2] bg-[#FEF2F2] px-4 py-3">
-          <p className="text-sm text-[#DC2626]">{error}</p>
+        <div className="mx-6 mt-4 rounded-md border border-console-red/20 bg-console-red/[0.04] px-4 py-3">
+          <p className="text-sm text-console-red">{error}</p>
         </div>
       )}
 
@@ -206,7 +210,7 @@ export function SignalTrackingDashboard() {
           rows={rows}
           isLoading={isLoading || isAppending}
           hasMore={nextCursor !== null}
-          p95LatencyMs={p95}
+          p95LatencyMs={aggregates?.p95_latency_ms ?? null}
           onLoadMore={() => { if (nextCursor) fetchPage(filters, nextCursor); }}
         />
       </div>
