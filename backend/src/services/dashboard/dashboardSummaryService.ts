@@ -321,7 +321,7 @@ export async function getClientSummaries(orgId: string): Promise<DashboardClient
     findingsCountMap[r.client_id] = (findingsCountMap[r.client_id] ?? 0) + 1;
   }
 
-  return clients.map((c: { id: string; name: string }) => {
+  const summaries: DashboardClientSummary[] = clients.map((c: { id: string; name: string }) => {
     const deployInfo = deploymentMap[c.id];
     const openCount = findingsCountMap[c.id] ?? 0;
     const setupStatus = deployInfo?.count ? 'complete' : 'in_progress';
@@ -339,6 +339,10 @@ export async function getClientSummaries(orgId: string): Promise<DashboardClient
       open_findings_count: openCount,
     };
   });
+
+  // Worst first: most open findings at the top, alphabetical among ties —
+  // so a principal sees which client needs attention without sorting manually.
+  return summaries.sort((a, b) => b.open_findings_count - a.open_findings_count || a.name.localeCompare(b.name));
 }
 
 export async function getOrgMetrics(orgId: string): Promise<OrgMetrics> {
