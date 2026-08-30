@@ -8,30 +8,31 @@ Atlas is a marketing signal optimisation and tracking infrastructure platform fo
 
 ## Features
 
-- **Journey Builder** — Multi-step wizard generating GTM container JSON (client + server-side). Business types: ecommerce, lead_gen, b2b_saas, marketplace, nonprofit, **b2b_lead_gen** (7-stage B2B template). Journey stages carry `proxy_value_gbp` (monetary value for value-based bidding) and `buyer_intent_level` (problem_aware / solution_aware / vendor_aware).
-- **AI Planning Mode** — Browserbase/Playwright site scan → Claude analysis → tagging recommendations, PII detection, GTM container + implementation guide. Implementation guide includes GCLID/UTM cookie capture, hidden form fields, CRM mapping, and Enhanced Conversions for Leads guidance. Approved recommendations save to the Signal Library via `POST /sessions/:id/save-to-library`.
-- **Signal Library** — Accessible at `/signals`. `signals` + `signal_packs` tables with system and org-scoped custom signals. Per-event specs, platform mappings, composable packs with deployment wizard.
-- **Signal Enrichment Configuration** — Per-client identity field mapping (`client_identity_configs`) and per-deployment signal field mapping (`signal_enrichment_configs`). Composite enrichment score (0–100, 50% identity / 50% signal average), Meta EMQ estimate, Google match rate estimate. 12-rule validation engine (IDENT_01–05, SIG_01–05, CROSS_01–02). Enrichment injected into CAPI pipeline as step 0a (non-fatal). GTM container generation includes identity DataLayer Variables. `IdentityConfigStep` embedded in ClientSetupWizard (step 4) and ClientDetailPage Enrichment tab. `SignalEnrichmentStep` embedded in DeploymentWizard (step 2). `capi_providers` extended with `identity_config_id`, `enrichment_score`, `enrichment_validated_at`.
-- **Conversion Strategy Gate** — Multi-objective wizard at `/planning/strategy`. Claude produces CONFIRM/AUGMENT/REPLACE verdicts with measurement governance tier (primary/secondary/suppression), platform-specific action types, and OCI nudge for CRM-stage events. PDF brief export + web view at `/strategy/briefs/:id`. The brief nudge is enforced frontend-only as a dismissible banner (`StrategyGateGuard`) — the backend `strategyGate` middleware on `POST /api/planning/sessions` and client deploy is a pass-through, not a hard block.
-- **Platform Connections** — OAuth connections to Google Ads (manager/child/standalone), Meta, GA4, and GTM. Encrypted tokens (AES-256-GCM). Supports account discovery under manager connections.
-- **Platform Reconciliation** — Config + volume + delivery diff runs against connected platforms. Findings tracking with severity, tolerance config per client, daily event stats time-series. Triggered manually or post-brief-lock.
-- **Implementation Health Checks (IHC)** — GTM container snapshots (OAuth or manual upload), tag configuration rule checks, baseline management, drift detection across crawl runs, alert preferences.
-- **Data Quality Monitoring (DQM)** — GTG path health probes (HTTP status/latency), DMA poll state tracking, success rate + match rate monitoring.
-- **Bid Signal Enricher** — Multi-destination Customer Match audience push (Google DMA). Match-rate telemetry, enricher run history, agency-plan Data Manager Console aggregating DMA state across clients.
-- **Signal Tracking Dashboard** — CAPI event log with aggregate cards (volume, match quality, dedup rate), paginated event list with filters, async CSV export via Bull queue.
-- **Event Taxonomy** — System + org-custom event tree with platform mappings. Full-text search, nested category structure.
-- **Naming Conventions** — Org-level event/param naming rules with real-time validation and preview of how existing signals rename.
-- **Crawl Signal Extractor (CSE)** — Subscription-gated automated site scan discovering and health-scoring tracking signals. Results at `/crawl/:runId` with real-time polling. Crawl runs can be promoted to IHC baselines.
-- **Usage Logging & Operator Monitoring** — Per-org usage event logging, Browserbase nightly reconciliation, operator alerts via email/Slack.
-- **Audit Engine** — Headless browser journey simulation, gap classification, scored PDF reports. Entry point is `EvaluateSiteCard` on the Home page and Dashboard (compact URL + funnel-type quick form, client optional, "Advanced" toggle reveals the full `RunAuditForm` journey mapping). A bare-URL evaluation (no client selected) can be attached to an existing client afterward via `LinkToClientButton` on the report view (`PATCH /api/audits/:audit_id/link-client`); `audits.client_id` is nullable.
-- **Home Page** — Post-login landing at `/`, branches purely on organisation existence (`useOrganisations` hook): no org → `FirstTimeSetup` (create-workspace landing, using the shared `CreateOrgForm`); org exists → `ReturningUserLanding`'s two-option screen ("Evaluate a site" via `EvaluateSiteCard`, "Set up a new client" via `QuickClientIntake` — or "Continue tracking setup" for single-client brand orgs), plus a `StatsRow` (org metrics) and `RecentActivityFeed`, and a link out to the full `/dashboard`. `QuickClientIntake` is a slim name/URL/business-type form that creates the client and jumps straight to `/planning/new?client_id=X`; the full 6-step `ClientSetupWizard` stays available as "Advanced setup" on the client list. Styled with the "operator console" design system — Orbitron/Rajdhani/JetBrains Mono type (`font-display`/`font-heading`/`font-mono`) and a `console.*` Tailwind color namespace layered onto existing navy/severity tokens — also applied to Sidebar, TopBar, and OrgSwitcher.
-- **Health Dashboard** — Live health score (includes `platform_acceptance_score`, `gtg_active`, `dma_coverage_score`), alert feed, historical trend.
-- **Channel Insights** — Session ingestion + diagnostic engine mapping signal behaviour per channel.
-- **Consent Integration Hub** — JS consent banner + CMP sync (OneTrust, Cookiebot, Usercentrics). Google Consent Mode v2.
-- **Realtime CAPI** — Meta CAPI, Google Enhanced Conversions, LinkedIn CAPI (TikTok stub). SHA-256 PII hashing, deduplication, consent gating. `capi_events` tracks `match_quality_score`, `latency_ms`, `payload`.
-- **Offline Conversions** — CSV upload to Google Ads `uploadClickConversions`. Validation pipeline, async Bull queue, per-row error reporting.
-- **Organisation & Client Management** — Multi-tenant workspace with org switching, member roles, per-client config.
-- **Billing & Subscriptions** — Stripe Checkout + Billing Portal. Plans: `free`, `pro`, `agency`. `planGuard` (backend) + `<PlanGate>` (frontend). Super admin via `SUPER_ADMIN_EMAILS`.
+- **Journey Builder** — Multi-step wizard generating GTM container JSON. Business types incl. `b2b_lead_gen` (7-stage template); stages carry `proxy_value_gbp` + `buyer_intent_level`.
+- **AI Planning Mode** — Browserbase/Playwright scan → Claude analysis → tagging recommendations, PII detection, GTM container + implementation guide (GCLID/UTM capture, CRM mapping, Enhanced Conversions for Leads). Approved recommendations save to the Signal Library.
+- **Signal Library** (`/signals`) — System + org-custom signals, composable packs, deployment wizard.
+- **Signal Enrichment Configuration** — Per-client identity mapping + per-deployment signal field mapping, composite 0–100 score, 12-rule validation engine, injected into the CAPI pipeline (non-fatal). Configured via `IdentityConfigStep` (ClientSetupWizard/ClientDetailPage) and `SignalEnrichmentStep` (DeploymentWizard).
+- **Conversion Strategy Gate** (`/planning/strategy`) — Multi-objective wizard; Claude verdicts (CONFIRM/AUGMENT/REPLACE) with governance tier + platform action types. PDF/web brief. Enforced as a dismissible frontend nudge (`StrategyGateGuard`) — the backend `strategyGate` middleware is a pass-through.
+- **Platform Connections** — OAuth to Google Ads/Meta/GA4/GTM (manager/child/standalone), AES-256-GCM encrypted tokens, account discovery.
+- **Platform Reconciliation** — Config/volume/delivery diffs against connected platforms, severity-tracked findings, per-client tolerance config.
+- **Implementation Health Checks (IHC)** — GTM container snapshots, tag config rule checks, baseline + drift detection, alert preferences.
+- **Data Quality Monitoring (DQM)** — GTG path health probes, DMA poll state, success/match rate monitoring.
+- **Bid Signal Enricher** — Customer Match audience push (Google DMA), match-rate telemetry, agency-plan Data Manager Console.
+- **Signal Tracking Dashboard** (`/signal-tracking`) — CAPI event log, filterable table, async CSV export, aggregate stat-card row (Total Signals / Avg Match Quality / Dedup Hit Rate / P95 Latency with period-over-period deltas).
+- **Event Taxonomy** — System + org-custom event tree, platform mappings, full-text search. *(Backend route only — no frontend page yet.)*
+- **Naming Conventions** — Org event/param naming rules, real-time validation + rename preview. *(Backend route only — no frontend page yet.)*
+- **Crawl Signal Extractor (CSE)** — Subscription-gated site scan (`/crawl/:runId`); runs can be promoted to IHC baselines.
+- **Usage Logging & Operator Monitoring** — Per-org usage logging, Browserbase nightly reconciliation, operator alerts (email/Slack).
+- **Audit Engine** — Headless journey simulation, gap classification, scored PDF reports. Entry point is `EvaluateSiteCard` (Home + Dashboard); a bare-URL run can be linked to a client afterward (`audits.client_id` nullable).
+- **Home Page** (`/`) — Branches on org existence: `FirstTimeSetup` vs `ReturningUserLanding` (`EvaluateSiteCard` / `QuickClientIntake`, `StatsRow`, `RecentActivityFeed`).
+- **Operator Console Design System** — Orbitron/Rajdhani/JetBrains Mono type (`font-display`/`font-heading`/`font-mono`) + `console.*` Tailwind palette layered onto navy/severity tokens. Live across Sidebar, TopBar, OrgSwitcher, Home, main Dashboard, Signal Tracking Dashboard, and Planning Wizard Step 1. Sidebar nav is grouped into 7 sections (Workspace/Engine/Library/Implementation/Tracking/Advanced/Privacy); sidebar header is a plain "ATLAS" text wordmark — no icon mark (illegible at sidebar scale).
+- **Health Dashboard** — Live health score, alert feed, historical trend.
+- **Channel Insights** — Session ingestion + diagnostic engine.
+- **Consent Integration Hub** — JS banner + CMP sync (OneTrust/Cookiebot/Usercentrics), Google Consent Mode v2.
+- **Realtime CAPI** — Meta/Google/LinkedIn CAPI (TikTok stub), SHA-256 hashing, dedup, consent gating.
+- **Offline Conversions** — CSV upload → Google Ads `uploadClickConversions`, async Bull queue, per-row error reporting.
+- **Organisation & Client Management** — Multi-tenant workspace, org switching, member roles.
+- **Billing & Subscriptions** — Stripe Checkout + Billing Portal. Plans: `free`/`pro`/`agency` via `planGuard`/`<PlanGate>`.
 
 ---
 
@@ -61,100 +62,53 @@ Atlas is a marketing signal optimisation and tracking infrastructure platform fo
 AtlasV2/
 ├── frontend/src/
 │   ├── components/
-│   │   ├── admin/        # Admin panels
-│   │   ├── audit/        # AuditHistoryTable, AuditProgressSteps, RunAuditForm, LinkToClientButton, ReportPages/*
-│   │   ├── capi/         # ProviderList, SetupWizard, CAPIMonitoringDashboard, EMQEstimator
-│   │   │   ├── offline/  # OfflineConversionsTab, UploadArea, ValidationReview, UploadHistory
-│   │   │   └── steps/    # Realtime wizard steps
-│   │   ├── channels/     # ChannelHealthIndicator, ChannelOverviewTable, DiagnosticCard
-│   │   ├── common/       # ErrorBoundary, PlanGate, HealthBadge, ScoreCard, SkeletonCard
-│   │   ├── connections/  # ConnectionSetup, OAuthFlow, AccountSelector, ConnectionCard
-│   │   ├── consent/      # ConsentSettings, BannerConfigurator, CMPIntegration
-│   │   ├── crawl/        # CrawlProgress, CrawlResults
-│   │   ├── dashboard/    # Dashboard views
-│   │   ├── developer/    # Developer portal components
-│   │   ├── health/       # Health dashboard components
+│   │   ├── admin/, audit/, capi/ (offline/, steps/), channels/, connections/,
+│   │   │   consent/, crawl/, developer/, health/, journey/, reconciliation/,
+│   │   │   enrichment/, signals/, strategy/  — one folder per feature area
+│   │   ├── common/       # ErrorBoundary, PlanGate, HealthBadge, ScoreCard, SkeletonCard, WizardStepper
+│   │   ├── dashboard/    # DeltaHeader, OrgMetricsStrip, AlertFeed, ClientHealthList, RecentActivityFeed
 │   │   ├── home/         # EvaluateSiteCard, NewClientCard, StatsRow, ReturningUserLanding, FirstTimeSetup
-│   │   ├── journey/      # JourneyWizard, StageCard, Step1–4
 │   │   ├── layout/       # AppLayout, ProtectedRoute, Sidebar, TopBar
 │   │   ├── organisation/ # ClientCard, ClientSetupWizard, MemberManagement, OrgSwitcher,
 │   │   │                 # CreateOrgForm, QuickClientIntake
 │   │   ├── planning/     # AnnotatedScreenshot, GTMContainerPreview, RecommendationCard, Step1–7
-│   │   ├── reconciliation/ # ReconciliationFindings, FindingCard, DiffViewer
-│   │   ├── enrichment/   # FieldMappingRow, EnrichmentScoreBadge, EnrichmentWarningBanner,
-│   │   │                 # IdentityConfigStep, SignalEnrichmentStep
-│   │   ├── signals/      # SignalCard, PackCard, DeploymentWizard
-│   │   ├── strategy/     # StrategyGateBanner, StrategyGateGuard, Step1Define, Step2Verdict,
-│   │   │                 # ObjectivesList, BriefLocked
-│   │   └── ui/           # shadcn/ui primitives
+│   │   ├── signals/      # SignalCard, PackCard, DeploymentWizard, SignalFlowTable,
+│   │   │                 # SignalFilterBar, SignalAggregateCards
+│   │   └── ui/           # shadcn/ui primitives (incl. checkbox.tsx)
 │   ├── lib/
-│   │   ├── api/          # adminApi, auditApi, billingApi, capiApi, channelApi, checklistApi,
-│   │   │                 # connectionApi, consentApi, crawlApi, dashboardApi, dataManagerApi,
-│   │   │                 # developerApi, enricherApi, exportApi, healthApi, ihcApi,
-│   │   │                 # journeyApi, offlineConversionsApi, organisationApi, planningApi,
-│   │   │                 # proxyEventApi, readinessApi, reconciliationApi, scheduleApi,
-│   │   │                 # signalApi, signalEventsApi, strategyApi, taxonomyApi, enrichmentApi
+│   │   ├── api/          # one *Api.ts module per feature area (adminApi, auditApi, capiApi,
+│   │   │                 # signalEventsApi, strategyApi, enrichmentApi, ...)
 │   │   ├── capi/         # adapters/ (meta, google, google-offline, linkedin, tiktok stub)
 │   │   ├── consent/      # banner-generator.ts, cmp-listeners.ts, consent-engine.ts, gcm-mapper.ts
 │   │   └── shared/       # crypto.ts
 │   ├── hooks/            # useOrganisations
-│   ├── pages/            # HomePage, LoginPage, DashboardPage, AdminPage,
-│   │                     # AuditProgressPage, ReportPage, GapReportPage,
-│   │                     # JourneyBuilderPage, JourneySpecPage,
-│   │                     # PlanningDashboard, PlanningModePage,
-│   │                     # SignalLibraryPage, SignalPacksPage, PackDetailPage,
-│   │                     # SignalTrackingDashboard,
-│   │                     # StrategyPage, StrategyBriefPage (/strategy/briefs/:id),
-│   │                     # CrawlStatusPage (/crawl/:runId),
-│   │                     # ConnectionsPage, ClientConnectionsPage, ClientDetailPage,
-│   │                     # ReconciliationPage, ReconciliationRunDetailPage,
-│   │                     # ImplementationHealthPage,
-│   │                     # EnricherPage, DataManagerConsolePage,
-│   │                     # DeveloperPortalPage, OrgDashboardPage, OrgSettingsPage,
-│   │                     # ConsentPage, CAPIPage, HealthDashboardPage,
-│   │                     # ChannelInsightsPage, ClientListPage,
-│   │                     # SettingsPage, BillingSuccessPage, BillingCancelPage, ResetPasswordPage
-│   ├── store/            # auditStore, billingStore, capiStore, connectionStore, consentStore,
-│   │                     # crawlStore, dashboardStore, enrichmentStore, journeyWizardStore,
-│   │                     # offlineConversionsStore, organisationStore, planningStore,
-│   │                     # reconciliationStore, signalStore, strategyStore, taxonomyStore
-│   └── types/            # audit, capi, channel, connections, consent, crawl, dashboard,
-│                         # enrichment, health, ihc, journey, offline-conversions, organisation,
-│                         # planning, schedule, signal, signal-tracking, strategy, taxonomy, usage
+│   ├── pages/            # one *Page.tsx per route — Home, Dashboard, Audit/Report/Gap, Journey*,
+│   │                     # Planning*, Signal*, Strategy*, Crawl*, Connections/Client*, Reconciliation*,
+│   │                     # ImplementationHealth, Enricher, DataManagerConsole, Consent, CAPI,
+│   │                     # HealthDashboard, ChannelInsights, Settings, Billing*, ResetPassword
+│   ├── store/            # one Zustand store per feature area
+│   └── types/            # one .ts per feature area
 │
 ├── backend/src/
 │   ├── api/
 │   │   ├── middleware/   # authMiddleware, planGuard, rateLimiter, planningLimiter, errorHandler
-│   │   └── routes/       # admin, audits, auth, billing, capi, channels, checklist, clients,
-│   │                     # connections, consent, crawl, dashboard, dataManager, developer,
-│   │                     # dqm, enricher, enrichment, exports, gtm, health, ihc, journeys,
-│   │                     # namingConventions, offlineConversions, organisations, planning,
-│   │                     # readiness, reconciliation, schedules, signalEvents, signals,
-│   │                     # strategy, taxonomy
+│   │   └── routes/       # one file per feature area — see Backend API Routes below
 │   └── services/
 │       ├── database/     # supabase.ts + one query module per feature area (28 modules)
 │       ├── planning/     # sessionOrchestrator, siteDetectionService, pageCaptureService,
-│       │                 # aiAnalysisService, piiDetectionService, changeDetectionService,
-│       │                 # generators/ (prompts, renderer, validator)
-│       ├── reconciliation/ # reconciliationRunner; engine/ (configDiff, volumeDiff,
-│       │                   # deliveryDiff, alignmentDiff, findingWriter);
-│       │                   # sync/ (ga4Sync, googleAdsSync, metaSync + stats syncs)
-│       ├── connections/  # connectionTester, tokenManager, connectionLifecycle;
-│       │                 # discovery/ (ga4, meta, googleAds); oauthFlows/ (ga4, meta, googleAds)
-│       ├── ihc/          # tagConfigurationRules, ruleInterpretations, alertService,
-│       │                 # baselineManager, findingsWriter
+│       │                 # aiAnalysisService, piiDetectionService, changeDetectionService, generators/
+│       ├── reconciliation/ # reconciliationRunner; engine/ (config/volume/delivery/alignmentDiff); sync/
+│       ├── connections/  # connectionTester, tokenManager, connectionLifecycle; discovery/; oauthFlows/
+│       ├── ihc/          # tagConfigurationRules, ruleInterpretations, alertService, baselineManager
 │       ├── dqm/          # dqmOrchestrator, dmaPolling
 │       ├── enricher/     # enricherService
-│       ├── enrichment/   # enrichmentConfigService.ts, enrichmentValidationRules.ts;
-│       │                 # __tests__/ (enrichmentConfigService.test.ts, enrichmentValidationRules.test.ts)
-│       ├── scoring/      # scoring engine
+│       ├── enrichment/   # enrichmentConfigService.ts, enrichmentValidationRules.ts, __tests__/
 │       ├── strategy/     # evaluationPrompt.ts, briefPdfGenerator.ts
 │       ├── crawl/        # crawlJob.ts, pageDiscovery.ts, signalDetector.ts, signalWriter.ts
 │       ├── usage/        # usageLogger.ts, alertDelivery.ts, claudeClient.ts
 │       ├── capi/         # credentials.ts, pipeline.ts, googleDelivery.ts, metaDelivery.ts,
 │       │                 # linkedinDelivery.ts, dedupStore.ts, customerMatch.ts
-│       ├── gtm/          # GTM container ingestion services
-│       ├── queue/        # jobQueue.ts (Bull), worker.ts
+│       ├── gtm/, queue/ (jobQueue.ts, worker.ts), scoring/
 │       └── [others]/     # audit/, browserbase/, channels/, health/, journey/, stripe/,
 │                         # signals/, export/, reporting/, developer/
 │
@@ -167,129 +121,56 @@ AtlasV2/
 
 **RLS enabled on every table. New tables use `organization_id = auth.uid()`. Some newer tables use `org_id` — match the column name to the pattern in that migration file.**
 
+Core: `organizations`, `profiles` (+ Stripe fields), `clients`, `organisation_members`, `planning_sessions`/`planning_pages`/`planning_recommendations`. `audits` predates `supabase/migrations/`; `client_id` (nullable FK) added 20260818 for after-the-fact linking.
+
+Stable feature-area tables (one line each — see migration files for exact columns):
+- **Consent & CAPI** (20260317): `consent_configs`, `consent_records`, `capi_providers` (encrypted credentials), `capi_events` (+ `match_quality_score`/`latency_ms`/`payload`), `capi_event_queue`.
+- **Channels** (20260325): `channel_sessions`, `channel_session_events`, `channel_journey_maps`, `channel_diagnostics`.
+- **Offline Conversions** (20260406/408): `offline_conversion_configs`, `offline_conversion_uploads`, `offline_conversion_rows` (raw PII nulled post-upload).
+- **Event Taxonomy** (20260410): `event_taxonomy`.
+- **Strategy Gate** (20260420/421/605): `strategy_briefs`, `strategy_objectives` (verdict/tier/action-types), `strategy_objective_campaigns`.
+- **Journey Builder** (20260602–613): `journey_stages` (`proxy_value_gbp`, `buyer_intent_level`, `timing_metadata`), `journey_client_link`.
+- **Usage & Billing** (20260520/522): `usage_events`, `org_subscriptions`, `browserbase_usage_snapshots`.
+- **CSE** (20260530): `crawl_runs` (+ `is_baseline` for IHC), `crawl_pages`, `detected_signals`, `org_page_scope`.
+- **Proxy Event Library** (20260601): `proxy_event_library`.
+- **Health** (extended across phases): `health_scores`/`health_snapshots` (+ `platform_acceptance_score`, `gtg_active`, `dma_coverage_score`).
+
+Actively-touched tables (fuller detail):
 ```sql
--- Core
-organizations      (id, name, type, plan, created_at)
-profiles           (id, organization_id, full_name, role,
-                    stripe_customer_id, stripe_subscription_id,
-                    subscription_status, current_period_end, created_at)
-clients            (id, organization_id, name, website_url, industry, created_at)
-organisation_members (id, organisation_id, user_id, role, ...)
-planning_sessions  (id, user_id, site_url, business_type, status, created_at)
-planning_pages     (id, session_id, url, page_type, scan_status, page_capture, ai_analysis, created_at)
-planning_recommendations (id, session_id, page_id, element_reference, selector,
-                           recommendation_type, event_name, action_type, approved, ...)
--- audits table predates supabase/migrations/ (originally db/migrations/001_create_audit_tables.sql);
--- client_id UUID (nullable, FK -> clients, ON DELETE SET NULL) added 20260818 so a bare-URL
--- "Evaluate a site" run can be linked to a client after the fact
-
--- Consent & CAPI (20260317)
-consent_configs, consent_records
-capi_providers     (credentials JSONB — AES-256-GCM encrypted)
-capi_events        (+ match_quality_score, latency_ms, payload added in 20260620)
-capi_event_queue
-
--- Channels (20260325)
-channel_sessions, channel_session_events, channel_journey_maps, channel_diagnostics
-
--- Offline Conversions (20260406 + 20260408)
-offline_conversion_configs, offline_conversion_uploads
-offline_conversion_rows  (raw PII nulled post-upload, hashed_email, hashed_phone, gclid, ...)
-
--- Event Taxonomy (20260410)
-event_taxonomy     (id, slug, name, description, category, platform_mappings JSONB, is_system, ...)
-
--- Strategy Gate (20260420 + 20260421 + 20260605)
-strategy_briefs        (id, organization_id, client_id, mode ['single'|'multi'],
-                         brief_name, version_no, locked_at, superseded_by, ...)
-strategy_objectives    (id, brief_id, organization_id, name, platforms TEXT[],
-                         verdict ['CONFIRM'|'AUGMENT'|'REPLACE'],
-                         recommended_primary_event, recommended_proxy_event,
-                         conversion_tier ['primary'|'secondary'|'suppression'],
-                         platform_action_types JSONB, locked, locked_at, ...)
-strategy_objective_campaigns (id, objective_id, platform, campaign_name, budget, ...)
-
--- Journey Builder (20260602–20260604 + 20260613)
-journey_stages     (..., proxy_value_gbp numeric, buyer_intent_level text,
-                    timing_metadata JSONB)
-journey_client_link (journey_id, client_id)
-
--- Usage & Billing (20260520–20260522)
-usage_events       (event_type: page_scan | ai_report_* | ai_query_* | dma_ingest_event | dma_enricher_event)
-org_subscriptions, browserbase_usage_snapshots
-
--- Crawl Signal Extractor (20260530)
-crawl_runs         (+ is_baseline bool for IHC)
-crawl_pages, detected_signals, org_page_scope
-
--- Proxy Event Library (20260601)
-proxy_event_library (id, organization_id, event_name, proxy_value_gbp, ...)
-
--- Platform Connections (20260606 + 20260607 + 20260608)
+-- Platform Connections (20260606-608)
 platform_connections   (id, organization_id, client_id, platform ['google_ads'|'meta'|'ga4'|'gtm_destinations'],
-                         connection_type ['manager'|'child'|'standalone'],
-                         parent_connection_id, account_id, account_label,
+                         connection_type ['manager'|'child'|'standalone'], parent_connection_id, account_id,
                          oauth_tokens TEXT (AES-256-GCM encrypted), status, last_synced_at, metadata)
-platform_state_cache   (connection_id, cache_key, data JSONB, ...)
-platform_event_stats_daily (connection_id, date, event_name, platform_count,
-                              atlas_count, delta_pct, quality_signals JSONB)
-volume_tolerance_configs   (client_id, platform, event_name, tolerance_pct, ...)
+platform_state_cache, platform_event_stats_daily, volume_tolerance_configs
 
 -- Reconciliation (20260607)
-reconciliation_runs    (id, organization_id, client_id, brief_id, run_type, status,
-                         platforms_run TEXT[], total_findings, ...)
-reconciliation_findings (id, run_id, dimension ['config'|'volume'|'delivery'|'alignment'],
-                          severity, event_name, platform, description, resolved_at, ...)
+reconciliation_runs     (id, organization_id, client_id, brief_id, run_type, status, platforms_run TEXT[], ...)
+reconciliation_findings (id, run_id, dimension ['config'|'volume'|'delivery'|'alignment'], severity, ...)
 
 -- Implementation Health (20260610)
-gtm_container_connections  (id, organization_id, client_id, property_id, container_id,
-                              auth_method ['oauth'|'manual_upload'],
-                              oauth_credentials_encrypted TEXT, last_synced_at, ...)
-gtm_container_snapshots    (id, connection_id, container_json JSONB, snapshot_at, ...)
-ihc_alert_preferences      (org_id, severity_threshold, notification_channels JSONB, ...)
-audit_findings             (id, organization_id, run_id, rule_id, severity, event_name,
-                              description, ihc_drift_count, ...)
+gtm_container_connections (auth_method ['oauth'|'manual_upload'], oauth_credentials_encrypted TEXT, ...)
+gtm_container_snapshots, ihc_alert_preferences, audit_findings
 
 -- DQM (20260615)
-dqm_gtg_checks     (org_id, gtag_url, http_status, response_ms, check_status, checked_at)
-dqm_dma_poll_state (org_id UNIQUE, last_polled_at, upload_success_rate, avg_match_rate,
-                     total_members_30d, destination_count, error_categories JSONB, backoff_until)
+dqm_gtg_checks (org_id, gtag_url, http_status, response_ms, check_status, checked_at)
+dqm_dma_poll_state (org_id UNIQUE, upload_success_rate, avg_match_rate, total_members_30d, backoff_until)
 
--- Enricher / Customer Match (20260611 + 20260612)
-audience_member_uploads (org_id, customer_id, operation_type, status, record_count,
-                          matched_count, dma_response JSONB, ...)
-enricher_runs           (org_id, ingest_type, destinations JSONB, operation_type, status,
-                          record_count, matched_count, match_rate, dma_response JSONB, ...)
+-- Enricher / Customer Match (20260611/612)
+audience_member_uploads, enricher_runs (org_id, ingest_type, destinations JSONB, match_rate, dma_response JSONB)
 
 -- Signal Library (20260619)
-signals            (id, organisation_id, key, name, category, is_system, is_custom,
-                    required_params JSONB, optional_params JSONB, platform_mappings JSONB,
-                    taxonomy_event_id, version, ...)
-signal_packs       (id, organisation_id, name, description, is_system, ...)
-signal_pack_signals (pack_id, signal_id)
-deployments        (id, organisation_id, signal_id, client_id, status, ...)
+signals (id, organisation_id, key, name, category, is_system, required_params JSONB, platform_mappings JSONB, ...)
+signal_packs, signal_pack_signals, deployments
 
 -- Signal Tracking Dashboard (20260620)
-mv_signal_aggregates_daily  (materialized view — org/provider/event aggregates)
-signal_export_jobs  (id, organization_id, status, filters JSONB, storage_path,
-                     download_url, expires_at, ...)
+mv_signal_aggregates_daily (materialized view), signal_export_jobs
 
 -- Signal Enrichment (20260703)
-signal_enrichment_configs  (id, deployment_id, signal_key, value_config JSONB,
-                             currency_config JSONB, dedup_config JSONB, content_config JSONB,
-                             meta_enabled, google_enabled, linkedin_enabled,
-                             validation_score, validation_warnings JSONB, last_validated_at,
-                             UNIQUE(deployment_id, signal_key))
-client_identity_configs    (id, client_id UNIQUE, email_field, phone_field, first_name_field,
-                             last_name_field, postal_code_field, country_field, external_id_field,
-                             fbc_field, fbp_field, gclid_field, wbraid_field, gbraid_field,
-                             auto_capture_ip, auto_capture_ua, enabled_identifiers TEXT[])
--- capi_providers extended: identity_config_id UUID, enrichment_score INTEGER, enrichment_validated_at TIMESTAMPTZ
--- signals.platform_mappings extended: identity_fields arrays for purchase/generate_lead/begin_checkout/sign_up
-
--- Health (extended across phases)
-health_scores      (+ platform_acceptance_score, gtg_active, dma_coverage_score)
-health_snapshots   (+ platform_acceptance_score)
+signal_enrichment_configs (id, deployment_id, signal_key, value/currency/dedup/content_config JSONB,
+                            meta/google/linkedin_enabled, validation_score, UNIQUE(deployment_id, signal_key))
+client_identity_configs   (id, client_id UNIQUE, email/phone/name/postal/country/external_id_field,
+                            fbc/fbp/gclid/wbraid/gbraid_field, auto_capture_ip/ua, enabled_identifiers TEXT[])
+-- capi_providers extended: identity_config_id, enrichment_score, enrichment_validated_at
 ```
 
 ---
@@ -340,8 +221,9 @@ health_snapshots   (+ platform_acceptance_score)
 8. **Plan hierarchy** — `free < pro < agency`. `planGuard(minPlan)` on backend, `<PlanGate minPlan="...">` on frontend. Super admins bypass both.
 9. **Migration guards** — `ALTER TABLE` on optional tables must be wrapped in `DO $$ IF EXISTS (SELECT FROM pg_tables ...) THEN ... END IF; END $$` to survive Supabase preview environments.
 10. **org_id resolution** — `req.user` carries only `id`, `email`, `plan`, `isSuperAdmin`. Resolve `organization_id` via `supabaseAdmin.from('profiles').select('organization_id').eq('id', userId)`. Note: some newer tables use `org_id` column (enricher_runs, dqm_*, audience_member_uploads) — match the column name used in that migration.
-11. **shadcn/ui registry** — if `npx shadcn add` fails, install the Radix primitive directly and create the component manually.
+11. **shadcn/ui registry** — if `npx shadcn add` fails, install the Radix primitive directly and create the component manually (the Radix package is often already a dependency even when the wrapper isn't — check `package.json` first).
 12. **Strategy Gate is a frontend nudge, not a backend block** — the `strategyGate` middleware (`backend/src/api/middleware/strategyGate.ts`) is a pass-through on its existing routes (`POST /api/planning/sessions`, client deploy); the brief requirement is enforced only via the dismissible `StrategyGateGuard` banner in the frontend.
+13. **Operator console tokens over hardcoded hex** — new/touched frontend UI should use `console.*`/`severity.*`/`navy.*` Tailwind tokens and `font-display`/`font-heading`/`font-mono` (defined in `tailwind.config.js`) rather than raw hex literals or default shadcn muted-foreground/border tokens. Several pages (Dashboard, Signal Tracking Dashboard, Planning Wizard) still had hex literals until the operator-console rollout — grep for `#[0-9A-Fa-f]{3,6}` in a file before styling it to catch leftovers.
 
 ---
 
@@ -358,37 +240,22 @@ health_snapshots   (+ platform_acceptance_score)
 9. **Functional components only.** No class components. No `'use client'`.
 10. **API responses** → `{ data, error, message }` shape.
 11. **Zustand for client state.** No React Query or SWR.
+12. **No fabricated UI data** — don't add charts, IDs, or status text that isn't backed by a real data source (e.g. a trend chart with no time-series endpoint behind it). Skip the visual rather than fake it, and note the gap.
 
 ---
 
 ## Active Development Branch
 
-`claude/update-claude-md-docs-pkekoq`
+`claude/atlas-ui-stitch-prompt-2zvqy7`
 
 ---
 
 ## Completed Sprints (summary)
 
+Early sprints (Stripe Payments, Offline Conversions, Strategy Gate 1.6, CSE 1–4, Usage & Monitoring, B2B Journey Template, GCLID Capture, Signal Library, Platform Connections, Platform Reconciliation, GTM Integration, IHC, DQM, Bid Signal Enricher, Signal Tracking Dashboard, Event Taxonomy, Naming Conventions, LinkedIn CAPI, Integration Tests) shipped the core feature set and backend routes/schema described above — see git history for detail on any of these.
+
 | Sprint | What shipped |
 |---|---|
-| Stripe Payments | DB migration, Stripe client, billing routes, planGuard, PlanGate, super admin |
-| Offline Conversions | DB migration, CSV validator, Google upload pipeline, Bull worker, 5-step UI wizard, Meta support |
-| Strategy Gate 1.6 | Multi-objective data model, Claude eval, PDF brief, governance tier + platform action types, OCI nudge |
-| CSE 1–4 | crawl_runs/pages/detected_signals schema, Browserbase signal detector, crawl API, CrawlStatusPage |
-| Usage & Monitoring | usage_events, org_subscriptions, browserbase_usage_snapshots, operator alerts |
-| B2B Journey Template | b2b_lead_gen type, 7-stage template, proxy_value_gbp + buyer_intent_level, timing metadata |
-| GCLID Capture | GCLID/UTM cookie script, hidden form fields, CRM field mapping, Enhanced Conversions for Leads in implementation guide |
-| Signal Library | signals/signal_packs/deployments tables, system events, Planning Mode save-to-library bridge |
-| Platform Connections | platform_connections table, OAuth flows (Google Ads/Meta/GA4), manager/child/standalone, account discovery |
-| Platform Reconciliation | reconciliation_runs/findings, config+volume+delivery+alignment diffs, tolerance config, daily stats sync |
-| GTM Integration | gtm_container_connections, OAuth + manual upload, container snapshots |
-| IHC | tag config rules, baseline promotion (crawl_runs.is_baseline), drift detection, alert preferences |
-| DQM | dqm_gtg_checks, dqm_dma_poll_state, GTG path probes, DMA poll state monitoring |
-| Bid Signal Enricher | Customer Match push, audience_member_uploads, enricher_runs, match-rate telemetry, Data Manager Console (agency) |
-| Signal Tracking Dashboard | CAPI event log + aggregates, capi_events extensions, mv_signal_aggregates_daily, async CSV export |
-| Event Taxonomy | event_taxonomy tree, system + custom events, platform mappings, full-text search |
-| Naming Conventions | org naming rules, real-time validation, rename preview |
-| LinkedIn CAPI | Full LinkedIn delivery (previously stub) |
-| Integration Tests | Backend route integration test suite (37 routes × test files) |
-| Signal Enrichment Configuration | signal_enrichment_configs + client_identity_configs tables (4 migrations); enrichmentConfigService (field resolution, applyIdentityConfig, applySignalEnrichment, scoring); 12-rule validation engine (enrichmentValidationRules); 8-endpoint enrichment route; enrichmentApi + enrichmentStore; FieldMappingRow, EnrichmentScoreBadge, EnrichmentWarningBanner, IdentityConfigStep, SignalEnrichmentStep components; IdentityConfigStep in ClientSetupWizard (step 4) + ClientDetailPage Enrichment tab; SignalEnrichmentStep in DeploymentWizard (step 2); CAPI pipeline enrichment injection (step 0a, non-fatal); GTM container identity DLV variables; 40 unit tests |
-| Home Redesign + Audit Engine Entry Point | Two-option HomePage (FirstTimeSetup / ReturningUserLanding) driven by new useOrganisations hook; EvaluateSiteCard as the Audit Engine's first real entry point (Dashboard + Home) with LinkToClientButton for after-the-fact client linking; audits.client_id migration + `PATCH /:audit_id/link-client`; QuickClientIntake slim client-creation flow into `/planning/new`; strategy gate softened to a backend pass-through matching the frontend nudge; org-context sidebar nav gaps fixed (Home link, Strategy Gate/Journey Builder/Signal Library/Platform Connections added to TOOLS group); "operator console" design-token system (Orbitron/Rajdhani/JetBrains Mono, `console.*` Tailwind palette) with Sidebar/TopBar/OrgSwitcher/Home reskin, StatsRow + RecentActivityFeed on Home |
+| Signal Enrichment Configuration | `signal_enrichment_configs`/`client_identity_configs` tables, `enrichmentConfigService` (field resolution + scoring), 12-rule validation engine, enrichment route/API/store, `IdentityConfigStep`/`SignalEnrichmentStep`/`FieldMappingRow`/`EnrichmentScoreBadge` components wired into ClientSetupWizard/ClientDetailPage/DeploymentWizard, CAPI pipeline injection, GTM identity DLV vars, 40 unit tests |
+| Home Redesign + Audit Engine Entry Point | Two-option HomePage (`FirstTimeSetup`/`ReturningUserLanding`) via `useOrganisations`; `EvaluateSiteCard` as Audit Engine entry point + `LinkToClientButton`; `audits.client_id` migration; `QuickClientIntake`; strategy gate softened to a pass-through; introduced the "operator console" design-token system (`console.*`, Orbitron/Rajdhani/JetBrains Mono) on Sidebar/TopBar/OrgSwitcher/Home |
+| Operator Console UI Rollout | Extended the console design system to the remaining major surfaces: Sidebar nav regrouped from flat Workspace/Tools into 7 semantic groups (Workspace/Engine/Library/Implementation/Tracking/Advanced/Privacy), surfacing Signal Tracking/Reconciliation/Implementation Health links that had no prior nav entry; OrgSwitcher dropdown restyled off shadcn defaults; main Dashboard (`DeltaHeader`/`OrgMetricsStrip`/`AlertFeed`/`ClientHealthList`) restyled; Signal Tracking Dashboard restyled + new real aggregate stat-card row (`SignalAggregateCards`, backed by the existing `/aggregates` endpoint); Planning Wizard Step 1 restyled, wizard stepper extracted into a reusable `WizardStepper`, added the missing shadcn `Checkbox` primitive, added a live "Configuration Draft" preview panel; sidebar header simplified to a plain "ATLAS" text wordmark after an icon-mark version proved illegible at sidebar scale |
