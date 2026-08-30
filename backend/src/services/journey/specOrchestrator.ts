@@ -18,6 +18,7 @@ export async function generateAndSaveSpecs(
     name: journey.name,
     business_type: journey.business_type,
     implementation_format: journey.implementation_format,
+    secondary_domains: journey.secondary_domains ?? [],
     stages,
   };
 

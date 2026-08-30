@@ -118,7 +118,7 @@ export function Step3PlatformSelector({ onNext, onBack }: Step3Props) {
       <div className="mt-8">
         <h3 className="text-sm font-semibold">Cross-domain tracking</h3>
         <p className="mt-1 text-xs text-muted-foreground">
-          If users move from this site to a separate domain during their journey (e.g. a checkout subdomain), add those domains here. Atlas will configure GA4 linked_domains and the Conversion Linker automatically.
+          If users move from this site to a separate domain during their journey (e.g. a checkout subdomain), add those domains here. Atlas will configure GA4 linked_domains, the Google Ads Conversion Linker, and — when Meta is selected — an fbclid link decorator automatically.
         </p>
         <div className="mt-3 flex gap-2">
           <Input

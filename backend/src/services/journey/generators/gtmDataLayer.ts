@@ -1,5 +1,6 @@
 import type { GTMDataLayerOutput, GTMStageOutput, JourneyDefinition, PlatformConfig } from '../../../types/journey';
 import { getActionPrimitive } from '../actionPrimitives';
+import { buildMetaCrossDomainDecoratorScript } from '../../../utils/metaCrossDomainLinker';
 
 function generateStageSnippet(
   stageLabel: string,
@@ -173,6 +174,50 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
 
 <!-- Replace {{GTM_CONTAINER_ID}} with your GTM container ID, e.g. GTM-XXXXXXX -->`;
 
+/**
+ * Cross-domain configuration guidance for when this journey routes users to
+ * a secondary domain (e.g. main site → checkout subdomain). GA4 and Google
+ * Ads have native cross-domain settings configured directly on their GTM
+ * tags; Meta has none, so a ready-to-paste link-decoration snippet is
+ * included instead. Returns undefined when no secondary domains are set.
+ */
+function generateCrossDomainSetup(secondaryDomains: string[], platforms: PlatformConfig[]): string | undefined {
+  if (secondaryDomains.length === 0) return undefined;
+
+  const activePlatforms = new Set(platforms.filter((p) => p.is_active).map((p) => p.platform));
+  const domainList = secondaryDomains.join(', ');
+  const lines: string[] = [];
+
+  lines.push('/*');
+  lines.push(` * Cross-domain tracking — this journey hands off to: ${domainList}`);
+  lines.push(' * Configure the following so click IDs and session identity survive the handoff.');
+  lines.push(' * Deploy this on every domain in the journey, including the destination(s).');
+  lines.push(' */');
+
+  if (activePlatforms.has('ga4')) {
+    lines.push('');
+    lines.push('// GA4 — on the "GA4 Configuration" tag, open Configuration Settings and add');
+    lines.push(`// these domains under "Domains to link": ${domainList}`);
+  }
+
+  if (activePlatforms.has('google_ads')) {
+    lines.push('');
+    lines.push('// Google Ads — on the Conversion Linker tag, enable "Enable cross-domain linking"');
+    lines.push(`// and add the same domains: ${domainList}`);
+  }
+
+  if (activePlatforms.has('meta')) {
+    lines.push('');
+    lines.push('// Meta has no built-in cross-domain mechanism — _fbc/_fbp cookies do not survive');
+    lines.push('// a true domain change. Add the snippet below as a Custom HTML tag firing on All');
+    lines.push('// Pages to carry fbclid across the handoff:');
+    lines.push('');
+    lines.push(buildMetaCrossDomainDecoratorScript(secondaryDomains));
+  }
+
+  return lines.join('\n');
+}
+
 export function generateGTMDataLayer(journey: JourneyDefinition, platforms: PlatformConfig[]): GTMDataLayerOutput {
   const stages: GTMStageOutput[] = journey.stages
     .sort((a, b) => a.stage_order - b.stage_order)
@@ -186,5 +231,11 @@ export function generateGTMDataLayer(journey: JourneyDefinition, platforms: Plat
       ),
     );
 
-  return { stages, global_setup: GTM_GLOBAL_SETUP };
+  const cross_domain_setup = generateCrossDomainSetup(journey.secondary_domains ?? [], platforms);
+
+  return {
+    stages,
+    global_setup: GTM_GLOBAL_SETUP,
+    ...(cross_domain_setup ? { cross_domain_setup } : {}),
+  };
 }

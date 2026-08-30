@@ -31,6 +31,7 @@ import {
   renderStandardEventAliasTag,
   dlvPathForParam,
 } from './renderer/gtm.renderer';
+import { buildMetaCrossDomainDecoratorScript } from '../../../utils/metaCrossDomainLinker';
 
 // ── GTM type interfaces ──────────────────────────────────────────────────────
 
@@ -950,6 +951,33 @@ src="https://www.facebook.com/tr?id={{CONST - Meta Pixel ID}}&ev=PageView&noscri
       type: 'c',
       parameter: [tmpl('value', platformIds?.meta ?? 'XXXXXXXXXXXXXXXX')],
       folderId: FOLDER.VARIABLES,
+    });
+  }
+
+  // ── Meta Cross-Domain Link Decorator ──────────────────────────────────────
+  // Unlike GA4 (linked_domains) or Google Ads (Conversion Linker), Meta has no
+  // built-in cross-domain mechanism — _fbc/_fbp are host-scoped cookies that
+  // do not survive a true domain change. This tag intercepts clicks on links
+  // pointing at a secondary domain and appends fbclid (read from the stored
+  // _fbc cookie, falling back to the current URL) to the link before
+  // navigation, so the destination's "Atlas — Store FBCLID" tag can recapture
+  // it on landing.
+  if (hasMeta && secondaryDomains.length > 0) {
+    const metaLinkerTagId = tagIds.next();
+    tags.push({
+      ...stub(),
+      tagId: metaLinkerTagId,
+      name: 'Atlas — Meta Cross-Domain Link Decorator',
+      type: 'html',
+      parameter: [
+        tmpl('html', buildMetaCrossDomainDecoratorScript(secondaryDomains)),
+        bool('supportDocumentWrite', 'false'),
+      ],
+      firingTriggerId: [allPagesTrigId],
+      tagFiringOption: 'oncePerEvent',
+      folderId: FOLDER.CONFIG,
+      fingerprint: '0',
+      tagManagerUrl: 'https://tagmanager.google.com/',
     });
   }
 

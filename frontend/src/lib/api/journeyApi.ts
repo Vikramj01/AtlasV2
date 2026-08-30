@@ -28,6 +28,7 @@ export interface CreateJourneyPayload {
   name?: string;
   business_type: BusinessType;
   implementation_format?: ImplementationFormat;
+  secondary_domains?: string[];
   stages?: Array<{
     stage_order: number;
     label: string;

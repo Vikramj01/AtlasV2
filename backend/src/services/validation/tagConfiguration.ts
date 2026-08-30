@@ -1,5 +1,5 @@
 /**
- * Layer: tag_configuration (12 rules total — 7 in Phase A, 5 in Phase B)
+ * Layer: tag_configuration (13 rules total — 7 in Phase A, 6 in Phase B)
  *
  * Rules operate on GTMContainerSnapshot inside AuditData.gtmContainer.
  * Every rule returns status: 'skipped' when gtmContainer is absent.
@@ -803,6 +803,104 @@ export const GA4_CROSS_DOMAIN_LINKING_MISSING = {
   },
 };
 
+// ── 5.13 META_CROSS_DOMAIN_FBCLID_MISSING ────────────────────────────────────
+//
+// Fires when the container has a Meta Pixel AND outbound click triggers to a
+// different hostname (same signal used by GA4_CROSS_DOMAIN_LINKING_MISSING),
+// but no tag decorates fbclid onto those outbound links. Unlike GA4's
+// linked_domains or Google Ads' Conversion Linker, Meta has no built-in
+// cross-domain mechanism — _fbc/_fbp are host-scoped cookies that do not
+// survive a true domain change, so link decoration is the only way to carry
+// the click ID across the handoff.
+//
+// Severity: high — the destination domain silently loses the ad click
+// attribution, degrading Meta CAPI event match quality without any visible
+// error.
+
+/** True if a tag is a Meta Pixel: the native template type, or Custom HTML that calls fbq(). */
+function hasMetaPixelTag(tags: GTMTag[]): boolean {
+  return tags.some((t) => t.type === 'sp' || (t.type === 'html' && /fbq\s*\(/.test(customHtmlContent(t))));
+}
+
+/** True if a Custom HTML tag appends fbclid onto a link's href before navigation. */
+function hasFbclidLinkDecoration(tags: GTMTag[]): boolean {
+  return tags.some((t) => {
+    if (t.type !== 'html') return false;
+    const html = customHtmlContent(t);
+    return /fbclid/i.test(html) && (/searchParams\s*\.\s*set/.test(html) || /\.href\s*=/.test(html));
+  });
+}
+
+export const META_CROSS_DOMAIN_FBCLID_MISSING = {
+  rule_id: 'META_CROSS_DOMAIN_FBCLID_MISSING',
+  validation_layer: 'tag_configuration' as const,
+  severity: 'high' as const,
+  affected_platforms: ['Meta'],
+
+  test(auditData: AuditData): ValidationResult {
+    if (!auditData.gtmContainer) return skippedResult(this.rule_id);
+
+    const { tags } = auditData.gtmContainer;
+
+    if (!hasMetaPixelTag(tags)) {
+      return {
+        rule_id: this.rule_id,
+        validation_layer: this.validation_layer,
+        status: 'skipped',
+        severity: this.severity,
+        technical_details: {
+          found: 'No Meta Pixel tag present in container',
+          expected: 'fbclid preserved across domain handoffs if outbound cross-domain links exist',
+          evidence: ['Rule skipped — no Meta Pixel tag found'],
+        },
+      };
+    }
+
+    if (!hasOutboundClickTrigger(auditData)) {
+      return {
+        rule_id: this.rule_id,
+        validation_layer: this.validation_layer,
+        status: 'pass',
+        severity: this.severity,
+        technical_details: {
+          found: 'Meta Pixel present, no outbound cross-domain click triggers detected',
+          expected: 'fbclid decoration on outbound links when the journey crosses domains',
+          evidence: ['No cross-domain tracking gap detected'],
+        },
+      };
+    }
+
+    if (hasFbclidLinkDecoration(tags)) {
+      return {
+        rule_id: this.rule_id,
+        validation_layer: this.validation_layer,
+        status: 'pass',
+        severity: this.severity,
+        technical_details: {
+          found: 'A tag decorates outbound links with fbclid before the domain handoff',
+          expected: 'fbclid decoration on outbound links when the journey crosses domains',
+          evidence: ['Cross-domain fbclid persistence tag detected'],
+        },
+      };
+    }
+
+    return {
+      rule_id: this.rule_id,
+      validation_layer: this.validation_layer,
+      status: 'fail',
+      severity: this.severity,
+      technical_details: {
+        found: 'Meta Pixel present with outbound click triggers to another hostname, but no tag decorates fbclid onto those links',
+        expected: 'Outbound links to secondary domains carry fbclid (or the stored _fbc value) so Meta can stitch the session after the handoff',
+        evidence: [
+          "Meta's _fbc/_fbp first-party cookies are host-scoped and do not survive a true domain change, unlike GA4's linked_domains or Google Ads' Conversion Linker",
+          'No tag found that appends fbclid to outbound links matching the secondary domain(s)',
+        ],
+      },
+    };
+  },
+};
+
 // ── Phase B rule registry ─────────────────────────────────────────────────────
 
 export const TAG_CONFIGURATION_RULES_PHASE_B = [
@@ -811,9 +909,10 @@ export const TAG_CONFIGURATION_RULES_PHASE_B = [
   DEFAULT_CONSENT_GRANTED_GLOBALLY,
   FRAGILE_CSS_SELECTOR_TRIGGER,
   GA4_CROSS_DOMAIN_LINKING_MISSING,
+  META_CROSS_DOMAIN_FBCLID_MISSING,
 ];
 
-// ── Combined registry (all 11 tag_configuration rules) ───────────────────────
+// ── Combined registry (all 13 tag_configuration rules) ────────────────────────
 
 export const TAG_CONFIGURATION_RULES_ALL = [
   ...TAG_CONFIGURATION_RULES_PHASE_A,
