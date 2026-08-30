@@ -171,6 +171,16 @@ function list(key: string, items: string[]): GTMParameter {
   return { type: 'LIST', key, list: items.map((v) => ({ type: 'TEMPLATE' as const, value: v })) };
 }
 
+/**
+ * JSON-serialize a value for embedding inside an inline `<script>` block.
+ * Escapes `<` so a user-supplied string (e.g. a secondary domain) containing
+ * `</script>` can't prematurely close the tag when the container is imported
+ * and rendered in a browser.
+ */
+function jsonForInlineScript(value: unknown): string {
+  return JSON.stringify(value).replace(/</g, '\\u003c');
+}
+
 function stub(accountId = '0', containerId = '0') {
   return {
     accountId,
@@ -950,6 +960,62 @@ src="https://www.facebook.com/tr?id={{CONST - Meta Pixel ID}}&ev=PageView&noscri
       type: 'c',
       parameter: [tmpl('value', platformIds?.meta ?? 'XXXXXXXXXXXXXXXX')],
       folderId: FOLDER.VARIABLES,
+    });
+  }
+
+  // ── Meta Cross-Domain Link Decorator ──────────────────────────────────────
+  // Unlike GA4 (linked_domains) or Google Ads (Conversion Linker), Meta has no
+  // built-in cross-domain mechanism — _fbc/_fbp are host-scoped cookies that
+  // do not survive a true domain change. This tag intercepts clicks on links
+  // pointing at a secondary domain and appends fbclid (read from the stored
+  // _fbc cookie, falling back to the current URL) to the link before
+  // navigation, so the destination's "Atlas — Store FBCLID" tag can recapture
+  // it on landing.
+  if (hasMeta && secondaryDomains.length > 0) {
+    const metaLinkerTagId = tagIds.next();
+    tags.push({
+      ...stub(),
+      tagId: metaLinkerTagId,
+      name: 'Atlas — Meta Cross-Domain Link Decorator',
+      type: 'html',
+      parameter: [
+        tmpl('html', `<script>
+(function() {
+  try {
+    var secondaryDomains = ${jsonForInlineScript(secondaryDomains)};
+    function getFbclid() {
+      var match = document.cookie.match(/(^| )_fbc=([^;]+)/);
+      if (match) {
+        var parts = decodeURIComponent(match[2]).split('.');
+        var last = parts[parts.length - 1];
+        if (last) return last;
+      }
+      var params = new URLSearchParams(window.location.search);
+      return params.get('fbclid');
+    }
+    document.addEventListener('click', function(evt) {
+      var link = evt.target && evt.target.closest ? evt.target.closest('a[href]') : null;
+      if (!link) return;
+      var url;
+      try { url = new URL(link.href, window.location.href); } catch (e) { return; }
+      var host = url.hostname.replace(/^www\\./, '');
+      if (secondaryDomains.indexOf(host) === -1) return;
+      if (url.searchParams.has('fbclid')) return;
+      var fbclid = getFbclid();
+      if (!fbclid) return;
+      url.searchParams.set('fbclid', fbclid);
+      link.setAttribute('href', url.toString());
+    }, true);
+  } catch (e) {}
+})();
+</script>`),
+        bool('supportDocumentWrite', 'false'),
+      ],
+      firingTriggerId: [allPagesTrigId],
+      tagFiringOption: 'oncePerEvent',
+      folderId: FOLDER.CONFIG,
+      fingerprint: '0',
+      tagManagerUrl: 'https://tagmanager.google.com/',
     });
   }
 

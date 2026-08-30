@@ -246,20 +246,34 @@ function extractLinkedDomains(tags: GTMTag[]): string[] {
   return param.list.map((p) => p.value ?? '').filter(Boolean);
 }
 
-function CrossDomainCallout({ domains }: { domains: string[] }) {
-  if (domains.length === 0) return null;
+/** True when the Meta cross-domain fbclid link decorator tag is present in the container. */
+function hasMetaCrossDomainDecorator(tags: GTMTag[]): boolean {
+  return tags.some((t) => t.type === 'html' && t.name === 'Atlas — Meta Cross-Domain Link Decorator');
+}
+
+function CrossDomainCallout({ domains, metaLinked }: { domains: string[]; metaLinked: boolean }) {
+  if (domains.length === 0 && !metaLinked) return null;
   return (
     <div className="mb-4 rounded-lg border border-indigo-200 bg-indigo-50 p-4 text-xs">
       <p className="mb-1 font-semibold text-indigo-800">Cross-domain tracking active</p>
-      <p className="mb-2 text-indigo-700">
-        This container is configured to stitch GA4 sessions across domains. The following domains will be linked:
-      </p>
-      <div className="flex flex-wrap gap-1.5">
-        {domains.map((d) => (
-          <span key={d} className="rounded-full bg-indigo-100 px-2 py-0.5 font-mono text-indigo-800">{d}</span>
-        ))}
-      </div>
-      <p className="mt-2 text-indigo-600">Verify in GA4 DebugView that a single client ID persists across the domain handoff after deploying.</p>
+      {domains.length > 0 && (
+        <>
+          <p className="mb-2 text-indigo-700">
+            This container is configured to stitch GA4 sessions across domains. The following domains will be linked:
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {domains.map((d) => (
+              <span key={d} className="rounded-full bg-indigo-100 px-2 py-0.5 font-mono text-indigo-800">{d}</span>
+            ))}
+          </div>
+          <p className="mt-2 text-indigo-600">Verify in GA4 DebugView that a single client ID persists across the domain handoff after deploying.</p>
+        </>
+      )}
+      {metaLinked && (
+        <p className={domains.length > 0 ? 'mt-2 text-indigo-700' : 'text-indigo-700'}>
+          Meta: outbound links to these domains are decorated with <code className="rounded bg-indigo-100 px-1">fbclid</code> so ad-click attribution survives the handoff.
+        </p>
+      )}
     </div>
   );
 }
@@ -293,10 +307,11 @@ export function GTMContainerPreview({
   const tagsByCategory = groupBy(tags, getTagCategory);
   const categoryOrder = ['Configuration', 'Conversion Events', 'Engagement Events', 'Custom'];
   const linkedDomains = extractLinkedDomains(tags);
+  const metaLinked = hasMetaCrossDomainDecorator(tags);
 
   return (
     <div className="space-y-3">
-      <CrossDomainCallout domains={linkedDomains} />
+      <CrossDomainCallout domains={linkedDomains} metaLinked={metaLinked} />
       {existingTracking && (
         <ExistingTrackingWarning
           tracking={existingTracking}

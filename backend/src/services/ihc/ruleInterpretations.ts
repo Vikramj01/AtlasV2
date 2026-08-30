@@ -156,4 +156,14 @@ export const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
       'Open the GA4 Config tag in GTM and add all secondary domains (e.g. checkout.example.com) to the "Domains to link" field under Configuration Settings. Simultaneously enable "Enable cross-domain linking" on the Google Ads Conversion Linker tag and add the same domains. After deploying, verify in GA4 DebugView that a single client_id persists across the domain handoff.',
     estimated_effort: 'low',
   },
+
+  META_CROSS_DOMAIN_FBCLID_MISSING: {
+    title: 'Meta Cross-Domain FBCLID Not Preserved',
+    business_impact:
+      "When users cross from one domain to another (e.g. main site → checkout subdomain or a separately hosted payment domain), Meta's _fbc/_fbp cookies are host-scoped and, unlike GA4's linked_domains or Google Ads' Conversion Linker, have no built-in mechanism to survive the handoff. The destination domain loses the fbclid, so Meta cannot match the resulting conversion back to the ad click — Advantage+ bidding and Conversions API event match quality degrade silently.",
+    recommended_owner: 'Tag Manager Team',
+    fix_summary:
+      'Add a tag that intercepts clicks on outbound links to the secondary domain(s) and appends fbclid (read from the stored _fbc cookie, or the current URL) to the link before navigation, then confirm the destination domain\'s GTM container captures fbclid into _fbc on load. Atlas generates this "Meta Cross-Domain Link Decorator" tag automatically once secondary domains are configured in Planning Mode or the Journey Builder — re-export the GTM container to pick it up.',
+    estimated_effort: 'low',
+  },
 };

@@ -467,7 +467,7 @@ export function Step1PlanningSetup() {
             <span className="text-xs font-normal text-console-fg-subtle">(optional — for cross-domain tracking)</span>
           </Label>
           <p className="text-xs text-console-fg-subtle">
-            If users move to a separate domain during this journey (e.g. a checkout subdomain), add those domains here. Atlas will configure GA4 cross-domain linking automatically.
+            If users move to a separate domain during this journey (e.g. a checkout subdomain), add those domains here. Atlas will configure GA4 cross-domain linking and, when Meta is selected, decorate outbound links with fbclid automatically.
           </p>
           <div className="flex gap-2">
             <Input
