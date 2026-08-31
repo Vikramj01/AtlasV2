@@ -20,6 +20,7 @@ import { emqGuidance, capiDeliveryGuidance } from '@/lib/guidance/metricGuidance
 import { ErrorLog } from '@/components/capi/ErrorLog';
 import { SkeletonCard } from '@/components/common/SkeletonCard';
 import { AudienceUploadTab } from '@/components/capi/AudienceUploadTab';
+import { RefundsTab } from '@/components/capi/RefundsTab';
 import type { CAPIProviderConfig } from '@/types/capi';
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -356,7 +357,7 @@ interface CAPIMonitoringDashboardProps {
 }
 
 type Window = 7 | 30;
-type Tab = 'delivery' | 'audience';
+type Tab = 'delivery' | 'audience' | 'refunds';
 
 export function CAPIMonitoringDashboard({ provider, onBack }: CAPIMonitoringDashboardProps) {
   const { dashboard, dashboardLoading, setDashboard, setDashboardLoading } = useCAPIStore();
@@ -416,7 +417,7 @@ export function CAPIMonitoringDashboard({ provider, onBack }: CAPIMonitoringDash
           {/* Delivery / Audience tab switcher — Audience only for Google */}
           {provider.provider === 'google' && (
             <div className="flex items-center rounded-lg border border-[#E5E7EB] p-0.5">
-              {(['delivery', 'audience'] as Tab[]).map((t) => (
+              {(['delivery', 'audience', 'refunds'] as Tab[]).map((t) => (
                 <button
                   key={t}
                   type="button"
@@ -428,7 +429,7 @@ export function CAPIMonitoringDashboard({ provider, onBack }: CAPIMonitoringDash
                       : { color: '#9CA3AF' }
                   }
                 >
-                  {t === 'delivery' ? 'Delivery' : 'Audience'}
+                  {t === 'delivery' ? 'Delivery' : t === 'audience' ? 'Audience' : 'Refunds'}
                 </button>
               ))}
             </div>
@@ -472,6 +473,11 @@ export function CAPIMonitoringDashboard({ provider, onBack }: CAPIMonitoringDash
       {/* ── Audience tab ─────────────────────────────────────────────────── */}
       {tab === 'audience' && (
         <AudienceUploadTab orgId={provider.id} />
+      )}
+
+      {/* ── Refunds tab ──────────────────────────────────────────────────── */}
+      {tab === 'refunds' && (
+        <RefundsTab />
       )}
 
       {/* ── Delivery tab ─────────────────────────────────────────────────── */}
