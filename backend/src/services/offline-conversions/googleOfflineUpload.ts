@@ -25,6 +25,7 @@ import type {
 } from '@/types/offline-conversions';
 import type {
   DMAEvent,
+  DMADestination,
   DMAIngestEventsRequest,
   DMAIngestEventsResponse,
 } from '@/integrations/google/dmaTypes';
@@ -219,6 +220,23 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * DMA destinations for an offline-conversion batch. Google Ads customer ID comes
+ * from the upload config (may differ from the connected account's default
+ * customer_id for MCC setups); GA4 is added alongside it when the connected
+ * credentials have a property ID configured, landing the same offline
+ * conversions in GA4 as well in one round-trip.
+ */
+function buildOfflineDestinations(config: OfflineConversionConfig, creds: GoogleCredentials): DMADestination[] {
+  const destinations: DMADestination[] = [
+    { type: 'GOOGLE_ADS', customerId: cleanCustomerId(config.google_customer_id!) },
+  ];
+  if (creds.ga4_property_id) {
+    destinations.push({ type: 'GA4', propertyId: creds.ga4_property_id });
+  }
+  return destinations;
+}
+
 // ── Upload a single batch with retry ─────────────────────────────────────────
 
 async function uploadBatch(
@@ -229,9 +247,7 @@ async function uploadBatch(
 ): Promise<{ response: DMAIngestEventsResponse; finalToken: string }> {
   const body: DMAIngestEventsRequest = {
     events,
-    destinations: [
-      { type: 'GOOGLE_ADS', customerId: cleanCustomerId(config.google_customer_id!) },
-    ],
+    destinations: buildOfflineDestinations(config, creds),
   };
 
   let currentToken = accessToken;
