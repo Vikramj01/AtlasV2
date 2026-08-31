@@ -128,6 +128,12 @@ export const clientApi = {
       body: JSON.stringify({ platforms }),
     }),
 
+  verifySgtm: (orgId: string, clientId: string) =>
+    apiFetch<{ verified: boolean; verified_at: string | null; platform: ClientPlatform }>(
+      `/api/organisations/${orgId}/clients/${clientId}/platforms/sgtm/verify`,
+      { method: 'POST' },
+    ),
+
   setPages: (
     orgId: string,
     clientId: string,

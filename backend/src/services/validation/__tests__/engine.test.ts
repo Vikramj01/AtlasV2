@@ -4,18 +4,18 @@ import { makePerfectAuditData, makeEmptyAuditData } from './mockAuditData';
 import type { AuditData } from '@/types/audit';
 
 describe('Validation engine', () => {
-  it('has exactly 42 rules registered', () => {
-    expect(ALL_RULES).toHaveLength(42);
+  it('has exactly 43 rules registered', () => {
+    expect(ALL_RULES).toHaveLength(43);
   });
 
   it('each rule has a unique rule_id', () => {
     const ids = ALL_RULES.map((r) => r.rule_id);
-    expect(new Set(ids).size).toBe(42);
+    expect(new Set(ids).size).toBe(43);
   });
 
-  it('returns 42 results for perfect AuditData', () => {
+  it('returns 43 results for perfect AuditData', () => {
     const results = runAllRules(makePerfectAuditData());
-    expect(results).toHaveLength(42);
+    expect(results).toHaveLength(43);
   });
 
   it('all results are pass or warning for perfect AuditData', () => {
@@ -77,7 +77,7 @@ describe('Validation engine', () => {
   it('malformed AuditData does not throw — returns warning for each rule', () => {
     const broken = {} as AuditData;
     const results = runAllRules(broken);
-    expect(results).toHaveLength(42);
+    expect(results).toHaveLength(43);
     // All should be warning, pass, fail, or skipped (not crash)
     expect(results.every((r) => ['warning', 'pass', 'fail', 'skipped'].includes(r.status))).toBe(true);
   });

@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { evaluateGTGAlert, evaluateDMAAlert } from '../dqmAlertEvaluator';
+import { evaluateGTGAlert, evaluateDMAAlert, evaluateSgtmAlert } from '../dqmAlertEvaluator';
 
 // ── evaluateGTGAlert ──────────────────────────────────────────────────────────
 
@@ -70,6 +70,67 @@ describe('evaluateGTGAlert', () => {
     it('skipped-backoff with existing alert → none (backoff does not clear or update)', () => {
       const r = evaluateGTGAlert({ status: 'skipped-backoff', existingAlertActive: true });
       expect(r.decision).toBe('none');
+    });
+  });
+});
+
+// ── evaluateSgtmAlert ─────────────────────────────────────────────────────────
+
+describe('evaluateSgtmAlert', () => {
+  describe('no verified endpoints', () => {
+    it('totalCount 0, no existing alert → none', () => {
+      const r = evaluateSgtmAlert({ worstStatus: 'pass', failingCount: 0, totalCount: 0, existingAlertActive: false });
+      expect(r.decision).toBe('none');
+    });
+
+    it('totalCount 0, existing alert active → resolve (last verified endpoint removed)', () => {
+      const r = evaluateSgtmAlert({ worstStatus: 'pass', failingCount: 0, totalCount: 0, existingAlertActive: true });
+      expect(r.decision).toBe('resolve');
+    });
+  });
+
+  describe('no existing alert', () => {
+    it('fail → open critical', () => {
+      const r = evaluateSgtmAlert({ worstStatus: 'fail', failingCount: 1, totalCount: 2, existingAlertActive: false });
+      expect(r.decision).toBe('open');
+      expect(r.severity).toBe('critical');
+    });
+
+    it('timeout → open critical', () => {
+      const r = evaluateSgtmAlert({ worstStatus: 'timeout', failingCount: 1, totalCount: 1, existingAlertActive: false });
+      expect(r.decision).toBe('open');
+      expect(r.severity).toBe('critical');
+    });
+
+    it('degraded → open warning', () => {
+      const r = evaluateSgtmAlert({ worstStatus: 'degraded', failingCount: 1, totalCount: 2, existingAlertActive: false });
+      expect(r.decision).toBe('open');
+      expect(r.severity).toBe('warning');
+    });
+
+    it('pass → none (nothing to open)', () => {
+      const r = evaluateSgtmAlert({ worstStatus: 'pass', failingCount: 0, totalCount: 2, existingAlertActive: false });
+      expect(r.decision).toBe('none');
+    });
+  });
+
+  describe('existing alert active (dedup)', () => {
+    it('fail with existing alert → update, not open', () => {
+      const r = evaluateSgtmAlert({ worstStatus: 'fail', failingCount: 1, totalCount: 2, existingAlertActive: true });
+      expect(r.decision).toBe('update');
+      expect(r.severity).toBe('critical');
+    });
+
+    it('degraded with existing alert → update warning', () => {
+      const r = evaluateSgtmAlert({ worstStatus: 'degraded', failingCount: 1, totalCount: 2, existingAlertActive: true });
+      expect(r.decision).toBe('update');
+      expect(r.severity).toBe('warning');
+    });
+
+    it('pass with existing alert → resolve (recovery)', () => {
+      const r = evaluateSgtmAlert({ worstStatus: 'pass', failingCount: 0, totalCount: 2, existingAlertActive: true });
+      expect(r.decision).toBe('resolve');
+      expect(r.severity).toBeNull();
     });
   });
 });

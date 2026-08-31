@@ -363,10 +363,10 @@ describe('Full pipeline — mock browser → validation → scoring', () => {
     expect(metaRule?.status).toBe('pass');
   });
 
-  it('returns all 42 results regardless of captured data', async () => {
+  it('returns all 43 results regardless of captured data', async () => {
     const { mockBrowser } = makeMockBrowser();
     const auditData = await simulateJourney(mockBrowser as never, BASE_OPTS);
     const results = runAllRules(auditData);
-    expect(results).toHaveLength(42);
+    expect(results).toHaveLength(43);
   });
 });

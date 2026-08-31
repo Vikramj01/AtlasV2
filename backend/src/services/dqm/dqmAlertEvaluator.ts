@@ -14,6 +14,18 @@ export interface GTGAlertInput {
   existingAlertActive: boolean;
 }
 
+export interface SgtmAlertInput {
+  // Worst status across all of the org's verified sGTM endpoints. One alert
+  // per org (matching GTG's existing granularity) rather than per client —
+  // per-client checks are still stored individually in dqm_sgtm_checks, this
+  // just aggregates them into a single alert to avoid extending the shared
+  // health_alerts schema (used by every other alert type) for one feature.
+  worstStatus: GTGStatus;
+  failingCount: number;
+  totalCount: number;
+  existingAlertActive: boolean;
+}
+
 export interface DMAAlertInput {
   uploadSuccessRate: number;          // 0–100
   avgMatchRate: number | null;
@@ -77,6 +89,41 @@ export function evaluateGTGAlert(input: GTGAlertInput): AlertEvalResult {
   }
 
   // pass or error (error = no GTM connection, not a true failure)
+  if (existingAlertActive) {
+    return { decision: 'resolve', severity: null, title: '', message: '' };
+  }
+  return { decision: 'none', severity: null, title: '', message: '' };
+}
+
+// ── sGTM evaluation ───────────────────────────────────────────────────────────
+
+export function evaluateSgtmAlert(input: SgtmAlertInput): AlertEvalResult {
+  const { worstStatus, failingCount, totalCount, existingAlertActive } = input;
+
+  // No verified sGTM endpoints for this org — nothing to monitor, resolve any
+  // stale alert (e.g. the last verified endpoint was removed).
+  if (totalCount === 0) {
+    if (existingAlertActive) return { decision: 'resolve', severity: null, title: '', message: '' };
+    return { decision: 'none', severity: null, title: '', message: '' };
+  }
+
+  const plural = totalCount !== 1;
+
+  if (worstStatus === 'fail' || worstStatus === 'timeout') {
+    const message = `${failingCount} of ${totalCount} verified server-side GTM endpoint${plural ? 's are' : ' is'} unreachable. Server-side tracking data may be lost for affected clients.`;
+    return existingAlertActive
+      ? { decision: 'update', severity: 'critical', title: 'Server-side GTM Unreachable', message }
+      : { decision: 'open', severity: 'critical', title: 'Server-side GTM Unreachable', message };
+  }
+
+  if (worstStatus === 'degraded') {
+    const message = `${failingCount} of ${totalCount} verified server-side GTM endpoint${plural ? 's are' : ' is'} responding slowly, above the latency threshold. This may indicate a server-side performance issue.`;
+    return existingAlertActive
+      ? { decision: 'update', severity: 'warning', title: 'Server-side GTM Responding Slowly', message }
+      : { decision: 'open', severity: 'warning', title: 'Server-side GTM Responding Slowly', message };
+  }
+
+  // pass or error (error = probe couldn't run, not a true failure) for all endpoints
   if (existingAlertActive) {
     return { decision: 'resolve', severity: null, title: '', message: '' };
   }

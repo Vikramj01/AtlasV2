@@ -20,6 +20,8 @@ import {
   updateClient,
   archiveClient,
   upsertClientPlatforms,
+  getClientPlatform,
+  markClientPlatformVerified,
   upsertClientPages,
   listDeployments,
   deployPack,
@@ -28,6 +30,7 @@ import {
   getClientOutput,
   getClientsByPack,
 } from '@/services/database/clientQueries';
+import { probeUrl } from '@/services/dqm/httpProbe';
 import {
   getSignalPackWithSignals,
   resolveDeploymentsForClient,
@@ -220,6 +223,36 @@ router.put('/:orgId/clients/:clientId/platforms', async (req: Request, res: Resp
       req.body as UpsertPlatformsRequest,
     );
     res.json({ platforms });
+  } catch (err) {
+    sendInternalError(res, err);
+  }
+});
+
+// ── POST /api/organisations/:orgId/clients/:clientId/platforms/sgtm/verify ────
+// HEAD-checks the client's claimed sGTM transport URL and marks it verified
+// on success. Prerequisite for DQM sGTM monitoring (dqmOrchestrator only
+// probes endpoints with is_verified = true) and for future tag-generation.
+
+router.post('/:orgId/clients/:clientId/platforms/sgtm/verify', async (req: Request, res: Response) => {
+  try {
+    const client = await getClient(req.params['clientId'], req.params['orgId']);
+    if (!client) return res.status(404).json({ error: 'Client not found' });
+
+    const sgtmPlatform = await getClientPlatform(req.params['clientId'], 'sgtm');
+    if (!sgtmPlatform?.measurement_id) {
+      return res.status(400).json({ error: 'No server-side GTM endpoint URL is configured for this client' });
+    }
+
+    const result = await probeUrl(sgtmPlatform.measurement_id);
+    if (result.checkStatus !== 'pass' && result.checkStatus !== 'degraded') {
+      return res.status(422).json({
+        error: `Endpoint did not respond successfully (${result.errorMessage ?? result.checkStatus})`,
+        verified: false,
+      });
+    }
+
+    const updated = await markClientPlatformVerified(req.params['clientId'], 'sgtm', true);
+    res.json({ verified: true, verified_at: updated.verified_at, platform: updated });
   } catch (err) {
     sendInternalError(res, err);
   }

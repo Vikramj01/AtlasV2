@@ -867,6 +867,26 @@ ihcRulesQueue.process(2, async (job) => {
 
   const containerSnapshot = parseContainerJson(snap.container_json as Record<string, unknown>, 'gtm_api');
 
+  // Resolve the connection's client (if any) to look up a verified sGTM endpoint —
+  // SGTM_ROUTING_NOT_CONFIGURED needs this precomputed since rules stay synchronous.
+  let sgtmVerified: boolean | undefined;
+  const { data: connection } = await supabaseAdmin
+    .from('gtm_container_connections')
+    .select('client_id')
+    .eq('id', (snap as { connection_id: string }).connection_id)
+    .single();
+
+  const connectionClientId = (connection as { client_id: string | null } | null)?.client_id;
+  if (connectionClientId) {
+    const { data: sgtmPlatform } = await supabaseAdmin
+      .from('client_platforms')
+      .select('is_verified')
+      .eq('client_id', connectionClientId)
+      .eq('platform', 'sgtm')
+      .maybeSingle();
+    sgtmVerified = (sgtmPlatform as { is_verified: boolean } | null)?.is_verified ?? false;
+  }
+
   // Dynamically import tag_configuration rules (registered in Sprint A2)
   let tagConfigRules: Array<{
     rule_id: string;
@@ -895,6 +915,7 @@ ihcRulesQueue.process(2, async (job) => {
     localStorageSnapshots: [],
     injected: { gclid: '', fbclid: '' },
     gtmContainer: containerSnapshot,
+    sgtmVerified,
   };
   const passingRuleIds: string[] = [];
   const failingFindings: import('@/services/ihc/findingsWriter').FindingInput[] = [];
