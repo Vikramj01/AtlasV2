@@ -27,6 +27,7 @@ import type {
   DMAEvent,
   DMAEventSource,
   DMAUserIdentifier,
+  DMADestination,
   DMAIngestEventsRequest,
   DMAIngestEventsResponse,
 } from '@/integrations/google/dmaTypes';
@@ -45,6 +46,21 @@ function cleanCustomerId(id: string): string {
 
 function buildConversionActionResource(customerId: string, conversionActionId: string): string {
   return `customers/${cleanCustomerId(customerId)}/conversionActions/${conversionActionId}`;
+}
+
+/**
+ * DMA destinations for a Google credential set. Google Ads is always included;
+ * GA4 is added alongside it when a property ID is configured, so the same
+ * `events:ingest` call lands the conversion in both destinations in one round-trip.
+ */
+export function buildGoogleDestinations(creds: GoogleCredentials): DMADestination[] {
+  const destinations: DMADestination[] = [
+    { type: 'GOOGLE_ADS', customerId: cleanCustomerId(creds.customer_id) },
+  ];
+  if (creds.ga4_property_id) {
+    destinations.push({ type: 'GA4', propertyId: creds.ga4_property_id });
+  }
+  return destinations;
 }
 
 // ── OAuth token refresh ───────────────────────────────────────────────────────
@@ -306,7 +322,7 @@ export async function sendGoogleEvents(
 
   const request: DMAIngestEventsRequest = {
     events: dmaEvents,
-    destinations: [{ type: 'GOOGLE_ADS', customerId: cleanCustomerId(creds.customer_id) }],
+    destinations: buildGoogleDestinations(creds),
   };
 
   let accessToken = creds.oauth_access_token;
@@ -395,7 +411,7 @@ export async function sendGoogleTestEvent(
 
   const request: DMAIngestEventsRequest = {
     events: [dmaEvent],
-    destinations: [{ type: 'GOOGLE_ADS', customerId: cleanCustomerId(creds.customer_id) }],
+    destinations: buildGoogleDestinations(creds),
     validateOnly: true,
   };
 

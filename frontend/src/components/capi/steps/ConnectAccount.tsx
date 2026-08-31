@@ -222,6 +222,7 @@ function GoogleConnectForm({ onNext }: ConnectAccountProps) {
   const [oauthRefreshToken, setOauthRefreshToken] = useState(draft.oauth_refresh_token ?? '');
   const [conversionActionId, setConversionActionId] = useState(draft.conversion_action_id ?? '');
   const [loginCustomerId, setLoginCustomerId] = useState(draft.login_customer_id ?? '');
+  const [ga4PropertyId, setGa4PropertyId] = useState(draft.ga4_property_id ?? '');
   const [showAccessToken, setShowAccessToken] = useState(false);
   const [showRefreshToken, setShowRefreshToken] = useState(false);
   const [errors, setErrors] = useState<{
@@ -307,6 +308,7 @@ function GoogleConnectForm({ onNext }: ConnectAccountProps) {
         oauth_refresh_token: oauthRefreshToken.trim(),
         conversion_action_id: conversionActionId.trim(),
         ...(loginCustomerId.trim() ? { login_customer_id: loginCustomerId.trim() } : {}),
+        ...(ga4PropertyId.trim() ? { ga4_property_id: ga4PropertyId.trim() } : {}),
       } satisfies GoogleCredentials,
     });
     onNext();
@@ -424,6 +426,25 @@ function GoogleConnectForm({ onNext }: ConnectAccountProps) {
         />
         <p className="text-xs text-muted-foreground">
           MCC login-customer-id. Required only if accessing the account via a manager account.
+        </p>
+      </div>
+
+      <div className="space-y-1">
+        <label htmlFor="ga4_property_id" className="block text-sm font-medium">
+          GA4 Property ID{' '}
+          <span className="text-muted-foreground font-normal">(optional)</span>
+        </label>
+        <input
+          id="ga4_property_id"
+          type="text"
+          value={ga4PropertyId}
+          onChange={(e) => setGa4PropertyId(e.target.value)}
+          placeholder="G-XXXXXXXXXX or numeric property ID"
+          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+        />
+        <p className="text-xs text-muted-foreground">
+          When set, every conversion sent to Google Ads is also delivered to this GA4 property
+          in the same call — no separate GA4 connection needed.
         </p>
       </div>
 

@@ -86,6 +86,7 @@ export interface GoogleCredentials {
   conversion_action_id: string;
   login_customer_id?: string; // MCC ID if using manager account
   access_token_expires_at?: string; // ISO string — when the current access token expires
+  ga4_property_id?: string; // GA4 measurement ID or numeric property ID — when set, DMA delivery also targets GA4 alongside Google Ads
 }
 
 export interface TikTokCredentials {
