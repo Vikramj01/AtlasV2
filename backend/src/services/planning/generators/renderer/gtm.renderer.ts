@@ -94,10 +94,14 @@ export function dlvPathForParam(key: string, isEcommerceEvent: boolean): string 
  * Render the eventParameters LIST for a GA4 event tag.
  * Maps ALL IR parameters — no events are exempted. Each parameter becomes
  * a MAP entry: key = param.key, value = {{DLV - dlvPath}}.
+ *
+ * Purchase events additionally get a `new_customer` parameter when the IR
+ * doesn't already carry one — sourced from "CJS - New Customer (Atlas)"
+ * (see gtmContainerGenerator.ts), which itself prefers an explicit dataLayer
+ * value over its own cookie-based estimate. This never overrides data the
+ * site already provides; it only fills in when nothing was provided at all.
  */
 export function renderGA4EventParameters(event: IREvent): GTMParameter[] {
-  if (event.parameters.length === 0) return [];
-
   const isEcommerce = ECOMMERCE_SNIPPET_ACTIONS.has(event.action_type);
   const mapItems: GTMParameter[] = event.parameters.map(param => ({
     type: 'MAP' as const,
@@ -107,6 +111,17 @@ export function renderGA4EventParameters(event: IREvent): GTMParameter[] {
     ],
   }));
 
+  if (event.action_type === 'purchase' && !event.parameters.some(p => p.key === 'new_customer')) {
+    mapItems.push({
+      type: 'MAP',
+      map: [
+        tmpl('key', 'new_customer'),
+        tmpl('value', '{{CJS - New Customer (Atlas)}}'),
+      ],
+    });
+  }
+
+  if (mapItems.length === 0) return [];
   return [{ type: 'LIST', key: 'eventParameters', list: mapItems }];
 }
 

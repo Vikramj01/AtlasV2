@@ -841,6 +841,69 @@ export function generateGTMContainer(
     tagManagerUrl: 'https://tagmanager.google.com/',
   });
 
+  // Atlas — Detect Returning Visitor: sets a first-party cookie on first visit so a
+  // "new customer" signal can be estimated on pages where the site's own backend
+  // doesn't push one. This is a fallback only — see "CJS - New Customer (Atlas)"
+  // below, which always prefers an explicit dataLayer value over this cookie guess.
+  tags.push({
+    ...stub(),
+    tagId: tagIds.next(),
+    name: 'Atlas — Detect Returning Visitor',
+    type: 'html',
+    parameter: [
+      tmpl('html', `<script>
+(function() {
+  try {
+    if (!document.cookie.match(/(^| )_atlas_customer_seen=/)) {
+      var expiry = new Date();
+      expiry.setDate(expiry.getDate() + 90);
+      var domain = window.location.hostname.replace(/^www\\./, '');
+      document.cookie = '_atlas_customer_seen=1'
+        + '; expires=' + expiry.toUTCString()
+        + '; path=/; domain=.' + domain + '; SameSite=Lax';
+    }
+  } catch (e) {}
+})();
+</script>`),
+      bool('supportDocumentWrite', 'false'),
+    ],
+    firingTriggerId: [allPagesTrigId],
+    tagFiringOption: 'oncePerEvent',
+    folderId: FOLDER.CONFIG,
+    fingerprint: '0',
+    tagManagerUrl: 'https://tagmanager.google.com/',
+  });
+
+  // CJS - New Customer (Atlas): prefers an explicit new_customer value already
+  // pushed into the dataLayer (authoritative — from the site's own order history);
+  // falls back to an ESTIMATE from the _atlas_customer_seen cookie only when no
+  // explicit value is present. Cookie-based estimates are unreliable across
+  // cleared cookies, incognito, and cross-device sessions — this is a fallback,
+  // not a source of truth.
+  const newCustomerVarId = varIds.next();
+  variables.push({
+    ...stub(),
+    variableId: newCustomerVarId,
+    name: 'CJS - New Customer (Atlas)',
+    type: 'jsm',
+    parameter: [
+      tmpl('javascript', `function() {
+  try {
+    var dl = window.dataLayer || [];
+    for (var i = dl.length - 1; i >= 0; i--) {
+      if (dl[i] && dl[i].new_customer !== undefined) {
+        return dl[i].new_customer;
+      }
+    }
+    var seen = document.cookie.match(/(^| )_atlas_customer_seen=/);
+    return !seen;
+  } catch (e) { return undefined; }
+}`),
+    ],
+    folderId: FOLDER.VARIABLES,
+    notes: 'Estimate only — prefer pushing an authoritative new_customer value from your own order history into the dataLayer when available.',
+  });
+
   // ── GA4 Config tag ─────────────────────────────────────────────────────────
   if (hasGA4) {
     const ga4ConfigId = tagIds.next();
