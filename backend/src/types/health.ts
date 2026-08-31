@@ -44,7 +44,8 @@ export type AlertType =
   | 'recon_brief_misaligned'
   | 'connection_expired'
   | 'dqm_gtg'
-  | 'dqm_dma';
+  | 'dqm_dma'
+  | 'dqm_sgtm';
 
 export interface HealthAlert {
   id: string;

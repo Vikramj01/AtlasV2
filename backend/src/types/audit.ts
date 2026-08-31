@@ -216,6 +216,12 @@ export interface AuditData {
   gtmContainer?: GTMContainerSnapshot;     // tag_configuration layer input
   crawlSignals?: CrawlSignalSnapshot[];    // implementation_drift layer input (current run)
   baselineAuditData?: AuditData;           // implementation_drift layer input (baseline run)
+  // True when the client has a verified server-side GTM endpoint on file
+  // (client_platforms.platform = 'sgtm', is_verified = true). Resolved by the
+  // caller before rules run — rules stay synchronous and don't hit the DB
+  // themselves. Undefined when the connection has no associated client_id
+  // (e.g. an org-level GTM connection not linked to a specific client).
+  sgtmVerified?: boolean;
 }
 
 // ─── API inputs ───────────────────────────────────────────────────────────────

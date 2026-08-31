@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { ExternalLink, Package, Download, Plus, Trash2, AlertTriangle, FileText, MapPin } from 'lucide-react';
+import { ExternalLink, Package, Download, Plus, Trash2, AlertTriangle, FileText, MapPin, CheckCircle2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -52,6 +52,8 @@ export function ClientDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [identityConfig, setIdentityConfig] = useState<ClientIdentityConfig | null>(null);
   const [enrichmentScore, setEnrichmentScore] = useState<ClientEnrichmentScore | null>(null);
+  const [isVerifyingSgtm, setIsVerifyingSgtm] = useState(false);
+  const [sgtmVerifyError, setSgtmVerifyError] = useState<string | null>(null);
 
   async function load() {
     if (!orgId || !clientId) return;
@@ -105,6 +107,23 @@ export function ClientDetailPage() {
     if (!orgId || !clientId) return;
     await clientApi.removeDeployment(orgId, clientId, deploymentId);
     setDeployments((d) => d.filter((dep) => dep.id !== deploymentId));
+  }
+
+  async function handleVerifySgtm() {
+    if (!orgId || !clientId) return;
+    setIsVerifyingSgtm(true);
+    setSgtmVerifyError(null);
+    try {
+      const { platform } = await clientApi.verifySgtm(orgId, clientId);
+      setClient((c) => c && {
+        ...c,
+        platforms: c.platforms.map((p) => (p.platform === 'sgtm' ? platform : p)),
+      });
+    } catch (err) {
+      setSgtmVerifyError(err instanceof Error ? err.message : 'Verification failed');
+    } finally {
+      setIsVerifyingSgtm(false);
+    }
   }
 
   if (isLoading) {
@@ -256,13 +275,34 @@ export function ClientDetailPage() {
                 ) : (
                   <div className="space-y-1.5">
                     {client.platforms.filter((p) => p.is_active).map((p) => (
-                      <div key={p.id} className="flex items-center justify-between text-xs">
+                      <div key={p.id} className="flex items-center justify-between text-xs gap-2">
                         <span className="font-medium uppercase text-muted-foreground">{p.platform}</span>
-                        <span className="font-mono text-muted-foreground/70">
+                        <span className="font-mono text-muted-foreground/70 truncate">
                           {p.measurement_id ?? '— not set'}
                         </span>
+                        {p.platform === 'sgtm' && p.measurement_id && (
+                          p.is_verified ? (
+                            <span className="flex items-center gap-1 text-green-700 shrink-0" title={p.verified_at ? `Verified ${new Date(p.verified_at).toLocaleString()}` : 'Verified'}>
+                              <CheckCircle2 className="h-3.5 w-3.5" />
+                              Verified
+                            </span>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-6 text-[11px] px-2 shrink-0"
+                              disabled={isVerifyingSgtm}
+                              onClick={handleVerifySgtm}
+                            >
+                              {isVerifyingSgtm ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Verify'}
+                            </Button>
+                          )
+                        )}
                       </div>
                     ))}
+                    {sgtmVerifyError && (
+                      <p className="text-[11px] text-red-600 pt-1">{sgtmVerifyError}</p>
+                    )}
                   </div>
                 )}
               </CardContent>

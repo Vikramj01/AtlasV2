@@ -1,5 +1,5 @@
 /**
- * Layer: tag_configuration (13 rules total — 7 in Phase A, 6 in Phase B)
+ * Layer: tag_configuration (14 rules total — 7 in Phase A, 7 in Phase B)
  *
  * Rules operate on GTMContainerSnapshot inside AuditData.gtmContainer.
  * Every rule returns status: 'skipped' when gtmContainer is absent.
@@ -901,6 +901,99 @@ export const META_CROSS_DOMAIN_FBCLID_MISSING = {
   },
 };
 
+// ── 5.14 SGTM_ROUTING_NOT_CONFIGURED ─────────────────────────────────────────
+//
+// Fires when the client has a verified server-side GTM endpoint on file
+// (client_platforms.platform = 'sgtm', is_verified = true — see sgtmProbe.ts
+// and the /platforms/sgtm/verify endpoint) but the live GA4 Config tag isn't
+// actually routing traffic through it (enableSendToServerContainer absent or
+// false). A client with no verified sGTM endpoint is never flagged — Atlas
+// doesn't yet generate the routing config itself (deferred pending
+// verification of the exact tag-JSON field, see Sprint 3 plan), so this rule
+// only catches drift for endpoints a human already configured and Atlas
+// separately confirmed are reachable.
+//
+// Severity: high — a silently-dropped server-container route means events
+// fall back to client-side delivery (or are lost) with no visible error.
+
+export const SGTM_ROUTING_NOT_CONFIGURED = {
+  rule_id: 'SGTM_ROUTING_NOT_CONFIGURED',
+  validation_layer: 'tag_configuration' as const,
+  severity: 'high' as const,
+  affected_platforms: ['GA4'],
+
+  test(auditData: AuditData): ValidationResult {
+    if (!auditData.gtmContainer) return skippedResult(this.rule_id);
+
+    if (!auditData.sgtmVerified) {
+      return {
+        rule_id: this.rule_id,
+        validation_layer: this.validation_layer,
+        status: 'skipped',
+        severity: this.severity,
+        technical_details: {
+          found: 'No verified server-side GTM endpoint on file for this client',
+          expected: 'A verified sgtm client_platforms row before this rule can evaluate routing',
+          evidence: ['Rule skipped — client has no verified server-side GTM endpoint'],
+        },
+      };
+    }
+
+    const ga4ConfigTags = auditData.gtmContainer.tags.filter((t) => t.type === 'gaawc');
+
+    if (ga4ConfigTags.length === 0) {
+      return {
+        rule_id: this.rule_id,
+        validation_layer: this.validation_layer,
+        status: 'skipped',
+        severity: this.severity,
+        technical_details: {
+          found: 'No GA4 Config tag (gaawc) present in container',
+          expected: 'A GA4 Config tag routing through the verified server-side GTM endpoint',
+          evidence: ['Rule skipped — no GA4 Config tag found'],
+        },
+      };
+    }
+
+    const violations: string[] = [];
+
+    for (const tag of ga4ConfigTags) {
+      const routed = paramValue(tag, 'enableSendToServerContainer') === 'true';
+      if (!routed) {
+        violations.push(
+          `"${tag.name}" (gaawc): enableSendToServerContainer is absent or false, but this client has a verified server-side GTM endpoint on file`,
+        );
+      }
+    }
+
+    if (violations.length > 0) {
+      return {
+        rule_id: this.rule_id,
+        validation_layer: this.validation_layer,
+        status: 'fail',
+        severity: this.severity,
+        technical_details: {
+          found: `${violations.length} GA4 Config tag${violations.length > 1 ? 's' : ''} not routed through the verified server container`,
+          expected: 'GA4 Config tag has enableSendToServerContainer set to true when a verified server-side GTM endpoint is on file',
+          evidence: violations,
+        },
+      };
+    }
+
+    return {
+      rule_id: this.rule_id,
+      validation_layer: this.validation_layer,
+      status: 'pass',
+      severity: this.severity,
+      technical_details: {
+        found: 'GA4 Config tag routes through the verified server-side GTM endpoint',
+        expected: 'enableSendToServerContainer set to true when a verified server-side GTM endpoint is on file',
+        evidence: ['No server-side GTM routing gap detected'],
+      },
+    };
+  },
+};
+
 // ── Phase B rule registry ─────────────────────────────────────────────────────
 
 export const TAG_CONFIGURATION_RULES_PHASE_B = [
@@ -910,6 +1003,7 @@ export const TAG_CONFIGURATION_RULES_PHASE_B = [
   FRAGILE_CSS_SELECTOR_TRIGGER,
   GA4_CROSS_DOMAIN_LINKING_MISSING,
   META_CROSS_DOMAIN_FBCLID_MISSING,
+  SGTM_ROUTING_NOT_CONFIGURED,
 ];
 
 // ── Combined registry (all 13 tag_configuration rules) ────────────────────────

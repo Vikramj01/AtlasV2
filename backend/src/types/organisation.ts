@@ -54,6 +54,8 @@ export interface ClientPlatform {
   is_active: boolean;
   measurement_id: string | null;
   config: Record<string, unknown>;
+  is_verified: boolean;
+  verified_at: string | null;
 }
 
 export interface ClientPage {

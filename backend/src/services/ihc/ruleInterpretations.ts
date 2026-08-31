@@ -166,4 +166,14 @@ export const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
       'Add a tag that intercepts clicks on outbound links to the secondary domain(s) and appends fbclid (read from the stored _fbc cookie, or the current URL) to the link before navigation, then confirm the destination domain\'s GTM container captures fbclid into _fbc on load. Atlas generates this "Meta Cross-Domain Link Decorator" tag automatically once secondary domains are configured in Planning Mode or the Journey Builder — re-export the GTM container to pick it up.',
     estimated_effort: 'low',
   },
+
+  SGTM_ROUTING_NOT_CONFIGURED: {
+    title: 'Server-Side GTM Endpoint Not Routed',
+    business_impact:
+      "This client has a verified server-side GTM endpoint on file, but the live GA4 Config tag isn't sending events through it. Server-side tagging is typically adopted specifically to improve match quality and survive ad blockers/ITP — if the routing silently drops, the site reverts to client-side-only delivery without any visible error, and the reliability gains the client is expecting simply aren't happening.",
+    recommended_owner: 'Tag Manager Team',
+    fix_summary:
+      'Open the GA4 Config tag in GTM and enable "Send to server container", pointing it at the verified endpoint. Confirm the endpoint URL matches the one verified in Atlas (Client → Platform Configuration), then re-export the container and re-run this check.',
+    estimated_effort: 'low',
+  },
 };

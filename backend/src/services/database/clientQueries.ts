@@ -155,12 +155,17 @@ export async function upsertClientPlatforms(
   clientId: string,
   req: UpsertPlatformsRequest,
 ): Promise<ClientPlatform[]> {
+  // Any edit to the sgtm row invalidates a prior verification — the reachable
+  // URL that was checked may no longer be the one on file. Re-verification is
+  // cheap (one HEAD request via the "Verify" button), so fail closed rather
+  // than risk monitoring/trusting a stale, unverified endpoint.
   const rows = req.platforms.map((p) => ({
     client_id: clientId,
     platform: p.platform,
     is_active: p.is_active,
     measurement_id: p.measurement_id ?? null,
     config: p.config ?? {},
+    ...(p.platform === 'sgtm' ? { is_verified: false, verified_at: null } : {}),
   }));
 
   const { data, error } = await supabase
@@ -170,6 +175,31 @@ export async function upsertClientPlatforms(
 
   if (error) throw new Error(`Failed to upsert client platforms: ${error.message}`);
   return (data ?? []) as ClientPlatform[];
+}
+
+export async function getClientPlatform(clientId: string, platform: string): Promise<ClientPlatform | null> {
+  const { data, error } = await supabase
+    .from('client_platforms')
+    .select('*')
+    .eq('client_id', clientId)
+    .eq('platform', platform)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  return data as ClientPlatform;
+}
+
+export async function markClientPlatformVerified(clientId: string, platform: string, verified: boolean): Promise<ClientPlatform> {
+  const { data, error } = await supabase
+    .from('client_platforms')
+    .update({ is_verified: verified, verified_at: verified ? new Date().toISOString() : null })
+    .eq('client_id', clientId)
+    .eq('platform', platform)
+    .select('*')
+    .single();
+
+  if (error) throw new Error(`Failed to update platform verification: ${error.message}`);
+  return data as ClientPlatform;
 }
 
 // ─── Client Pages ─────────────────────────────────────────────────────────────

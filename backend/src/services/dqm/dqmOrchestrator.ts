@@ -1,8 +1,10 @@
 // DQM Orchestrator — runs all DQM checks for a single org
 
 import { probeGTGPath, saveGTGCheck } from './gtgProbe';
+import { probeSgtmHealth, saveSgtmCheck } from './sgtmProbe';
 import { pollDMADiagnostics, upsertDMAPollState, updateDMABackoff, getDMAPollState } from './dmaPolling';
-import { evaluateGTGAlert, evaluateDMAAlert } from './dqmAlertEvaluator';
+import { evaluateGTGAlert, evaluateDMAAlert, evaluateSgtmAlert } from './dqmAlertEvaluator';
+import type { GTGStatus } from './dqmAlertEvaluator';
 import { sendDQMAlertNotification } from './dqmAlertDelivery';
 import {
   getAlertByType,
@@ -52,7 +54,7 @@ async function loadOrgConfig(orgId: string): Promise<OrgConfig> {
 
 async function writeDQMRunLog(
   orgId: string,
-  checkType: 'gtg' | 'dma',
+  checkType: 'gtg' | 'dma' | 'sgtm',
   status: string,
   latencyMs: number | null,
   triggeredBy: 'scheduled' | 'manual',
@@ -72,10 +74,10 @@ async function writeDQMRunLog(
 
 async function applyAlertDecision(
   orgId: string,
-  checkType: 'gtg' | 'dma',
+  checkType: 'gtg' | 'dma' | 'sgtm',
   decision: import('./dqmAlertEvaluator').AlertEvalResult,
 ): Promise<string> {
-  const alertType = checkType === 'gtg' ? 'dqm_gtg' : 'dqm_dma';
+  const alertType = checkType === 'gtg' ? 'dqm_gtg' : checkType === 'dma' ? 'dqm_dma' : 'dqm_sgtm';
 
   if (decision.decision === 'open') {
     await createAlert(orgId, alertType, decision.severity!, decision.title, decision.message, null, null);
@@ -136,6 +138,45 @@ export async function runDQMForOrg(
     });
     const gtgAction = await applyAlertDecision(orgId, 'gtg', gtgDecision);
     await writeDQMRunLog(orgId, 'gtg', gtgResult.checkStatus, gtgResult.responseMs, triggeredBy, gtgAction);
+  }
+
+  // ── sGTM probe — one HEAD check per client with a verified endpoint ──────────
+  const sgtmChecks = await probeSgtmHealth(orgId, config.degradedLatencyThresholdMs).catch((err) => {
+    logger.error({ err, orgId }, 'DQM: sGTM probe failed');
+    return [];
+  });
+
+  await Promise.all(sgtmChecks.map((c) => saveSgtmCheck(orgId, c)));
+
+  const sgtmStatusRank: Record<GTGStatus, number> = {
+    pass: 0,
+    error: 0,
+    'skipped-backoff': 0,
+    degraded: 1,
+    fail: 2,
+    timeout: 2,
+  };
+  let sgtmWorstStatus: GTGStatus = 'pass';
+  let sgtmFailingCount = 0;
+  for (const c of sgtmChecks) {
+    if (sgtmStatusRank[c.checkStatus] > sgtmStatusRank[sgtmWorstStatus]) sgtmWorstStatus = c.checkStatus;
+    if (c.checkStatus === 'fail' || c.checkStatus === 'timeout' || c.checkStatus === 'degraded') sgtmFailingCount++;
+  }
+
+  const existingSgtmAlert = await getAlertByType(orgId, 'dqm_sgtm');
+  const sgtmDecision = evaluateSgtmAlert({
+    worstStatus: sgtmWorstStatus,
+    failingCount: sgtmFailingCount,
+    totalCount: sgtmChecks.length,
+    existingAlertActive: !!existingSgtmAlert,
+  });
+
+  if (sgtmDecision.decision !== 'none') {
+    const sgtmAction = await applyAlertDecision(orgId, 'sgtm', sgtmDecision);
+    const sgtmWorstResponseMs = sgtmChecks.length > 0
+      ? sgtmChecks.reduce((worst, c) => (sgtmStatusRank[c.checkStatus] > sgtmStatusRank[worst.checkStatus] ? c : worst), sgtmChecks[0]).responseMs
+      : null;
+    await writeDQMRunLog(orgId, 'sgtm', sgtmChecks.length === 0 ? 'not-applicable' : sgtmWorstStatus, sgtmWorstResponseMs, triggeredBy, sgtmAction);
   }
 
   // ── DMA poll — skip if polled recently (cadence gate) ────────────────────────
