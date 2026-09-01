@@ -11,6 +11,7 @@ import { supabase } from '@/lib/supabase';
 import { dashboardApi } from '@/lib/api/dashboardApi';
 
 const LoginPage                 = lazy(() => import('@/pages/LoginPage').then(m => ({ default: m.LoginPage })));
+const ShopifyWelcomePage        = lazy(() => import('@/pages/ShopifyWelcomePage').then(m => ({ default: m.ShopifyWelcomePage })));
 const ResetPasswordPage         = lazy(() => import('@/pages/ResetPasswordPage').then(m => ({ default: m.ResetPasswordPage })));
 const HomePage                  = lazy(() => import('@/pages/HomePage').then(m => ({ default: m.HomePage })));
 const DashboardPage             = lazy(() => import('@/pages/DashboardPage').then(m => ({ default: m.DashboardPage })));
@@ -80,6 +81,7 @@ export default function App() {
             {/* Public */}
             <Route path="/login" element={<LoginPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
+            <Route path="/shopify/welcome" element={<ShopifyWelcomePage />} />
 
             {/* Protected — wrapped in AppLayout (sidebar + topbar) */}
             <Route element={<ProtectedRoute />}>

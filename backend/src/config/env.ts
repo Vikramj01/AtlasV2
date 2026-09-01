@@ -84,6 +84,27 @@ export const env = {
   // Generate: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
   OAUTH_STATE_SECRET: optional('OAUTH_STATE_SECRET', 'dev-oauth-state-secret-change-in-production'),
 
+  // Shopify App (Sprint 4 — standalone acquisition channel). API key/secret
+  // from the app's Partner Dashboard listing. Scopes: minimum required to
+  // read order/refund/shop data for CAPI forwarding.
+  SHOPIFY_APP_API_KEY: optional('SHOPIFY_APP_API_KEY', ''),
+  SHOPIFY_APP_API_SECRET: optional('SHOPIFY_APP_API_SECRET', ''),
+  SHOPIFY_APP_SCOPES: optional('SHOPIFY_APP_SCOPES', 'read_orders,read_customers'),
+  // Shopify Admin REST API version (YYYY-MM, quarterly releases). Shopify
+  // supports each version for ~12 months — confirm this is still current
+  // (or bump it) against the Partner Dashboard before going live; not
+  // verified against a live Shopify environment in this sandbox.
+  SHOPIFY_API_VERSION: optional('SHOPIFY_API_VERSION', '2024-01'),
+  // Publicly reachable backend base URL. Every other OAuth flow redirects
+  // back to the frontend SPA (which then calls the backend with a bearer
+  // token) — Shopify's OAuth callback must be verified and provisioned
+  // server-side before any authenticated session exists, so it redirects
+  // here directly instead.
+  BACKEND_URL:
+    NODE_ENV === 'production'
+      ? requireEnv('BACKEND_URL')
+      : optional('BACKEND_URL', 'http://localhost:3001'),
+
   // Email — Resend (https://resend.com). Optional: emails are silently skipped if not set.
   RESEND_API_KEY: optional('RESEND_API_KEY', ''),
   FROM_EMAIL: optional('FROM_EMAIL', 'Atlas <notifications@atlas.vimi.digital>'),

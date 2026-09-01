@@ -1,4 +1,4 @@
-import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue, crawlQueue, reconciliationSyncQueue, reconciliationRunQueue, reconciliationStatsQueue, reconciliationStaleResyncQueue, gtmContainerSyncQueue, ihcRulesQueue, ihcDriftQueue, ihcAlertQueue, ihcDigestQueue, dmaIngestQueue, dqmQueue, signalMvRefreshQueue, airIngestionQueue, publicAuditQueue } from './jobQueue';
+import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue, crawlQueue, reconciliationSyncQueue, reconciliationRunQueue, reconciliationStatsQueue, reconciliationStaleResyncQueue, gtmContainerSyncQueue, ihcRulesQueue, ihcDriftQueue, ihcAlertQueue, ihcDigestQueue, dmaIngestQueue, dqmQueue, signalMvRefreshQueue, airIngestionQueue, publicAuditQueue, shopifyWebhookEventQueue } from './jobQueue';
 import type { GtmContainerSyncJobData, IhcRulesJobData, IhcDriftJobData, IhcAlertJobData, IhcDigestJobData, DQMJobData, AirIngestionJobData } from './jobQueue';
 import { runConfigSyncForConnection, getConnectionsDueForSync, runStatsSyncForConnection, getConnectionsDueForStatsSync, runStaleResyncForConnection, getConnectionsForStaleResync } from '@/services/reconciliation/sync/syncOrchestrator';
 import { executeRun } from '@/services/reconciliation/reconciliationRunner';
@@ -1372,3 +1372,85 @@ publicAuditQueue.process(async (job) => {
 });
 
 logger.info('Public audit queue worker registered');
+
+// ── Shopify Order/Refund Event worker ─────────────────────────────────────────
+// Loads the staged shopify_webhook_events row, resolves the org/client via
+// the shop's platform_connections row, and maps + delivers the order (CAPI
+// pipeline) or refund (refund pipeline) accordingly.
+
+shopifyWebhookEventQueue.process(async (job) => {
+  const { event_id } = job.data;
+  logger.info({ eventId: event_id, jobId: job.id }, 'Shopify webhook event job received');
+
+  const { supabaseAdmin } = await import('@/services/database/supabase');
+  const { resolveTokens } = await import('@/services/connections/tokenManager');
+  const { getOrder } = await import('@/services/connections/shopify/shopifyClient');
+  const { mapShopifyOrderToAtlasEvent } = await import('@/services/capi/shopifyOrderMapper');
+  const { mapShopifyRefundToRecordRefundInput } = await import('@/services/capi/shopifyRefundMapper');
+  const { deliverShopifyEventToAllProviders } = await import('@/services/capi/shopifyCapiDelivery');
+  const { recordRefund, removeFromGoogleAudience } = await import('@/services/capi/refundDelivery');
+
+  const { data: staged, error: stagedError } = await supabaseAdmin
+    .from('shopify_webhook_events')
+    .select('id, shop_domain, topic, payload, status')
+    .eq('id', event_id)
+    .single();
+
+  if (stagedError || !staged) {
+    throw new Error(`Shopify webhook worker: staged event ${event_id} not found: ${stagedError?.message ?? 'unknown'}`);
+  }
+
+  const row = staged as { id: string; shop_domain: string; topic: string; payload: unknown; status: string };
+
+  if (row.status === 'processed') {
+    logger.info({ eventId: event_id }, 'Shopify webhook worker: already processed, skipping');
+    return;
+  }
+
+  try {
+    const { data: connection, error: connError } = await supabaseAdmin
+      .from('platform_connections')
+      .select('id, organization_id, client_id')
+      .eq('platform', 'shopify')
+      .eq('account_id', row.shop_domain)
+      .maybeSingle();
+
+    if (connError || !connection) {
+      throw new Error(`No shopify connection found for shop ${row.shop_domain}: ${connError?.message ?? 'not found'}`);
+    }
+
+    const conn = connection as { id: string; organization_id: string; client_id: string };
+    const tokens = await resolveTokens(conn.id);
+
+    if (row.topic === 'orders/paid') {
+      const order = row.payload as import('@/services/capi/shopifyOrderMapper').ShopifyOrderPayload;
+      const event = mapShopifyOrderToAtlasEvent(row.shop_domain, order);
+      await deliverShopifyEventToAllProviders(conn.organization_id, event);
+    } else if (row.topic === 'refunds/create') {
+      const refund = row.payload as import('@/services/capi/shopifyRefundMapper').ShopifyRefundPayload;
+      const order = await getOrder(row.shop_domain, tokens.access_token, refund.order_id);
+      const input = mapShopifyRefundToRecordRefundInput(refund, order);
+      const refundEvent = await recordRefund(conn.organization_id, conn.organization_id, {
+        ...input,
+        client_id: conn.client_id,
+      });
+      // Fire-and-forget, same as the authenticated POST /api/refunds route.
+      void removeFromGoogleAudience(conn.organization_id, refundEvent.id, input.email, input.phone);
+    } else {
+      logger.warn({ eventId: event_id, topic: row.topic }, 'Shopify webhook worker: unrecognised topic, skipping');
+    }
+
+    await supabaseAdmin
+      .from('shopify_webhook_events')
+      .update({ status: 'processed', processed_at: new Date().toISOString() })
+      .eq('id', event_id);
+  } catch (err) {
+    await supabaseAdmin
+      .from('shopify_webhook_events')
+      .update({ status: 'failed', error_message: err instanceof Error ? err.message : String(err) })
+      .eq('id', event_id);
+    throw err;
+  }
+});
+
+logger.info('Shopify webhook event queue worker registered');

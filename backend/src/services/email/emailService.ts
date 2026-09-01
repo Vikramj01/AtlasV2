@@ -202,6 +202,73 @@ export async function sendSignupConfirmationEmail(opts: {
   });
 }
 
+// ── Email: Shopify install welcome / claim account ────────────────────────────
+
+/**
+ * Sent immediately after a merchant installs the Shopify app. Contains the
+ * Supabase-generated invite link (generateLink({type:'invite'})) that lets
+ * the merchant set a password and log into the full Atlas dashboard — same
+ * org/data that's already forwarding their orders.
+ */
+export async function sendShopifyWelcomeEmail(opts: {
+  to: string;
+  claimUrl: string;
+}): Promise<SendResult> {
+  const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f9fafb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 20px;">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;border:1px solid #e5e7eb;overflow:hidden;">
+        <!-- Header -->
+        <tr><td style="background:#1e40af;padding:24px 32px;">
+          <p style="margin:0;font-size:18px;font-weight:700;color:#ffffff;letter-spacing:-0.3px;">Atlas</p>
+          <p style="margin:4px 0 0;font-size:12px;color:#93c5fd;">Signal Health Platform</p>
+        </td></tr>
+        <!-- Body -->
+        <tr><td style="padding:32px;">
+          <p style="margin:0 0 16px;font-size:16px;font-weight:600;color:#111827;">Your store is connected</p>
+          <p style="margin:0 0 24px;font-size:14px;color:#6b7280;line-height:1.6;">
+            Atlas is now forwarding your orders and refunds to any ad platforms
+            you connect. Set a password to log in and see it all — your Google
+            Ads/Meta connections, order activity, and the rest of Atlas.
+            This link expires in 24 hours.
+          </p>
+          <!-- CTA -->
+          <table cellpadding="0" cellspacing="0" style="margin:0 0 24px;">
+            <tr><td style="background:#1e40af;border-radius:8px;padding:12px 24px;">
+              <a href="${opts.claimUrl}" style="color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;">
+                Set your password →
+              </a>
+            </td></tr>
+          </table>
+          <p style="margin:0 0 8px;font-size:13px;color:#9ca3af;">Or copy this link:</p>
+          <p style="margin:0 0 24px;font-size:12px;color:#6b7280;word-break:break-all;background:#f3f4f6;padding:10px 12px;border-radius:6px;font-family:monospace;">
+            ${opts.claimUrl}
+          </p>
+          <p style="margin:0;font-size:12px;color:#9ca3af;">
+            If you didn't install Atlas on your Shopify store, you can safely ignore this email.
+          </p>
+        </td></tr>
+        <!-- Footer -->
+        <tr><td style="padding:16px 32px;border-top:1px solid #f3f4f6;">
+          <p style="margin:0;font-size:11px;color:#d1d5db;text-align:center;">Sent via Atlas — atlas.vimi.digital</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`.trim();
+
+  return sendEmail({
+    to: opts.to,
+    subject: 'Your Shopify store is connected to Atlas',
+    html,
+  });
+}
+
 // ── Email 3: Password reset ───────────────────────────────────────────────────
 
 /**
