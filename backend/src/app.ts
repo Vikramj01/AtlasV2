@@ -43,6 +43,7 @@ import { enrichmentRouter } from '@/api/routes/enrichment';
 import { slackRouter } from '@/api/routes/slack';
 import { insightsRouter } from '@/api/routes/insights';
 import { publicAuditRouter } from '@/api/routes/publicAudit';
+import { shopifyAppRouter } from '@/api/routes/shopifyApp';
 import logger from '@/utils/logger';
 import { env } from '@/config/env';
 
@@ -58,6 +59,10 @@ app.set('trust proxy', 1);
 // Register express.raw() for this exact path BEFORE express.json() so the
 // global JSON parser does not consume the body first.
 app.use('/api/billing/webhook', express.raw({ type: 'application/json' }));
+
+// Same requirement for every Shopify webhook — HMAC verification needs the
+// exact raw bytes Shopify signed.
+app.use('/api/shopify/webhooks', express.raw({ type: 'application/json' }));
 
 app.use(helmet());
 app.use(cors({
@@ -172,6 +177,8 @@ app.use('/api/tracking', trackingRouter);
 app.use('/api/share', deliverableShareRouter);
 app.use('/api/onboarding', onboardingRouter);
 app.use('/api/public/audit', publicAuditRouter);
+// Shopify App: /api/shopify/* (public — install, OAuth callback, webhooks)
+app.use('/api/shopify', shopifyAppRouter);
 app.use('/api', enrichmentRouter);
 app.use('/api/slack', slackRouter);
 app.use('/api/insights', insightsRouter);

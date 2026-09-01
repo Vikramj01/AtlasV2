@@ -209,6 +209,49 @@ export async function processEvent(
     return { event_id: event.event_id, status: 'consent_blocked' };
   }
 
+  return runFromDedup(event, providerConfig);
+}
+
+// ── Server-sourced events (no live browser session) ───────────────────────────
+//
+// Some integrations have no live browser session to have captured a consent
+// decision from in the first place — e.g. the Shopify order/refund webhooks
+// (shopifyCapiDelivery.ts), which forward data about a purchase that already
+// completed on the merchant's own storefront. isConsentGranted() requires a
+// real event.consent_state sourced from a CMP decision; there is no lawful
+// way to synthesize one for one of these events, and defaulting it to
+// "granted" would be a real compliance risk, not a technicality — Atlas's
+// own rule is that every event carries a REAL consent state.
+//
+// This mirrors how the offline-conversions CSV pipeline already works today
+// (googleOfflineUpload.ts/metaOfflineUpload.ts never touch a consent_state
+// at all) — for a server-sourced batch/webhook integration, the org
+// connecting the integration is the one attesting they have lawful basis to
+// forward their own transaction data, the same framing as any offline
+// conversion import product. Deliberately narrow: use this only for
+// integrations that have no live browser session by construction — never as
+// a general-purpose alternative to processEvent() for events that do.
+//
+// Runs the same dedup/hash/deliver/log/counters pipeline as processEvent()
+// (steps 2-7) — just skips step 0 (enrichment; not applicable, the caller
+// already did its own explicit field mapping) and step 1 (the consent gate
+// above).
+export async function processServerSourcedEvent(
+  event: AtlasEvent,
+  providerConfig: CAPIProviderConfig,
+): Promise<PipelineResult> {
+  if (!event.event_id) {
+    event = { ...event, event_id: randomUUID() };
+  }
+  return runFromDedup(event, providerConfig);
+}
+
+async function runFromDedup(
+  event: AtlasEvent,
+  providerConfig: CAPIProviderConfig,
+): Promise<PipelineResult> {
+  const { id: providerId, provider, organization_id, identifier_config, dedup_config, event_mapping } = providerConfig;
+
   // 2. Dedup check
   if (dedup_config.enabled) {
     const isDup = await isEventDuplicate(providerId, event.event_id, dedup_config.dedup_window_minutes);

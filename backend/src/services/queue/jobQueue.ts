@@ -610,3 +610,31 @@ dqmQueue.on('failed', (job, err) => {
   logger.error({ jobId: job?.id, err }, 'DQM job failed');
 });
 
+// ── Shopify Order/Refund Event Queue ──────────────────────────────────────────
+// Processes staged shopify_webhook_events rows: maps the order/refund into
+// the CAPI/refund pipelines and delivers to the org's connected platforms.
+// No PII in the payload (raw payload lives in shopify_webhook_events,
+// loaded from the DB inside the worker) — same convention as every other
+// queue in this file. Ack-then-process: the webhook route inserts the
+// staging row and enqueues before Shopify's 5s ack deadline; delivery
+// failures retry here without needing Shopify to redeliver.
+
+export interface ShopifyWebhookEventJobData {
+  event_id: string;
+}
+
+export const shopifyWebhookEventQueue = new Bull<ShopifyWebhookEventJobData>('shopify-webhook-event', makeBullOpts({
+  attempts: 3,
+  backoff: { type: 'exponential', delay: 30_000 },
+  removeOnComplete: 100,
+  removeOnFail: 50,
+}));
+
+shopifyWebhookEventQueue.on('completed', (job) => {
+  logger.info({ jobId: job.id, eventId: job.data.event_id }, 'Shopify webhook event job completed');
+});
+
+shopifyWebhookEventQueue.on('failed', (job, err) => {
+  logger.error({ jobId: job?.id, eventId: job?.data?.event_id, err: err.message }, 'Shopify webhook event job failed');
+});
+
