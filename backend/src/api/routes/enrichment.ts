@@ -70,6 +70,7 @@ const IdentityConfigSchema = z.object({
   gclid_field: z.string().optional(),
   wbraid_field: z.string().optional(),
   gbraid_field: z.string().optional(),
+  ttclid_field: z.string().optional(),
   auto_capture_ip: z.boolean().optional(),
   auto_capture_ua: z.boolean().optional(),
   enabled_identifiers: z.array(z.string()).optional(),

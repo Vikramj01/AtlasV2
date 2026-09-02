@@ -107,6 +107,7 @@ export function mapShopifyOrderToAtlasEvent(shop: string, order: ShopifyOrderPay
       fbc: noteAttribute(order, 'atlas_fbc'),
       wbraid: noteAttribute(order, 'atlas_wbraid'),
       gbraid: noteAttribute(order, 'atlas_gbraid'),
+      ttclid: noteAttribute(order, 'atlas_ttclid'),
     },
     custom_data: {
       value,

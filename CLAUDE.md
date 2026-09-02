@@ -32,7 +32,7 @@ Atlas is a marketing signal optimisation and tracking infrastructure platform fo
 - **Health Dashboard** — Live health score, alert feed, historical trend.
 - **Channel Insights** — Session ingestion + diagnostic engine.
 - **Consent Integration Hub** — JS banner + CMP sync (OneTrust/Cookiebot/Usercentrics), Google Consent Mode v2.
-- **Realtime CAPI** — Meta/Google/LinkedIn CAPI (TikTok stub), SHA-256 hashing, dedup, consent gating; new-vs-returning customer signal (Google Ads/GA4 via DMA `userProperties.customerType`, sourced from GTM cookie/dataLayer or Shopify `customer.orders_count`).
+- **Realtime CAPI** — Meta/Google/LinkedIn/TikTok CAPI, SHA-256 hashing, dedup, consent gating; new-vs-returning customer signal (Google Ads/GA4 via DMA `userProperties.customerType`, sourced from GTM cookie/dataLayer or Shopify `customer.orders_count`). TikTok Events API delivery (`tiktokDelivery.ts`) is wired into the pipeline, credential validation, and test-event flow; matches on hashed PII plus `ttclid` (captured alongside gclid/fbclid/wbraid/gbraid).
 - **Offline Conversions** — CSV upload → Google Ads `uploadClickConversions`, async Bull queue, per-row error reporting.
 - **Organisation & Client Management** — Multi-tenant workspace, org switching, member roles.
 - **Billing & Subscriptions** — Stripe Checkout + Billing Portal. Plans: `free`/`pro`/`agency` via `planGuard`/`<PlanGate>`.
@@ -81,7 +81,7 @@ AtlasV2/
 │   ├── lib/
 │   │   ├── api/          # one *Api.ts module per feature area (adminApi, auditApi, capiApi,
 │   │   │                 # signalEventsApi, strategyApi, enrichmentApi, ...)
-│   │   ├── capi/         # adapters/ (meta, google, google-offline, linkedin, tiktok stub)
+│   │   ├── capi/         # adapters/ (meta, google, google-offline, linkedin, tiktok)
 │   │   ├── consent/      # banner-generator.ts, cmp-listeners.ts, consent-engine.ts, gcm-mapper.ts
 │   │   └── shared/       # crypto.ts
 │   ├── hooks/            # useOrganisations
@@ -202,6 +202,9 @@ platform_connections.platform: widened to include 'shopify'
 profiles: provisioning_source, claimed_at added
 shopify_webhook_events (staging table, service-role-only RLS — keeps PII out of Bull job payloads)
 shopify_compliance_requests (GDPR mandatory-webhook audit log, service-role-only RLS)
+
+-- TikTok ttclid Capture (20260902)
+client_identity_configs: ttclid_field TEXT NOT NULL DEFAULT 'ttclid' added
 ```
 
 ---
@@ -299,3 +302,4 @@ Early sprints (Stripe Payments, Offline Conversions, Strategy Gate 1.6, CSE 1–
 | Ecommerce Signals 3: sGTM detection + monitoring | `client_platforms.is_verified`/`verified_at` + a URL-reachability verify endpoint; new `dqm_sgtm_checks` table + `sgtmProbe.ts` health probe wired into `dqmOrchestrator`; new IHC drift rule `SGTM_ROUTING_NOT_CONFIGURED`. Tag generation (routing GA4 traffic through the container) deferred pending GTM field-name verification against a live export |
 | Ecommerce Signals 4: Shopify acquisition channel | Public Shopify App — install with no prior Atlas account; shadow Supabase Auth user provisioning auto-creates a full org via `handle_new_user()`; `platform_connections` gains `platform='shopify'`; order/refund webhooks staged (`shopify_webhook_events`) then routed through a new consent-gate-free `processServerSourcedEvent()` CAPI path (`pipeline.ts`); 3 mandatory GDPR compliance webhooks logged to `shopify_compliance_requests`; unauthenticated `/shopify/welcome` claim-your-account page |
 | Ecommerce Signals 5: Google DMA schema fix + Shopify click-ID/new-customer signal | Corrected a major schema drift between Atlas's DMA integration and the live Data Manager API (verified via its Discovery Document) affecting every existing Google Ads/GA4 delivery — missing required `eventTimestamp`, wrong user-identifier/consent/address nesting, conversion action moved to `Destination.productDestinationId`, wrong Audience Match URL casing, a missing `removeAudienceMembers()` REMOVE method (refund audience removal had likely never worked); consolidated event/audience-member building into a shared `dmaEventBuilder.ts`. Shopify storefront ScriptTag now captures gclid/fbclid/wbraid/gbraid into order `note_attributes`; `customer.orders_count` feeds a real `userProperties.customerType` new-customer signal (Google Ads/GA4 only — no Meta CAPI equivalent) |
+| TikTok ttclid capture + delivery test coverage | Closed the gap left by the earlier TikTok CAPI backend delivery work (`tiktokDelivery.ts`, shipped Phase 2 but never marked done in this file — corrected the stale "TikTok stub" line above). Added `ttclid` end-to-end following the existing gclid/fbclid/wbraid/gbraid pattern: `IdentifierType`/`AtlasEvent.user_data` (both frontend/backend), raw passthrough in `pipeline.ts`'s `buildHashedIdentifiers()`, `TikTokTrackEvent.user.ttclid` in `tiktokDelivery.ts`/the frontend TikTok adapter, GTM `Atlas - Click ID Cookie Capture` tag + `URL Query - ttclid` variable, Shopify `shopifyCaptureScript.ts`/`shopifyOrderMapper.ts` (`_atlas_ttclid` cookie → `atlas_ttclid` note attribute), `client_identity_configs.ttclid_field` (+ `applyIdentityConfig()`), and `ATTRIBUTION_PARAMS` in the AI Planning Mode's IR schema. Added `tiktokDelivery.test.ts` (26 tests covering formatting, dedup status, batch failure semantics, test-event routing, credential validation) plus new `applyIdentityConfig()`/`formatTikTokEvent()` ttclid cases in existing suites |

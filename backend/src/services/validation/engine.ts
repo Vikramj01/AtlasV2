@@ -3,7 +3,7 @@
  * Runs all 26 rules against AuditData and returns structured results.
  * All rules are pure functions — no side effects, no async.
  */
-import type { AuditData, ValidationResult, ValidationLayer } from '@/types/audit';
+import type { AuditData, ValidationResult, ValidationLayer, FunnelType } from '@/types/audit';
 import { LAYER_1_RULES } from './signalInitiation';
 import { LAYER_2_RULES } from './parameterCompleteness';
 import { LAYER_3_RULES } from './persistence';
@@ -31,11 +31,30 @@ function isRuleApplicable(rule: { affected_platforms: string[] }, activePlatform
 }
 
 /**
- * Run all 26 rules against the provided AuditData.
+ * Returns true if a rule applies to the given funnel type.
+ * Rules with no `funnel_types` are funnel-agnostic and always apply.
+ * A missing/malformed funnelType (e.g. corrupt AuditData) never hides
+ * rules — it falls back to "applies everywhere" rather than silently
+ * dropping checks.
+ */
+function isRuleApplicableToFunnel(
+  rule: { rule_id: string; funnel_types?: readonly FunnelType[] },
+  funnelType: FunnelType | undefined,
+): boolean {
+  return !rule.funnel_types || !funnelType || rule.funnel_types.includes(funnelType);
+}
+
+/**
+ * Run all applicable rules against the provided AuditData.
+ * Rules scoped to a specific funnel_type (e.g. ecommerce-only checkout/cart
+ * checks) are excluded for other funnel types, rather than run and left to
+ * auto-fail — see funnel_types on the rule definitions in signalInitiation.ts/
+ * parameterCompleteness.ts/persistence.ts.
  * A rule that throws is caught and returned as 'warning' with the error in evidence.
  */
 export function runAllRules(auditData: AuditData): ValidationResult[] {
-  return ALL_RULES.map((rule) => {
+  const applicableRules = ALL_RULES.filter((rule) => isRuleApplicableToFunnel(rule, auditData.funnel_type));
+  return applicableRules.map((rule) => {
     try {
       return rule.test(auditData);
     } catch (err) {
@@ -62,7 +81,9 @@ export function runAllRules(auditData: AuditData): ValidationResult[] {
  * count against the score.
  */
 export function runRulesForPlatforms(activePlatforms: string[], auditData: AuditData): ValidationResult[] {
-  const applicableRules = ALL_RULES.filter((rule) => isRuleApplicable(rule, activePlatforms));
+  const applicableRules = ALL_RULES.filter(
+    (rule) => isRuleApplicable(rule, activePlatforms) && isRuleApplicableToFunnel(rule, auditData.funnel_type),
+  );
 
   return applicableRules.map((rule) => {
     try {

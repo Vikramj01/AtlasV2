@@ -111,7 +111,8 @@ capiRouter.post('/browser-event', async (req: Request, res: Response): Promise<v
     if (provider.provider === 'linkedin') {
       writes.push(setDedupEntry('linkedin', provider.id, event_id, event_name, entry));
     }
-    // TikTok has no ttclid capture yet either — deduplicate on event_id
+    // The browser-event beacon only carries fbc/gclid — TikTok dedup still keys
+    // on event_id here (matches sendTikTokEvents/getTikTokDedupEntry)
     if (provider.provider === 'tiktok') {
       writes.push(setDedupEntry('tiktok', provider.id, event_id, event_name, entry));
     }

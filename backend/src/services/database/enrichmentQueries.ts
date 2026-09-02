@@ -34,6 +34,7 @@ export async function upsertClientIdentityConfig(
     ...(req.gclid_field !== undefined && { gclid_field: req.gclid_field }),
     ...(req.wbraid_field !== undefined && { wbraid_field: req.wbraid_field }),
     ...(req.gbraid_field !== undefined && { gbraid_field: req.gbraid_field }),
+    ...(req.ttclid_field !== undefined && { ttclid_field: req.ttclid_field }),
     ...(req.auto_capture_ip !== undefined && { auto_capture_ip: req.auto_capture_ip }),
     ...(req.auto_capture_ua !== undefined && { auto_capture_ua: req.auto_capture_ua }),
     ...(req.enabled_identifiers !== undefined && { enabled_identifiers: req.enabled_identifiers }),

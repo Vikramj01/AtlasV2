@@ -180,7 +180,7 @@ export const ECOMMERCE_PARAM_KEYS = new Set<string>([
 
 /** Attribution parameters — must never be marked required in IRParameter[]. */
 export const ATTRIBUTION_PARAMS = new Set<string>([
-  'gclid', 'fbclid', 'gbraid', 'wbraid',
+  'gclid', 'fbclid', 'gbraid', 'wbraid', 'ttclid',
 ]);
 
 /** Price indicator pattern — must not appear in lead_gen event parameter examples. */
