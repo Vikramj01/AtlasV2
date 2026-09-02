@@ -9,6 +9,9 @@ export const GA4_PURCHASE_EVENT_FIRED = {
   validation_layer: 'signal_initiation' as const,
   severity: 'critical' as const,
   affected_platforms: ['ga4'],
+  // Checks specifically for an ecommerce `purchase` event — not applicable to
+  // saas/lead_gen funnels, which convert on signup/form-submit, not purchase.
+  funnel_types: ['ecommerce'] as const,
 
   test(auditData: AuditData): ValidationResult {
     const hasGA4Event = auditData.dataLayer.some((e) => e.event === 'purchase');
@@ -38,6 +41,7 @@ export const META_PIXEL_PURCHASE_EVENT_FIRED = {
   validation_layer: 'signal_initiation' as const,
   severity: 'critical' as const,
   affected_platforms: ['meta'],
+  funnel_types: ['ecommerce'] as const,
 
   test(auditData: AuditData): ValidationResult {
     const hasMetaPixelEvent = auditData.networkRequests.some(
@@ -195,6 +199,7 @@ export const ADD_TO_CART_EVENT_FIRED = {
   validation_layer: 'signal_initiation' as const,
   severity: 'medium' as const,
   affected_platforms: ['all'],
+  funnel_types: ['ecommerce'] as const,
 
   test(auditData: AuditData): ValidationResult {
     const hasAddToCart = auditData.dataLayer.some((e) => e.event === 'add_to_cart');

@@ -3,15 +3,21 @@
  * Are required parameters present in conversion events?
  */
 import type { AuditData, ValidationResult } from '@/types/audit';
+import { getConversionEvents } from './conversionEvent';
 
 export const TRANSACTION_ID_PRESENT = {
   rule_id: 'TRANSACTION_ID_PRESENT',
   validation_layer: 'parameter_completeness' as const,
   severity: 'critical' as const,
   affected_platforms: ['all'],
+  // transaction_id is an order/checkout concept with no equivalent in GA4's
+  // sign_up or generate_lead event schemas — unlike VALUE_PARAMETER_PRESENT/
+  // CURRENCY_PARAMETER_PRESENT etc. just above, there's no funnel-appropriate
+  // event to resolve this against, so it's excluded rather than generalized.
+  funnel_types: ['ecommerce'] as const,
 
   test(auditData: AuditData): ValidationResult {
-    const purchaseEvents = auditData.dataLayer.filter((e) => e.event === 'purchase');
+    const purchaseEvents = getConversionEvents(auditData);
     const hasTransactionID = purchaseEvents.some(
       (e) => e.transaction_id && e.transaction_id !== '' && e.transaction_id !== 'null',
     );
@@ -38,7 +44,7 @@ export const VALUE_PARAMETER_PRESENT = {
   affected_platforms: ['all'],
 
   test(auditData: AuditData): ValidationResult {
-    const purchaseEvents = auditData.dataLayer.filter((e) => e.event === 'purchase');
+    const purchaseEvents = getConversionEvents(auditData);
     const hasValue = purchaseEvents.some((e) => {
       const v = Number(e.value);
       return v > 0 && v < 1_000_000;
@@ -66,7 +72,7 @@ export const CURRENCY_PARAMETER_PRESENT = {
   affected_platforms: ['all'],
 
   test(auditData: AuditData): ValidationResult {
-    const purchaseEvents = auditData.dataLayer.filter((e) => e.event === 'purchase');
+    const purchaseEvents = getConversionEvents(auditData);
     const hasCurrency = purchaseEvents.some(
       (e) => e.currency && typeof e.currency === 'string' && e.currency.length === 3,
     );
@@ -147,7 +153,7 @@ export const EVENT_ID_GENERATED = {
   affected_platforms: ['sgtm'],
 
   test(auditData: AuditData): ValidationResult {
-    const purchaseEvents = auditData.dataLayer.filter((e) => e.event === 'purchase');
+    const purchaseEvents = getConversionEvents(auditData);
     const eventIds = purchaseEvents.map((e) => e.event_id).filter(Boolean);
     const uniqueIds = new Set(eventIds);
     const hasUniqueEventIds =
@@ -178,7 +184,7 @@ export const EMAIL_CAPTURED_FOR_ENHANCED_CONVERSIONS = {
   affected_platforms: ['ga4', 'google_ads'],
 
   test(auditData: AuditData): ValidationResult {
-    const purchaseEvents = auditData.dataLayer.filter((e) => e.event === 'purchase');
+    const purchaseEvents = getConversionEvents(auditData);
     const hasEmail = purchaseEvents.some((e) => {
       const email = e.user_data?.email;
       if (!email || typeof email !== 'string') return false;
@@ -208,7 +214,7 @@ export const PHONE_CAPTURED_FOR_CAPI = {
   affected_platforms: ['meta'],
 
   test(auditData: AuditData): ValidationResult {
-    const purchaseEvents = auditData.dataLayer.filter((e) => e.event === 'purchase');
+    const purchaseEvents = getConversionEvents(auditData);
     const hasPhone = purchaseEvents.some(
       (e) =>
         e.user_data?.phone &&
@@ -235,6 +241,7 @@ export const ITEMS_ARRAY_POPULATED = {
   validation_layer: 'parameter_completeness' as const,
   severity: 'medium' as const,
   affected_platforms: ['all'],
+  funnel_types: ['ecommerce'] as const,
 
   test(auditData: AuditData): ValidationResult {
     const purchaseEvents = auditData.dataLayer.filter((e) => e.event === 'purchase');
@@ -269,7 +276,7 @@ export const USER_ID_PRESENT = {
   affected_platforms: ['all'],
 
   test(auditData: AuditData): ValidationResult {
-    const purchaseEvents = auditData.dataLayer.filter((e) => e.event === 'purchase');
+    const purchaseEvents = getConversionEvents(auditData);
     const hasUserID = purchaseEvents.some(
       (e) => e.user_id && String(e.user_id).length > 0,
     );
@@ -294,6 +301,7 @@ export const COUPON_CAPTURED_IF_USED = {
   validation_layer: 'parameter_completeness' as const,
   severity: 'low' as const,
   affected_platforms: ['all'],
+  funnel_types: ['ecommerce'] as const,
 
   test(auditData: AuditData): ValidationResult {
     const purchaseEvents = auditData.dataLayer.filter((e) => e.event === 'purchase');
@@ -320,6 +328,7 @@ export const SHIPPING_CAPTURED = {
   validation_layer: 'parameter_completeness' as const,
   severity: 'low' as const,
   affected_platforms: ['all'],
+  funnel_types: ['ecommerce'] as const,
 
   test(auditData: AuditData): ValidationResult {
     const purchaseEvents = auditData.dataLayer.filter((e) => e.event === 'purchase');

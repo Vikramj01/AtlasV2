@@ -3,6 +3,7 @@
  * Do critical identifiers survive cross-page navigation?
  */
 import type { AuditData, ValidationResult } from '@/types/audit';
+import { getConversionEvent } from './conversionEvent';
 
 export const GCLID_PERSISTS_TO_CONVERSION = {
   rule_id: 'GCLID_PERSISTS_TO_CONVERSION',
@@ -12,7 +13,7 @@ export const GCLID_PERSISTS_TO_CONVERSION = {
 
   test(auditData: AuditData): ValidationResult {
     const landingGclid = auditData.urlParams?.gclid ?? auditData.injected?.gclid;
-    const purchaseEvent = auditData.dataLayer.find((e) => e.event === 'purchase');
+    const purchaseEvent = getConversionEvent(auditData);
     const purchaseGclid = purchaseEvent?.gclid as string | undefined;
     const hasPersistence = !!(landingGclid && purchaseGclid && landingGclid === purchaseGclid);
     return {
@@ -65,6 +66,7 @@ export const TRANSACTION_ID_MATCHES_ORDER_SYSTEM = {
   validation_layer: 'persistence' as const,
   severity: 'high' as const,
   affected_platforms: ['all'],
+  funnel_types: ['ecommerce'] as const,
 
   test(auditData: AuditData): ValidationResult {
     const purchaseEvent = auditData.dataLayer.find((e) => e.event === 'purchase');
@@ -99,7 +101,7 @@ export const EVENT_ID_CONSISTENCY_CLIENT_TO_SERVER = {
   affected_platforms: ['sgtm'],
 
   test(auditData: AuditData): ValidationResult {
-    const purchaseEvent = auditData.dataLayer.find((e) => e.event === 'purchase');
+    const purchaseEvent = getConversionEvent(auditData);
     const clientEventId = purchaseEvent?.event_id;
     const serverHasEventId = !!(
       clientEventId &&
@@ -132,7 +134,7 @@ export const USER_DATA_NORMALIZED_CONSISTENTLY = {
   affected_platforms: ['all'],
 
   test(auditData: AuditData): ValidationResult {
-    const purchaseEvent = auditData.dataLayer.find((e) => e.event === 'purchase');
+    const purchaseEvent = getConversionEvent(auditData);
     const email = purchaseEvent?.user_data?.email;
     const phone = purchaseEvent?.user_data?.phone;
     const emailNormalized =
@@ -163,7 +165,7 @@ export const PII_PROPERLY_HASHED = {
   affected_platforms: ['meta', 'google_ads'],
 
   test(auditData: AuditData): ValidationResult {
-    const purchaseEvent = auditData.dataLayer.find((e) => e.event === 'purchase');
+    const purchaseEvent = getConversionEvent(auditData);
     const email = purchaseEvent?.user_data?.email;
     const phone = purchaseEvent?.user_data?.phone;
     // SHA256 hashes are exactly 64 hex characters

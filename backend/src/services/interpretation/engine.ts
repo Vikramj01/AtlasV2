@@ -65,7 +65,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
     affected_platforms: ['All'],
     severity: 'critical',
     recommended_owner: 'Frontend Developer',
-    fix_summary: 'Implement dataLayer initialization and push events at key points: page_view, add_to_cart, begin_checkout, purchase.',
+    fix_summary: 'Implement dataLayer initialization and push events at key points: page_view plus your funnel\'s key actions (e.g. add_to_cart/purchase for ecommerce, sign_up for SaaS, generate_lead for lead gen).',
     estimated_effort: 'medium',
   },
   GTM_CONTAINER_LOADED: {
@@ -110,12 +110,12 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
   },
   VALUE_PARAMETER_PRESENT: {
     rule_id: 'VALUE_PARAMETER_PRESENT',
-    headline: "No revenue value is being sent, so ROAS can't be tracked and Smart Bidding has nothing to optimize for.",
-    business_impact: 'Cannot track ROAS or revenue impact. Smart bidding has no value to optimize for.',
+    headline: "No conversion value is being sent, so ROAS can't be tracked and Smart Bidding has nothing to optimize for.",
+    business_impact: 'Cannot track ROAS or value-based bidding impact. Smart bidding has no value to optimize for.',
     affected_platforms: ['GA4', 'Google Ads', 'Meta', 'sGTM'],
     severity: 'critical',
     recommended_owner: 'Backend Developer',
-    fix_summary: 'Include transaction value in purchase event: {value: order.total}',
+    fix_summary: 'Include a value on your conversion event (order total for ecommerce, an estimated lead/plan value for SaaS or lead gen): {value: ...}',
     estimated_effort: 'low',
   },
   CURRENCY_PARAMETER_PRESENT: {
@@ -165,7 +165,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
     affected_platforms: ['Google Ads', 'Meta CAPI'],
     severity: 'high',
     recommended_owner: 'Backend Developer',
-    fix_summary: 'Capture customer email at checkout: {user_data: {email: customer.email}}',
+    fix_summary: 'Capture customer email on your conversion event: {user_data: {email: customer.email}}',
     estimated_effort: 'low',
   },
   PHONE_CAPTURED_FOR_CAPI: {
@@ -175,7 +175,7 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
     affected_platforms: ['Meta CAPI'],
     severity: 'medium',
     recommended_owner: 'Backend Developer',
-    fix_summary: 'Capture phone at checkout, normalized to digits only.',
+    fix_summary: 'Capture phone on your conversion event, normalized to digits only.',
     estimated_effort: 'low',
   },
   ITEMS_ARRAY_POPULATED: {
@@ -190,8 +190,8 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
   },
   USER_ID_PRESENT: {
     rule_id: 'USER_ID_PRESENT',
-    headline: "You can't track repeat customers — repeat purchase rate and LTV are wrong.",
-    business_impact: 'Cannot track repeat customers. Repeat purchase rate and LTV are wrong.',
+    headline: "You can't track repeat/returning users — repeat conversion rate and LTV are wrong.",
+    business_impact: 'Cannot track repeat or returning users across sessions. Repeat conversion rate and LTV are wrong.',
     affected_platforms: ['GA4', 'sGTM'],
     severity: 'high',
     recommended_owner: 'Backend Developer',
@@ -220,12 +220,12 @@ const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
   },
   GCLID_PERSISTS_TO_CONVERSION: {
     rule_id: 'GCLID_PERSISTS_TO_CONVERSION',
-    headline: 'Google Ads loses attribution for this conversion — each lost click ID is one more unattributed sale.',
-    business_impact: 'Google Ads loses attribution data for this conversion. Each lost gclid = one more unattributed sale.',
+    headline: 'Google Ads loses attribution for this conversion — each lost click ID is one more unattributed conversion.',
+    business_impact: 'Google Ads loses attribution data for this conversion. Each lost gclid = one more unattributed conversion.',
     affected_platforms: ['Google Ads'],
     severity: 'critical',
     recommended_owner: 'Frontend Developer',
-    fix_summary: 'Store gclid in sessionStorage on landing, retrieve and attach to purchase event.',
+    fix_summary: 'Store gclid in sessionStorage on landing, retrieve and attach to your conversion event.',
     estimated_effort: 'medium',
   },
   FBCLID_PERSISTS_TO_CONVERSION: {
