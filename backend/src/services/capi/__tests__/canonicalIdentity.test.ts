@@ -88,7 +88,7 @@ describe('Google delivery — canonical identity', () => {
     vi.mocked(getGoogleDedupEntry).mockResolvedValue(null);
     vi.mocked(fetch).mockResolvedValue({
       ok: true,
-      json: async () => ({ eventResults: [] }),
+      json: async () => ({ requestId: 'req-1' }),
     } as Response);
 
     const event = baseEvent();
@@ -107,7 +107,7 @@ describe('Google delivery — canonical identity', () => {
   it('prefers an explicit custom_data.order_id over the canonical event_id', async () => {
     vi.mocked(fetch).mockResolvedValue({
       ok: true,
-      json: async () => ({ eventResults: [] }),
+      json: async () => ({ requestId: 'req-1' }),
     } as Response);
 
     const event = baseEvent({ custom_data: { order_id: 'business-order-42' } });
@@ -118,11 +118,16 @@ describe('Google delivery — canonical identity', () => {
     expect(getGoogleDedupEntry).not.toHaveBeenCalled();
   });
 
-  it('reports the actual orderId sent on a partial failure, not the raw event_id', async () => {
+  it('reports the actual orderId sent on a hard failure, not the raw event_id', async () => {
+    // The live events:ingest response has no partial-failure envelope to
+    // simulate (IngestEventsResponse is just { requestId, fieldWarnings } —
+    // see the DMA schema fix) — a non-2xx HTTP response is the real failure
+    // mode this guards against.
     vi.mocked(getGoogleDedupEntry).mockResolvedValue(null);
     vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      json: async () => ({ partialFailureError: { message: 'bad request' } }),
+      ok: false,
+      status: 400,
+      json: async () => ({ error: { code: 400, message: 'bad request', status: 'INVALID_ARGUMENT' } }),
     } as Response);
 
     const event = baseEvent();

@@ -29,6 +29,7 @@ import {
   exchangeCodeForToken,
 } from '@/services/connections/oauthFlows/shopifyOAuth';
 import { verifyWebhookHmac } from '@/services/connections/shopify/shopifyWebhookVerify';
+import { SHOPIFY_CAPTURE_SCRIPT } from '@/services/connections/shopify/shopifyCaptureScript';
 import { provisionShopifyInstall } from '@/services/connections/shopify/shopifyProvisioning';
 import { enqueueShopifyOrderEvent, enqueueShopifyRefundEvent } from '@/services/capi/shopifyWebhookIngest';
 import { supabaseAdmin } from '@/services/database/supabase';
@@ -36,6 +37,18 @@ import { env } from '@/config/env';
 import logger from '@/utils/logger';
 
 export const shopifyAppRouter = Router();
+
+// ── GET /api/shopify/capture.js ─────────────────────────────────────────────
+// Served content for the ScriptTag registered by registerScriptTag() at
+// install time (shopifyProvisioning.ts). Public, static, cacheable — no
+// per-shop templating needed, the script reads everything it needs from
+// the page it's running on.
+
+shopifyAppRouter.get('/capture.js', (_req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.send(SHOPIFY_CAPTURE_SCRIPT);
+});
 
 // ── GET /api/shopify/install ───────────────────────────────────────────────────
 

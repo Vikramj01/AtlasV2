@@ -471,40 +471,11 @@ export interface MetaEventPayload {
 }
 
 // --- Google-Specific Types ---
-
-export interface GoogleConversionAdjustment {
-  adjustmentType: 'ENHANCEMENT';
-  conversionAction: string; // Resource name: customers/{id}/conversionActions/{id}
-  orderId?: string;
-  gclidDateTimePair?: {
-    gclid: string;
-    conversionDateTime: string; // yyyy-mm-dd HH:mm:ss+|-HH:mm
-  };
-  userAgent?: string;
-  consent?: {
-    adUserData: 'GRANTED' | 'DENIED' | 'UNSPECIFIED';
-    adPersonalization: 'GRANTED' | 'DENIED' | 'UNSPECIFIED';
-  };
-  userIdentifiers: Array<
-    | { hashedEmail: string }
-    | { hashedPhoneNumber: string }
-    | {
-        addressInfo: {
-          hashedFirstName?: string;
-          hashedLastName?: string;
-          city?: string;
-          state?: string;
-          postalCode?: string;
-          countryCode?: string;
-        };
-      }
-  >;
-}
-
-export interface GoogleUploadRequest {
-  conversionAdjustments: GoogleConversionAdjustment[];
-  partialFailure: boolean;
-}
+// (DMA's own request/response types live in
+// backend/src/integrations/google/dmaTypes.ts — this codebase's
+// "Google-specific type" concept for the classic Ads API adjustment-upload
+// shape was dead code and has been removed; DMA is the only integration
+// path in use.)
 
 // --- Amazon-Specific Types ---
 

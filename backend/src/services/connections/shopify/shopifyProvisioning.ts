@@ -11,7 +11,7 @@
 import { supabaseAdmin } from '@/services/database/supabase';
 import { encryptTokens } from '@/services/connections/tokenManager';
 import { createClient } from '@/services/database/clientQueries';
-import { getShopInfo, registerAllWebhooks } from './shopifyClient';
+import { getShopInfo, registerAllWebhooks, registerScriptTag } from './shopifyClient';
 import { sendShopifyWelcomeEmail } from '@/services/email/emailService';
 import { env } from '@/config/env';
 import logger from '@/utils/logger';
@@ -31,6 +31,17 @@ export interface ShopifyProvisioningResult {
   connectionId: string;
   shadowUserId: string;
   isNewInstall: boolean;
+}
+
+// Fire-and-log, same as registerAllWebhooks — a failed script tag
+// registration shouldn't abort the install, it just means click-ID
+// capture isn't live until a retry (e.g. the next reinstall).
+async function registerCaptureScriptTag(shop: string, accessToken: string): Promise<void> {
+  try {
+    await registerScriptTag(shop, accessToken, `${env.BACKEND_URL}/api/shopify/capture.js`);
+  } catch (err) {
+    logger.error({ err, shop }, 'Shopify: capture script tag registration failed');
+  }
 }
 
 async function findExistingConnection(shop: string): Promise<{ id: string; organization_id: string; client_id: string } | null> {
@@ -130,10 +141,11 @@ export async function provisionShopifyInstall(shop: string, accessToken: string,
   };
 
   if (existing) {
-    // Reinstall: Shopify clears webhook subscriptions on uninstall, so
-    // these always need re-registering regardless of what the previous
-    // metadata held.
+    // Reinstall: Shopify clears webhook subscriptions AND script tags on
+    // uninstall, so both always need re-registering regardless of what the
+    // previous metadata held.
     const webhookIds = await registerAllWebhooks(shop, accessToken, env.BACKEND_URL);
+    await registerCaptureScriptTag(shop, accessToken);
 
     await supabaseAdmin
       .from('platform_connections')
@@ -162,6 +174,7 @@ export async function provisionShopifyInstall(shop: string, accessToken: string,
   const { organisationId, clientId } = await provisionNewOrgForShadowUser(shadowUserId, shopInfo.name, shopInfo.domain);
 
   const webhookIds = await registerAllWebhooks(shop, accessToken, env.BACKEND_URL);
+  await registerCaptureScriptTag(shop, accessToken);
 
   const { data: connection, error: connectionError } = await supabaseAdmin
     .from('platform_connections')
