@@ -19,6 +19,7 @@ export function ExecutiveSummary({ report }: Props) {
 
   return (
     <div className="space-y-6">
+      <p className="text-sm font-medium text-muted-foreground">{report.website_url}</p>
       <StatusBanner
         status={executive_summary.overall_status}
         summary={executive_summary.business_summary}

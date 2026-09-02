@@ -143,6 +143,7 @@ export function generateReport(
 
   return {
     audit_id: auditData.audit_id,
+    website_url: auditData.website_url,
     generated_at: new Date().toISOString(),
     executive_summary: {
       overall_status: overallStatus,

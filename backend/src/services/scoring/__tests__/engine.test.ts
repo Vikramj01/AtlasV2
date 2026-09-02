@@ -174,6 +174,44 @@ describe('Attribution Risk Level', () => {
     // 1 non-pass → Medium
     expect(calculateScores(results).attribution_risk_level).toBe('Medium');
   });
+
+  // Regression: landing-capture rules alone drove this score, so a site that
+  // captures gclid/fbclid on the landing page but drops them before the
+  // conversion event scored "Low" attribution risk — the exact opposite of
+  // reality. Persistence rules must be able to move this score even when
+  // both capture rules pass.
+  it('is not Low when both persistence rules fail even though both capture rules pass', () => {
+    const results = [
+      makeResult('GCLID_CAPTURED_AT_LANDING', 'pass'),
+      makeResult('FBCLID_CAPTURED_AT_LANDING', 'pass'),
+      makeResult('GCLID_PERSISTS_TO_CONVERSION', 'fail'),
+      makeResult('FBCLID_PERSISTS_TO_CONVERSION', 'fail'),
+    ];
+    const level = calculateScores(results).attribution_risk_level;
+    expect(level).not.toBe('Low');
+    expect(level).toBe('High');
+  });
+
+  it('returns Critical when every present attribution rule (capture + persistence) fails', () => {
+    const results = allFail([
+      'GCLID_CAPTURED_AT_LANDING',
+      'FBCLID_CAPTURED_AT_LANDING',
+      'GCLID_PERSISTS_TO_CONVERSION',
+      'FBCLID_PERSISTS_TO_CONVERSION',
+    ]);
+    expect(calculateScores(results).attribution_risk_level).toBe('Critical');
+  });
+
+  it('returns Low only when capture AND persistence both pass', () => {
+    const results = allPass([
+      'GCLID_CAPTURED_AT_LANDING',
+      'FBCLID_CAPTURED_AT_LANDING',
+      'GCLID_PERSISTS_TO_CONVERSION',
+      'FBCLID_PERSISTS_TO_CONVERSION',
+      'TRANSACTION_ID_PRESENT',
+    ]);
+    expect(calculateScores(results).attribution_risk_level).toBe('Low');
+  });
 });
 
 // ── 3. Optimization Strength ───────────────────────────────────────────────────

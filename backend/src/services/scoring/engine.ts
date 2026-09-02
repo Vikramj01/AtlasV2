@@ -6,10 +6,15 @@
  */
 import type { AuditScores, ValidationResult } from '@/types/audit';
 
-// Attribution rules
+// Attribution rules — capture AND persistence. Landing-capture rules alone
+// (GCLID/FBCLID_CAPTURED_AT_LANDING) can pass while the click ID is dropped
+// before the conversion event, which is the actual attribution failure —
+// so the persistence rules must count here too, not just capture.
 const ATTRIBUTION_RULES = [
   'GCLID_CAPTURED_AT_LANDING',
   'FBCLID_CAPTURED_AT_LANDING',
+  'GCLID_PERSISTS_TO_CONVERSION',
+  'FBCLID_PERSISTS_TO_CONVERSION',
   'TRANSACTION_ID_PRESENT',
 ] as const;
 

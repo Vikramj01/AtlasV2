@@ -314,6 +314,7 @@ export interface PlatformBreakdown {
 
 export interface ReportJSON {
   audit_id: string;
+  website_url: string;
   generated_at: string;
   executive_summary: {
     overall_status: 'healthy' | 'partially_broken' | 'critical';
