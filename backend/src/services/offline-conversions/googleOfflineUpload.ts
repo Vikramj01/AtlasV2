@@ -31,6 +31,17 @@ import type {
 } from '@/integrations/google/dmaTypes';
 import logger from '@/utils/logger';
 
+// Row-level PII → DMA UserIdentifier[]. Offline rows only ever carry
+// email/phone (no name/address fields), unlike the live CAPI pipeline's
+// identifiers — kept local rather than routed through
+// dmaEventBuilder.ts's AtlasEvent-shaped buildDMAEvent().
+function buildRowUserIdentifiers(hashedEmail: string | null, hashedPhone: string | null): DMAEvent['userData'] {
+  const userIdentifiers: NonNullable<DMAEvent['userData']>['userIdentifiers'] = [];
+  if (hashedEmail) userIdentifiers.push({ emailAddress: hashedEmail });
+  if (hashedPhone) userIdentifiers.push({ phoneNumber: hashedPhone });
+  return userIdentifiers.length > 0 ? { userIdentifiers } : undefined;
+}
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const DMA_BASE_URL = 'https://datamanager.googleapis.com/v1';
@@ -130,34 +141,23 @@ interface GoogleAdsSearchResponse {
 
 function buildDMAEventFromRow(
   row: OfflineConversionRow,
-  config: OfflineConversionConfig,
   hashedEmail: string | null,
   hashedPhone: string | null,
 ): DMAEvent {
-  const cid = cleanCustomerId(config.google_customer_id!);
-  const conversionAction = `customers/${cid}/conversionActions/${config.conversion_action_id}`;
-  const eventDateTime = new Date(row.conversion_time!).toISOString();
-
-  const userIdentifiers: DMAEvent['userIdentifiers'] = [];
-  if (hashedEmail) userIdentifiers.push({ hashedEmail });
-  if (hashedPhone) userIdentifiers.push({ hashedPhoneNumber: hashedPhone });
+  const eventTimestamp = new Date(row.conversion_time!).toISOString();
 
   const event: DMAEvent = {
-    eventType: 'CONVERSION',
+    eventTimestamp,
     eventSource: 'OTHER',
-    eventDateTime,
-    conversionAction,
-    userIdentifiers,
+    currency: row.currency ?? undefined,
+    conversionValue: row.conversion_value ?? undefined,
   };
 
-  if (row.order_id) event.transactionId = row.order_id;
+  const userData = buildRowUserIdentifiers(hashedEmail, hashedPhone);
+  if (userData) event.userData = userData;
 
-  if (row.raw_gclid) {
-    event.gclidDateTimePair = {
-      gclid: row.raw_gclid,
-      conversionDateTime: eventDateTime,
-    };
-  }
+  if (row.order_id) event.transactionId = row.order_id;
+  if (row.raw_gclid) event.adIdentifiers = { gclid: row.raw_gclid };
 
   return event;
 }
@@ -189,29 +189,23 @@ function parseDMABatchResponse(
   response: DMAIngestEventsResponse,
   rows: OfflineConversionRow[],
 ): GoogleRowResult[] {
-  const errorMap = new Map(
-    (response.eventResults ?? [])
-      .filter((r) => r.error)
-      .map((r) => [r.eventIndex, r.error!]),
-  );
+  // The live events:ingest response only confirms submission (requestId +
+  // fieldWarnings) — there is no per-row eventResults array to attribute a
+  // rejection to a specific row anymore (this file previously relied on one
+  // that doesn't exist on the live API; see googleDelivery.ts's matching
+  // comment for the full explanation). A successful batch POST here means
+  // every row in it was accepted for processing — log any fieldWarnings for
+  // visibility without marking individual rows rejected.
+  if (response.fieldWarnings && response.fieldWarnings.length > 0) {
+    logger.warn({ warnings: response.fieldWarnings }, 'DMA offline upload: batch returned field warnings');
+  }
 
-  return rows.map((row, i) => {
-    const err = errorMap.get(i);
-    if (err) {
-      return {
-        row_index: row.row_index,
-        status: 'rejected' as const,
-        error_code: String(err.code),
-        error_message: mapErrorCode(String(err.code)) || err.message,
-      };
-    }
-    return {
-      row_index: row.row_index,
-      status: 'uploaded' as const,
-      error_code: null,
-      error_message: null,
-    };
-  });
+  return rows.map((row) => ({
+    row_index: row.row_index,
+    status: 'uploaded' as const,
+    error_code: null,
+    error_message: null,
+  }));
 }
 
 // ── Sleep helper for backoff ───────────────────────────────────────────────────
@@ -229,10 +223,15 @@ function sleep(ms: number): Promise<void> {
  */
 function buildOfflineDestinations(config: OfflineConversionConfig, creds: GoogleCredentials): DMADestination[] {
   const destinations: DMADestination[] = [
-    { type: 'GOOGLE_ADS', customerId: cleanCustomerId(config.google_customer_id!) },
+    {
+      operatingAccount: { accountId: cleanCustomerId(config.google_customer_id!), accountType: 'GOOGLE_ADS' },
+      productDestinationId: config.conversion_action_id ?? undefined,
+    },
   ];
   if (creds.ga4_property_id) {
-    destinations.push({ type: 'GA4', propertyId: creds.ga4_property_id });
+    destinations.push({
+      operatingAccount: { accountId: creds.ga4_property_id, accountType: 'GOOGLE_ANALYTICS_PROPERTY' },
+    });
   }
   return destinations;
 }
@@ -321,7 +320,7 @@ export async function uploadOfflineConversions(
 
   // ── Build DMA event payloads ───────────────────────────────────────────
   const dmaEvents = rows.map((row, i) =>
-    buildDMAEventFromRow(row, config, hashedData[i].hashedEmail, hashedData[i].hashedPhone),
+    buildDMAEventFromRow(row, hashedData[i].hashedEmail, hashedData[i].hashedPhone),
   );
 
   // ── Split into 2,000-row batches ───────────────────────────────────────
@@ -354,20 +353,6 @@ export async function uploadOfflineConversions(
           status: 'rejected',
           error_code: apiError.status,
           error_message: mapErrorCode(apiError.status) || apiError.message,
-        });
-      }
-      hasPartialFailure = true;
-    } else if (response.partialFailureError) {
-      logger.error(
-        { message: response.partialFailureError.message },
-        'DMA batch partial failure error',
-      );
-      for (const row of batchRows) {
-        allResults.push({
-          row_index: row.row_index,
-          status: 'rejected',
-          error_code: 'PARTIAL_FAILURE',
-          error_message: response.partialFailureError.message,
         });
       }
       hasPartialFailure = true;

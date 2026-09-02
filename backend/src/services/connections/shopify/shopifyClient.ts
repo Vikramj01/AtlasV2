@@ -78,6 +78,26 @@ export async function registerWebhook(shop: string, accessToken: string, topic: 
   return { id: json.webhook.id };
 }
 
+// Auto-injects a script onto every storefront page via Shopify's ScriptTag
+// API — no merchant theme editing required, works on every Shopify plan
+// (this is a storefront-level mechanism, not checkout customization, so it
+// doesn't need Shopify Plus / checkout extensibility). Used to install the
+// click-ID capture script (see shopifyCaptureScript.ts).
+export async function registerScriptTag(shop: string, accessToken: string, src: string): Promise<{ id: number }> {
+  const response = await shopifyFetch(shop, accessToken, 'script_tags.json', {
+    method: 'POST',
+    body: JSON.stringify({ script_tag: { event: 'onload', src, display_scope: 'online_store' } }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Shopify registerScriptTag failed (${response.status}): ${body}`);
+  }
+
+  const json = await response.json() as { script_tag: { id: number } };
+  return { id: json.script_tag.id };
+}
+
 export async function registerAllWebhooks(shop: string, accessToken: string, backendBaseUrl: string): Promise<Record<string, number>> {
   const topics: Array<[string, string]> = [
     ['orders/paid', `${backendBaseUrl}/api/shopify/webhooks/orders-paid`],

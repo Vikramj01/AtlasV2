@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { DMAClientError, ingestEvents, validateEvents, ingestAudienceMembers } from '../dmaClient';
-import type { DMAIngestEventsRequest, DMAIngestAudienceMembersRequest } from '../dmaTypes';
+import { DMAClientError, ingestEvents, validateEvents, ingestAudienceMembers, removeAudienceMembers } from '../dmaClient';
+import type { DMAIngestEventsRequest, DMAIngestAudienceMembersRequest, DMARemoveAudienceMembersRequest } from '../dmaTypes';
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
@@ -65,20 +65,28 @@ function mockFetch(status: number, body: unknown) {
   } as Response);
 }
 
+const GOOGLE_ADS_DESTINATION = {
+  operatingAccount: { accountId: '1234567890', accountType: 'GOOGLE_ADS' as const },
+  productDestinationId: '999',
+};
+
 const MINIMAL_EVENTS_REQUEST: DMAIngestEventsRequest = {
   events: [{
-    eventType: 'CONVERSION',
-    eventDateTime: '2026-05-20T10:00:00Z',
+    eventTimestamp: '2026-05-20T10:00:00Z',
     eventSource: 'WEB',
-    userIdentifiers: [{ hashedEmail: 'abc123' }],
+    userData: { userIdentifiers: [{ emailAddress: 'abc123' }] },
   }],
-  destinations: [{ type: 'GOOGLE_ADS', customerId: '1234567890' }],
+  destinations: [GOOGLE_ADS_DESTINATION],
 };
 
 const MINIMAL_AUDIENCE_REQUEST: DMAIngestAudienceMembersRequest = {
-  audienceMembers: [{ hashedEmail: 'abc123' }],
-  destinations: [{ type: 'GOOGLE_ADS', customerId: '1234567890' }],
-  operationType: 'CREATE',
+  audienceMembers: [{ userData: { userIdentifiers: [{ emailAddress: 'abc123' }] } }],
+  destinations: [{ operatingAccount: { accountId: '1234567890', accountType: 'GOOGLE_ADS' } }],
+};
+
+const MINIMAL_REMOVE_REQUEST: DMARemoveAudienceMembersRequest = {
+  audienceMembers: [{ userData: { userIdentifiers: [{ emailAddress: 'abc123' }] } }],
+  destinations: [{ operatingAccount: { accountId: '1234567890', accountType: 'GOOGLE_ADS' } }],
 };
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -106,7 +114,7 @@ describe('ingestEvents', () => {
   });
 
   it('calls events:ingest with correct URL and Authorization header', async () => {
-    const fetchSpy = mockFetch(200, { eventResults: [] });
+    const fetchSpy = mockFetch(200, { requestId: 'req-1' });
 
     await ingestEvents(ORG_ID, MINIMAL_EVENTS_REQUEST);
 
@@ -117,8 +125,21 @@ describe('ingestEvents', () => {
     expect((init?.headers as Record<string, string>)['developer-token']).toBe('test-dev-token');
   });
 
+  it('sends the request body with the corrected Event shape (eventTimestamp, nested userData)', async () => {
+    const fetchSpy = mockFetch(200, { requestId: 'req-1' });
+
+    await ingestEvents(ORG_ID, MINIMAL_EVENTS_REQUEST);
+
+    const [, init] = fetchSpy.mock.calls[0];
+    const body = JSON.parse(init?.body as string);
+    expect(body.events[0].eventTimestamp).toBe('2026-05-20T10:00:00Z');
+    expect(body.events[0].userData.userIdentifiers[0].emailAddress).toBe('abc123');
+    expect(body.destinations[0].operatingAccount.accountType).toBe('GOOGLE_ADS');
+    expect(body.destinations[0].productDestinationId).toBe('999');
+  });
+
   it('returns the parsed response body', async () => {
-    const expectedResponse = { eventResults: [{ eventIndex: 0 }] };
+    const expectedResponse = { requestId: 'req-abc' };
     mockFetch(200, expectedResponse);
 
     const result = await ingestEvents(ORG_ID, MINIMAL_EVENTS_REQUEST);
@@ -146,7 +167,7 @@ describe('ingestEvents', () => {
 
     const fetchSpy = vi.spyOn(global, 'fetch')
       .mockResolvedValueOnce({ status: 401, ok: false, text: async () => '{"error":{"code":401,"message":"Unauthorized","status":"UNAUTHENTICATED"}}' } as Response)
-      .mockResolvedValueOnce({ status: 200, ok: true, text: async () => '{"eventResults":[]}' } as Response);
+      .mockResolvedValueOnce({ status: 200, ok: true, text: async () => '{"requestId":"req-1"}' } as Response);
 
     await ingestEvents(ORG_ID, MINIMAL_EVENTS_REQUEST);
 
@@ -162,7 +183,7 @@ describe('ingestEvents', () => {
     const refreshedTokens = { access_token: 'fresh-token', refresh_token: 'rt', expires_at: FUTURE_EXPIRY, token_type: 'Bearer' };
     vi.mocked(resolveTokens).mockResolvedValue(nearExpiryTokens);
     vi.mocked(refreshGoogleToken).mockResolvedValue(refreshedTokens);
-    const fetchSpy = mockFetch(200, { eventResults: [] });
+    const fetchSpy = mockFetch(200, { requestId: 'req-1' });
 
     await ingestEvents(ORG_ID, MINIMAL_EVENTS_REQUEST);
 
@@ -197,7 +218,7 @@ describe('validateEvents', () => {
   });
 
   it('adds validateOnly: true to the request body', async () => {
-    const fetchSpy = mockFetch(200, { validatedEventCount: 1 });
+    const fetchSpy = mockFetch(200, { requestId: 'req-1' });
 
     const { validateOnly: _v, ...requestWithoutFlag } = { ...MINIMAL_EVENTS_REQUEST, validateOnly: false };
     await validateEvents(ORG_ID, requestWithoutFlag);
@@ -215,30 +236,64 @@ describe('ingestAudienceMembers', () => {
     mockTokens();
   });
 
-  it('calls audiencemembers:ingest with correct URL', async () => {
-    const fetchSpy = mockFetch(200, { memberResults: [] });
+  it('calls audienceMembers:ingest with the correctly-cased URL', async () => {
+    const fetchSpy = mockFetch(200, { requestId: 'req-1' });
 
     await ingestAudienceMembers(ORG_ID, MINIMAL_AUDIENCE_REQUEST);
 
     const [url] = fetchSpy.mock.calls[0];
-    expect(url).toBe('https://datamanager.googleapis.com/v1/audiencemembers:ingest');
+    expect(url).toBe('https://datamanager.googleapis.com/v1/audienceMembers:ingest');
   });
 
-  it('includes operationType in the request body', async () => {
-    const fetchSpy = mockFetch(200, { memberResults: [] });
+  it('sends the request body with the corrected AudienceMember shape (nested userData)', async () => {
+    const fetchSpy = mockFetch(200, { requestId: 'req-1' });
 
     await ingestAudienceMembers(ORG_ID, MINIMAL_AUDIENCE_REQUEST);
 
     const [, init] = fetchSpy.mock.calls[0];
     const body = JSON.parse(init?.body as string);
-    expect(body.operationType).toBe('CREATE');
+    expect(body.audienceMembers[0].userData.userIdentifiers[0].emailAddress).toBe('abc123');
+    // The live API has no operationType field at all — CREATE and REMOVE are
+    // separate methods (see removeAudienceMembers below), not a body flag.
+    expect(body.operationType).toBeUndefined();
   });
 
   it('returns parsed response', async () => {
-    const expected = { memberResults: [{ memberIndex: 0 }] };
+    const expected = { requestId: 'req-xyz' };
     mockFetch(200, expected);
 
     const result = await ingestAudienceMembers(ORG_ID, MINIMAL_AUDIENCE_REQUEST);
     expect(result).toEqual(expected);
+  });
+});
+
+describe('removeAudienceMembers', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockDmaCredentials();
+    mockTokens();
+  });
+
+  it('calls audienceMembers:remove — a distinct method from :ingest', async () => {
+    const fetchSpy = mockFetch(200, { requestId: 'req-1' });
+
+    await removeAudienceMembers(ORG_ID, MINIMAL_REMOVE_REQUEST);
+
+    const [url] = fetchSpy.mock.calls[0];
+    expect(url).toBe('https://datamanager.googleapis.com/v1/audienceMembers:remove');
+  });
+
+  it('returns parsed response', async () => {
+    const expected = { requestId: 'req-remove-1' };
+    mockFetch(200, expected);
+
+    const result = await removeAudienceMembers(ORG_ID, MINIMAL_REMOVE_REQUEST);
+    expect(result).toEqual(expected);
+  });
+
+  it('throws DMAClientError on non-2xx response', async () => {
+    mockFetch(400, { error: { code: 400, message: 'Invalid request', status: 'INVALID_ARGUMENT' } });
+
+    await expect(removeAudienceMembers(ORG_ID, MINIMAL_REMOVE_REQUEST)).rejects.toThrow(DMAClientError);
   });
 });

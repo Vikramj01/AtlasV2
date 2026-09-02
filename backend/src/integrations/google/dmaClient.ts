@@ -7,6 +7,8 @@ import type {
   DMAIngestEventsResponse,
   DMAIngestAudienceMembersRequest,
   DMAIngestAudienceMembersResponse,
+  DMARemoveAudienceMembersRequest,
+  DMARemoveAudienceMembersResponse,
   DMAApiError,
 } from './dmaTypes';
 
@@ -128,7 +130,7 @@ export async function ingestEvents(
   request: DMAIngestEventsRequest,
 ): Promise<DMAIngestEventsResponse> {
   logger.info(
-    { orgId, eventCount: request.events.length, destinations: request.destinations.map((d) => d.type) },
+    { orgId, eventCount: request.events.length, destinations: request.destinations.map((d) => d.operatingAccount.accountType) },
     'DMA: ingestEvents',
   );
   return post<DMAIngestEventsResponse>(orgId, '/events:ingest', request);
@@ -145,13 +147,32 @@ export async function validateEvents(
   });
 }
 
+// Path casing matters — Google's custom-method routing is case-sensitive.
+// The real method is `audienceMembers:ingest` (capital M); a prior version
+// of this file called `/audiencemembers:ingest` (lowercase), which does
+// not match the live API's routing.
 export async function ingestAudienceMembers(
   orgId: string,
   request: DMAIngestAudienceMembersRequest,
 ): Promise<DMAIngestAudienceMembersResponse> {
   logger.info(
-    { orgId, memberCount: request.audienceMembers.length, destinations: request.destinations.map((d) => d.type) },
+    { orgId, memberCount: request.audienceMembers.length, destinations: request.destinations.map((d) => d.operatingAccount.accountType) },
     'DMA: ingestAudienceMembers',
   );
-  return post<DMAIngestAudienceMembersResponse>(orgId, '/audiencemembers:ingest', request);
+  return post<DMAIngestAudienceMembersResponse>(orgId, '/audienceMembers:ingest', request);
+}
+
+// CREATE and REMOVE are separate methods on the live API (RemoveAudienceMembersRequest
+// has no operationType field) — this did not previously exist; removal was
+// silently routed through ingestAudienceMembers with a meaningless
+// operationType field the API doesn't recognize.
+export async function removeAudienceMembers(
+  orgId: string,
+  request: DMARemoveAudienceMembersRequest,
+): Promise<DMARemoveAudienceMembersResponse> {
+  logger.info(
+    { orgId, memberCount: request.audienceMembers.length, destinations: request.destinations.map((d) => d.operatingAccount.accountType) },
+    'DMA: removeAudienceMembers',
+  );
+  return post<DMARemoveAudienceMembersResponse>(orgId, '/audienceMembers:remove', request);
 }

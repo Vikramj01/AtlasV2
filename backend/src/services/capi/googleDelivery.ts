@@ -5,11 +5,15 @@
  *   POST https://datamanager.googleapis.com/v1/events:ingest
  *
  * Handles:
- *   - Payload formatting from AtlasEvent → DMAEvent
+ *   - Payload formatting from AtlasEvent → DMAEvent (via dmaEventBuilder.ts,
+ *     shared with googleOfflineUpload.ts)
  *   - OAuth access token refresh (using stored refresh token + GOOGLE_OAUTH_CLIENT_* env vars)
- *   - Partial failure detection from DMA response envelope
  *   - Credential validation via Google tokeninfo endpoint
  *   - validateOnly mode for test events
+ *
+ * The live events:ingest response only confirms submission (requestId +
+ * fieldWarnings) — it does not return per-event delivered/failed status.
+ * See sendGoogleEvents()'s inline comment for the resulting scope boundary.
  */
 
 import type {
@@ -17,20 +21,16 @@ import type {
   HashedIdentifier,
   EventMapping,
   GoogleCredentials,
-  GoogleConversionAdjustment,
   TestResult,
   DeliveryResult,
   ValidationResult,
 } from '@/types/capi';
-import type { ConsentDecisions } from '@/types/consent';
 import type {
-  DMAEvent,
-  DMAEventSource,
-  DMAUserIdentifier,
   DMADestination,
   DMAIngestEventsRequest,
   DMAIngestEventsResponse,
 } from '@/integrations/google/dmaTypes';
+import { buildDMAEvent } from '@/integrations/google/dmaEventBuilder';
 import logger from '@/utils/logger';
 import { getGoogleDedupEntry } from './dedupStore';
 
@@ -44,21 +44,24 @@ function cleanCustomerId(id: string): string {
   return id.replace(/-/g, '');
 }
 
-function buildConversionActionResource(customerId: string, conversionActionId: string): string {
-  return `customers/${cleanCustomerId(customerId)}/conversionActions/${conversionActionId}`;
-}
-
 /**
- * DMA destinations for a Google credential set. Google Ads is always included;
- * GA4 is added alongside it when a property ID is configured, so the same
- * `events:ingest` call lands the conversion in both destinations in one round-trip.
+ * DMA destinations for a Google credential set. Google Ads is always included
+ * (conversion action ID goes on Destination.productDestinationId — the live
+ * API moved this off the Event resource entirely); GA4 is added alongside it
+ * when a property ID is configured, so the same `events:ingest` call lands
+ * the conversion in both destinations in one round-trip.
  */
 export function buildGoogleDestinations(creds: GoogleCredentials): DMADestination[] {
   const destinations: DMADestination[] = [
-    { type: 'GOOGLE_ADS', customerId: cleanCustomerId(creds.customer_id) },
+    {
+      operatingAccount: { accountId: cleanCustomerId(creds.customer_id), accountType: 'GOOGLE_ADS' },
+      productDestinationId: creds.conversion_action_id,
+    },
   ];
   if (creds.ga4_property_id) {
-    destinations.push({ type: 'GA4', propertyId: creds.ga4_property_id });
+    destinations.push({
+      operatingAccount: { accountId: creds.ga4_property_id, accountType: 'GOOGLE_ANALYTICS_PROPERTY' },
+    });
   }
   return destinations;
 }
@@ -104,143 +107,6 @@ export async function refreshGoogleToken(creds: GoogleCredentials): Promise<stri
   return body.access_token;
 }
 
-// ── Consent mapping ───────────────────────────────────────────────────────────
-
-function mapConsentToGoogle(
-  consentState: ConsentDecisions,
-): GoogleConversionAdjustment['consent'] {
-  const map = (v: string | undefined): 'GRANTED' | 'DENIED' | 'UNSPECIFIED' => {
-    if (v === 'granted')  return 'GRANTED';
-    if (v === 'denied')   return 'DENIED';
-    return 'UNSPECIFIED';
-  };
-  return {
-    adUserData:        map(consentState.marketing),
-    adPersonalization: map(consentState.personalisation),
-  };
-}
-
-// ── Payload formatting ────────────────────────────────────────────────────────
-
-export function formatGoogleAdjustment(
-  event: AtlasEvent,
-  mapping: EventMapping,
-  identifiers: HashedIdentifier[],
-  conversionActionResourceName: string,
-): GoogleConversionAdjustment {
-  const userIdentifiers: GoogleConversionAdjustment['userIdentifiers'] = [];
-
-  const addressInfo: {
-    hashedFirstName?: string;
-    hashedLastName?: string;
-    city?: string;
-    state?: string;
-    postalCode?: string;
-    countryCode?: string;
-  } = {};
-  let hasAddressField = false;
-
-  for (const id of identifiers) {
-    switch (id.type) {
-      case 'email':
-        userIdentifiers.push({ hashedEmail: id.value });
-        break;
-      case 'phone':
-        userIdentifiers.push({ hashedPhoneNumber: id.value });
-        break;
-      case 'fn':
-        addressInfo.hashedFirstName = id.value;
-        hasAddressField = true;
-        break;
-      case 'ln':
-        addressInfo.hashedLastName = id.value;
-        hasAddressField = true;
-        break;
-      case 'ct':
-        addressInfo.city = id.value;
-        hasAddressField = true;
-        break;
-      case 'st':
-        addressInfo.state = id.value;
-        hasAddressField = true;
-        break;
-      case 'zp':
-        addressInfo.postalCode = id.value;
-        hasAddressField = true;
-        break;
-      case 'country':
-        addressInfo.countryCode = id.value;
-        hasAddressField = true;
-        break;
-    }
-  }
-
-  if (hasAddressField) {
-    userIdentifiers.push({ addressInfo });
-  }
-
-  const adjustment: GoogleConversionAdjustment = {
-    adjustmentType: 'ENHANCEMENT',
-    conversionAction: conversionActionResourceName,
-    userIdentifiers,
-  };
-
-  if (event.user_data.gclid) {
-    adjustment.gclidDateTimePair = {
-      gclid: event.user_data.gclid,
-      conversionDateTime: new Date(event.event_time * 1000).toISOString(),
-    };
-  }
-
-  if (event.custom_data?.order_id) {
-    adjustment.orderId = event.custom_data.order_id;
-  }
-
-  if (event.user_data.client_user_agent) {
-    adjustment.userAgent = event.user_data.client_user_agent;
-  }
-
-  if (event.consent_state) {
-    adjustment.consent = mapConsentToGoogle(event.consent_state);
-  }
-
-  void mapping;
-  return adjustment;
-}
-
-// ── GoogleConversionAdjustment → DMAEvent ─────────────────────────────────────
-
-// Maps Atlas/Meta action_source values to the DMA EventSource enum.
-// Both online EC and offline conversions use the same DMA endpoint — eventSource
-// is the only field that distinguishes them. Store Sales (IN_STORE) requires
-// Google account allowlisting; surface a warning in the Deployment Wizard UI.
-function actionSourceToDMAEventSource(actionSource: string | undefined): DMAEventSource {
-  switch (actionSource) {
-    case 'physical_store': return 'IN_STORE';
-    case 'phone_call':     return 'PHONE';
-    case 'app':            return 'APP';
-    case 'system_generated':
-    case 'chat':           return 'OTHER';
-    default:               return 'WEB';
-  }
-}
-
-function toDMAEvent(adjustment: GoogleConversionAdjustment, event: AtlasEvent): DMAEvent {
-  const eventDateTime = new Date(event.event_time * 1000).toISOString();
-  return {
-    eventType: 'CONVERSION',
-    eventDateTime,
-    eventSource: actionSourceToDMAEventSource(event.action_source),
-    userIdentifiers: adjustment.userIdentifiers as DMAUserIdentifier[],
-    conversionAction: adjustment.conversionAction,
-    transactionId: adjustment.orderId,
-    gclidDateTimePair: adjustment.gclidDateTimePair
-      ? { gclid: adjustment.gclidDateTimePair.gclid, conversionDateTime: eventDateTime }
-      : undefined,
-    consent: adjustment.consent,
-  };
-}
-
 // ── DMA HTTP layer ─────────────────────────────────────────────────────────────
 
 function buildDMAHeaders(accessToken: string, loginCustomerId?: string): Record<string, string> {
@@ -279,8 +145,10 @@ export async function sendGoogleEvents(
   providerId?: string,
 ): Promise<DeliveryResult[]> {
   if (events.length === 0) return [];
-
-  const resource = buildConversionActionResource(creds.customer_id, creds.conversion_action_id);
+  // mappings kept for call-site signature compatibility with the other
+  // provider adapters — Google/DMA has no event-name mapping concept
+  // (eventName is sent as Atlas's own canonical name), same as before this fix.
+  void mappings;
 
   const dedupResults = await Promise.all(
     events.map(async (e) => {
@@ -309,16 +177,9 @@ export async function sendGoogleEvents(
     }),
   );
 
-  const adjustments = events.map((e, i) => {
-    const mapping =
-      mappings.find((m) => m.atlas_event === e.event_name) ??
-      ({ atlas_event: e.event_name, provider_event: e.event_name } as EventMapping);
-    const adjustment = formatGoogleAdjustment(e, mapping, identifiersPerEvent[i] ?? [], resource);
-    adjustment.orderId = dedupResults[i].orderId;
-    return adjustment;
-  });
-
-  const dmaEvents: DMAEvent[] = events.map((e, i) => toDMAEvent(adjustments[i], e));
+  const dmaEvents = events.map((e, i) =>
+    buildDMAEvent(e, identifiersPerEvent[i] ?? [], { transactionId: dedupResults[i].orderId }),
+  );
 
   const request: DMAIngestEventsRequest = {
     events: dmaEvents,
@@ -355,46 +216,29 @@ export async function sendGoogleEvents(
     }));
   }
 
-  if (body.partialFailureError) {
-    return events.map((_e, i) => ({
-      event_id: dedupResults[i].orderId,
-      status: 'failed' as const,
-      provider_response: body,
-      error_code: 'PARTIAL_FAILURE',
-      error_message: body.partialFailureError!.message,
-      dedup_status: providerId ? dedupResults[i].dedup_status : undefined,
-    }));
+  // The live events:ingest response is submit-confirmation only
+  // ({ requestId, fieldWarnings }) — there is no per-event success/failure
+  // array (that model does not exist on this API anymore; the old
+  // eventResults/partialFailureError handling here was itself part of the
+  // schema drift this fix corrects). A 2xx response means the batch was
+  // accepted for processing, not that every event was confirmed delivered —
+  // true per-event confirmation requires polling requestStatus:retrieve on a
+  // delay, which is out of scope here (see the incident writeup). Treat a
+  // successful submission as 'delivered'; log fieldWarnings for visibility
+  // without failing the batch, since warnings aren't necessarily rejections.
+  if (body.fieldWarnings && body.fieldWarnings.length > 0) {
+    logger.warn({ providerId, warnings: body.fieldWarnings }, 'Google DMA: events:ingest returned field warnings');
   }
 
-  // Build error map from DMA eventResults (keyed by eventIndex)
-  const errorMap = new Map(
-    (body.eventResults ?? [])
-      .filter((r) => r.error)
-      .map((r) => [r.eventIndex, r.error!]),
-  );
-
-  return events.map((_e, i) => {
-    const err = errorMap.get(i);
-    if (err) {
-      return {
-        event_id: dedupResults[i].orderId,
-        status: 'failed' as const,
-        provider_response: body,
-        error_code: String(err.code),
-        error_message: err.message,
-        dedup_status: providerId ? dedupResults[i].dedup_status : undefined,
-      };
-    }
-    return {
-      event_id: dedupResults[i].orderId,
-      status: 'delivered' as const,
-      provider_response: body,
-      dedup_status: providerId ? dedupResults[i].dedup_status : undefined,
-      dedup_key: providerId ? dedupResults[i].dedup_key : undefined,
-      dedup_matched_at:
-        dedupResults[i].dedup_status === 'hit' ? new Date().toISOString() : undefined,
-    };
-  });
+  return events.map((_e, i) => ({
+    event_id: dedupResults[i].orderId,
+    status: 'delivered' as const,
+    provider_response: body,
+    dedup_status: providerId ? dedupResults[i].dedup_status : undefined,
+    dedup_key: providerId ? dedupResults[i].dedup_key : undefined,
+    dedup_matched_at:
+      dedupResults[i].dedup_status === 'hit' ? new Date().toISOString() : undefined,
+  }));
 }
 
 // ── Test event ────────────────────────────────────────────────────────────────
@@ -405,9 +249,8 @@ export async function sendGoogleTestEvent(
   mapping: EventMapping,
   creds: GoogleCredentials,
 ): Promise<TestResult> {
-  const resource = buildConversionActionResource(creds.customer_id, creds.conversion_action_id);
-  const adjustment = formatGoogleAdjustment(event, mapping, identifiers, resource);
-  const dmaEvent = toDMAEvent(adjustment, event);
+  void mapping; // kept for call-site signature compatibility, see sendGoogleEvents
+  const dmaEvent = buildDMAEvent(event, identifiers);
 
   const request: DMAIngestEventsRequest = {
     events: [dmaEvent],

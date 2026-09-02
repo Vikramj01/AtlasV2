@@ -1,10 +1,12 @@
 import crypto from 'crypto';
-import { ingestAudienceMembers } from '@/integrations/google/dmaClient';
+import { ingestAudienceMembers, removeAudienceMembers } from '@/integrations/google/dmaClient';
+import { buildAudienceMember } from '@/integrations/google/dmaEventBuilder';
+import type { AddressFields } from '@/integrations/google/dmaEventBuilder';
 import { pushToLinkedInMatchedAudience, type LinkedInAudiencePushResult } from '@/integrations/linkedin/matchedAudiencesClient';
 import { supabaseAdmin } from '@/services/database/supabase';
 import logger from '@/utils/logger';
 import { logUsage } from '@/services/usage/usageLogger';
-import type { DMAUserIdData, DMADestination } from '@/integrations/google/dmaTypes';
+import type { DMAAudienceMember, DMADestination, DMAAccountType } from '@/integrations/google/dmaTypes';
 
 export interface EnricherContact {
   email?: string;
@@ -47,28 +49,37 @@ function hashName(raw: string) { return sha256(raw.trim().toLowerCase()); }
 
 function cleanCustomerId(id: string) { return id.replace(/-/g, ''); }
 
-function buildUserIdData(contact: EnricherContact): DMAUserIdData {
-  const data: DMAUserIdData = {};
-  if (contact.email) data.hashedEmail = hashEmail(contact.email);
-  if (contact.phone) data.hashedPhoneNumber = hashPhone(contact.phone);
-  if (contact.first_name || contact.last_name || contact.zip || contact.country) {
-    data.addressInfo = {
-      ...(contact.first_name && { hashedFirstName: hashName(contact.first_name) }),
-      ...(contact.last_name && { hashedLastName: hashName(contact.last_name) }),
-      ...(contact.zip && { postalCode: contact.zip }),
-      ...(contact.country && { countryCode: contact.country }),
-    };
-  }
-  return data;
+function buildUserIdData(contact: EnricherContact): DMAAudienceMember {
+  const address: AddressFields = {
+    ...(contact.first_name && { givenName: hashName(contact.first_name) }),
+    ...(contact.last_name && { familyName: hashName(contact.last_name) }),
+    ...(contact.zip && { postalCode: contact.zip }),
+    ...(contact.country && { regionCode: contact.country }),
+  };
+
+  return buildAudienceMember({
+    hashedEmail: contact.email ? hashEmail(contact.email) : undefined,
+    hashedPhone: contact.phone ? hashPhone(contact.phone) : undefined,
+    address: Object.keys(address).length > 0 ? address : undefined,
+  });
 }
 
+// Maps this feature's own destination-type union to DMA's real
+// Destination.operatingAccount.accountType enum (verified against the live
+// Discovery Document — see dmaTypes.ts's header comment).
+const ACCOUNT_TYPE_MAP: Record<'GOOGLE_ADS' | 'GA4' | 'DV360' | 'CM360', DMAAccountType> = {
+  GOOGLE_ADS: 'GOOGLE_ADS',
+  GA4: 'GOOGLE_ANALYTICS_PROPERTY',
+  DV360: 'DISPLAY_VIDEO_ADVERTISER',
+  CM360: 'FLOODLIGHT_CONFIG',
+};
+
 function buildDestinations(dests: EnricherDestination[]): DMADestination[] {
-  return dests.map((d) => ({
-    type: d.type as DMADestination['type'],
-    ...(d.customerId && { customerId: cleanCustomerId(d.customerId) }),
-    ...(d.propertyId && { propertyId: d.propertyId }),
-    ...(d.advertiserId && { advertiserId: d.advertiserId }),
-  }));
+  return dests.map((d) => {
+    const accountType = ACCOUNT_TYPE_MAP[d.type as keyof typeof ACCOUNT_TYPE_MAP];
+    const accountId = d.customerId ? cleanCustomerId(d.customerId) : (d.propertyId ?? d.advertiserId ?? '');
+    return { operatingAccount: { accountId, accountType } };
+  });
 }
 
 export async function runAudienceEnricher(
@@ -117,26 +128,19 @@ export async function runAudienceEnricher(
       const audienceMembers = contacts.map(buildUserIdData);
       const dmaDestinations = buildDestinations(googleDestinations);
 
-      const response = await ingestAudienceMembers(orgId, {
-        audienceMembers,
-        destinations: dmaDestinations,
-        operationType,
-      });
+      // CREATE and REMOVE are separate methods on the live API — a prior
+      // version of this function always called ingestAudienceMembers
+      // regardless of operationType, so REMOVE never actually removed
+      // anyone (same bug as customerMatch.ts, fixed there for the same
+      // reason). Neither method returns per-member results on the live API
+      // (just { requestId }) — a successful call means the batch was
+      // accepted for processing; see googleDelivery.ts's matching comment.
+      const response = operationType === 'REMOVE'
+        ? await removeAudienceMembers(orgId, { audienceMembers, destinations: dmaDestinations })
+        : await ingestAudienceMembers(orgId, { audienceMembers, destinations: dmaDestinations });
 
-      const errorMap = new Map(
-        (response.memberResults ?? [])
-          .filter((r) => r.error)
-          .map((r) => [r.memberIndex, r.error!]),
-      );
-
-      memberErrors = Array.from(errorMap.entries()).map(([index, err]) => ({
-        index,
-        code: String(err.code),
-        message: err.message,
-      }));
-
-      failedCount = errorMap.size;
-      matchedCount = contacts.length - failedCount;
+      failedCount = 0;
+      matchedCount = contacts.length;
       dmaResponse = response as unknown as Record<string, unknown>;
     }
 

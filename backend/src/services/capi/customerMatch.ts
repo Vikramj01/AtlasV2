@@ -2,14 +2,20 @@
  * Customer Match ingestion service
  *
  * Hashes contact PII (SHA-256) and calls the Google DMA
- * audiencemembers:ingest endpoint via dmaClient.
+ * audienceMembers:ingest / audienceMembers:remove endpoints via dmaClient.
+ * These are separate methods on the live API (confirmed against the raw
+ * Discovery Document) — a prior version of this file sent a synthetic
+ * `operationType` field to a single `:ingest` call for both, which the
+ * live API doesn't recognize, so REMOVE never actually removed anyone.
  *
  * PII is NEVER logged — only aggregate counts are emitted.
  */
 
 import { createHash } from 'crypto';
-import { ingestAudienceMembers, DMAClientError } from '@/integrations/google/dmaClient';
-import type { DMAUserIdData } from '@/integrations/google/dmaTypes';
+import { ingestAudienceMembers, removeAudienceMembers, DMAClientError } from '@/integrations/google/dmaClient';
+import { buildAudienceMember } from '@/integrations/google/dmaEventBuilder';
+import type { AddressFields } from '@/integrations/google/dmaEventBuilder';
+import type { DMADestination, DMAAudienceMember } from '@/integrations/google/dmaTypes';
 import logger from '@/utils/logger';
 import { logUsage } from '@/services/usage/usageLogger';
 
@@ -57,35 +63,21 @@ function cleanCustomerId(customerId: string): string {
   return customerId.replace(/-/g, '');
 }
 
-// ── Contact → DMAUserIdData ───────────────────────────────────────────────────
+// ── Contact → DMAAudienceMember ───────────────────────────────────────────────
 
-function buildUserIdData(contact: AudienceContact): DMAUserIdData {
-  const member: DMAUserIdData = {};
+function buildMember(contact: AudienceContact): DMAAudienceMember {
+  const address: AddressFields = {
+    ...(contact.first_name !== undefined && { givenName: hashName(contact.first_name) }),
+    ...(contact.last_name !== undefined && { familyName: hashName(contact.last_name) }),
+    ...(contact.zip !== undefined && { postalCode: contact.zip }),
+    ...(contact.country !== undefined && { regionCode: contact.country }),
+  };
 
-  if (contact.email) {
-    member.hashedEmail = hashEmail(contact.email);
-  }
-
-  if (contact.phone) {
-    member.hashedPhoneNumber = hashPhone(contact.phone);
-  }
-
-  const hasAddressField =
-    contact.first_name !== undefined ||
-    contact.last_name !== undefined ||
-    contact.zip !== undefined ||
-    contact.country !== undefined;
-
-  if (hasAddressField) {
-    member.addressInfo = {
-      ...(contact.first_name !== undefined && { hashedFirstName: hashName(contact.first_name) }),
-      ...(contact.last_name !== undefined && { hashedLastName: hashName(contact.last_name) }),
-      ...(contact.zip !== undefined && { postalCode: contact.zip }),
-      ...(contact.country !== undefined && { countryCode: contact.country }),
-    };
-  }
-
-  return member;
+  return buildAudienceMember({
+    hashedEmail: contact.email ? hashEmail(contact.email) : undefined,
+    hashedPhone: contact.phone ? hashPhone(contact.phone) : undefined,
+    address: Object.keys(address).length > 0 ? address : undefined,
+  });
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -96,43 +88,28 @@ export async function ingestCustomerMatchBatch(
   contacts: AudienceContact[],
   operationType: 'CREATE' | 'REMOVE',
 ): Promise<AudienceIngestResult> {
-  const audienceMembers: DMAUserIdData[] = contacts.map(buildUserIdData);
+  const audienceMembers: DMAAudienceMember[] = contacts.map(buildMember);
+  const destinations: DMADestination[] = [
+    { operatingAccount: { accountId: cleanCustomerId(customerId), accountType: 'GOOGLE_ADS' } },
+  ];
 
-  const response = await ingestAudienceMembers(orgId, {
-    audienceMembers,
-    destinations: [
-      {
-        type: 'GOOGLE_ADS',
-        customerId: cleanCustomerId(customerId),
-      },
-    ],
-    operationType,
-  });
+  const response = operationType === 'REMOVE'
+    ? await removeAudienceMembers(orgId, { audienceMembers, destinations })
+    : await ingestAudienceMembers(orgId, { audienceMembers, destinations });
 
-  // Build an index → error map from memberResults
-  const errorMap = new Map<number, { code: string; message: string }>();
-  for (const result of response.memberResults ?? []) {
-    if (result.error) {
-      errorMap.set(result.memberIndex, {
-        code: String(result.error.code),
-        message: result.error.message,
-      });
-    }
-  }
-
+  // Neither audienceMembers:ingest nor :remove return per-member results on
+  // the live API (just { requestId }) — a successful call means the whole
+  // batch was accepted for processing. See googleDelivery.ts's matching
+  // comment on sendGoogleEvents for the full explanation of this API-wide
+  // submit-confirmation-only response model.
   const record_count = contacts.length;
-  const failed_count = errorMap.size;
-  const matched_count = record_count - failed_count;
-
-  const member_errors = Array.from(errorMap.entries()).map(([index, err]) => ({
-    index,
-    code: err.code,
-    message: err.message,
-  }));
+  const failed_count = 0;
+  const matched_count = record_count;
+  const member_errors: Array<{ index: number; code: string; message: string }> = [];
 
   logger.info(
-    { orgId, record_count, matched_count, failed_count },
-    'Customer Match batch ingested',
+    { orgId, operationType, record_count, requestId: response.requestId },
+    'Customer Match batch submitted',
   );
 
   void logUsage({
@@ -140,7 +117,7 @@ export async function ingestCustomerMatchBatch(
     event_type: 'dma_ingest_event',
     dma_member_count: contacts.length,
     dma_matched_count: matched_count,
-    metadata: { customer_id: customerId },
+    metadata: { customer_id: customerId, operation_type: operationType },
   });
 
   return {
