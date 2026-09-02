@@ -402,7 +402,7 @@ export function generateGTMContainer(
 
   // ── Click ID URL Query variables ──────────────────────────────────────────
 
-  const CLICK_ID_KEYS = ['gclid', 'fbclid', 'wbraid', 'gbraid'] as const;
+  const CLICK_ID_KEYS = ['gclid', 'fbclid', 'wbraid', 'gbraid', 'ttclid'] as const;
   for (const key of CLICK_ID_KEYS) {
     variables.push({
       ...stub(),
@@ -545,7 +545,7 @@ export function generateGTMContainer(
   });
 
   // ── Click ID cookie capture tag ──────────────────────────────────────────
-  // Reads gclid, gbraid, wbraid from URL params on every page load.
+  // Reads gclid, gbraid, wbraid, ttclid from URL params on every page load.
   // Stores each in a first-party cookie with a 90-day TTL so the click ID
   // survives across pages and sessions (important for lead gen flows).
   // Also pushes captured IDs to the dataLayer for use by GA4 and EC tags.
@@ -558,7 +558,7 @@ export function generateGTMContainer(
     parameter: [
       tmpl('html', `<script>
 (function() {
-  var CLICK_IDS = ['gclid', 'gbraid', 'wbraid'];
+  var CLICK_IDS = ['gclid', 'gbraid', 'wbraid', 'ttclid'];
   var TTL_DAYS  = 90;
 
   var expires = new Date();

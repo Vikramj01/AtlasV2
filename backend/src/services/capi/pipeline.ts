@@ -108,6 +108,7 @@ function buildHashedIdentifiers(
   pushRaw('gclid',  ud.gclid);
   pushRaw('wbraid', ud.wbraid);
   pushRaw('gbraid', ud.gbraid);
+  pushRaw('ttclid', ud.ttclid);
 
   return results;
 }

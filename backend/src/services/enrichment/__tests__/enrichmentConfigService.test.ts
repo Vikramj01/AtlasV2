@@ -49,6 +49,7 @@ const baseIdentityConfig = (): ClientIdentityConfig => ({
   gclid_field: 'gclid',
   wbraid_field: 'wbraid',
   gbraid_field: 'gbraid',
+  ttclid_field: 'ttclid',
   auto_capture_ip: true,
   auto_capture_ua: true,
   enabled_identifiers: ['email', 'phone', 'fn', 'ln', 'zp', 'country', 'external_id', 'fbc', 'fbp', 'gclid'],
@@ -145,6 +146,7 @@ describe('applyIdentityConfig', () => {
     _fbc: 'fb.1.1234.abcdef',
     _fbp: 'fb.1.5678.xyz',
     gclid: 'Cj0KCQ',
+    ttclid: 'ttclid-abc123',
   };
 
   it('populates all enabled identity fields', () => {
@@ -163,6 +165,18 @@ describe('applyIdentityConfig', () => {
     expect(result.user_data.fbc).toBe('fb.1.1234.abcdef');
     expect(result.user_data.fbp).toBe('fb.1.5678.xyz');
     expect(result.user_data.gclid).toBe('Cj0KCQ');
+  });
+
+  it('resolves ttclid from flat raw data when enabled', () => {
+    const config = baseIdentityConfig();
+    config.enabled_identifiers = [...config.enabled_identifiers, 'ttclid'];
+    const result = applyIdentityConfig(baseAtlasEvent(), rawData, config);
+    expect(result.user_data.ttclid).toBe('ttclid-abc123');
+  });
+
+  it('does not resolve ttclid when not enabled', () => {
+    const result = applyIdentityConfig(baseAtlasEvent(), rawData, baseIdentityConfig());
+    expect(result.user_data.ttclid).toBeUndefined();
   });
 
   it('auto-captures IP and UA from request context', () => {

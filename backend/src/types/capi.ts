@@ -49,7 +49,8 @@ export type IdentifierType =
   | 'fbp'     // Meta browser cookie
   | 'gclid'   // Google click ID
   | 'wbraid'  // Google iOS web-to-app
-  | 'gbraid'; // Google iOS app-to-web
+  | 'gbraid'  // Google iOS app-to-web
+  | 'ttclid'; // TikTok click ID
 
 export type ActionSource =
   | 'website'
@@ -258,6 +259,7 @@ export interface AtlasEvent {
     gclid?: string;              // Google Click ID
     wbraid?: string;
     gbraid?: string;
+    ttclid?: string;             // TikTok Click ID
     client_user_agent?: string;
     client_ip_address?: string;
   };

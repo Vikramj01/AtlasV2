@@ -17,6 +17,7 @@ const baseIdentity: ClientIdentityConfig = {
   gclid_field: '',
   wbraid_field: '',
   gbraid_field: '',
+  ttclid_field: '',
   auto_capture_ip: true,
   auto_capture_ua: true,
   enabled_identifiers: ['email', 'phone', 'fbc', 'fbp'],

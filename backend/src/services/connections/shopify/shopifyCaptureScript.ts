@@ -1,8 +1,8 @@
 // Storefront click-ID capture script, auto-injected via Shopify's ScriptTag
 // API (see registerScriptTag() in shopifyClient.ts). Runs on every
-// storefront page: captures gclid/fbclid/wbraid/gbraid from the landing
-// URL, persists them locally, and pushes them as Shopify cart attributes
-// so they ride through checkout into the completed order's
+// storefront page: captures gclid/fbclid/wbraid/gbraid/ttclid from the
+// landing URL, persists them locally, and pushes them as Shopify cart
+// attributes so they ride through checkout into the completed order's
 // note_attributes (read back out in shopifyOrderMapper.ts).
 //
 // Cookie conventions match what Atlas's own GTM container generator
@@ -14,18 +14,20 @@
 //   _fbc    = "fb.1.<Date.now()_ms>.<fbclid>"   (Meta's own _fbc format —
 //             the CAPI pipeline expects this exact formatted value for
 //             user_data.fbc, not the raw fbclid)
-//   wbraid/gbraid have no established computed format anywhere in this
-//   codebase — stored raw, matching gtmContainerGenerator.ts's
-//   "_atlas_wbraid"/"_atlas_gbraid" cookies.
+//   wbraid/gbraid/ttclid have no established computed format anywhere in
+//   this codebase — stored raw, matching gtmContainerGenerator.ts's
+//   "_atlas_wbraid"/"_atlas_gbraid"/"_atlas_ttclid" cookies.
 //
 // The cart-attribute NAMES below (atlas_gclid/atlas_fbc/atlas_wbraid/
-// atlas_gbraid) are Atlas's own — defined and read back only by Atlas's
-// own code (this script + shopifyOrderMapper.ts), not a Shopify or
-// third-party convention, so there's no external-field-name guessing risk.
+// atlas_gbraid/atlas_ttclid) are Atlas's own — defined and read back only
+// by Atlas's own code (this script + shopifyOrderMapper.ts), not a
+// Shopify or third-party convention, so there's no external-field-name
+// guessing risk.
 //
-// gclid/wbraid/gbraid are pushed RAW (matching DMA's AdIdentifiers shape,
-// which wants the bare click ID) — only fbc is pushed pre-formatted
-// (matching Meta CAPI's user_data.fbc expectation).
+// gclid/wbraid/gbraid/ttclid are pushed RAW (matching DMA's AdIdentifiers
+// shape and TikTok's user.ttclid field, both of which want the bare click
+// ID) — only fbc is pushed pre-formatted (matching Meta CAPI's
+// user_data.fbc expectation).
 
 export const SHOPIFY_CAPTURE_SCRIPT = `
 (function() {
@@ -56,6 +58,8 @@ export const SHOPIFY_CAPTURE_SCRIPT = `
   if (wbraid) setCookie('_atlas_wbraid', wbraid, 90);
   var gbraid = getQueryParam('gbraid');
   if (gbraid) setCookie('_atlas_gbraid', gbraid, 90);
+  var ttclid = getQueryParam('ttclid');
+  if (ttclid) setCookie('_atlas_ttclid', ttclid, 90);
 
   var attributes = {};
   var storedGclid = getCookie('_atlas_gclid_raw');
@@ -66,6 +70,8 @@ export const SHOPIFY_CAPTURE_SCRIPT = `
   if (storedWbraid) attributes['atlas_wbraid'] = storedWbraid;
   var storedGbraid = getCookie('_atlas_gbraid');
   if (storedGbraid) attributes['atlas_gbraid'] = storedGbraid;
+  var storedTtclid = getCookie('_atlas_ttclid');
+  if (storedTtclid) attributes['atlas_ttclid'] = storedTtclid;
 
   if (Object.keys(attributes).length === 0) return;
 

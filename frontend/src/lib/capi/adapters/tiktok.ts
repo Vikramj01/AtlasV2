@@ -42,6 +42,7 @@ export interface TikTokEventPayload {
       email?: string;         // SHA-256 hashed
       phone_number?: string;  // SHA-256 hashed (E.164 format)
       external_id?: string;   // SHA-256 hashed
+      ttclid?: string;        // Raw — not hashed
     };
     user_agent?: string;
     ip?: string;
@@ -100,6 +101,7 @@ export function formatTikTokPayload(
       case 'email':       user.email        = id.value; break;
       case 'phone':       user.phone_number = id.value; break;
       case 'external_id': user.external_id  = id.value; break;
+      case 'ttclid':      user.ttclid       = id.value; break;
     }
   }
 

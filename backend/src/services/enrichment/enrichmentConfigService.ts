@@ -108,6 +108,10 @@ export function applyIdentityConfig(
     const v = resolve(identityConfig.gbraid_field) ?? rawEventData[identityConfig.gbraid_field];
     if (typeof v === 'string' && v) ud.gbraid = v;
   }
+  if (enabled.has('ttclid')) {
+    const v = resolve(identityConfig.ttclid_field) ?? rawEventData[identityConfig.ttclid_field];
+    if (typeof v === 'string' && v) ud.ttclid = v;
+  }
 
   // Auto-capture from request context
   if (identityConfig.auto_capture_ip && requestIp) ud.client_ip_address = requestIp;

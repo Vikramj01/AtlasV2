@@ -24,6 +24,7 @@ export interface IdentityFieldMapping {
   gclid?: string;
   wbraid?: string;
   gbraid?: string;
+  ttclid?: string;
   client_ip_address?: 'auto' | null;
   client_user_agent?: 'auto' | null;
 }
@@ -43,6 +44,7 @@ export interface ClientIdentityConfig {
   gclid_field: string;
   wbraid_field: string;
   gbraid_field: string;
+  ttclid_field: string;
   auto_capture_ip: boolean;
   auto_capture_ua: boolean;
   enabled_identifiers: IdentifierType[];
@@ -145,6 +147,7 @@ export interface SaveIdentityConfigRequest {
   gclid_field?: string;
   wbraid_field?: string;
   gbraid_field?: string;
+  ttclid_field?: string;
   auto_capture_ip?: boolean;
   auto_capture_ua?: boolean;
   enabled_identifiers?: IdentifierType[];

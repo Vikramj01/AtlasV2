@@ -12,8 +12,9 @@
  *     exists for a pixel_id + access_token pair without also holding an advertiser_id)
  *
  * TikTok matching uses SHA-256 hashed PII (each field as a one-item array) plus ttclid,
- * the TikTok click identifier — Atlas has no dedicated ttclid field today, so click-ID
- * matching is IP/UA/PII only until one is added.
+ * the TikTok click identifier — captured raw (unhashed, per TikTok's spec) alongside
+ * gclid/fbclid/wbraid/gbraid via the GTM click-ID capture tag, the Shopify storefront
+ * capture script, and `client_identity_configs.ttclid_field`.
  *
  * Reference:
  *   https://business-api.tiktok.com/portal/docs?id=1771101186666498
@@ -55,6 +56,7 @@ export interface TikTokTrackEvent {
     email?: string[];
     phone?: string[];
     external_id?: string[];
+    ttclid?: string;
     ip?: string;
     user_agent?: string;
   };
@@ -84,6 +86,7 @@ export function formatTikTokEvent(
       case 'email':       user.email       = [id.value]; break;
       case 'phone':       user.phone       = [id.value]; break;
       case 'external_id': user.external_id = [id.value]; break;
+      case 'ttclid':      user.ttclid      = id.value;   break;
     }
   }
   if (event.user_data.client_ip_address) user.ip = event.user_data.client_ip_address;
