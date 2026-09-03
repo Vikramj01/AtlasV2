@@ -4,7 +4,7 @@
  *   - Outbound network requests (GA4, Meta, Google Ads, GTM, sGTM, LinkedIn, TikTok, Microsoft UET)
  *   - Cookies and localStorage snapshots
  */
-import type { DataLayerEvent, NetworkRequest, CookieSnapshot, LocalStorageSnapshot } from '@/types/audit';
+import type { DataLayerEvent, NetworkRequest, CookieSnapshot, LocalStorageSnapshot, DetailedCookie, ConsoleError } from '@/types/audit';
 
 // URLs we want to capture (ad/analytics platforms)
 const TRACKED_URL_PATTERNS = [
@@ -158,6 +158,7 @@ export function interceptNetworkRequests(
   page.on('response', (rawRes: unknown) => {
     const res = rawRes as {
       url(): string;
+      status(): number;
       request(): { timing?(): { startTime: number; responseEnd: number } };
     };
     const url = res.url();
@@ -165,6 +166,11 @@ export function interceptNetworkRequests(
     const step = getStep();
     const existing = sink.find((r) => r.url === url && r.step === step);
     if (existing) {
+      try {
+        existing.statusCode = res.status();
+      } catch {
+        // Status not always available
+      }
       try {
         const timing = res.request().timing?.();
         if (timing) {
@@ -175,21 +181,87 @@ export function interceptNetworkRequests(
       }
     }
   });
+
+  // A request that never got a response at all (DNS failure, connection
+  // refused, blocked by the browser/an extension) — used by NO_TAG_LOAD_ERRORS
+  // (L1.16): a tag that fails to load reports as absent everywhere else, not
+  // as broken, so this is the only place that distinguishes the two.
+  page.on('requestfailed', (rawReq: unknown) => {
+    const req = rawReq as { url(): string };
+    const url = req.url();
+    if (!shouldCaptureUrl(url)) return;
+    const step = getStep();
+    const existing = sink.find((r) => r.url === url && r.step === step);
+    if (existing) existing.failed = true;
+  });
 }
 
 /**
- * Capture a cookie snapshot from the current page context.
+ * Set up console-error and uncaught-exception interception on a
+ * Playwright page — used by Hygiene & Integrity's NO_CONSOLE_ERRORS_FROM_
+ * MEASUREMENT_CODE (L12.4) and CONVERSION_SURFACE_REACHABLE_WITHOUT_
+ * JAVASCRIPT_ERRORS (L12.8). Registered once for the whole session, same
+ * StepRef pattern as interceptNetworkRequests.
+ */
+export function interceptConsoleErrors(
+  page: {
+    on: (event: string, handler: (arg: unknown) => void) => void;
+  },
+  sink: ConsoleError[],
+  stepNameOrRef: string | StepRef,
+): void {
+  const getStep = (): string =>
+    typeof stepNameOrRef === 'string' ? stepNameOrRef : stepNameOrRef.current;
+
+  page.on('console', (rawMsg: unknown) => {
+    const msg = rawMsg as { type?: () => string; text?: () => string };
+    if (msg.type?.() !== 'error') return;
+    sink.push({ message: msg.text?.() ?? '', step: getStep() });
+  });
+
+  page.on('pageerror', (rawErr: unknown) => {
+    const err = rawErr as { message?: string } | string;
+    const message = typeof err === 'string' ? err : err.message ?? String(err);
+    sink.push({ message, step: getStep() });
+  });
+}
+
+/**
+ * Capture a cookie snapshot from the current page context — both the flat
+ * name→value map existing callers rely on, and each cookie's full
+ * attribute set (domain/expires/secure/sameSite) for Storage Durability
+ * (L3) rules that need more than presence.
  */
 export async function captureCookies(
-  context: { cookies: (urls?: string[]) => Promise<Array<{ name: string; value: string }>> },
+  context: {
+    cookies: (urls?: string[]) => Promise<Array<{
+      name: string;
+      value: string;
+      domain?: string;
+      path?: string;
+      expires?: number;
+      secure?: boolean;
+      sameSite?: string;
+    }>>;
+  },
   step: string,
 ): Promise<CookieSnapshot> {
   const cookies = await context.cookies();
   const cookieMap: Record<string, string> = {};
+  const detailed: DetailedCookie[] = [];
   for (const c of cookies) {
     cookieMap[c.name] = c.value;
+    detailed.push({
+      name: c.name,
+      value: c.value,
+      domain: c.domain ?? '',
+      path: c.path ?? '/',
+      expires: c.expires ?? -1,
+      secure: c.secure ?? false,
+      sameSite: c.sameSite === 'Strict' || c.sameSite === 'None' ? c.sameSite : 'Lax',
+    });
   }
-  return { step, cookies: cookieMap };
+  return { step, cookies: cookieMap, detailed };
 }
 
 /**
@@ -205,6 +277,29 @@ export async function captureLocalStorage(
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
         if (key) result[key] = localStorage.getItem(key) ?? '';
+      }
+      return result;
+    });
+    return { step, entries };
+  } catch {
+    return { step, entries: {} };
+  }
+}
+
+/**
+ * Capture a sessionStorage snapshot from the page — see AuditData.sessionStorage's
+ * docstring on why this is captured separately from localStorage.
+ */
+export async function captureSessionStorage(
+  page: { evaluate: (fn: () => Record<string, string>) => Promise<Record<string, string>> },
+  step: string,
+): Promise<LocalStorageSnapshot> {
+  try {
+    const entries = await page.evaluate(() => {
+      const result: Record<string, string> = {};
+      for (let i = 0; i < sessionStorage.length; i++) {
+        const key = sessionStorage.key(i);
+        if (key) result[key] = sessionStorage.getItem(key) ?? '';
       }
       return result;
     });
@@ -235,4 +330,19 @@ export function mergeLocalStorage(snapshots: LocalStorageSnapshot[]): Record<str
     Object.assign(merged, snap.entries);
   }
   return merged;
+}
+
+/**
+ * Merge all cookie snapshots' detailed attribute sets into one array, one
+ * entry per cookie name — later steps override earlier ones (most recent
+ * wins), same semantics as mergeCookies above.
+ */
+export function mergeDetailedCookies(snapshots: CookieSnapshot[]): DetailedCookie[] {
+  const merged = new Map<string, DetailedCookie>();
+  for (const snap of snapshots) {
+    for (const cookie of snap.detailed ?? []) {
+      merged.set(cookie.name, cookie);
+    }
+  }
+  return [...merged.values()];
 }

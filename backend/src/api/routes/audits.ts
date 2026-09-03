@@ -52,15 +52,53 @@ router.get('/', async (req: Request, res: Response) => {
 
 // ─── POST /api/audits/start ───────────────────────────────────────────────────
 
+const SITE_TYPES = ['plg_saas', 'ecommerce', 'lead_gen_b2b', 'marketplace', 'app_install', 'subscription_media'] as const;
+const DECLARED_PLATFORMS = ['google_ads', 'meta', 'tiktok', 'linkedin', 'microsoft', 'reddit', 'pinterest'] as const;
+const TRAFFIC_REGIONS = ['eea', 'uk', 'switzerland', 'brazil', 'us', 'other'] as const;
+
+// Bridges a v2 site_type onto the legacy (NOT NULL) funnel_type column so the
+// audits row stays valid and the current journey simulator — still keyed by
+// FunnelType, not SiteType — has something to run against. plg_saas/ecommerce/
+// lead_gen_b2b map onto their existing journey configs 1:1; the 3 net-new site
+// types fall back to the closest existing journey shape until dedicated
+// per-site-type journey configs land (Check Register engine core work).
+const SITE_TYPE_TO_LEGACY_FUNNEL: Record<(typeof SITE_TYPES)[number], 'ecommerce' | 'saas' | 'lead_gen'> = {
+  plg_saas: 'saas',
+  ecommerce: 'ecommerce',
+  lead_gen_b2b: 'lead_gen',
+  marketplace: 'ecommerce',
+  app_install: 'saas',
+  subscription_media: 'saas',
+};
+
 const StartAuditSchema = z.object({
   website_url: z.string().min(1),
-  funnel_type: z.enum(['ecommerce', 'saas', 'lead_gen']),
+  // v1 (legacy) — required unless site_type (v2) is supplied.
+  funnel_type: z.enum(['ecommerce', 'saas', 'lead_gen']).optional(),
   region: z.enum(['us', 'eu', 'global']).optional(),
+  // v2 Check Register Scan Inputs.
+  site_type: z.enum(SITE_TYPES).optional(),
+  secondary_motion: z.enum(['none', 'sales_assisted', 'hybrid']).optional(),
+  declared_platforms: z.array(z.enum(DECLARED_PLATFORMS)).optional(),
+  primary_channel: z.enum(DECLARED_PLATFORMS).optional(),
+  monthly_spend_band: z.string().optional(),
+  traffic_regions: z.array(z.enum(TRAFFIC_REGIONS)).optional(),
+  cmp: z.enum(['onetrust', 'cookiebot', 'usercentrics', 'custom', 'none']).optional(),
+  product_domain: z.string().optional(),
+  checkout_domain: z.string().optional(),
+  additional_properties: z.array(z.string()).optional(),
+  declared_conversions: z.array(z.object({ name: z.string(), kind: z.enum(['primary', 'secondary']) })).optional(),
   url_map: z.record(z.string(), z.string()),
   test_email: z.string().email().optional(),
   test_phone: z.string().optional(),
   client_id: z.string().uuid().optional(),
-});
+}).refine(
+  (data) => !!data.funnel_type || !!data.site_type,
+  { message: 'funnel_type or site_type is required', path: ['funnel_type'] },
+).refine(
+  (data) => !data.site_type || ((data.declared_platforms?.length ?? 0) > 0 && !!data.primary_channel && (data.traffic_regions?.length ?? 0) > 0),
+  { message: 'site_type requires declared_platforms, primary_channel, and traffic_regions', path: ['site_type'] },
+);
 
 router.post('/start', auditLimiter, async (req: Request, res: Response) => {
   const { user } = req as AuthenticatedRequest;
@@ -70,7 +108,14 @@ router.post('/start', auditLimiter, async (req: Request, res: Response) => {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid request body' });
     return;
   }
-  const { website_url, funnel_type, region, url_map, test_email, test_phone, client_id } = parsed.data;
+  const {
+    website_url, region, url_map, test_email, test_phone, client_id,
+    site_type, secondary_motion, declared_platforms, primary_channel, monthly_spend_band,
+    traffic_regions, cmp, product_domain, checkout_domain, additional_properties, declared_conversions,
+  } = parsed.data;
+
+  const isV2 = !!site_type;
+  const funnel_type = isV2 ? SITE_TYPE_TO_LEGACY_FUNNEL[site_type] : parsed.data.funnel_type!;
 
   const websiteUrlResult = validateUrl(website_url);
   if (!websiteUrlResult.valid) {
@@ -103,6 +148,20 @@ router.post('/start', auditLimiter, async (req: Request, res: Response) => {
       test_email,
       test_phone,
       client_id,
+      ...(isV2 && {
+        rule_set_version: 'v2',
+        site_type,
+        secondary_motion,
+        declared_platforms,
+        primary_channel,
+        monthly_spend_band,
+        traffic_regions,
+        cmp,
+        product_domain: product_domain || website_url,
+        checkout_domain,
+        additional_properties,
+        declared_conversions,
+      }),
     });
 
     await auditQueue.add({
@@ -112,9 +171,23 @@ router.post('/start', auditLimiter, async (req: Request, res: Response) => {
       region: region ?? 'us',
       url_map,
       // test_email / test_phone are stored in the audits DB row, not the queue
+      ...(isV2 && {
+        rule_set_version: 'v2',
+        site_type,
+        secondary_motion,
+        declared_platforms,
+        primary_channel,
+        monthly_spend_band,
+        traffic_regions,
+        cmp,
+        product_domain: product_domain || website_url,
+        checkout_domain,
+        additional_properties,
+        declared_conversions,
+      }),
     });
 
-    logger.info({ audit_id: audit.id, user_id: user.id }, 'Audit queued');
+    logger.info({ audit_id: audit.id, user_id: user.id, rule_set_version: isV2 ? 'v2' : 'v1-legacy' }, 'Audit queued');
 
     res.status(202).json({
       audit_id: audit.id,

@@ -135,22 +135,24 @@ export function generateReport(
   results: ValidationResult[],
   siteSetup: SiteSetupSummary,
   customJourneyStages?: JourneyStage[],
+  customPlatformBreakdown?: PlatformBreakdown[],
 ): ReportJSON {
   const resultMap = new Map(results.map((r) => [r.rule_id, r]));
-  const failedRuleIds = results.filter((r) => r.status === 'fail').map((r) => r.rule_id);
-  const overallStatus = determineOverallStatus(failedRuleIds);
-  const businessSummary = generateBusinessSummary(failedRuleIds);
+  const overallStatus = determineOverallStatus(results);
+  const businessSummary = generateBusinessSummary(results);
 
   return {
     audit_id: auditData.audit_id,
+    website_url: auditData.website_url,
     generated_at: new Date().toISOString(),
+    rule_set_version: auditData.rule_set_version,
     executive_summary: {
       overall_status: overallStatus,
       business_summary: businessSummary,
       scores,
     },
     journey_stages: customJourneyStages ?? buildJourneyStages(auditData.funnel_type, resultMap),
-    platform_breakdown: buildPlatformBreakdown(resultMap),
+    platform_breakdown: customPlatformBreakdown ?? buildPlatformBreakdown(resultMap),
     issues,
     site_setup: siteSetup,
     technical_appendix: {

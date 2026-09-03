@@ -4,7 +4,7 @@
  * ReportJSON inputs — from minimal to full 26-rule reports.
  */
 import { describe, it, expect } from 'vitest';
-import { generatePDF } from '../pdfGenerator';
+import { generatePDF, computeRuleOverviewStats } from '../pdfGenerator';
 import type { ReportJSON, ValidationResult, ReportIssue } from '@/types/audit';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -38,6 +38,7 @@ function makeIssue(overrides?: Partial<ReportIssue>): ReportIssue {
 function makeMinimalReport(overrides?: Partial<ReportJSON>): ReportJSON {
   return {
     audit_id: 'test-audit-pdf-001',
+    website_url: 'https://example.com',
     generated_at: new Date().toISOString(),
     executive_summary: {
       overall_status: 'healthy',
@@ -72,6 +73,53 @@ function makeMinimalReport(overrides?: Partial<ReportJSON>): ReportJSON {
     ...overrides,
   };
 }
+
+// ── computeRuleOverviewStats ────────────────────────────────────────────────────
+// Regression coverage for the "N rules validated" headline being sourced from
+// the raw (skipped-inclusive) results array instead of the same active set the
+// Technical Appendix table renders — e.g. a saas audit where 8 ecommerce-only
+// rules never run (excluded, not 'skipped') and 17 tag_configuration/
+// implementation_drift rules return 'skipped' (no GTM container connected):
+// 35 results in the array, but only 18 are "validated" (5 passed + 13 failed),
+// matching what the appendix actually lists.
+
+describe('computeRuleOverviewStats', () => {
+  it('excludes skipped results from the validated count', () => {
+    const results: ValidationResult[] = [
+      makeValidationResult('A', 'pass'),
+      makeValidationResult('B', 'fail'),
+      makeValidationResult('C', 'warning'),
+      { ...makeValidationResult('D'), status: 'skipped' },
+      { ...makeValidationResult('E'), status: 'skipped' },
+    ];
+    const stats = computeRuleOverviewStats(results);
+    expect(stats.validated).toHaveLength(3);
+    expect(stats.passed).toBe(1);
+    expect(stats.failed).toBe(1);
+    expect(stats.warnings).toBe(1);
+  });
+
+  it('validated count matches passed + failed + warnings, not the raw array length', () => {
+    const results: ValidationResult[] = [
+      ...Array.from({ length: 5 }, (_, i) => makeValidationResult(`P${i}`, 'pass')),
+      ...Array.from({ length: 13 }, (_, i) => makeValidationResult(`F${i}`, 'fail')),
+      ...Array.from({ length: 17 }, (_, i) => ({ ...makeValidationResult(`S${i}`), status: 'skipped' as const })),
+    ];
+    expect(results).toHaveLength(35);
+    const stats = computeRuleOverviewStats(results);
+    expect(stats.validated).toHaveLength(18);
+    expect(stats.validated.length).toBe(stats.passed + stats.failed + stats.warnings);
+  });
+
+  it('returns an empty validated set when every result is skipped', () => {
+    const results: ValidationResult[] = [
+      { ...makeValidationResult('A'), status: 'skipped' },
+    ];
+    const stats = computeRuleOverviewStats(results);
+    expect(stats.validated).toHaveLength(0);
+    expect(stats.passed + stats.failed + stats.warnings).toBe(0);
+  });
+});
 
 // PDF magic bytes: %PDF-
 const PDF_MAGIC = Buffer.from('%PDF-');

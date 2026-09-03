@@ -18,6 +18,21 @@ export interface AuditJobData {
   validation_spec?: unknown;
   // Scheduled audit: set when the audit was triggered by a schedule
   scheduled_audit_id?: string;
+  // Check Register v2 Scan Inputs — present when rule_set_version === 'v2'.
+  // No PII among these (unlike test_email/test_phone above), so unlike those
+  // they travel in the job payload directly rather than requiring a DB reload.
+  rule_set_version?: string;
+  site_type?: string;
+  secondary_motion?: string;
+  declared_platforms?: string[];
+  primary_channel?: string;
+  monthly_spend_band?: string;
+  traffic_regions?: string[];
+  cmp?: string;
+  product_domain?: string;
+  checkout_domain?: string;
+  additional_properties?: string[];
+  declared_conversions?: { name: string; kind: 'primary' | 'secondary' }[];
 }
 
 // Parse REDIS_URL into explicit ioredis options so TLS is handled correctly.

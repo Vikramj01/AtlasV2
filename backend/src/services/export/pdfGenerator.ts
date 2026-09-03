@@ -3,8 +3,30 @@
  * Generates a 5-page PDF from a ReportJSON using PDFKit.
  */
 import PDFDocument from 'pdfkit';
-import type { ReportJSON } from '@/types/audit';
+import type { ReportJSON, ValidationResult } from '@/types/audit';
 import { getIssueHeadline } from '@/services/interpretation/engine';
+
+/**
+ * Rule Overview stats for page 1 (and the row set for the Technical Appendix
+ * table on page 5) — excludes 'skipped' results (funnel-inapplicable rules,
+ * or rules requiring a GTM container connection this scan doesn't have) so
+ * the headline "N rules validated" matches what the appendix actually lists,
+ * rather than the full rule library size.
+ */
+export function computeRuleOverviewStats(validationResults: ValidationResult[]): {
+  validated: ValidationResult[];
+  passed: number;
+  failed: number;
+  warnings: number;
+} {
+  const validated = validationResults.filter((r) => r.status !== 'skipped');
+  return {
+    validated,
+    passed: validated.filter((r) => r.status === 'pass').length,
+    failed: validated.filter((r) => r.status === 'fail').length,
+    warnings: validated.filter((r) => r.status === 'warning').length,
+  };
+}
 
 // ── Colour palette ─────────────────────────────────────────────────────────────
 const C = {
@@ -133,6 +155,8 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
 
     doc.fillColor(C.darkText).fontSize(22).font('Helvetica-Bold')
       .text('Signal Health Report', LEFT, 56);
+    doc.fillColor(C.midText).fontSize(11).font('Helvetica-Bold')
+      .text(report.website_url, LEFT);
     doc.fillColor(C.lightText).fontSize(10).font('Helvetica')
       .text(`${genDate}  ·  Audit ID: ${report.audit_id}`, LEFT);
 
@@ -228,12 +252,10 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
     doc.moveDown(0.8);
     sectionHeading('Rule Overview');
     const allResults = report.technical_appendix.validation_results;
-    const passed   = allResults.filter((r) => r.status === 'pass').length;
-    const failed   = allResults.filter((r) => r.status === 'fail').length;
-    const warnings = allResults.filter((r) => r.status === 'warning').length;
+    const { validated: validatedResults, passed, failed, warnings } = computeRuleOverviewStats(allResults);
 
     doc.fillColor(C.midText).fontSize(10).font('Helvetica')
-      .text(`${allResults.length} rules validated  ·  `, LEFT, doc.y, { continued: true })
+      .text(`${validatedResults.length} rules validated  ·  `, LEFT, doc.y, { continued: true })
       .fillColor(C.healthy).text(`${passed} passed  ·  `, { continued: true })
       .fillColor(C.broken).text(`${failed} failed  ·  `, { continued: true })
       .fillColor(C.atRisk).text(`${warnings} warnings`);
@@ -574,8 +596,7 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
 
     drawTableHeader();
 
-    const activeResults = allResults.filter((r) => r.status !== 'skipped');
-    activeResults.forEach((result, i) => {
+    validatedResults.forEach((result, i) => {
       if (needsNewPage(ROW_H + 10)) {
         doc.addPage();
         pageHeader('Technical Appendix', 'Page 5 / 5');

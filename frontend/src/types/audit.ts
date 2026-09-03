@@ -6,6 +6,59 @@ export type AuditStatus = 'queued' | 'running' | 'completed' | 'failed';
 export type Severity = 'critical' | 'high' | 'medium' | 'low';
 export type RuleStatus = 'pass' | 'fail' | 'warning' | 'skipped' | 'not_run';
 
+// ─── Check Register v2 — Scan Inputs ──────────────────────────────────────────
+// Atlas Check Register v1.0 (2 September 2026) — "Scan Inputs" sheet.
+
+/** Which rule library produced a given audit's results — scores are not comparable across versions. */
+export type RuleSetVersion = 'v1-legacy' | 'v2';
+
+export type SiteType =
+  | 'plg_saas'
+  | 'ecommerce'
+  | 'lead_gen_b2b'
+  | 'marketplace'
+  | 'app_install'
+  | 'subscription_media';
+
+export type SecondaryMotion = 'none' | 'sales_assisted' | 'hybrid';
+
+export type DeclaredPlatform =
+  | 'google_ads'
+  | 'meta'
+  | 'tiktok'
+  | 'linkedin'
+  | 'microsoft'
+  | 'reddit'
+  | 'pinterest';
+
+/** Regions field granularity the consent layer (L8) needs — distinct from the legacy `Region` (us/eu/global). */
+export type TrafficRegion = 'eea' | 'uk' | 'switzerland' | 'brazil' | 'us' | 'other';
+
+export type CMP = 'onetrust' | 'cookiebot' | 'usercentrics' | 'custom' | 'none';
+
+export interface DeclaredConversion {
+  name: string;
+  kind: 'primary' | 'secondary';
+}
+
+/** The four Scan Inputs collected before a Check Register v2 scan runs, plus the optional unlocks. */
+export interface ScanInputs {
+  site_type: SiteType;
+  secondary_motion?: SecondaryMotion;
+  declared_platforms: DeclaredPlatform[];
+  primary_channel: DeclaredPlatform;
+  monthly_spend_band?: string;
+  traffic_regions: TrafficRegion[];
+  cmp?: CMP;
+  website_url: string;
+  product_domain?: string;
+  checkout_domain?: string;
+  additional_properties?: string[];
+  test_email?: string;
+  test_phone?: string;
+  declared_conversions?: DeclaredConversion[];
+}
+
 export interface AuditScores {
   conversion_signal_health: number;
   attribution_risk_level: 'Low' | 'Medium' | 'High' | 'Critical';
@@ -14,11 +67,26 @@ export interface AuditScores {
 }
 
 export type ValidationLayerFilter =
+  // v1 (5 layers)
   | 'signal_initiation'
   | 'parameter_completeness'
   | 'persistence'
   | 'tag_configuration'
-  | 'implementation_drift';
+  | 'implementation_drift'
+  // v2 — Check Register (13 layers, L0-L12). 'parameter_completeness' above
+  // is shared with v2's L6 — same concept, larger rule set.
+  | 'scope_configuration'
+  | 'foundation_tags'
+  | 'click_id_capture'
+  | 'storage_durability'
+  | 'cross_domain_continuity'
+  | 'event_firing'
+  | 'identity_match_quality'
+  | 'consent'
+  | 'server_side_delivery'
+  | 'deduplication'
+  | 'reconciliation'
+  | 'hygiene_integrity';
 
 export interface ReportIssue {
   rule_id: string;
@@ -131,7 +199,10 @@ export interface SiteSetupSummary {
 
 export interface ReportJSON {
   audit_id: string;
+  website_url: string;
   generated_at: string;
+  /** Which rule library produced this report — never compare scores across versions. Absent on reports generated before this field existed; treat as 'v1-legacy'. */
+  rule_set_version?: RuleSetVersion;
   executive_summary: {
     overall_status: 'healthy' | 'partially_broken' | 'critical';
     business_summary: string;
@@ -173,5 +244,11 @@ export interface StartAuditInput {
   url_map: Record<string, string>;
   test_email?: string;
   test_phone?: string;
+  client_id?: string;
+}
+
+/** POST /api/audits/start payload for a Check Register v2 scan. */
+export interface StartAuditInputV2 extends ScanInputs {
+  url_map: Record<string, string>;
   client_id?: string;
 }

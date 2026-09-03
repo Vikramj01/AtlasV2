@@ -8,36 +8,54 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { RunAuditForm } from '@/components/audit/RunAuditForm';
+import { MultiChipToggle } from '@/components/audit/MultiChipToggle';
 import { useAudit } from '@/hooks/useAudit';
-import type { FunnelType } from '@/types/audit';
-
-const FUNNEL_OPTIONS: { value: FunnelType; label: string }[] = [
-  { value: 'ecommerce', label: 'Ecommerce' },
-  { value: 'saas', label: 'SaaS' },
-  { value: 'lead_gen', label: 'Lead Gen' },
-];
+import { SITE_TYPE_OPTIONS, DECLARED_PLATFORM_OPTIONS, TRAFFIC_REGION_OPTIONS } from '@/lib/scanInputOptions';
+import type { SiteType, DeclaredPlatform, TrafficRegion } from '@/types/audit';
 
 /**
  * "Evaluate a site" — the Audit Engine's bare-URL entry point. No client
  * required: agencies use this to pitch a prospect or check on an existing
- * client. A quick URL + funnel-type form covers the common case; "Advanced"
- * reveals RunAuditForm's full per-step journey mapping for anyone who wants
- * to map the whole funnel up front.
+ * client. Collects the Check Register's required Scan Inputs (site type,
+ * declared platforms + primary channel, traffic regions) — the minimum the
+ * scan needs to score correctly instead of grading channels the advertiser
+ * doesn't buy. "Advanced" reveals the full Scan Inputs (secondary motion,
+ * spend band, CMP, checkout domain, declared conversions) plus per-step
+ * journey mapping for anyone who wants to map the whole funnel up front.
  */
 export function EvaluateSiteCard() {
   const navigate = useNavigate();
   const { startAudit, loading, error } = useAudit();
   const [url, setUrl] = useState('');
-  const [funnelType, setFunnelType] = useState<FunnelType>('ecommerce');
+  const [siteType, setSiteType] = useState<SiteType>('ecommerce');
+  const [declaredPlatforms, setDeclaredPlatforms] = useState<DeclaredPlatform[]>([]);
+  const [primaryChannel, setPrimaryChannel] = useState<DeclaredPlatform | ''>('');
+  const [trafficRegions, setTrafficRegions] = useState<TrafficRegion[]>(['us']);
   const [showAdvanced, setShowAdvanced] = useState(false);
+
+  const handlePlatformsChange = (next: DeclaredPlatform[]) => {
+    setDeclaredPlatforms(next);
+    // Keep primary channel valid — default to the first declared platform,
+    // clear it if the user deselected everything.
+    if (!next.includes(primaryChannel as DeclaredPlatform)) {
+      setPrimaryChannel(next[0] ?? '');
+    }
+  };
+
+  const canSubmit = url.trim() && declaredPlatforms.length > 0 && primaryChannel && trafficRegions.length > 0;
 
   async function handleQuickSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!primaryChannel) return;
+    const websiteUrl = url.trim();
     const auditId = await startAudit({
-      website_url: url.trim(),
-      funnel_type: funnelType,
-      region: 'us',
-      url_map: { landing: url.trim() },
+      website_url: websiteUrl,
+      site_type: siteType,
+      declared_platforms: declaredPlatforms,
+      primary_channel: primaryChannel,
+      traffic_regions: trafficRegions,
+      product_domain: websiteUrl,
+      url_map: { landing: websiteUrl },
     });
     if (auditId) navigate(`/audit/${auditId}/progress`);
   }
@@ -81,18 +99,58 @@ export function EvaluateSiteCard() {
               className="border-console-border bg-console-chip font-mono text-[13px] text-console-fg placeholder:text-console-fg-disabled focus-visible:ring-console-primary"
             />
           </div>
+
           <div className="space-y-1.5">
-            <Label className="font-heading text-[13px] font-semibold text-console-fg-muted">Funnel type</Label>
-            <Select value={funnelType} onValueChange={(v) => setFunnelType(v as FunnelType)}>
+            <Label className="font-heading text-[13px] font-semibold text-console-fg-muted">Site type</Label>
+            <Select value={siteType} onValueChange={(v) => setSiteType(v as SiteType)}>
               <SelectTrigger className="border-console-border bg-console-chip text-console-fg focus:ring-console-primary">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {FUNNEL_OPTIONS.map((o) => (
+                {SITE_TYPE_OPTIONS.map((o) => (
                   <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="font-heading text-[13px] font-semibold text-console-fg-muted">
+              Ad platforms you buy
+            </Label>
+            <p className="text-xs text-console-fg-muted">
+              Only declared platforms are scored — everything else reports Out of Scope, not Broken.
+            </p>
+            <MultiChipToggle
+              options={DECLARED_PLATFORM_OPTIONS}
+              selected={declaredPlatforms}
+              onChange={handlePlatformsChange}
+            />
+          </div>
+
+          {declaredPlatforms.length > 0 && (
+            <div className="space-y-1.5">
+              <Label className="font-heading text-[13px] font-semibold text-console-fg-muted">Primary channel</Label>
+              <Select value={primaryChannel} onValueChange={(v) => setPrimaryChannel(v as DeclaredPlatform)}>
+                <SelectTrigger className="border-console-border bg-console-chip text-console-fg focus:ring-console-primary">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {DECLARED_PLATFORM_OPTIONS.filter((o) => declaredPlatforms.includes(o.value)).map((o) => (
+                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <Label className="font-heading text-[13px] font-semibold text-console-fg-muted">Traffic regions</Label>
+            <MultiChipToggle
+              options={TRAFFIC_REGION_OPTIONS}
+              selected={trafficRegions}
+              onChange={setTrafficRegions}
+            />
           </div>
 
           {error && (
@@ -102,7 +160,7 @@ export function EvaluateSiteCard() {
           <div className="mt-auto space-y-2 pt-2">
             <Button
               type="submit"
-              disabled={loading || !url.trim()}
+              disabled={loading || !canSubmit}
               className="w-full bg-console-primary font-heading font-bold hover:bg-console-primary-hover disabled:shadow-none shadow-console-glow"
             >
               {loading ? 'Starting…' : 'Evaluate'}

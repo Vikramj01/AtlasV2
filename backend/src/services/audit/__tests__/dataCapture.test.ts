@@ -6,13 +6,16 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   flushDataLayer,
   interceptNetworkRequests,
+  interceptConsoleErrors,
   captureCookies,
   captureLocalStorage,
+  captureSessionStorage,
   mergeCookies,
   mergeLocalStorage,
+  mergeDetailedCookies,
   type StepRef,
 } from '../dataCapture';
-import type { NetworkRequest } from '@/types/audit';
+import type { NetworkRequest, ConsoleError } from '@/types/audit';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -51,15 +54,20 @@ function makeRequest(overrides: {
   };
 }
 
-function makeResponse(url: string, timingMs?: number) {
+function makeResponse(url: string, timingMs?: number, status = 200) {
   return {
     url: () => url,
+    status: () => status,
     request: () => ({
       timing: timingMs !== undefined
         ? () => ({ startTime: 0, responseEnd: timingMs })
         : undefined,
     }),
   };
+}
+
+function makeFailedRequest(url: string) {
+  return { url: () => url };
 }
 
 // ─── flushDataLayer ───────────────────────────────────────────────────────────
@@ -161,6 +169,40 @@ describe('interceptNetworkRequests — string step', () => {
 
     expect(sink[0].loadTime).toBeUndefined();
   });
+
+  it('patches statusCode on matching response', () => {
+    const { page, emit } = makeEventEmitterPage();
+    const sink: NetworkRequest[] = [];
+    interceptNetworkRequests(page, sink, 'landing');
+
+    const url = 'https://www.googletagmanager.com/gtm.js?id=GTM-TEST';
+    emit('request', makeRequest({ url, method: 'GET' }));
+    emit('response', makeResponse(url, undefined, 404));
+
+    expect(sink[0].statusCode).toBe(404);
+  });
+
+  it('marks a request failed on requestfailed', () => {
+    const { page, emit } = makeEventEmitterPage();
+    const sink: NetworkRequest[] = [];
+    interceptNetworkRequests(page, sink, 'landing');
+
+    const url = 'https://www.facebook.com/tr/';
+    emit('request', makeRequest({ url, method: 'GET' }));
+    emit('requestfailed', makeFailedRequest(url));
+
+    expect(sink[0].failed).toBe(true);
+  });
+
+  it('ignores requestfailed for untracked URLs', () => {
+    const { page, emit } = makeEventEmitterPage();
+    const sink: NetworkRequest[] = [];
+    interceptNetworkRequests(page, sink, 'landing');
+
+    emit('requestfailed', makeFailedRequest('https://example.com/untracked'));
+
+    expect(sink).toHaveLength(0);
+  });
 });
 
 describe('interceptNetworkRequests — StepRef (mutable step)', () => {
@@ -193,6 +235,59 @@ describe('interceptNetworkRequests — StepRef (mutable step)', () => {
   });
 });
 
+// ─── interceptConsoleErrors ───────────────────────────────────────────────────
+
+describe('interceptConsoleErrors', () => {
+  it('captures a console.error message with its step', () => {
+    const { page, emit } = makeEventEmitterPage();
+    const sink: ConsoleError[] = [];
+    interceptConsoleErrors(page, sink, 'confirmation');
+
+    emit('console', { type: () => 'error', text: () => 'Uncaught TypeError: gtag is not a function' });
+
+    expect(sink).toHaveLength(1);
+    expect(sink[0].message).toBe('Uncaught TypeError: gtag is not a function');
+    expect(sink[0].step).toBe('confirmation');
+  });
+
+  it('ignores non-error console messages', () => {
+    const { page, emit } = makeEventEmitterPage();
+    const sink: ConsoleError[] = [];
+    interceptConsoleErrors(page, sink, 'landing');
+
+    emit('console', { type: () => 'log', text: () => 'some debug log' });
+    emit('console', { type: () => 'warning', text: () => 'a warning' });
+
+    expect(sink).toHaveLength(0);
+  });
+
+  it('captures an uncaught page exception', () => {
+    const { page, emit } = makeEventEmitterPage();
+    const sink: ConsoleError[] = [];
+    interceptConsoleErrors(page, sink, 'checkout');
+
+    emit('pageerror', new Error('dataLayer is not defined'));
+
+    expect(sink).toHaveLength(1);
+    expect(sink[0].message).toBe('dataLayer is not defined');
+    expect(sink[0].step).toBe('checkout');
+  });
+
+  it('reads the current step at error time via a StepRef', () => {
+    const { page, emit } = makeEventEmitterPage();
+    const sink: ConsoleError[] = [];
+    const stepRef: StepRef = { current: 'landing' };
+    interceptConsoleErrors(page, sink, stepRef);
+
+    emit('console', { type: () => 'error', text: () => 'first error' });
+    stepRef.current = 'confirmation';
+    emit('console', { type: () => 'error', text: () => 'second error' });
+
+    expect(sink[0].step).toBe('landing');
+    expect(sink[1].step).toBe('confirmation');
+  });
+});
+
 // ─── captureCookies ───────────────────────────────────────────────────────────
 
 describe('captureCookies', () => {
@@ -213,6 +308,43 @@ describe('captureCookies', () => {
     const context = { cookies: vi.fn().mockResolvedValue([]) };
     const snap = await captureCookies(context, 'landing');
     expect(snap.cookies).toEqual({});
+  });
+
+  it('captures each cookie\'s full attribute set alongside the flat map', async () => {
+    const context = {
+      cookies: vi.fn().mockResolvedValue([
+        { name: '_gcl_aw', value: 'abc', domain: '.example.com', path: '/', expires: 1893456000, secure: true, sameSite: 'Lax' },
+      ]),
+    };
+    const snap = await captureCookies(context, 'landing');
+    expect(snap.detailed).toEqual([
+      { name: '_gcl_aw', value: 'abc', domain: '.example.com', path: '/', expires: 1893456000, secure: true, sameSite: 'Lax' },
+    ]);
+  });
+
+  it('defaults missing attributes rather than throwing (minimal mock shape)', async () => {
+    const context = { cookies: vi.fn().mockResolvedValue([{ name: 'gclid', value: 'x' }]) };
+    const snap = await captureCookies(context, 'landing');
+    expect(snap.detailed).toEqual([
+      { name: 'gclid', value: 'x', domain: '', path: '/', expires: -1, secure: false, sameSite: 'Lax' },
+    ]);
+  });
+});
+
+// ─── captureSessionStorage ─────────────────────────────────────────────────────
+
+describe('captureSessionStorage', () => {
+  it('returns entries from page.evaluate', async () => {
+    const page = { evaluate: vi.fn().mockResolvedValue({ gclid: 'session_only_gclid' }) };
+    const snap = await captureSessionStorage(page as never, 'landing');
+    expect(snap.step).toBe('landing');
+    expect(snap.entries['gclid']).toBe('session_only_gclid');
+  });
+
+  it('returns empty entries if page.evaluate throws', async () => {
+    const page = { evaluate: vi.fn().mockRejectedValue(new Error('cross-origin')) };
+    const snap = await captureSessionStorage(page as never, 'landing');
+    expect(snap.entries).toEqual({});
   });
 });
 
@@ -262,5 +394,26 @@ describe('mergeLocalStorage', () => {
 
   it('returns empty object for empty input', () => {
     expect(mergeLocalStorage([])).toEqual({});
+  });
+});
+
+describe('mergeDetailedCookies', () => {
+  it('later snapshots override earlier ones by cookie name', () => {
+    const oldCookie = { name: '_gcl_aw', value: 'old', domain: '.example.com', path: '/', expires: 100, secure: true, sameSite: 'Lax' as const };
+    const newCookie = { name: '_gcl_aw', value: 'new', domain: '.example.com', path: '/', expires: 200, secure: true, sameSite: 'Lax' as const };
+    const merged = mergeDetailedCookies([
+      { step: 'landing', cookies: {}, detailed: [oldCookie] },
+      { step: 'confirmation', cookies: {}, detailed: [newCookie] },
+    ]);
+    expect(merged).toEqual([newCookie]);
+  });
+
+  it('treats a missing detailed array as no cookies for that snapshot', () => {
+    const merged = mergeDetailedCookies([{ step: 'landing', cookies: { foo: 'bar' } }]);
+    expect(merged).toEqual([]);
+  });
+
+  it('returns an empty array for empty input', () => {
+    expect(mergeDetailedCookies([])).toEqual([]);
   });
 });

@@ -1,16 +1,136 @@
 // ─── Audit inputs ────────────────────────────────────────────────────────────
 
+import type { NamingConvention } from './taxonomy';
+
 export type FunnelType = 'ecommerce' | 'saas' | 'lead_gen';
 export type Region = 'us' | 'eu' | 'global';
 export type AuditStatus = 'queued' | 'running' | 'completed' | 'failed';
-export type ValidationLayer =
+
+/** The 5 layers of the original (v1) rule library. */
+export type ValidationLayerV1 =
   | 'signal_initiation'
   | 'parameter_completeness'
   | 'persistence'
   | 'tag_configuration'
   | 'implementation_drift';
+
+/**
+ * The 13 layers of the Check Register v2 rule library (L0-L12).
+ * 'parameter_completeness' is deliberately the same literal as its v1
+ * counterpart above — same concept, a larger rule set — so the two collapse
+ * to one union member rather than needing a v1/v2-qualified name.
+ */
+export type ValidationLayerV2 =
+  | 'scope_configuration'      // L0
+  | 'foundation_tags'          // L1
+  | 'click_id_capture'         // L2
+  | 'storage_durability'       // L3
+  | 'cross_domain_continuity'  // L4
+  | 'event_firing'             // L5
+  | 'parameter_completeness'   // L6
+  | 'identity_match_quality'   // L7
+  | 'consent'                  // L8
+  | 'server_side_delivery'     // L9
+  | 'deduplication'            // L10
+  | 'reconciliation'           // L11
+  | 'hygiene_integrity';       // L12
+
+export type ValidationLayer = ValidationLayerV1 | ValidationLayerV2;
+
 export type Severity = 'critical' | 'high' | 'medium' | 'low';
 export type RuleStatus = 'pass' | 'fail' | 'warning' | 'skipped' | 'not_run';
+
+// ─── Check Register v2 — Scan Inputs ──────────────────────────────────────────
+// Atlas Check Register v1.0 (2 September 2026) — "Scan Inputs" sheet.
+// Collected before a v2 scan runs; these drive rule applicability throughout
+// the register (see ValidationRule.applies_to / platform_scope below).
+
+/** Which rule library produced a given audit's results — scores are not comparable across versions. */
+export type RuleSetVersion = 'v1-legacy' | 'v2';
+
+export type SiteType =
+  | 'plg_saas'
+  | 'ecommerce'
+  | 'lead_gen_b2b'
+  | 'marketplace'
+  | 'app_install'
+  | 'subscription_media';
+
+export type SecondaryMotion = 'none' | 'sales_assisted' | 'hybrid';
+
+export type DeclaredPlatform =
+  | 'google_ads'
+  | 'meta'
+  | 'tiktok'
+  | 'linkedin'
+  | 'microsoft'
+  | 'reddit'
+  | 'pinterest';
+
+/** Regions field granularity the consent layer (L8) needs — distinct from the legacy `Region` (us/eu/global). */
+export type TrafficRegion = 'eea' | 'uk' | 'switzerland' | 'brazil' | 'us' | 'other';
+
+export type CMP = 'onetrust' | 'cookiebot' | 'usercentrics' | 'custom' | 'none';
+
+export interface DeclaredConversion {
+  name: string;
+  kind: 'primary' | 'secondary';
+}
+
+/** The four Scan Inputs collected before a Check Register v2 scan runs, plus the optional unlocks. */
+export interface ScanInputs {
+  // 1. Site type
+  site_type: SiteType;
+  secondary_motion?: SecondaryMotion;
+  // 2. Ad platforms
+  declared_platforms: DeclaredPlatform[];
+  primary_channel: DeclaredPlatform;
+  monthly_spend_band?: string;
+  // 3. Regions
+  traffic_regions: TrafficRegion[];
+  cmp?: CMP;
+  // 4. Domains
+  website_url: string;
+  product_domain?: string;
+  checkout_domain?: string;
+  additional_properties?: string[];
+  // Optional unlocks
+  test_email?: string;
+  test_phone?: string;
+  declared_conversions?: DeclaredConversion[];
+}
+
+// ─── Check Register v2 — Rule shape ───────────────────────────────────────────
+
+/**
+ * How a rule's applicability is gated by the declared platforms:
+ *   'declared' — the sentinel used by L0.1 only: evaluated once per declared
+ *                platform (does *that* platform have its tag?), not a single pass/fail.
+ *   'any'      — platform-agnostic infrastructure (GTM, dataLayer) — always applicable.
+ *   'n/a'      — not platform-gated at all (e.g. domain reachability).
+ *   string[]   — only applicable when at least one of these specific platforms is declared.
+ */
+export type PlatformScope = 'declared' | 'any' | 'n/a' | DeclaredPlatform[];
+
+/** What the rule needs beyond a single browser pass — see the "Beyond the Crawl" sheet. */
+export type DetectionMethod = 'crawl' | 'second_pass' | 'credentials' | 'connector';
+
+/** A single Check Register v2 rule. */
+export interface ValidationRule {
+  /** Canonical Check Register ID, e.g. "L1.4" — stable identifier from the spec, shown in the technical appendix. */
+  id: string;
+  /** Readable slug used everywhere else code keys off a rule (report/DB rows, interpretations), e.g. "GA4_CONFIG_TAG_PRESENT". */
+  rule_id: string;
+  layer: ValidationLayerV2;
+  /** Short label matching the spreadsheet's "Check" column. */
+  check: string;
+  severity: Severity;
+  applies_to: SiteType[] | 'all';
+  platform_scope: PlatformScope;
+  detectable_by: DetectionMethod;
+  owner: string;
+  test(auditData: AuditData): ValidationResult;
+}
 
 // ─── Captured data (from Browserbase) ────────────────────────────────────────
 
@@ -57,16 +177,46 @@ export interface NetworkRequest {
   timestamp: number;
   step: string;
   loadTime?: number; // ms — used by GTM_CONTAINER_LOADED rule
+  /** HTTP response status, when the response was observed (dataCapture.ts's response listener). */
+  statusCode?: number;
+  /** True when Playwright's own 'requestfailed' fired (DNS error, connection refused, blocked by client, etc.) — used by NO_TAG_LOAD_ERRORS (L1.16). */
+  failed?: boolean;
+}
+
+/**
+ * A cookie's full attribute set, as Playwright's context.cookies() reports
+ * it — the flat name→value map on CookieSnapshot/AuditData.cookies can't
+ * answer "how long does this live" or "is it scoped to the parent domain",
+ * which the Check Register v2 Storage Durability layer (L3) needs. expires
+ * is Unix seconds, or -1 for a session cookie (Playwright's convention —
+ * mirrored here rather than reinvented).
+ */
+export interface DetailedCookie {
+  name: string;
+  value: string;
+  domain: string;
+  path: string;
+  expires: number;
+  secure: boolean;
+  sameSite: 'Strict' | 'Lax' | 'None';
 }
 
 export interface CookieSnapshot {
   step: string;
   cookies: Record<string, string>;
+  /** Optional — only populated by dataCapture.ts's captureCookies(); absent from hand-built fixtures/proxy captures. */
+  detailed?: DetailedCookie[];
 }
 
 export interface LocalStorageSnapshot {
   step: string;
   entries: Record<string, string>;
+}
+
+/** A browser console error or uncaught exception observed during a step — see dataCapture.ts's interceptConsoleErrors. */
+export interface ConsoleError {
+  message: string;
+  step: string;
 }
 
 // ─── GTM container snapshot (for tag_configuration layer) ────────────────────
@@ -197,13 +347,93 @@ export interface AuditData {
   website_url: string;
   funnel_type: FunnelType;
   region: Region;
+  /** Which rule library evaluates this AuditData. Defaults to 'v1-legacy' when absent (existing callers). */
+  rule_set_version?: RuleSetVersion;
+  // Check Register v2 Scan Inputs — present when rule_set_version === 'v2'.
+  site_type?: SiteType;
+  secondary_motion?: SecondaryMotion;
+  declared_platforms?: DeclaredPlatform[];
+  primary_channel?: DeclaredPlatform;
+  monthly_spend_band?: string;
+  traffic_regions?: TrafficRegion[];
+  cmp?: CMP;
+  product_domain?: string;
+  /**
+   * Result of a live HTTP reachability probe against product_domain, run by
+   * the caller (journeySimulator.ts's probeDomainReachable) before rules run
+   * — same pattern as sgtmVerified below. Undefined when product_domain was
+   * never set or equals website_url (nothing distinct to probe); L0.4 treats
+   * that as 'skipped', not as unreachable.
+   */
+  product_domain_reachable?: boolean;
+  /**
+   * The client's connected GTM container ID (via OAuth/manual upload —
+   * getConnectedGtmContainerId), resolved by the caller before rules run —
+   * same "resolve async, read sync" pattern as product_domain_reachable and
+   * sgtmVerified below. Used by CONTAINER_ID_MATCHES_DECLARED (L1.2) to
+   * compare against the container ID(s) actually observed loading on the
+   * page; undefined when the audit has no associated client or the client
+   * has nothing connected, in which case L1.2 has nothing to compare
+   * against and is 'skipped', not failed.
+   */
+  connected_gtm_container_id?: string;
+  /**
+   * Every journey step name the simulator actually navigated to, regardless
+   * of whether any tracking request fired there — the canonical "pages
+   * sampled" list. networkRequests only contains requests matching a
+   * tracked platform URL pattern, so it can't answer "which pages did the
+   * crawl visit" on its own (a page with a broken tag would look identical
+   * to a page the crawl never reached). Used by
+   * TAGS_PRESENT_ACROSS_SAMPLED_PAGES (L1.13).
+   */
+  steps_visited?: string[];
+  /**
+   * The landing page's URL after navigation settled (Playwright's page.url()
+   * — reflects any redirect chain the site itself performed), captured by
+   * journeySimulator right after the landing goto resolves. Compared against
+   * urlParams (what Atlas actually sent) to detect whether a redirect
+   * stripped click ID / UTM params — see LANDING_REDIRECT_PRESERVES_QUERY_
+   * STRING (L2.9) and CAPTURE_OCCURS_BEFORE_REDIRECT_COMPLETES (L2.10).
+   * Undefined for AuditData built outside journeySimulator (journey-mode's
+   * proxyAuditData, hand-built test fixtures) — both rules treat that as
+   * 'skipped', not a redirect failure.
+   */
+  landing_final_url?: string;
+  /**
+   * document.referrer as read by the landing page, after journeySimulator
+   * sets a synthetic Referer header (simulating arrival via an ad click) on
+   * the landing navigation. Used by REFERRER_PRESERVED_THROUGH_ENTRY
+   * (L2.11); undefined (not '') means referrer capture was never attempted
+   * for this AuditData.
+   */
+  landing_referrer_captured?: string;
+  checkout_domain?: string;
+  additional_properties?: string[];
+  declared_conversions?: DeclaredConversion[];
   dataLayer: DataLayerEvent[];
   networkRequests: NetworkRequest[];
   cookieSnapshots: CookieSnapshot[];
   localStorageSnapshots: LocalStorageSnapshot[];
+  /**
+   * Synthetic click ID / UTM values journeySimulator injected into the
+   * landing URL — gclid/fbclid required (every caller already sets them);
+   * the rest are optional so existing callers (orchestrator.ts's journey
+   * mode, worker.ts) that only ever set gclid/fbclid stay valid as-is. See
+   * makeSyntheticIds() in journeySimulator.ts.
+   */
   injected: {
     gclid: string;
     fbclid: string;
+    gbraid?: string;
+    wbraid?: string;
+    ttclid?: string;
+    li_fat_id?: string;
+    msclkid?: string;
+    utm_source?: string;
+    utm_medium?: string;
+    utm_campaign?: string;
+    utm_content?: string;
+    utm_term?: string;
   };
   test_email?: string;
   test_phone?: string;
@@ -211,6 +441,35 @@ export interface AuditData {
   urlParams?: Record<string, string>;      // Landing page URL params
   storage?: Record<string, string>;        // localStorage at conversion step
   cookies?: Record<string, string>;        // Merged cookie map (all steps)
+  /**
+   * sessionStorage, merged the same way as storage (localStorage) above —
+   * captured separately because Storage Durability (L3) needs to tell
+   * "written to sessionStorage only" (destroyed on tab close) apart from
+   * "written to localStorage/a cookie" (survives it), which the flat
+   * `storage` field alone can't distinguish.
+   */
+  sessionStorage?: Record<string, string>;
+  /**
+   * Full cookie attribute set (domain/expires/secure/sameSite) merged
+   * across all steps, last-wins per name — the flat `cookies` map above
+   * only carries name→value, which can't answer Storage Durability's
+   * (L3) questions about cookie lifetime, domain scoping, or SameSite/
+   * Secure correctness.
+   */
+  detailedCookies?: DetailedCookie[];
+  /**
+   * Check Register v2 Cross-Domain Continuity (L4) inputs — all captured by
+   * journeySimulator.ts only when product_domain is set to a genuinely
+   * distinct, reachable host (reusing the L0.4 reachability probe); left
+   * undefined otherwise, which the L4 rules that read them treat as
+   * 'skipped', not a failure. outboundCrossDomainLinks comes from a DOM
+   * scan of the landing page's <a href> tags, not from the product-domain
+   * visit itself.
+   */
+  marketingGa4ClientId?: string;
+  productDomainGa4ClientId?: string;
+  productDomainSessionStartDetected?: boolean;
+  outboundCrossDomainLinks?: { total: number; withGl: number };
   pageMetadata?: Record<string, unknown>;  // Misc page metadata
   // IHC extensions — absent when the respective data source is not connected
   gtmContainer?: GTMContainerSnapshot;     // tag_configuration layer input
@@ -222,6 +481,25 @@ export interface AuditData {
   // themselves. Undefined when the connection has no associated client_id
   // (e.g. an org-level GTM connection not linked to a specific client).
   sgtmVerified?: boolean;
+  /**
+   * The org's Naming Conventions config (services/signals/namingConvention.ts),
+   * resolved by the caller before rules run — same "resolve outside, read
+   * inside" pattern as sgtmVerified/connected_gtm_container_id above. Used
+   * by EVENT_NAMES_MATCH_DECLARED_TAXONOMY (L5.13). Falls back to
+   * DEFAULT_CONVENTION inside the rule when undefined (org never
+   * configured one), so this is never itself a reason to skip.
+   */
+  namingConvention?: NamingConvention;
+  /**
+   * Console errors and uncaught exceptions observed across the whole
+   * crawl (dataCapture.ts's interceptConsoleErrors, registered once
+   * alongside interceptNetworkRequests). Undefined — not an empty array —
+   * when console capture never ran for this AuditData (hand-built
+   * fixtures, journey-mode's proxyAuditData); the L12 rules that read this
+   * treat that as 'skipped', since an empty array from a real crawl and
+   * "we never checked" need different verdicts.
+   */
+  consoleErrors?: ConsoleError[];
 }
 
 // ─── API inputs ───────────────────────────────────────────────────────────────
@@ -314,7 +592,10 @@ export interface PlatformBreakdown {
 
 export interface ReportJSON {
   audit_id: string;
+  website_url: string;
   generated_at: string;
+  /** Which rule library produced this report — never compare scores across versions. Absent on reports generated before this field existed; treat as 'v1-legacy'. */
+  rule_set_version?: RuleSetVersion;
   executive_summary: {
     overall_status: 'healthy' | 'partially_broken' | 'critical';
     business_summary: string;
@@ -348,4 +629,23 @@ export interface AuditRow {
   test_email?: string;
   test_phone?: string;
   client_id?: string | null;
+  // Check Register v2 Scan Inputs columns (20260902002_scan_inputs_check_register.sql) — null on rows written before this migration.
+  rule_set_version?: RuleSetVersion;
+  site_type?: SiteType | null;
+  secondary_motion?: SecondaryMotion | null;
+  declared_platforms?: DeclaredPlatform[];
+  primary_channel?: DeclaredPlatform | null;
+  monthly_spend_band?: string | null;
+  traffic_regions?: TrafficRegion[];
+  cmp?: CMP | null;
+  product_domain?: string | null;
+  checkout_domain?: string | null;
+  additional_properties?: string[];
+  declared_conversions?: DeclaredConversion[] | null;
+}
+
+/** POST /api/audits/start payload for a Check Register v2 scan. */
+export interface StartAuditInputV2 extends ScanInputs {
+  url_map: Record<string, string>;
+  client_id?: string;
 }
