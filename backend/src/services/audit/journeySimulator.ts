@@ -17,22 +17,42 @@ import {
 } from './dataCapture';
 import logger from '@/utils/logger';
 
-// Synthetic click IDs injected on landing — allows persistence validation
+/**
+ * Synthetic click IDs + UTM params injected on landing — lets validation
+ * rules check whether the site actually captures/stores an identifier we
+ * know we sent, rather than just observing whatever real traffic happened
+ * to arrive with. Covers every platform Check Register v2's L2 (Click ID
+ * Capture) layer checks, not just gclid/fbclid.
+ */
 function makeSyntheticIds() {
   const ts = Date.now();
   return {
-    gclid:  `test_gclid_${ts}`,
-    fbclid: `test_fbclid_${ts}`,
+    gclid:       `test_gclid_${ts}`,
+    fbclid:      `test_fbclid_${ts}`,
+    gbraid:      `test_gbraid_${ts}`,
+    wbraid:      `test_wbraid_${ts}`,
+    ttclid:      `test_ttclid_${ts}`,
+    li_fat_id:   `test_lifatid_${ts}`,
+    msclkid:     `test_msclkid_${ts}`,
+    utm_source:  'atlas_audit',
+    utm_medium:  'cpc',
+    utm_campaign: `atlas_audit_${ts}`,
+    utm_content: 'atlas_test_content',
+    utm_term:    'atlas_test_term',
   };
 }
 
-/** Append synthetic click ID params to a URL string */
-function injectClickIds(url: string, gclid: string, fbclid: string): string {
+/** Append every synthetic click ID / UTM param onto a URL string. */
+function injectSyntheticParams(url: string, params: Record<string, string | undefined>): string {
   const u = new URL(url);
-  u.searchParams.set('gclid',  gclid);
-  u.searchParams.set('fbclid', fbclid);
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined) u.searchParams.set(key, value);
+  }
   return u.toString();
 }
+
+/** Referer header set on the landing navigation — simulates arriving via an ad click, for L2.11. */
+const LANDING_REFERRER = 'https://www.google.com/';
 
 /**
  * Live HTTP reachability probe for a Scan Input domain (L0.4 — "Product
@@ -85,6 +105,8 @@ export async function simulateJourney(
         waitForSelector: (sel: string, opts?: object) => Promise<unknown>;
         click?: (sel: string) => Promise<void>;
         fill?: (sel: string, value: string) => Promise<void>;
+        /** Current page URL — used to detect redirects on the landing navigation (L2.9/L2.10). */
+        url?: () => string;
       }>;
       cookies: (urls?: string[]) => Promise<Array<{ name: string; value: string }>>;
       close: () => Promise<void>;
@@ -114,22 +136,33 @@ export async function simulateJourney(
   const stepRef: StepRef = { current: 'init' };
   interceptNetworkRequests(page, networkRequests, stepRef);
 
+  let landingFinalUrl: string | undefined;
+  let landingReferrerCaptured: string | undefined;
+
   try {
     for (const step of steps) {
       stepRef.current = step.name;
       let url = opts.url_map[step.urlKey] ?? opts.website_url;
 
-      // Inject click IDs on landing page
+      // Inject click IDs + UTM params on landing page
       if (step.name === 'landing') {
-        url = injectClickIds(url, injected.gclid, injected.fbclid);
+        url = injectSyntheticParams(url, injected);
       }
 
       logger.debug({ step: step.name, url }, 'Navigating to step');
 
-      await page.goto(url, { waitUntil: 'networkidle' }).catch(() => {
+      const gotoOpts = step.name === 'landing'
+        ? { waitUntil: 'networkidle', referer: LANDING_REFERRER }
+        : { waitUntil: 'networkidle' };
+
+      await page.goto(url, gotoOpts).catch(() => {
         // Fallback: wait for domcontentloaded
         return page.goto(url, { waitUntil: 'domcontentloaded' });
       });
+
+      if (step.name === 'landing') {
+        landingFinalUrl = page.url ? page.url() : url;
+      }
 
       if (step.waitFor) {
         await page.waitForSelector(step.waitFor, { timeout: 5000 }).catch(() => {});
@@ -157,6 +190,13 @@ export async function simulateJourney(
         .catch(() => []) as string[];
       gtmScriptSrcs.push(...stepScriptSrcs);
 
+      // document.referrer for L2.11 — deliberately the last evaluate() call
+      // in the step, after flushDataLayer's, so it can never intercept the
+      // dataLayer sink flush.
+      if (step.name === 'landing') {
+        landingReferrerCaptured = await page.evaluate(() => document.referrer).catch(() => '') as string;
+      }
+
       // Snapshot cookies and localStorage
       cookieSnapshots.push(await captureCookies(context, step.name));
       localStorageSnapshots.push(
@@ -171,7 +211,7 @@ export async function simulateJourney(
   const landingUrl = opts.url_map['landing'] ?? opts.website_url;
   const urlParams: Record<string, string> = {};
   try {
-    new URL(injectClickIds(landingUrl, injected.gclid, injected.fbclid))
+    new URL(injectSyntheticParams(landingUrl, injected))
       .searchParams
       .forEach((v, k) => { urlParams[k] = v; });
   } catch { /* invalid URL — ignore */ }
@@ -203,6 +243,8 @@ export async function simulateJourney(
     product_domain_reachable: productDomainReachable,
     connected_gtm_container_id: opts.connected_gtm_container_id,
     steps_visited: steps.map((s) => s.name),
+    landing_final_url: landingFinalUrl,
+    landing_referrer_captured: landingReferrerCaptured,
     dataLayer,
     networkRequests,
     cookieSnapshots,

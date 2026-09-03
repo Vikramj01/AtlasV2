@@ -359,6 +359,26 @@ export interface AuditData {
    * TAGS_PRESENT_ACROSS_SAMPLED_PAGES (L1.13).
    */
   steps_visited?: string[];
+  /**
+   * The landing page's URL after navigation settled (Playwright's page.url()
+   * — reflects any redirect chain the site itself performed), captured by
+   * journeySimulator right after the landing goto resolves. Compared against
+   * urlParams (what Atlas actually sent) to detect whether a redirect
+   * stripped click ID / UTM params — see LANDING_REDIRECT_PRESERVES_QUERY_
+   * STRING (L2.9) and CAPTURE_OCCURS_BEFORE_REDIRECT_COMPLETES (L2.10).
+   * Undefined for AuditData built outside journeySimulator (journey-mode's
+   * proxyAuditData, hand-built test fixtures) — both rules treat that as
+   * 'skipped', not a redirect failure.
+   */
+  landing_final_url?: string;
+  /**
+   * document.referrer as read by the landing page, after journeySimulator
+   * sets a synthetic Referer header (simulating arrival via an ad click) on
+   * the landing navigation. Used by REFERRER_PRESERVED_THROUGH_ENTRY
+   * (L2.11); undefined (not '') means referrer capture was never attempted
+   * for this AuditData.
+   */
+  landing_referrer_captured?: string;
   checkout_domain?: string;
   additional_properties?: string[];
   declared_conversions?: DeclaredConversion[];
@@ -366,9 +386,26 @@ export interface AuditData {
   networkRequests: NetworkRequest[];
   cookieSnapshots: CookieSnapshot[];
   localStorageSnapshots: LocalStorageSnapshot[];
+  /**
+   * Synthetic click ID / UTM values journeySimulator injected into the
+   * landing URL — gclid/fbclid required (every caller already sets them);
+   * the rest are optional so existing callers (orchestrator.ts's journey
+   * mode, worker.ts) that only ever set gclid/fbclid stay valid as-is. See
+   * makeSyntheticIds() in journeySimulator.ts.
+   */
   injected: {
     gclid: string;
     fbclid: string;
+    gbraid?: string;
+    wbraid?: string;
+    ttclid?: string;
+    li_fat_id?: string;
+    msclkid?: string;
+    utm_source?: string;
+    utm_medium?: string;
+    utm_campaign?: string;
+    utm_content?: string;
+    utm_term?: string;
   };
   test_email?: string;
   test_phone?: string;
