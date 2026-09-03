@@ -100,9 +100,22 @@ export const UNDECLARED_PLATFORM_TAG_DETECTED: ValidationRule = {
 
 // ── L0.3 — Conversion surface identified ─────────────────────────────────────
 //
-// Proxy for "the crawl actually reached a conversion-shaped page/state":
-// any dataLayer event or network request tagged with a step beyond
-// landing/init means the journey progressed past the entry page.
+// The single highest-leverage rule in the register (Site Evaluation Coverage
+// & Honesty PRD §6.2) — every downstream layer's credibility rests on this
+// correctly detecting when the crawl never left the landing page.
+//
+// Primary path: reads journeySimulator.ts's step_coverage — a step "counts"
+// only when it both resolved to a URL genuinely distinct from landing (not
+// just relabelled) AND actually navigated successfully. This replaces the
+// old label-based check, which tested step *names* rather than URLs: a step
+// relabelled 'checkout' that silently fell back to the homepage used to
+// read identically to a real checkout visit, so this rule could — and did —
+// pass on a homepage-only scan.
+//
+// Fallback path: when step_coverage is absent (Journey-Builder mode's
+// proxyAuditData, hand-built test fixtures, or an AuditData replayed from
+// before this field existed), falls back to the original step-label check
+// so those callers keep working exactly as before.
 
 export const CONVERSION_SURFACE_IDENTIFIED: ValidationRule = {
   id: 'L0.3',
@@ -116,6 +129,37 @@ export const CONVERSION_SURFACE_IDENTIFIED: ValidationRule = {
   owner: 'Marketing Ops',
 
   test(auditData: AuditData): ValidationResult {
+    const stepCoverage = auditData.step_coverage;
+
+    if (stepCoverage && stepCoverage.length > 0) {
+      const qualifying = stepCoverage.filter((s) => s.distinct_from_landing && s.navigation_success);
+      const found = qualifying.length > 0;
+      const nonLanding = stepCoverage.filter((s) => s.step !== 'landing');
+      const fellBack = nonLanding.filter((s) => !(s.distinct_from_landing && s.navigation_success));
+
+      return {
+        rule_id: this.rule_id,
+        validation_layer: this.layer,
+        status: found ? 'pass' : 'fail',
+        severity: this.severity,
+        technical_details: {
+          found: found
+            ? `Reached ${qualifying.length} journey step${qualifying.length !== 1 ? 's' : ''} distinct from landing: ${qualifying.map((s) => s.step).join(', ')}`
+            : 'No journey step reached a page distinct from landing',
+          expected: 'At least one page or state matching the declared conversion is reachable',
+          evidence: found
+            ? [`Steps reached: ${qualifying.map((s) => s.step).join(', ')}`]
+            : [
+                'The crawl never progressed past the landing page — the rest of this audit is unanchored',
+                fellBack.length > 0
+                  ? `Steps that fell back to the landing URL: ${fellBack.map((s) => s.step).join(', ')}`
+                  : 'No non-landing steps were attempted',
+              ],
+        },
+      };
+    }
+
+    // Fallback — step_coverage not present on this AuditData.
     const nonLandingSteps = new Set(
       [...auditData.dataLayer.map((e) => e.step), ...auditData.networkRequests.map((r) => r.step)]
         .filter((s) => s && s !== 'landing' && s !== 'init'),

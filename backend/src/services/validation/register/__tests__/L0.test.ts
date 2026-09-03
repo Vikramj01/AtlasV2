@@ -11,7 +11,19 @@ import {
   PRODUCT_DOMAIN_REACHABLE,
   L0_RULES,
 } from '../L0';
-import type { AuditData, NetworkRequest } from '@/types/audit';
+import type { AuditData, NetworkRequest, StepCoverage } from '@/types/audit';
+
+function makeStep(overrides: Partial<StepCoverage> = {}): StepCoverage {
+  return {
+    step: 'product',
+    requested_url: 'https://example.com/product',
+    final_url: 'https://example.com/product',
+    source: 'user_supplied',
+    distinct_from_landing: true,
+    navigation_success: true,
+    ...overrides,
+  };
+}
 
 function makeRequest(overrides: Partial<NetworkRequest> = {}): NetworkRequest {
   return {
@@ -126,6 +138,104 @@ describe('CONVERSION_SURFACE_IDENTIFIED (L0.3)', () => {
     });
     const result = CONVERSION_SURFACE_IDENTIFIED.test(auditData);
     expect(result.status).toBe('fail');
+  });
+
+  // ── step_coverage truth table (Site Evaluation Coverage & Honesty PRD §6.2) ──
+  // Takes priority over the label-based check above whenever present — these
+  // cases exist specifically because the label-based check could be fooled
+  // by a step relabelled 'checkout' that never actually left the homepage.
+
+  describe('with step_coverage present', () => {
+    it('fails when every non-landing step fell back to the landing URL', () => {
+      const auditData = makeAuditData({
+        step_coverage: [
+          makeStep({ step: 'landing', distinct_from_landing: false, source: 'user_supplied' }),
+          makeStep({ step: 'product', distinct_from_landing: false, source: 'fallback_landing' }),
+          makeStep({ step: 'checkout', distinct_from_landing: false, source: 'fallback_landing' }),
+        ],
+        // Old label-based signal would have passed this — dataLayer/network
+        // events are still tagged with the (misleading) step name.
+        dataLayer: [{ event: 'purchase', timestamp: Date.now(), step: 'checkout' }],
+      });
+      const result = CONVERSION_SURFACE_IDENTIFIED.test(auditData);
+      expect(result.status).toBe('fail');
+      expect(result.technical_details.evidence.join(' ')).toContain('product, checkout');
+    });
+
+    it('passes when at least one step is both distinct from landing and successfully navigated', () => {
+      const auditData = makeAuditData({
+        step_coverage: [
+          makeStep({ step: 'landing', distinct_from_landing: false, source: 'user_supplied' }),
+          makeStep({ step: 'product', distinct_from_landing: false, source: 'fallback_landing' }),
+          makeStep({ step: 'checkout', distinct_from_landing: true, navigation_success: true, source: 'user_supplied' }),
+        ],
+      });
+      const result = CONVERSION_SURFACE_IDENTIFIED.test(auditData);
+      expect(result.status).toBe('pass');
+      expect(result.technical_details.found).toContain('checkout');
+    });
+
+    it('fails when the only distinct step is a redirect back to the landing page (distinct_from_landing already false)', () => {
+      // journeySimulator computes distinct_from_landing off final_url, so a
+      // site-side redirect back to the homepage is already reflected here —
+      // this case documents that the rule doesn't need its own redirect logic.
+      const auditData = makeAuditData({
+        step_coverage: [
+          makeStep({ step: 'landing', distinct_from_landing: false, source: 'user_supplied' }),
+          makeStep({
+            step: 'checkout',
+            requested_url: 'https://example.com/checkout',
+            final_url: 'https://example.com/', // redirected back to landing
+            distinct_from_landing: false,
+            navigation_success: true,
+            source: 'user_supplied',
+          }),
+        ],
+      });
+      const result = CONVERSION_SURFACE_IDENTIFIED.test(auditData);
+      expect(result.status).toBe('fail');
+    });
+
+    it('fails when the only distinct step failed to navigate', () => {
+      const auditData = makeAuditData({
+        step_coverage: [
+          makeStep({ step: 'landing', distinct_from_landing: false, source: 'user_supplied' }),
+          makeStep({
+            step: 'confirmation',
+            distinct_from_landing: true,
+            navigation_success: false,
+            error: 'net::ERR_NAME_NOT_RESOLVED',
+            source: 'user_supplied',
+          }),
+        ],
+      });
+      const result = CONVERSION_SURFACE_IDENTIFIED.test(auditData);
+      expect(result.status).toBe('fail');
+    });
+
+    it('ignores dataLayer/networkRequests step labels entirely once step_coverage is present', () => {
+      // Same shape as the old-logic 'passes' tests above, but with
+      // step_coverage now saying every step fell back — proves the new
+      // path takes priority and isn't fooled by relabelled requests.
+      const auditData = makeAuditData({
+        step_coverage: [
+          makeStep({ step: 'landing', distinct_from_landing: false, source: 'user_supplied' }),
+          makeStep({ step: 'checkout', distinct_from_landing: false, source: 'fallback_landing' }),
+        ],
+        networkRequests: [makeRequest({ step: 'checkout' })],
+      });
+      const result = CONVERSION_SURFACE_IDENTIFIED.test(auditData);
+      expect(result.status).toBe('fail');
+    });
+  });
+
+  it('falls back to label-based logic when step_coverage is absent (Journey-Builder mode, legacy fixtures)', () => {
+    const auditData = makeAuditData({
+      step_coverage: undefined,
+      networkRequests: [makeRequest({ step: 'checkout' })],
+    });
+    const result = CONVERSION_SURFACE_IDENTIFIED.test(auditData);
+    expect(result.status).toBe('pass');
   });
 });
 
