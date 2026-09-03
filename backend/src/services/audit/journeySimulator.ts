@@ -6,7 +6,7 @@
 import type {
   AuditData, FunnelType, Region, DataLayerEvent, NetworkRequest, CookieSnapshot, LocalStorageSnapshot, ConsoleError,
   RuleSetVersion, SiteType, SecondaryMotion, DeclaredPlatform, TrafficRegion, CMP, DeclaredConversion,
-  StepCoverage, StepUrlSource,
+  StepCoverage, StepUrlSource, ConsentCapture,
 } from '@/types/audit';
 import type { NamingConvention } from '@/types/taxonomy';
 import { JOURNEY_CONFIGS } from '@/services/browserbase/journeyConfigs';
@@ -24,6 +24,8 @@ import {
   type StepRef,
 } from './dataCapture';
 import { extractGa4ClientId, ga4SessionStartDetected } from '@/services/detection/trackingSignals';
+import { detectConsentBanner, dismissConsentBanner, type EvaluatePage } from '@/services/detection/consentBanner';
+import { ALL_DECLARED_PLATFORMS, platformTagDetected } from '@/services/validation/register/platformDetection';
 import logger from '@/utils/logger';
 
 /**
@@ -238,6 +240,7 @@ export async function simulateJourney(
   let productDomainGa4ClientId: string | undefined;
   let productDomainSessionStartDetected: boolean | undefined;
   let landingNormalizedUrl: string | undefined;
+  let consentCapture: ConsentCapture | undefined;
   const stepCoverage: StepCoverage[] = [];
 
   const crossDomainTargets = [opts.product_domain, opts.checkout_domain]
@@ -288,6 +291,44 @@ export async function simulateJourney(
 
         if (step.waitFor) {
           await page.waitForSelector(step.waitFor, { timeout: 5000 }).catch(() => {});
+        }
+
+        // Consent banner handling (landing step only) — every tag gated
+        // behind a CMP never fires until the visitor accepts, so without
+        // this every EU/UK-traffic site reads as untracked. Runs after the
+        // landing navigation settles and before step actions, so the
+        // pre-consent snapshot below reflects only what fired on first
+        // load, and everything from here on (this step's own flushDataLayer/
+        // cookie capture below, and every subsequent step) is post-consent.
+        if (step.name === 'landing') {
+          await flushDataLayer(page as Parameters<typeof flushDataLayer>[0], dataLayer, step.name);
+          // Scans every platform Atlas can detect, not just opts.declared_platforms
+          // — the same "declared vs. what's actually there" distinction L0.1/L0.2
+          // draw elsewhere. An undeclared platform gated behind the same banner
+          // is just as worth surfacing in tags_before/tags_after.
+          const tagsBefore = ALL_DECLARED_PLATFORMS.filter((p) =>
+            platformTagDetected(p, { networkRequests } as AuditData),
+          );
+
+          const bannerDetection = await detectConsentBanner(page as unknown as EvaluatePage, opts.cmp);
+          const dismissed = await dismissConsentBanner(page as unknown as EvaluatePage, opts.cmp);
+          // 3500ms matches publicAuditRunner.ts's own settle wait after a
+          // successful dismiss; 2000ms otherwise still gives a same-origin
+          // page a chance to settle even when nothing was clicked.
+          await new Promise((r) => setTimeout(r, dismissed ? 3500 : 2000));
+
+          const tagsAfter = ALL_DECLARED_PLATFORMS.filter((p) =>
+            platformTagDetected(p, { networkRequests } as AuditData),
+          );
+
+          consentCapture = {
+            banner_present: bannerDetection.present,
+            vendor: bannerDetection.vendor,
+            dismissed,
+            declared_cmp: opts.cmp,
+            tags_before: tagsBefore,
+            tags_after: tagsAfter,
+          };
         }
 
         // Execute step actions
@@ -433,6 +474,7 @@ export async function simulateJourney(
     namingConvention: opts.namingConvention,
     steps_visited: steps.map((s) => s.name),
     step_coverage: stepCoverage,
+    consent_capture: consentCapture,
     landing_final_url: landingFinalUrl,
     landing_referrer_captured: landingReferrerCaptured,
     outboundCrossDomainLinks,

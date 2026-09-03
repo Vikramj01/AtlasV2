@@ -391,6 +391,26 @@ export interface StepCoverage {
   error?: string;
 }
 
+/**
+ * What journeySimulator.ts observed dismissing a consent banner on the
+ * landing step (Site Evaluation Coverage & Honesty PRD §6.5) —
+ * detectConsentBanner/dismissConsentBanner in services/detection/
+ * consentBanner.ts. tags_before/tags_after are DeclaredPlatform keys (not
+ * display labels) so a future rule can compare them directly against
+ * AuditData.declared_platforms. Undefined AuditData.consent_capture (not
+ * this interface's own fields) is what a caller checks for "was consent
+ * handling attempted at all" — see AuditData.consent_capture's docstring.
+ */
+export interface ConsentCapture {
+  banner_present: boolean;
+  vendor?: CMP;
+  dismissed: boolean;
+  /** The declared Scan Input, threaded through for convenience — same value as AuditData.cmp. */
+  declared_cmp?: CMP;
+  tags_before: string[];
+  tags_after: string[];
+}
+
 // ─── AuditData passed to validation engine ───────────────────────────────────
 
 export interface AuditData {
@@ -445,6 +465,15 @@ export interface AuditData {
    * in that case rather than treating a missing array as "nothing distinct".
    */
   step_coverage?: StepCoverage[];
+  /**
+   * Consent-banner detection/dismissal observed on the landing step — see
+   * ConsentCapture above. Undefined means consent handling was never
+   * attempted for this AuditData (Journey-Builder mode, hand-built
+   * fixtures, or an AuditData predating this field) — distinct from a
+   * ConsentCapture with banner_present: false, which means handling ran
+   * and genuinely found no banner.
+   */
+  consent_capture?: ConsentCapture;
   /**
    * The landing page's URL after navigation settled (Playwright's page.url()
    * — reflects any redirect chain the site itself performed), captured by

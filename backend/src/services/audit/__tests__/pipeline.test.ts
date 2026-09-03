@@ -457,6 +457,101 @@ describe('Full pipeline — mock browser → validation → scoring', () => {
   });
 });
 
+// ─── consent_capture (Site Evaluation Coverage & Honesty PRD §6.5) ──────────
+//
+// makeMockBrowser's generic evaluate() mock (drains dataLayerEvents
+// regardless of which call site invoked it) can't distinguish a consent
+// detection/dismissal call from any other evaluate() call, so this uses a
+// purpose-built mock that inspects the second argument — only
+// consentBanner.ts's functions ever call page.evaluate(fn, arg) with an arg
+// in this codebase, so an arg carrying `.selectors` unambiguously identifies
+// a consent-related call.
+
+function makeConsentAwareMockBrowser() {
+  const pageListeners: Record<string, Array<(arg: unknown) => void>> = {};
+  let consentEvaluateCalls = 0;
+
+  const mockPage = {
+    addInitScript: vi.fn().mockResolvedValue(undefined),
+    exposeFunction: vi.fn().mockResolvedValue(undefined),
+    waitForSelector: vi.fn().mockResolvedValue(undefined),
+    click: vi.fn().mockResolvedValue(undefined),
+    fill: vi.fn().mockResolvedValue(undefined),
+    on(event: string, handler: (arg: unknown) => void) {
+      pageListeners[event] = pageListeners[event] ?? [];
+      pageListeners[event].push(handler);
+    },
+    goto: vi.fn().mockResolvedValue(null),
+    evaluate: vi.fn().mockImplementation(async (_fn: unknown, arg?: unknown) => {
+      if (arg && typeof arg === 'object' && 'selectors' in (arg as object)) {
+        consentEvaluateCalls += 1;
+        if (consentEvaluateCalls === 1) {
+          // detectConsentBanner's call
+          return { present: true, vendor: 'onetrust', selector: '#onetrust-accept-btn-handler' };
+        }
+        // dismissConsentBanner's call — simulate the click causing a
+        // previously-gated Google Ads tag to fire for the first time.
+        const fakeReq = {
+          url: () => 'https://www.googleadservices.com/pagead/conversion/123',
+          method: () => 'GET',
+          headers: () => ({}),
+          postData: () => null,
+        };
+        (pageListeners['request'] ?? []).forEach((h) => h(fakeReq));
+        return true;
+      }
+      return []; // dataLayer flush / script-src collection / localStorage — not under test here
+    }),
+  };
+
+  const mockContext = {
+    newPage: vi.fn().mockResolvedValue(mockPage),
+    cookies: vi.fn().mockResolvedValue([]),
+    close: vi.fn().mockResolvedValue(undefined),
+  };
+  const mockBrowser = { newContext: vi.fn().mockResolvedValue(mockContext) };
+  return { mockBrowser, mockPage };
+}
+
+describe('simulateJourney — consent_capture', () => {
+  it('records the detected vendor/dismissal outcome, and a tag gated behind the banner appears in tags_after but not tags_before', async () => {
+    const { mockBrowser } = makeConsentAwareMockBrowser();
+    const auditData = await simulateJourney(mockBrowser as never, {
+      ...BASE_OPTS,
+      declared_platforms: ['google_ads'],
+      cmp: 'onetrust',
+    });
+
+    expect(auditData.consent_capture).toBeDefined();
+    expect(auditData.consent_capture?.banner_present).toBe(true);
+    expect(auditData.consent_capture?.vendor).toBe('onetrust');
+    expect(auditData.consent_capture?.dismissed).toBe(true);
+    expect(auditData.consent_capture?.declared_cmp).toBe('onetrust');
+    expect(auditData.consent_capture?.tags_before).not.toContain('google_ads');
+    expect(auditData.consent_capture?.tags_after).toContain('google_ads');
+  });
+
+  it('reports no banner and empty tags_before/tags_after when nothing was ever detected or fired', async () => {
+    const { mockBrowser, mockPage } = makeConsentAwareMockBrowser();
+    // Override: neither detect nor dismiss finds anything, and dismiss never fires a network request.
+    let consentCalls = 0;
+    mockPage.evaluate.mockImplementation(async (_fn: unknown, arg?: unknown) => {
+      if (arg && typeof arg === 'object' && 'selectors' in (arg as object)) {
+        consentCalls += 1;
+        return consentCalls === 1 ? { present: false } : false;
+      }
+      return [];
+    });
+
+    const auditData = await simulateJourney(mockBrowser as never, { ...BASE_OPTS, declared_platforms: ['google_ads'] });
+
+    expect(auditData.consent_capture?.banner_present).toBe(false);
+    expect(auditData.consent_capture?.dismissed).toBe(false);
+    expect(auditData.consent_capture?.tags_before).toEqual([]);
+    expect(auditData.consent_capture?.tags_after).toEqual([]);
+  });
+});
+
 // ─── Full v2 pipeline: step_coverage → runRegister precondition gating ──────
 //
 // Site Evaluation Coverage & Honesty PRD, Phase 1 (§13 test plan): a

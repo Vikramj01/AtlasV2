@@ -73,6 +73,15 @@ export interface StepCoverage {
   error?: string;
 }
 
+export interface ConsentCapture {
+  banner_present: boolean;
+  vendor?: CMP;
+  dismissed: boolean;
+  declared_cmp?: CMP;
+  tags_before: string[];
+  tags_after: string[];
+}
+
 export interface AuditScores {
   conversion_signal_health: number;
   attribution_risk_level: 'Low' | 'Medium' | 'High' | 'Critical';

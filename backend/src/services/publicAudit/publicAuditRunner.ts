@@ -15,6 +15,7 @@
 import { supabaseAdmin } from '@/services/database/supabase';
 import { detectSite } from '@/services/planning/siteDetectionService';
 import { createBrowserbaseSession, getCDPUrl } from '@/services/browserbase/client';
+import { dismissConsentBanner, type EvaluatePage } from '@/services/detection/consentBanner';
 import Anthropic from '@anthropic-ai/sdk';
 import { env } from '@/config/env';
 import logger from '@/utils/logger';
@@ -113,63 +114,6 @@ export async function runPublicAudit(runId: string, url: string): Promise<void> 
   }
 }
 
-// ── Consent banner handling ──────────────────────────────────────────────────
-//
-// Tries a list of known CMP "accept all" selectors, then falls back to a
-// text match (including common EU-language phrasing) against any clickable
-// element. Returns true if something was clicked.
-
-async function acceptCookieConsent(page: { evaluate<T>(fn: () => T): Promise<T> }): Promise<boolean> {
-  return page.evaluate(() => {
-    const knownSelectors = [
-      '#onetrust-accept-btn-handler',
-      '#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll',
-      '#CybotCookiebotDialogBodyButtonAccept',
-      '.CybotCookiebotDialogBodyButton',
-      '#accept-cookie-consent',
-      '#cookie-consent-accept',
-      '#coiConsentBtn',
-      '[data-testid="uc-accept-all-button"]',
-      '.uc-btn-accept-banner',
-      '#didomi-notice-agree-button',
-      '.cm-btn-accept',
-      '.cc-btn.cc-allow',
-      '#cookie-law-info-bar .cli_action_button',
-      'button[data-cky-tag="accept-button"]',
-    ];
-
-    for (const sel of knownSelectors) {
-      const el = document.querySelector(sel) as HTMLElement | null;
-      if (el) {
-        el.click();
-        return true;
-      }
-    }
-
-    const textMatches = [
-      'accept all', 'accept all cookies', 'allow all', 'allow all cookies', 'i accept',
-      'godkänn alla', 'acceptera alla', // Swedish
-      'alle akzeptieren', // German
-      'tout accepter', // French
-      'accepteren alle', 'alles accepteren', // Dutch
-      'accetta tutti', // Italian
-      'aceptar todo', // Spanish
-    ];
-    const candidates = Array.from(
-      document.querySelectorAll('button, a[role="button"], [role="button"], input[type="button"]'),
-    );
-    for (const el of candidates) {
-      const text = (el.textContent || (el as HTMLInputElement).value || '').trim().toLowerCase();
-      if (textMatches.some(t => text === t || text.includes(t))) {
-        (el as HTMLElement).click();
-        return true;
-      }
-    }
-
-    return false;
-  });
-}
-
 // ── Browserbase scan ──────────────────────────────────────────────────────────
 
 interface BrowserScanResult {
@@ -229,7 +173,7 @@ async function runBrowserbaseScan(url: string, runId: string): Promise<BrowserSc
     // Without clicking through, those tags look "not detected" even when
     // they're installed and working. Accept the banner so gated tags get a
     // chance to fire, then give them extra time to do so.
-    const consentAccepted = await acceptCookieConsent(page);
+    const consentAccepted = await dismissConsentBanner(page as unknown as EvaluatePage);
     await page.waitForTimeout(consentAccepted ? 3500 : 2000);
 
     logger.info({ runId, consentAccepted }, 'Public audit consent banner handling');
