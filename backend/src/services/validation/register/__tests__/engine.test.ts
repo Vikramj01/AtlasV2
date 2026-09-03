@@ -173,9 +173,9 @@ describe('runRegister', () => {
 
   it('defaults to the REGISTER export when no rules argument is passed', () => {
     // REGISTER now carries L0 (4), L1 (16), L2 (11), L3 (6), L4 (4), L5
-    // (12), and L6 (15) rules; the rest are empty until L7-L12 ship. Locks
-    // in that runRegister() with no explicit rules argument actually
-    // reaches the real library, not an empty stand-in.
+    // (12), L6 (15), and L7 (11) rules; the rest are empty until L8-L12
+    // ship. Locks in that runRegister() with no explicit rules argument
+    // actually reaches the real library, not an empty stand-in.
     const results = runRegister(makeAuditData());
     expect(results.length).toBeGreaterThan(0);
     expect(results.map((r) => r.rule_id)).toContain('DECLARED_PLATFORM_HAS_TAG');
@@ -185,6 +185,7 @@ describe('runRegister', () => {
     expect(results.map((r) => r.rule_id)).toContain('CROSS_DOMAIN_LINKER_CONFIGURED');
     expect(results.map((r) => r.rule_id)).toContain('PRIMARY_CONVERSION_EVENT_FIRES');
     expect(results.map((r) => r.rule_id)).toContain('CONVERSION_VALUE_PRESENT');
+    expect(results.map((r) => r.rule_id)).toContain('EMAIL_CAPTURED_FOR_ENHANCED_CONVERSIONS');
   });
 
   it("a 'declared' scope rule always runs, independent of which platforms are declared", () => {
