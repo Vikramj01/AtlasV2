@@ -34,9 +34,10 @@ import logger from '@/utils/logger';
 import { L0_RULES } from './L0';
 import { L1_RULES } from './L1';
 import { L2_RULES } from './L2';
+import { L3_RULES } from './L3';
 
 /** The full Check Register v2 rule library. Populated as each layer (L0-L12) ships. */
-export const REGISTER: ValidationRule[] = [...L0_RULES, ...L1_RULES, ...L2_RULES];
+export const REGISTER: ValidationRule[] = [...L0_RULES, ...L1_RULES, ...L2_RULES, ...L3_RULES];
 
 export function isApplicableToSiteType(
   applies_to: SiteType[] | 'all',

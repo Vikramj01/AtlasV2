@@ -11,8 +11,10 @@ import {
   interceptNetworkRequests,
   captureCookies,
   captureLocalStorage,
+  captureSessionStorage,
   mergeCookies,
   mergeLocalStorage,
+  mergeDetailedCookies,
   type StepRef,
 } from './dataCapture';
 import logger from '@/utils/logger';
@@ -121,6 +123,7 @@ export async function simulateJourney(
   const networkRequests: NetworkRequest[] = [];
   const cookieSnapshots: CookieSnapshot[] = [];
   const localStorageSnapshots: LocalStorageSnapshot[] = [];
+  const sessionStorageSnapshots: LocalStorageSnapshot[] = [];
   const gtmScriptSrcs: string[] = [];
 
   const context = await browser.newContext({
@@ -197,10 +200,13 @@ export async function simulateJourney(
         landingReferrerCaptured = await page.evaluate(() => document.referrer).catch(() => '') as string;
       }
 
-      // Snapshot cookies and localStorage
+      // Snapshot cookies, localStorage, and sessionStorage
       cookieSnapshots.push(await captureCookies(context, step.name));
       localStorageSnapshots.push(
         await captureLocalStorage(page as Parameters<typeof captureLocalStorage>[0], step.name),
+      );
+      sessionStorageSnapshots.push(
+        await captureSessionStorage(page as Parameters<typeof captureSessionStorage>[0], step.name),
       );
     }
   } finally {
@@ -217,7 +223,9 @@ export async function simulateJourney(
   } catch { /* invalid URL — ignore */ }
 
   const mergedCookies = mergeCookies(cookieSnapshots);
+  const mergedDetailedCookies = mergeDetailedCookies(cookieSnapshots);
   const mergedStorage = mergeLocalStorage(localStorageSnapshots);
+  const mergedSessionStorage = mergeLocalStorage(sessionStorageSnapshots);
 
   // Check if Meta Pixel set fbclid-related cookies
   const hasFBPixelOnLanding = !!(mergedCookies['_fbp'] || mergedCookies['_fbc']);
@@ -254,7 +262,9 @@ export async function simulateJourney(
     test_phone: opts.test_phone,
     urlParams,
     storage: mergedStorage,
+    sessionStorage: mergedSessionStorage,
     cookies: mergedCookies,
+    detailedCookies: mergedDetailedCookies,
     pageMetadata: {
       pixel_fbclid: hasFBPixelOnLanding,
       gtm_script_srcs: gtmScriptSrcs,

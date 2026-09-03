@@ -172,15 +172,16 @@ describe('runRegister', () => {
   });
 
   it('defaults to the REGISTER export when no rules argument is passed', () => {
-    // REGISTER now carries L0 (4), L1 (16), and L2 (11) rules; the rest are
-    // empty until L3-L12 ship. Locks in that runRegister() with no explicit
-    // rules argument actually reaches the real library, not an empty
-    // stand-in.
+    // REGISTER now carries L0 (4), L1 (16), L2 (11), and L3 (6) rules; the
+    // rest are empty until L4-L12 ship. Locks in that runRegister() with no
+    // explicit rules argument actually reaches the real library, not an
+    // empty stand-in.
     const results = runRegister(makeAuditData());
     expect(results.length).toBeGreaterThan(0);
     expect(results.map((r) => r.rule_id)).toContain('DECLARED_PLATFORM_HAS_TAG');
     expect(results.map((r) => r.rule_id)).toContain('GTM_CONTAINER_LOADED');
     expect(results.map((r) => r.rule_id)).toContain('GCLID_CAPTURED_AT_LANDING');
+    expect(results.map((r) => r.rule_id)).toContain('GCL_AW_COOKIE_PRESENT');
   });
 
   it("a 'declared' scope rule always runs, independent of which platforms are declared", () => {

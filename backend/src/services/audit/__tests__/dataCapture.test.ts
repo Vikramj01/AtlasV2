@@ -8,8 +8,10 @@ import {
   interceptNetworkRequests,
   captureCookies,
   captureLocalStorage,
+  captureSessionStorage,
   mergeCookies,
   mergeLocalStorage,
+  mergeDetailedCookies,
   type StepRef,
 } from '../dataCapture';
 import type { NetworkRequest } from '@/types/audit';
@@ -253,6 +255,43 @@ describe('captureCookies', () => {
     const snap = await captureCookies(context, 'landing');
     expect(snap.cookies).toEqual({});
   });
+
+  it('captures each cookie\'s full attribute set alongside the flat map', async () => {
+    const context = {
+      cookies: vi.fn().mockResolvedValue([
+        { name: '_gcl_aw', value: 'abc', domain: '.example.com', path: '/', expires: 1893456000, secure: true, sameSite: 'Lax' },
+      ]),
+    };
+    const snap = await captureCookies(context, 'landing');
+    expect(snap.detailed).toEqual([
+      { name: '_gcl_aw', value: 'abc', domain: '.example.com', path: '/', expires: 1893456000, secure: true, sameSite: 'Lax' },
+    ]);
+  });
+
+  it('defaults missing attributes rather than throwing (minimal mock shape)', async () => {
+    const context = { cookies: vi.fn().mockResolvedValue([{ name: 'gclid', value: 'x' }]) };
+    const snap = await captureCookies(context, 'landing');
+    expect(snap.detailed).toEqual([
+      { name: 'gclid', value: 'x', domain: '', path: '/', expires: -1, secure: false, sameSite: 'Lax' },
+    ]);
+  });
+});
+
+// ─── captureSessionStorage ─────────────────────────────────────────────────────
+
+describe('captureSessionStorage', () => {
+  it('returns entries from page.evaluate', async () => {
+    const page = { evaluate: vi.fn().mockResolvedValue({ gclid: 'session_only_gclid' }) };
+    const snap = await captureSessionStorage(page as never, 'landing');
+    expect(snap.step).toBe('landing');
+    expect(snap.entries['gclid']).toBe('session_only_gclid');
+  });
+
+  it('returns empty entries if page.evaluate throws', async () => {
+    const page = { evaluate: vi.fn().mockRejectedValue(new Error('cross-origin')) };
+    const snap = await captureSessionStorage(page as never, 'landing');
+    expect(snap.entries).toEqual({});
+  });
 });
 
 // ─── captureLocalStorage ──────────────────────────────────────────────────────
@@ -301,5 +340,26 @@ describe('mergeLocalStorage', () => {
 
   it('returns empty object for empty input', () => {
     expect(mergeLocalStorage([])).toEqual({});
+  });
+});
+
+describe('mergeDetailedCookies', () => {
+  it('later snapshots override earlier ones by cookie name', () => {
+    const oldCookie = { name: '_gcl_aw', value: 'old', domain: '.example.com', path: '/', expires: 100, secure: true, sameSite: 'Lax' as const };
+    const newCookie = { name: '_gcl_aw', value: 'new', domain: '.example.com', path: '/', expires: 200, secure: true, sameSite: 'Lax' as const };
+    const merged = mergeDetailedCookies([
+      { step: 'landing', cookies: {}, detailed: [oldCookie] },
+      { step: 'confirmation', cookies: {}, detailed: [newCookie] },
+    ]);
+    expect(merged).toEqual([newCookie]);
+  });
+
+  it('treats a missing detailed array as no cookies for that snapshot', () => {
+    const merged = mergeDetailedCookies([{ step: 'landing', cookies: { foo: 'bar' } }]);
+    expect(merged).toEqual([]);
+  });
+
+  it('returns an empty array for empty input', () => {
+    expect(mergeDetailedCookies([])).toEqual([]);
   });
 });

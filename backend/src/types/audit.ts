@@ -181,9 +181,29 @@ export interface NetworkRequest {
   failed?: boolean;
 }
 
+/**
+ * A cookie's full attribute set, as Playwright's context.cookies() reports
+ * it — the flat name→value map on CookieSnapshot/AuditData.cookies can't
+ * answer "how long does this live" or "is it scoped to the parent domain",
+ * which the Check Register v2 Storage Durability layer (L3) needs. expires
+ * is Unix seconds, or -1 for a session cookie (Playwright's convention —
+ * mirrored here rather than reinvented).
+ */
+export interface DetailedCookie {
+  name: string;
+  value: string;
+  domain: string;
+  path: string;
+  expires: number;
+  secure: boolean;
+  sameSite: 'Strict' | 'Lax' | 'None';
+}
+
 export interface CookieSnapshot {
   step: string;
   cookies: Record<string, string>;
+  /** Optional — only populated by dataCapture.ts's captureCookies(); absent from hand-built fixtures/proxy captures. */
+  detailed?: DetailedCookie[];
 }
 
 export interface LocalStorageSnapshot {
@@ -413,6 +433,22 @@ export interface AuditData {
   urlParams?: Record<string, string>;      // Landing page URL params
   storage?: Record<string, string>;        // localStorage at conversion step
   cookies?: Record<string, string>;        // Merged cookie map (all steps)
+  /**
+   * sessionStorage, merged the same way as storage (localStorage) above —
+   * captured separately because Storage Durability (L3) needs to tell
+   * "written to sessionStorage only" (destroyed on tab close) apart from
+   * "written to localStorage/a cookie" (survives it), which the flat
+   * `storage` field alone can't distinguish.
+   */
+  sessionStorage?: Record<string, string>;
+  /**
+   * Full cookie attribute set (domain/expires/secure/sameSite) merged
+   * across all steps, last-wins per name — the flat `cookies` map above
+   * only carries name→value, which can't answer Storage Durability's
+   * (L3) questions about cookie lifetime, domain scoping, or SameSite/
+   * Secure correctness.
+   */
+  detailedCookies?: DetailedCookie[];
   pageMetadata?: Record<string, unknown>;  // Misc page metadata
   // IHC extensions — absent when the respective data source is not connected
   gtmContainer?: GTMContainerSnapshot;     // tag_configuration layer input
