@@ -20,6 +20,7 @@ import {
   updateScheduleScore,
 } from '@/services/database/scheduleQueries';
 import { createAudit, getReport } from '@/services/database/queries';
+import { isRegressionComparable } from './regressionComparability';
 import type { FunnelType, Region } from '@/types/audit';
 import type { PlanningSession, PlanningPage } from '@/types/planning';
 import logger from '@/utils/logger';
@@ -50,12 +51,19 @@ auditQueue.on('completed', async (job) => {
     if (!schedule) return;
 
     const previousScore = schedule.last_audit_score;
+    const currentRuleSetVersion = report.rule_set_version;
 
-    // Update the stored score
-    await updateScheduleScore(scheduled_audit_id, currentScore);
+    // Update the stored score (+ which rule library produced it, so next
+    // time's comparison can tell a v1-scored run apart from a v2-scored one)
+    await updateScheduleScore(scheduled_audit_id, currentScore, currentRuleSetVersion);
 
-    // Fire regression alert if score dropped ≥5 points
-    if (previousScore !== null && currentScore < previousScore - 5) {
+    // Fire regression alert if score dropped ≥5 points, and the two runs are
+    // actually comparable (see isRegressionComparable's docstring)
+    if (
+      isRegressionComparable(schedule.last_audit_rule_set_version, currentRuleSetVersion) &&
+      previousScore !== null &&
+      currentScore < previousScore - 5
+    ) {
       const delta = Math.round(previousScore - currentScore);
       await supabaseAdmin.from('health_alerts').insert({
         user_id: schedule.user_id,
@@ -164,7 +172,13 @@ scheduleRunnerQueue.process(async (_job) => {
 
   for (const schedule of due) {
     try {
-      // Create the audit record (bypass rate limiter — this is a scheduled run)
+      // Create the audit record (bypass rate limiter — this is a scheduled run).
+      // Threads the schedule's own v2 Scan Inputs through unconditionally —
+      // undefined fields on a v1-legacy schedule are simply undefined here
+      // too, so createAudit's insert behaves exactly as it did before this
+      // field existed (Site Evaluation Coverage & Honesty PRD §6.7 — a
+      // scheduled re-run of a v2 audit must be scored by v2, not silently
+      // fall back to the legacy engine).
       const audit = await createAudit({
         user_id: schedule.user_id,
         website_url: schedule.website_url,
@@ -172,6 +186,18 @@ scheduleRunnerQueue.process(async (_job) => {
         region: schedule.region as Region,
         test_email: (schedule as unknown as Record<string, unknown>)['test_email'] as string | undefined,
         test_phone: (schedule as unknown as Record<string, unknown>)['test_phone'] as string | undefined,
+        rule_set_version: schedule.rule_set_version,
+        site_type: schedule.site_type,
+        secondary_motion: schedule.secondary_motion,
+        declared_platforms: schedule.declared_platforms,
+        primary_channel: schedule.primary_channel,
+        monthly_spend_band: schedule.monthly_spend_band,
+        traffic_regions: schedule.traffic_regions,
+        cmp: schedule.cmp,
+        product_domain: schedule.product_domain,
+        checkout_domain: schedule.checkout_domain,
+        additional_properties: schedule.additional_properties,
+        declared_conversions: schedule.declared_conversions,
       });
 
       // Enqueue the audit job (include scheduled_audit_id for regression detection)
@@ -182,6 +208,18 @@ scheduleRunnerQueue.process(async (_job) => {
         region: schedule.region,
         url_map: schedule.url_map,
         scheduled_audit_id: schedule.id,
+        rule_set_version: schedule.rule_set_version,
+        site_type: schedule.site_type,
+        secondary_motion: schedule.secondary_motion,
+        declared_platforms: schedule.declared_platforms,
+        primary_channel: schedule.primary_channel,
+        monthly_spend_band: schedule.monthly_spend_band,
+        traffic_regions: schedule.traffic_regions,
+        cmp: schedule.cmp,
+        product_domain: schedule.product_domain,
+        checkout_domain: schedule.checkout_domain,
+        additional_properties: schedule.additional_properties,
+        declared_conversions: schedule.declared_conversions,
       });
 
       // Mark the schedule as having run + compute next_run_at
