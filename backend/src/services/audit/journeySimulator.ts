@@ -6,6 +6,7 @@
 import type {
   AuditData, FunnelType, Region, DataLayerEvent, NetworkRequest, CookieSnapshot, LocalStorageSnapshot, ConsoleError,
   RuleSetVersion, SiteType, SecondaryMotion, DeclaredPlatform, TrafficRegion, CMP, DeclaredConversion,
+  StepCoverage, StepUrlSource,
 } from '@/types/audit';
 import type { NamingConvention } from '@/types/taxonomy';
 import { JOURNEY_CONFIGS } from '@/services/browserbase/journeyConfigs';
@@ -65,6 +66,29 @@ const LANDING_REFERRER = 'https://www.google.com/';
 export function hostnameOf(url: string): string | undefined {
   try {
     return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Normalises a URL for StepCoverage's "is this actually a different page
+ * than the landing page" comparison: lowercase origin + pathname, trailing
+ * slash stripped, hash and query dropped entirely (the landing URL carries
+ * injected synthetic click-ID/UTM params, so query must never factor in).
+ * A protocol-relative URL ("//example.com/path") is resolved against a
+ * placeholder base so it still normalises correctly; every other input is
+ * parsed as an absolute URL on its own, so genuinely unparseable input
+ * (rather than being silently absorbed as a "relative path" against that
+ * base) correctly returns undefined.
+ */
+export function normalizeUrlForCoverage(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  try {
+    const u = url.startsWith('//') ? new URL(url, 'https://atlas-normalize.invalid') : new URL(url);
+    let pathname = u.pathname.toLowerCase();
+    if (pathname.length > 1 && pathname.endsWith('/')) pathname = pathname.slice(0, -1);
+    return `${u.protocol}//${u.host.toLowerCase()}${pathname}`;
   } catch {
     return undefined;
   }
@@ -213,6 +237,8 @@ export async function simulateJourney(
   let marketingGa4ClientId: string | undefined;
   let productDomainGa4ClientId: string | undefined;
   let productDomainSessionStartDetected: boolean | undefined;
+  let landingNormalizedUrl: string | undefined;
+  const stepCoverage: StepCoverage[] = [];
 
   const crossDomainTargets = [opts.product_domain, opts.checkout_domain]
     .filter((d): d is string => !!d)
@@ -222,70 +248,114 @@ export async function simulateJourney(
   try {
     for (const step of steps) {
       stepRef.current = step.name;
-      let url = opts.url_map[step.urlKey] ?? opts.website_url;
+      const userSuppliedUrl = opts.url_map[step.urlKey];
+      const source: StepUrlSource = userSuppliedUrl ? 'user_supplied' : 'fallback_landing';
+      let url = userSuppliedUrl ?? opts.website_url;
 
       // Inject click IDs + UTM params on landing page
       if (step.name === 'landing') {
         url = injectSyntheticParams(url, injected);
       }
 
-      logger.debug({ step: step.name, url }, 'Navigating to step');
+      const requestedUrl = url;
+      let finalUrl: string | undefined;
+      let navigationSuccess = false;
+      let stepError: string | undefined;
 
-      const gotoOpts = step.name === 'landing'
-        ? { waitUntil: 'networkidle', referer: LANDING_REFERRER }
-        : { waitUntil: 'networkidle' };
+      // Per-step isolation (defect #1): a bad URL — or any failure partway
+      // through a step's actions/capture — must degrade only that step, not
+      // abort the whole run. Only an infrastructure failure outside this
+      // block (lost Browserbase session, CDP disconnect) still propagates
+      // up to the outer try/finally.
+      try {
+        logger.debug({ step: step.name, url }, 'Navigating to step');
 
-      await page.goto(url, gotoOpts).catch(() => {
-        // Fallback: wait for domcontentloaded
-        return page.goto(url, { waitUntil: 'domcontentloaded' });
-      });
+        const gotoOpts = step.name === 'landing'
+          ? { waitUntil: 'networkidle', referer: LANDING_REFERRER, timeout: 20000 }
+          : { waitUntil: 'networkidle', timeout: 20000 };
 
-      if (step.name === 'landing') {
-        landingFinalUrl = page.url ? page.url() : url;
-      }
+        await page.goto(url, gotoOpts).catch(() => {
+          // Fallback: wait for domcontentloaded, with a shorter bound
+          return page.goto(url, { waitUntil: 'domcontentloaded', timeout: 10000 });
+        });
 
-      if (step.waitFor) {
-        await page.waitForSelector(step.waitFor, { timeout: 5000 }).catch(() => {});
-      }
+        navigationSuccess = true;
+        finalUrl = page.url ? page.url() : url;
 
-      // Execute step actions
-      for (const action of step.actions ?? []) {
-        if (action.type === 'wait') {
-          await new Promise((r) => setTimeout(r, action.ms));
-        } else if (action.type === 'scroll_bottom') {
-          await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-        } else if (action.type === 'click' && page.click) {
-          await page.click(action.selector).catch(() => {});
-        } else if (action.type === 'fill' && page.fill) {
-          await page.fill(action.selector, action.value).catch(() => {});
+        if (step.name === 'landing') {
+          landingFinalUrl = finalUrl;
         }
+
+        if (step.waitFor) {
+          await page.waitForSelector(step.waitFor, { timeout: 5000 }).catch(() => {});
+        }
+
+        // Execute step actions
+        for (const action of step.actions ?? []) {
+          if (action.type === 'wait') {
+            await new Promise((r) => setTimeout(r, action.ms));
+          } else if (action.type === 'scroll_bottom') {
+            await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+          } else if (action.type === 'click' && page.click) {
+            await page.click(action.selector).catch(() => {});
+          } else if (action.type === 'fill' && page.fill) {
+            await page.fill(action.selector, action.value).catch(() => {});
+          }
+        }
+
+        // Flush dataLayer events collected during this step
+        await flushDataLayer(page as Parameters<typeof flushDataLayer>[0], dataLayer, step.name);
+
+        // Collect <script src> values for live GTM container ID detection
+        const stepScriptSrcs = await page
+          .evaluate(() => Array.from(document.querySelectorAll('script[src]')).map((s) => s.getAttribute('src') ?? ''))
+          .catch(() => []) as string[];
+        gtmScriptSrcs.push(...stepScriptSrcs);
+
+        // document.referrer for L2.11, and an outbound-link scan for L4.1/L4.2
+        // — both deliberately after flushDataLayer's evaluate() call, so
+        // neither can ever intercept the dataLayer sink flush.
+        if (step.name === 'landing') {
+          landingReferrerCaptured = await page.evaluate(() => document.referrer).catch(() => '') as string;
+          outboundCrossDomainLinks = await scanOutboundCrossDomainLinks(page, crossDomainTargets);
+        }
+
+        // Snapshot cookies, localStorage, and sessionStorage
+        cookieSnapshots.push(await captureCookies(context, step.name));
+        localStorageSnapshots.push(
+          await captureLocalStorage(page as Parameters<typeof captureLocalStorage>[0], step.name),
+        );
+        sessionStorageSnapshots.push(
+          await captureSessionStorage(page as Parameters<typeof captureSessionStorage>[0], step.name),
+        );
+      } catch (err) {
+        stepError = err instanceof Error ? err.message : String(err);
+        logger.warn({ step: step.name, err: stepError }, 'Step failed — continuing to the next step');
       }
 
-      // Flush dataLayer events collected during this step
-      await flushDataLayer(page as Parameters<typeof flushDataLayer>[0], dataLayer, step.name);
-
-      // Collect <script src> values for live GTM container ID detection
-      const stepScriptSrcs = await page
-        .evaluate(() => Array.from(document.querySelectorAll('script[src]')).map((s) => s.getAttribute('src') ?? ''))
-        .catch(() => []) as string[];
-      gtmScriptSrcs.push(...stepScriptSrcs);
-
-      // document.referrer for L2.11, and an outbound-link scan for L4.1/L4.2
-      // — both deliberately after flushDataLayer's evaluate() call, so
-      // neither can ever intercept the dataLayer sink flush.
+      // Computed unconditionally — even a step that failed partway through
+      // (e.g. dataLayer flush threw after navigation already succeeded)
+      // still has a real finalUrl/requestedUrl worth recording provenance
+      // for, and landingNormalizedUrl must be set from the landing step's
+      // outcome either way so later steps have something to compare against.
+      const normalizedStepUrl = normalizeUrlForCoverage(finalUrl ?? requestedUrl);
       if (step.name === 'landing') {
-        landingReferrerCaptured = await page.evaluate(() => document.referrer).catch(() => '') as string;
-        outboundCrossDomainLinks = await scanOutboundCrossDomainLinks(page, crossDomainTargets);
+        landingNormalizedUrl = normalizedStepUrl;
       }
+      const distinctFromLanding = step.name !== 'landing'
+        && !!normalizedStepUrl
+        && !!landingNormalizedUrl
+        && normalizedStepUrl !== landingNormalizedUrl;
 
-      // Snapshot cookies, localStorage, and sessionStorage
-      cookieSnapshots.push(await captureCookies(context, step.name));
-      localStorageSnapshots.push(
-        await captureLocalStorage(page as Parameters<typeof captureLocalStorage>[0], step.name),
-      );
-      sessionStorageSnapshots.push(
-        await captureSessionStorage(page as Parameters<typeof captureSessionStorage>[0], step.name),
-      );
+      stepCoverage.push({
+        step: step.name,
+        requested_url: requestedUrl,
+        final_url: finalUrl,
+        source,
+        distinct_from_landing: distinctFromLanding,
+        navigation_success: navigationSuccess,
+        ...(stepError ? { error: stepError } : {}),
+      });
     }
 
     // Cross-Domain Continuity probe (L4.3/L4.4) — only when product_domain
@@ -362,6 +432,7 @@ export async function simulateJourney(
     declared_conversions: opts.declared_conversions,
     namingConvention: opts.namingConvention,
     steps_visited: steps.map((s) => s.name),
+    step_coverage: stepCoverage,
     landing_final_url: landingFinalUrl,
     landing_referrer_captured: landingReferrerCaptured,
     outboundCrossDomainLinks,

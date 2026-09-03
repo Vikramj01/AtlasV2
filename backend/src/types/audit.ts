@@ -340,6 +340,43 @@ export interface SiteSetupSummary {
   possible_server_side_gtm: PossibleServerSideGtm;
 }
 
+// ─── Step coverage (Site Evaluation Coverage & Honesty PRD, Phase 1) ─────────
+
+/**
+ * How a journey step's URL was resolved. Phase 1 (journeySimulator.ts) only
+ * ever produces 'user_supplied' (present in the caller's url_map) or
+ * 'fallback_landing' (silently substituted the homepage). 'sitemap',
+ * 'nav_link' and 'heuristic' are Phase 2 values, populated once
+ * stepUrlResolver.ts ships — declared here now so StepCoverage.source's
+ * type doesn't need to change shape when Phase 2 lands.
+ */
+export type StepUrlSource = 'user_supplied' | 'sitemap' | 'nav_link' | 'heuristic' | 'fallback_landing';
+
+/**
+ * Per-step provenance for one journey step — did the crawl actually reach a
+ * page distinct from the landing page, or silently fall back to it? This is
+ * the data L0.3 (CONVERSION_SURFACE_IDENTIFIED) is rewritten against: without
+ * it, a step relabelled 'checkout' that never left the homepage is
+ * indistinguishable from a real checkout visit.
+ */
+export interface StepCoverage {
+  step: string;
+  requested_url: string;
+  /** Playwright's page.url() after navigation settled — reflects any redirect the site performed. Absent when navigation never completed. */
+  final_url?: string;
+  source: StepUrlSource;
+  /**
+   * Whether this step's URL (final_url when available, else requested_url)
+   * differs from the landing step's, on a normalised comparison — lowercase
+   * origin + pathname, trailing slash stripped, hash/query removed (query
+   * must be dropped because the landing URL carries injected synthetic
+   * click-ID/UTM params). Always false for the landing step itself.
+   */
+  distinct_from_landing: boolean;
+  navigation_success: boolean;
+  error?: string;
+}
+
 // ─── AuditData passed to validation engine ───────────────────────────────────
 
 export interface AuditData {
@@ -387,6 +424,13 @@ export interface AuditData {
    * TAGS_PRESENT_ACROSS_SAMPLED_PAGES (L1.13).
    */
   steps_visited?: string[];
+  /**
+   * Per-step URL provenance — see StepCoverage above. Undefined for AuditData
+   * built outside journeySimulator.ts (Journey-Builder mode's proxyAuditData,
+   * hand-built test fixtures); L0.3 falls back to its old label-based logic
+   * in that case rather than treating a missing array as "nothing distinct".
+   */
+  step_coverage?: StepCoverage[];
   /**
    * The landing page's URL after navigation settled (Playwright's page.url()
    * — reflects any redirect chain the site itself performed), captured by

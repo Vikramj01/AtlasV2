@@ -59,6 +59,20 @@ export interface ScanInputs {
   declared_conversions?: DeclaredConversion[];
 }
 
+// ─── Step coverage (Site Evaluation Coverage & Honesty PRD, Phase 1) ─────────
+
+export type StepUrlSource = 'user_supplied' | 'sitemap' | 'nav_link' | 'heuristic' | 'fallback_landing';
+
+export interface StepCoverage {
+  step: string;
+  requested_url: string;
+  final_url?: string;
+  source: StepUrlSource;
+  distinct_from_landing: boolean;
+  navigation_success: boolean;
+  error?: string;
+}
+
 export interface AuditScores {
   conversion_signal_health: number;
   attribution_risk_level: 'Low' | 'Medium' | 'High' | 'Critical';

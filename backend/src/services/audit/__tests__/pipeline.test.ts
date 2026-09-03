@@ -274,6 +274,90 @@ describe('simulateJourney — AuditData assembly', () => {
   });
 });
 
+// ─── step_coverage (Site Evaluation Coverage & Honesty PRD, Phase 1) ─────────
+
+describe('simulateJourney — step_coverage', () => {
+  it('marks every step user_supplied and distinct from landing when url_map gives each a real, different URL', async () => {
+    const { mockBrowser } = makeMockBrowser();
+    const auditData = await simulateJourney(mockBrowser as never, BASE_OPTS);
+
+    expect(auditData.step_coverage).toHaveLength(4);
+    const [landing, product, checkout, confirmation] = auditData.step_coverage!;
+
+    expect(landing.step).toBe('landing');
+    expect(landing.source).toBe('user_supplied');
+    expect(landing.distinct_from_landing).toBe(false); // never distinct from itself
+    expect(landing.navigation_success).toBe(true);
+
+    for (const step of [product, checkout, confirmation]) {
+      expect(step.source).toBe('user_supplied');
+      expect(step.distinct_from_landing).toBe(true);
+      expect(step.navigation_success).toBe(true);
+    }
+  });
+
+  it('marks a step fallback_landing and NOT distinct when url_map omits its key entirely', async () => {
+    const { mockBrowser } = makeMockBrowser();
+    const auditData = await simulateJourney(mockBrowser as never, {
+      ...BASE_OPTS,
+      url_map: { landing: 'https://shop.example.com' }, // product/checkout/confirmation all fall back
+    });
+
+    const nonLanding = auditData.step_coverage!.filter((s) => s.step !== 'landing');
+    expect(nonLanding).toHaveLength(3);
+    for (const step of nonLanding) {
+      expect(step.source).toBe('fallback_landing');
+      expect(step.distinct_from_landing).toBe(false);
+    }
+  });
+
+  it('marks every step NOT distinct when url_map points every key at the same homepage URL (the defect this PRD exists to fix)', async () => {
+    const { mockBrowser } = makeMockBrowser();
+    const auditData = await simulateJourney(mockBrowser as never, {
+      ...BASE_OPTS,
+      url_map: {
+        landing: 'https://shop.example.com',
+        product: 'https://shop.example.com',
+        checkout: 'https://shop.example.com',
+        confirmation: 'https://shop.example.com',
+      },
+    });
+
+    // These are 'user_supplied' — the URL was explicitly given — but still
+    // not distinct, because it's the same page as landing. source and
+    // distinct_from_landing are independent signals.
+    const nonLanding = auditData.step_coverage!.filter((s) => s.step !== 'landing');
+    expect(nonLanding.every((s) => s.source === 'user_supplied')).toBe(true);
+    expect(nonLanding.every((s) => s.distinct_from_landing === false)).toBe(true);
+  });
+
+  it('a step whose navigation fails entirely does not abort the other steps (defect #1)', async () => {
+    const { mockBrowser, mockPage } = makeMockBrowser();
+    mockPage.goto.mockImplementation(async (url: string) => {
+      if (url.includes('order-confirmed')) {
+        throw new Error('net::ERR_NAME_NOT_RESOLVED');
+      }
+      return null;
+    });
+
+    const auditData = await simulateJourney(mockBrowser as never, BASE_OPTS);
+
+    // landing, product, checkout each navigate once; confirmation is tried
+    // twice (primary + domcontentloaded fallback), both of which fail.
+    expect(mockPage.goto).toHaveBeenCalledTimes(5);
+
+    const coverage = auditData.step_coverage!;
+    expect(coverage).toHaveLength(4);
+
+    const confirmation = coverage.find((s) => s.step === 'confirmation')!;
+    expect(confirmation.navigation_success).toBe(false);
+    expect(confirmation.error).toBeTruthy();
+
+    const otherSteps = coverage.filter((s) => s.step !== 'confirmation');
+    expect(otherSteps.every((s) => s.navigation_success)).toBe(true);
+  });
+});
+
 // ─── Full pipeline: simulate → validate → score ───────────────────────────────
 
 describe('Full pipeline — mock browser → validation → scoring', () => {
