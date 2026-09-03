@@ -172,9 +172,12 @@ describe('runRegister', () => {
   });
 
   it('defaults to the REGISTER export when no rules argument is passed', () => {
-    // REGISTER is empty until L0-L12 ship — this locks in that runRegister()
-    // degrades gracefully (empty results) rather than throwing.
-    expect(runRegister(makeAuditData())).toEqual([]);
+    // REGISTER now carries L0's 4 rules; the rest are empty until L1-L12
+    // ship. Locks in that runRegister() with no explicit rules argument
+    // actually reaches the real library, not an empty stand-in.
+    const results = runRegister(makeAuditData());
+    expect(results.length).toBeGreaterThan(0);
+    expect(results.map((r) => r.rule_id)).toContain('DECLARED_PLATFORM_HAS_TAG');
   });
 
   it("a 'declared' scope rule always runs, independent of which platforms are declared", () => {

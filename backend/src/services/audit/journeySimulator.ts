@@ -34,6 +34,28 @@ function injectClickIds(url: string, gclid: string, fbclid: string): string {
   return u.toString();
 }
 
+/**
+ * Live HTTP reachability probe for a Scan Input domain (L0.4 — "Product
+ * domain reachable"). Rules stay pure/synchronous (see engine.ts docstrings),
+ * so this runs here, once, before AuditData is returned — the same pattern
+ * as sgtmVerified (resolved by the caller, read synchronously by the rule).
+ * A HEAD request is enough; any non-5xx response counts as reachable (a 401/
+ * 403 auth wall is still "reachable", per L0.4's own "crawlable to the auth
+ * wall" framing — this only proves the door exists, not that it opens).
+ */
+export async function probeDomainReachable(url: string, timeoutMs = 5000): Promise<boolean> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { method: 'HEAD', signal: controller.signal, redirect: 'follow' });
+    return res.status < 500;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export interface SimulatorOptions {
   audit_id: string;
   website_url: string;
@@ -42,6 +64,8 @@ export interface SimulatorOptions {
   url_map: Record<string, string>;
   test_email?: string;
   test_phone?: string;
+  /** Check Register v2 Scan Input — see probeDomainReachable above. */
+  product_domain?: string;
 }
 
 /**
@@ -156,11 +180,25 @@ export async function simulateJourney(
   // Check if Meta Pixel set fbclid-related cookies
   const hasFBPixelOnLanding = !!(mergedCookies['_fbp'] || mergedCookies['_fbc']);
 
+  // L0.4 — only probe when product_domain is a distinct host from the
+  // marketing domain; a same-site value has nothing separate to prove.
+  let productDomainReachable: boolean | undefined;
+  if (opts.product_domain) {
+    try {
+      const sameHost = new URL(opts.product_domain).host === new URL(opts.website_url).host;
+      productDomainReachable = sameHost ? undefined : await probeDomainReachable(opts.product_domain);
+    } catch {
+      productDomainReachable = false; // product_domain wasn't a parseable URL — treat as unreachable, not skipped
+    }
+  }
+
   return {
     audit_id: opts.audit_id,
     website_url: opts.website_url,
     funnel_type: opts.funnel_type,
     region: opts.region,
+    product_domain: opts.product_domain,
+    product_domain_reachable: productDomainReachable,
     dataLayer,
     networkRequests,
     cookieSnapshots,

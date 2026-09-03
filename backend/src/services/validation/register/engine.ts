@@ -31,9 +31,10 @@ import type {
   AuditData, ValidationRule, ValidationResult, SiteType, DeclaredPlatform, PlatformScope,
 } from '@/types/audit';
 import logger from '@/utils/logger';
+import { L0_RULES } from './L0';
 
 /** The full Check Register v2 rule library. Populated as each layer (L0-L12) ships. */
-export const REGISTER: ValidationRule[] = [];
+export const REGISTER: ValidationRule[] = [...L0_RULES];
 
 export function isApplicableToSiteType(
   applies_to: SiteType[] | 'all',

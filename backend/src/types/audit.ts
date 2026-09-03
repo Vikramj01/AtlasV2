@@ -326,6 +326,14 @@ export interface AuditData {
   traffic_regions?: TrafficRegion[];
   cmp?: CMP;
   product_domain?: string;
+  /**
+   * Result of a live HTTP reachability probe against product_domain, run by
+   * the caller (journeySimulator.ts's probeDomainReachable) before rules run
+   * — same pattern as sgtmVerified below. Undefined when product_domain was
+   * never set or equals website_url (nothing distinct to probe); L0.4 treats
+   * that as 'skipped', not as unreachable.
+   */
+  product_domain_reachable?: boolean;
   checkout_domain?: string;
   additional_properties?: string[];
   declared_conversions?: DeclaredConversion[];
