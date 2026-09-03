@@ -1,5 +1,7 @@
 // ─── Audit inputs ────────────────────────────────────────────────────────────
 
+import type { NamingConvention } from './taxonomy';
+
 export type FunnelType = 'ecommerce' | 'saas' | 'lead_gen';
 export type Region = 'us' | 'eu' | 'global';
 export type AuditStatus = 'queued' | 'running' | 'completed' | 'failed';
@@ -473,6 +475,15 @@ export interface AuditData {
   // themselves. Undefined when the connection has no associated client_id
   // (e.g. an org-level GTM connection not linked to a specific client).
   sgtmVerified?: boolean;
+  /**
+   * The org's Naming Conventions config (services/signals/namingConvention.ts),
+   * resolved by the caller before rules run — same "resolve outside, read
+   * inside" pattern as sgtmVerified/connected_gtm_container_id above. Used
+   * by EVENT_NAMES_MATCH_DECLARED_TAXONOMY (L5.13). Falls back to
+   * DEFAULT_CONVENTION inside the rule when undefined (org never
+   * configured one), so this is never itself a reason to skip.
+   */
+  namingConvention?: NamingConvention;
 }
 
 // ─── API inputs ───────────────────────────────────────────────────────────────

@@ -26,7 +26,7 @@ function searchParam(url: string, key: string): string | null {
 }
 
 /** A GA4 hit's param, checked in the URL query string first, then the POST body (gtag sends both shapes). */
-function ga4RequestParam(request: NetworkRequest, key: string): string | null {
+export function ga4RequestParam(request: NetworkRequest, key: string): string | null {
   const fromQuery = searchParam(request.url, key);
   if (fromQuery) return fromQuery;
   if (!request.body) return null;
@@ -91,6 +91,22 @@ export function detectMetaPixel(requests: NetworkRequest[]): TagMatch {
   return buildMatch(hits, hits.map((r) => searchParam(r.url, 'id')));
 }
 
+/**
+ * A Meta Pixel call carrying an actual tracked event (`fbq('track', 'Purchase', ...)`
+ * and friends) rather than just the base pageview the loader itself fires —
+ * `ev=` present and not `PageView`. Used by META_CONVERSION_EVENT_FIRES
+ * (L5.3) to distinguish "the pixel is installed" (L1.7) from "a conversion
+ * event actually fired".
+ */
+export function detectMetaConversionEvent(requests: NetworkRequest[]): TagMatch {
+  const hits = requests.filter((r) => {
+    if (!r.url.includes('facebook.com/tr')) return false;
+    const ev = searchParam(r.url, 'ev') ?? (r.body ? new URLSearchParams(r.body).get('ev') : null);
+    return !!ev && ev !== 'PageView';
+  });
+  return buildMatch(hits, []);
+}
+
 /** Google Ads conversion pixel — googleadservices.com/pagead/conversion or google.com/pagead/conversion. */
 export function detectGoogleAds(requests: NetworkRequest[]): TagMatch {
   const hits = requests.filter(
@@ -102,6 +118,17 @@ export function detectGoogleAds(requests: NetworkRequest[]): TagMatch {
 /** TikTok Pixel — analytics.tiktok.com. No stable public ID param to extract. */
 export function detectTikTokPixel(requests: NetworkRequest[]): TagMatch {
   const hits = requests.filter((r) => r.url.includes('analytics.tiktok.com'));
+  return buildMatch(hits, []);
+}
+
+/**
+ * A TikTok pixel event track call, not just the base pixel loader script —
+ * the loader is a GET for the .js file, while ttq.track() calls POST to the
+ * tracking endpoint. Used by TIKTOK_CONVERSION_EVENT_FIRES (L5.4) to
+ * distinguish "the pixel is installed" (L1.8) from "an event actually fired".
+ */
+export function detectTikTokConversionEvent(requests: NetworkRequest[]): TagMatch {
+  const hits = requests.filter((r) => r.url.includes('analytics.tiktok.com') && r.method === 'POST');
   return buildMatch(hits, []);
 }
 

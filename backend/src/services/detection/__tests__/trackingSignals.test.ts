@@ -3,7 +3,7 @@
  * Cross-Domain Continuity (L4.3/L4.4).
  */
 import { describe, it, expect } from 'vitest';
-import { extractGa4ClientId, ga4SessionStartDetected } from '../trackingSignals';
+import { extractGa4ClientId, ga4SessionStartDetected, detectMetaConversionEvent, detectTikTokConversionEvent } from '../trackingSignals';
 import type { NetworkRequest } from '@/types/audit';
 
 function makeRequest(overrides: Partial<NetworkRequest> = {}): NetworkRequest {
@@ -57,5 +57,39 @@ describe('ga4SessionStartDetected', () => {
 
   it('returns false for an empty request list', () => {
     expect(ga4SessionStartDetected([])).toBe(false);
+  });
+});
+
+describe('detectMetaConversionEvent', () => {
+  it('detects a tracked event via the ev query param', () => {
+    const requests = [makeRequest({ url: 'https://www.facebook.com/tr?id=123&ev=Purchase' })];
+    expect(detectMetaConversionEvent(requests).hitCount).toBe(1);
+  });
+
+  it('detects a tracked event via the ev POST body param', () => {
+    const requests = [makeRequest({ url: 'https://www.facebook.com/tr', method: 'POST', body: 'id=123&ev=Lead' })];
+    expect(detectMetaConversionEvent(requests).hitCount).toBe(1);
+  });
+
+  it('does not count a base PageView pixel call as a conversion event', () => {
+    const requests = [makeRequest({ url: 'https://www.facebook.com/tr?id=123&ev=PageView' })];
+    expect(detectMetaConversionEvent(requests).hitCount).toBe(0);
+  });
+
+  it('ignores requests with no ev param at all', () => {
+    const requests = [makeRequest({ url: 'https://www.facebook.com/tr?id=123' })];
+    expect(detectMetaConversionEvent(requests).hitCount).toBe(0);
+  });
+});
+
+describe('detectTikTokConversionEvent', () => {
+  it('counts a POST to the TikTok tracking endpoint as an event', () => {
+    const requests = [makeRequest({ url: 'https://analytics.tiktok.com/api/v2/pixel/track', method: 'POST' })];
+    expect(detectTikTokConversionEvent(requests).hitCount).toBe(1);
+  });
+
+  it('does not count the GET pixel loader script as an event', () => {
+    const requests = [makeRequest({ url: 'https://analytics.tiktok.com/i18n/pixel/events.js', method: 'GET' })];
+    expect(detectTikTokConversionEvent(requests).hitCount).toBe(0);
   });
 });
