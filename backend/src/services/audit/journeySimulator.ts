@@ -17,6 +17,7 @@ import {
   mergeDetailedCookies,
   type StepRef,
 } from './dataCapture';
+import { extractGa4ClientId, ga4SessionStartDetected } from '@/services/detection/trackingSignals';
 import logger from '@/utils/logger';
 
 /**
@@ -56,6 +57,45 @@ function injectSyntheticParams(url: string, params: Record<string, string | unde
 /** Referer header set on the landing navigation — simulates arriving via an ad click, for L2.11. */
 const LANDING_REFERRER = 'https://www.google.com/';
 
+export function hostnameOf(url: string): string | undefined {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Scans the landing page's <a href> tags for links to the declared product/
+ * checkout domain and checks how many carry GA4's `_gl` cross-domain linker
+ * parameter — the transport mechanism CROSS_DOMAIN_LINKER_CONFIGURED (L4.1)
+ * and _GL_PARAMETER_APPENDED_ON_OUTBOUND_LINKS (L4.2) both read.
+ */
+export async function scanOutboundCrossDomainLinks(
+  page: { evaluate: (fn: () => unknown) => Promise<unknown> },
+  targetHosts: string[],
+): Promise<{ total: number; withGl: number }> {
+  if (targetHosts.length === 0) return { total: 0, withGl: 0 };
+  try {
+    const hrefs = await page
+      .evaluate(() => Array.from(document.querySelectorAll('a[href]')).map((a) => (a as HTMLAnchorElement).href))
+      .catch(() => []) as string[];
+    let total = 0;
+    let withGl = 0;
+    for (const href of hrefs) {
+      const host = hostnameOf(href);
+      if (!host || !targetHosts.includes(host)) continue;
+      total += 1;
+      try {
+        if (new URL(href).searchParams.has('_gl')) withGl += 1;
+      } catch { /* unreachable — href already parsed by hostnameOf */ }
+    }
+    return { total, withGl };
+  } catch {
+    return { total: 0, withGl: 0 };
+  }
+}
+
 /**
  * Live HTTP reachability probe for a Scan Input domain (L0.4 — "Product
  * domain reachable"). Rules stay pure/synchronous (see engine.ts docstrings),
@@ -88,6 +128,8 @@ export interface SimulatorOptions {
   test_phone?: string;
   /** Check Register v2 Scan Input — see probeDomainReachable above. */
   product_domain?: string;
+  /** Check Register v2 Scan Input — used by scanOutboundCrossDomainLinks (L4.1/L4.2). */
+  checkout_domain?: string;
   /** Resolved by the caller (getConnectedGtmContainerId) before simulation — see AuditData.connected_gtm_container_id. */
   connected_gtm_container_id?: string;
 }
@@ -141,6 +183,16 @@ export async function simulateJourney(
 
   let landingFinalUrl: string | undefined;
   let landingReferrerCaptured: string | undefined;
+  let outboundCrossDomainLinks: { total: number; withGl: number } | undefined;
+  let productDomainReachable: boolean | undefined;
+  let marketingGa4ClientId: string | undefined;
+  let productDomainGa4ClientId: string | undefined;
+  let productDomainSessionStartDetected: boolean | undefined;
+
+  const crossDomainTargets = [opts.product_domain, opts.checkout_domain]
+    .filter((d): d is string => !!d)
+    .map(hostnameOf)
+    .filter((h): h is string => !!h);
 
   try {
     for (const step of steps) {
@@ -193,11 +245,12 @@ export async function simulateJourney(
         .catch(() => []) as string[];
       gtmScriptSrcs.push(...stepScriptSrcs);
 
-      // document.referrer for L2.11 — deliberately the last evaluate() call
-      // in the step, after flushDataLayer's, so it can never intercept the
-      // dataLayer sink flush.
+      // document.referrer for L2.11, and an outbound-link scan for L4.1/L4.2
+      // — both deliberately after flushDataLayer's evaluate() call, so
+      // neither can ever intercept the dataLayer sink flush.
       if (step.name === 'landing') {
         landingReferrerCaptured = await page.evaluate(() => document.referrer).catch(() => '') as string;
+        outboundCrossDomainLinks = await scanOutboundCrossDomainLinks(page, crossDomainTargets);
       }
 
       // Snapshot cookies, localStorage, and sessionStorage
@@ -208,6 +261,39 @@ export async function simulateJourney(
       sessionStorageSnapshots.push(
         await captureSessionStorage(page as Parameters<typeof captureSessionStorage>[0], step.name),
       );
+    }
+
+    // Cross-Domain Continuity probe (L4.3/L4.4) — only when product_domain
+    // is a genuinely distinct, reachable host (reuses the same
+    // reachability probe L0.4 needs, computed once here rather than
+    // twice). Navigates the SAME context/page there, as a real cross-
+    // domain click would, so cookies that are actually parent-domain-
+    // scoped carry over exactly as they would for a real visitor.
+    if (opts.product_domain) {
+      try {
+        const sameHost = new URL(opts.product_domain).host === new URL(opts.website_url).host;
+        if (!sameHost) {
+          productDomainReachable = await probeDomainReachable(opts.product_domain);
+          if (productDomainReachable) {
+            marketingGa4ClientId = extractGa4ClientId(networkRequests, mergeCookies(cookieSnapshots));
+
+            stepRef.current = 'product_domain';
+            const productDomain = opts.product_domain;
+            await page.goto(productDomain, { waitUntil: 'networkidle' }).catch(() =>
+              page.goto(productDomain, { waitUntil: 'domcontentloaded' }),
+            );
+            await flushDataLayer(page as Parameters<typeof flushDataLayer>[0], dataLayer, 'product_domain');
+            const productCookieSnapshot = await captureCookies(context, 'product_domain');
+            cookieSnapshots.push(productCookieSnapshot);
+
+            const productDomainRequests = networkRequests.filter((r) => r.step === 'product_domain');
+            productDomainGa4ClientId = extractGa4ClientId(productDomainRequests, productCookieSnapshot.cookies);
+            productDomainSessionStartDetected = ga4SessionStartDetected(productDomainRequests);
+          }
+        }
+      } catch {
+        productDomainReachable = false; // product_domain wasn't a parseable URL — treat as unreachable, not skipped
+      }
     }
   } finally {
     await context.close();
@@ -230,18 +316,6 @@ export async function simulateJourney(
   // Check if Meta Pixel set fbclid-related cookies
   const hasFBPixelOnLanding = !!(mergedCookies['_fbp'] || mergedCookies['_fbc']);
 
-  // L0.4 — only probe when product_domain is a distinct host from the
-  // marketing domain; a same-site value has nothing separate to prove.
-  let productDomainReachable: boolean | undefined;
-  if (opts.product_domain) {
-    try {
-      const sameHost = new URL(opts.product_domain).host === new URL(opts.website_url).host;
-      productDomainReachable = sameHost ? undefined : await probeDomainReachable(opts.product_domain);
-    } catch {
-      productDomainReachable = false; // product_domain wasn't a parseable URL — treat as unreachable, not skipped
-    }
-  }
-
   return {
     audit_id: opts.audit_id,
     website_url: opts.website_url,
@@ -249,10 +323,15 @@ export async function simulateJourney(
     region: opts.region,
     product_domain: opts.product_domain,
     product_domain_reachable: productDomainReachable,
+    checkout_domain: opts.checkout_domain,
     connected_gtm_container_id: opts.connected_gtm_container_id,
     steps_visited: steps.map((s) => s.name),
     landing_final_url: landingFinalUrl,
     landing_referrer_captured: landingReferrerCaptured,
+    outboundCrossDomainLinks,
+    marketingGa4ClientId,
+    productDomainGa4ClientId,
+    productDomainSessionStartDetected,
     dataLayer,
     networkRequests,
     cookieSnapshots,

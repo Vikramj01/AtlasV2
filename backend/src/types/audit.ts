@@ -449,6 +449,19 @@ export interface AuditData {
    * Secure correctness.
    */
   detailedCookies?: DetailedCookie[];
+  /**
+   * Check Register v2 Cross-Domain Continuity (L4) inputs — all captured by
+   * journeySimulator.ts only when product_domain is set to a genuinely
+   * distinct, reachable host (reusing the L0.4 reachability probe); left
+   * undefined otherwise, which the L4 rules that read them treat as
+   * 'skipped', not a failure. outboundCrossDomainLinks comes from a DOM
+   * scan of the landing page's <a href> tags, not from the product-domain
+   * visit itself.
+   */
+  marketingGa4ClientId?: string;
+  productDomainGa4ClientId?: string;
+  productDomainSessionStartDetected?: boolean;
+  outboundCrossDomainLinks?: { total: number; withGl: number };
   pageMetadata?: Record<string, unknown>;  // Misc page metadata
   // IHC extensions — absent when the respective data source is not connected
   gtmContainer?: GTMContainerSnapshot;     // tag_configuration layer input

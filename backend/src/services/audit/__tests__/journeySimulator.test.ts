@@ -1,10 +1,10 @@
 /**
  * Unit tests for journeySimulator's probeDomainReachable (Check Register v2
- * L0.4 — "Product domain reachable"). global.fetch is mocked; no network or
- * browser required.
+ * L0.4 — "Product domain reachable") and scanOutboundCrossDomainLinks
+ * (L4.1/L4.2). global.fetch is mocked; no network or browser required.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { probeDomainReachable } from '../journeySimulator';
+import { probeDomainReachable, hostnameOf, scanOutboundCrossDomainLinks } from '../journeySimulator';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -40,5 +40,49 @@ describe('probeDomainReachable', () => {
       })),
     );
     await expect(probeDomainReachable('https://slow.example.com', 10)).resolves.toBe(false);
+  });
+});
+
+describe('hostnameOf', () => {
+  it('strips a leading www.', () => {
+    expect(hostnameOf('https://www.example.com/path')).toBe('example.com');
+  });
+
+  it('returns the bare hostname when there is no www.', () => {
+    expect(hostnameOf('https://app.example.com/path?x=1')).toBe('app.example.com');
+  });
+
+  it('returns undefined for an unparseable URL', () => {
+    expect(hostnameOf('not a url')).toBeUndefined();
+  });
+});
+
+describe('scanOutboundCrossDomainLinks', () => {
+  function makePage(hrefs: string[]) {
+    return { evaluate: vi.fn().mockResolvedValue(hrefs) };
+  }
+
+  it('returns zero counts when no target hosts are given', async () => {
+    const page = makePage(['https://app.example.com/']);
+    await expect(scanOutboundCrossDomainLinks(page, [])).resolves.toEqual({ total: 0, withGl: 0 });
+  });
+
+  it('counts links to a target host and how many carry _gl', async () => {
+    const page = makePage([
+      'https://app.example.com/dashboard?_gl=1abc123',
+      'https://app.example.com/pricing',
+      'https://unrelated.com/',
+    ]);
+    await expect(scanOutboundCrossDomainLinks(page, ['app.example.com'])).resolves.toEqual({ total: 2, withGl: 1 });
+  });
+
+  it('ignores unparseable hrefs and links to non-target hosts', async () => {
+    const page = makePage(['javascript:void(0)', 'https://other.com/']);
+    await expect(scanOutboundCrossDomainLinks(page, ['app.example.com'])).resolves.toEqual({ total: 0, withGl: 0 });
+  });
+
+  it('returns zero counts when page.evaluate throws', async () => {
+    const page = { evaluate: vi.fn().mockRejectedValue(new Error('detached')) };
+    await expect(scanOutboundCrossDomainLinks(page, ['app.example.com'])).resolves.toEqual({ total: 0, withGl: 0 });
   });
 });
