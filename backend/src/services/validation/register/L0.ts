@@ -117,6 +117,27 @@ export const UNDECLARED_PLATFORM_TAG_DETECTED: ValidationRule = {
 // before this field existed), falls back to the original step-label check
 // so those callers keep working exactly as before.
 
+/**
+ * The boolean this rule reduces to — factored out so engine.ts's
+ * 'conversion_surface' precondition (§6.3) evaluates the *exact* same
+ * condition L0.3 itself reports pass/fail on, rather than a second,
+ * potentially-drifting reimplementation. A rule gated on this precondition
+ * is 'skipped', never 'fail', when it comes back false — see engine.ts.
+ */
+export function conversionSurfaceReached(auditData: AuditData): boolean {
+  const stepCoverage = auditData.step_coverage;
+
+  if (stepCoverage && stepCoverage.length > 0) {
+    return stepCoverage.some((s) => s.distinct_from_landing && s.navigation_success);
+  }
+
+  const nonLandingSteps = new Set(
+    [...auditData.dataLayer.map((e) => e.step), ...auditData.networkRequests.map((r) => r.step)]
+      .filter((s) => s && s !== 'landing' && s !== 'init'),
+  );
+  return nonLandingSteps.size > 0;
+}
+
 export const CONVERSION_SURFACE_IDENTIFIED: ValidationRule = {
   id: 'L0.3',
   rule_id: 'CONVERSION_SURFACE_IDENTIFIED',
@@ -133,7 +154,7 @@ export const CONVERSION_SURFACE_IDENTIFIED: ValidationRule = {
 
     if (stepCoverage && stepCoverage.length > 0) {
       const qualifying = stepCoverage.filter((s) => s.distinct_from_landing && s.navigation_success);
-      const found = qualifying.length > 0;
+      const found = qualifying.length > 0; // === conversionSurfaceReached(auditData) for this branch
       const nonLanding = stepCoverage.filter((s) => s.step !== 'landing');
       const fellBack = nonLanding.filter((s) => !(s.distinct_from_landing && s.navigation_success));
 

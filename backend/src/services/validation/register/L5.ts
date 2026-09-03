@@ -57,6 +57,7 @@ export const PRIMARY_CONVERSION_EVENT_FIRES: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  requires: ['conversion_surface'],
 
   test(auditData: AuditData): ValidationResult {
     const name = primaryConversionName(auditData);
@@ -111,6 +112,7 @@ function makeConversionFiresRule(opts: {
     platform_scope: opts.platform_scope,
     detectable_by: 'crawl',
     owner: 'Frontend',
+    requires: ['conversion_surface'],
 
     test(auditData: AuditData): ValidationResult {
       const match = opts.detect(auditData.networkRequests);
@@ -173,6 +175,7 @@ export const GA4_CONVERSION_EVENT_FIRES: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  requires: ['conversion_surface'],
 
   test(auditData: AuditData): ValidationResult {
     const name = primaryConversionName(auditData);
@@ -222,6 +225,7 @@ export const EVENT_FIRES_EXACTLY_ONCE: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  requires: ['conversion_surface'],
 
   test(auditData: AuditData): ValidationResult {
     const name = primaryConversionName(auditData);
@@ -301,6 +305,7 @@ export const FIRES_ON_COMPLETION_NOT_ON_INTENT: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  requires: ['conversion_surface'],
 
   test(auditData: AuditData): ValidationResult {
     const name = primaryConversionName(auditData);
@@ -346,6 +351,7 @@ export const NO_CONVERSION_FIRES_ON_NON_CONVERSION_PAGES: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  requires: ['conversion_surface'],
 
   test(auditData: AuditData): ValidationResult {
     const name = primaryConversionName(auditData);
@@ -394,6 +400,7 @@ export const PAGE_VIEW_FIRES_ON_EVERY_ROUTE: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  requires: ['conversion_surface'],
 
   test(auditData: AuditData): ValidationResult {
     const steps = (auditData.steps_visited ?? []).filter((s) => s !== 'init');
@@ -446,6 +453,7 @@ export const MICRO_CONVERSIONS_FIRE: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  requires: ['conversion_surface'],
 
   test(auditData: AuditData): ValidationResult {
     const names = secondaryConversionNames(auditData);
@@ -493,6 +501,7 @@ export const EVENT_NAMES_MATCH_DECLARED_TAXONOMY: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
+  requires: ['conversion_surface'],
 
   test(auditData: AuditData): ValidationResult {
     const convention = auditData.namingConvention ?? DEFAULT_CONVENTION;
@@ -552,6 +561,7 @@ export const EVENT_ORDERING_IS_CORRECT: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  requires: ['conversion_surface'],
 
   test(auditData: AuditData): ValidationResult {
     const name = primaryConversionName(auditData);

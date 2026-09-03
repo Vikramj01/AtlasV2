@@ -11,6 +11,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { simulateJourney, type SimulatorOptions } from '../journeySimulator';
 import { runAllRules } from '@/services/validation/engine';
 import { calculateScores } from '@/services/scoring/engine';
+import { runRegister } from '@/services/validation/register/engine';
+import { calculateV2Scores } from '@/services/validation/register/scoring';
 
 // ─── Mock browser factory ─────────────────────────────────────────────────────
 
@@ -452,5 +454,70 @@ describe('Full pipeline — mock browser → validation → scoring', () => {
     const auditData = await simulateJourney(mockBrowser as never, BASE_OPTS);
     const results = runAllRules(auditData);
     expect(results).toHaveLength(43);
+  });
+});
+
+// ─── Full v2 pipeline: step_coverage → runRegister precondition gating ──────
+//
+// Site Evaluation Coverage & Honesty PRD, Phase 1 (§13 test plan): a
+// homepage-only scan must skip every conversion_surface-gated rule rather
+// than fail it, and a scan reaching real distinct pages must skip none of
+// them. Unlike the v1 pipeline above, this exercises the Check Register v2
+// path (runRegister/calculateV2Scores) end-to-end from simulateJourney's
+// real step_coverage output — not a hand-built AuditData fixture.
+
+const V2_BASE_OPTS: SimulatorOptions = {
+  ...BASE_OPTS,
+  site_type: 'ecommerce',
+  rule_set_version: 'v2',
+  declared_platforms: ['google_ads'],
+  primary_channel: 'google_ads',
+  traffic_regions: ['us'],
+  declared_conversions: [{ name: 'purchase', kind: 'primary' }],
+};
+
+/** Rules skipped specifically by the new precondition engine — not a rule that self-skips for an unrelated reason (e.g. no product_domain declared). */
+function skippedForConversionSurface(results: ReturnType<typeof runRegister>) {
+  return results.filter(
+    (r) => r.status === 'skipped' && r.technical_details.found.startsWith('Not tested — the crawl never reached'),
+  );
+}
+
+describe('Full v2 pipeline — step_coverage → runRegister precondition gating', () => {
+  it('a homepage-only scan yields L0.3 fail and skips (not fails) every conversion_surface-gated rule', async () => {
+    const { mockBrowser } = makeMockBrowser();
+    const auditData = await simulateJourney(mockBrowser as never, {
+      ...V2_BASE_OPTS,
+      url_map: { landing: 'https://shop.example.com' }, // product/checkout/confirmation all fall back to it
+    });
+
+    expect(auditData.step_coverage?.some((s) => s.distinct_from_landing)).toBe(false);
+
+    const results = runRegister(auditData);
+    expect(results.find((r) => r.rule_id === 'CONVERSION_SURFACE_IDENTIFIED')?.status).toBe('fail');
+
+    const skipped = skippedForConversionSurface(results);
+    // L4.3, L4.4, all of L5 (12), L6 (10), L7 (10) that are applicable to an
+    // ecommerce/google_ads audit — a large majority of the register, per the
+    // PRD's own "~42 skipped" estimate for a homepage-only ecommerce scan.
+    expect(skipped.length).toBeGreaterThanOrEqual(25);
+
+    // scoring.ts's scored() excludes 'skipped' from every denominator — this
+    // is the observable effect: far fewer rules count toward the score.
+    const scoredCount = results.filter((r) => r.status !== 'skipped').length;
+    expect(scoredCount).toBeLessThan(results.length - 20);
+    expect(() => calculateV2Scores(results)).not.toThrow();
+  });
+
+  it('a scan reaching real, distinct step URLs yields L0.3 pass and zero precondition-driven skips', async () => {
+    const { mockBrowser } = makeMockBrowser();
+    // V2_BASE_OPTS inherits BASE_OPTS's url_map, which already gives product/checkout/confirmation distinct paths.
+    const auditData = await simulateJourney(mockBrowser as never, V2_BASE_OPTS);
+
+    expect(auditData.step_coverage?.filter((s) => s.distinct_from_landing).length).toBe(3);
+
+    const results = runRegister(auditData);
+    expect(results.find((r) => r.rule_id === 'CONVERSION_SURFACE_IDENTIFIED')?.status).toBe('pass');
+    expect(skippedForConversionSurface(results)).toHaveLength(0);
   });
 });

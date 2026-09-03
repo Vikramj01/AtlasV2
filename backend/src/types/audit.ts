@@ -115,6 +115,18 @@ export type PlatformScope = 'declared' | 'any' | 'n/a' | DeclaredPlatform[];
 /** What the rule needs beyond a single browser pass — see the "Beyond the Crawl" sheet. */
 export type DetectionMethod = 'crawl' | 'second_pass' | 'credentials' | 'connector';
 
+/**
+ * A precondition the crawl must have satisfied before a rule's test() is
+ * even worth running — see engine.ts's runRegister() and the "skip, don't
+ * fail, what could not be tested" design (Site Evaluation Coverage & Honesty
+ * PRD §6.3). 'conversion_surface' is the only value today: it gates every
+ * rule that needs a real conversion event/page (L5-L7, L4.3/L4.4) behind
+ * step_coverage actually having reached one, per L0.3's own definition of
+ * that (see L0.ts) — declared here as an open union so a future phase can
+ * add another precondition without changing this shape.
+ */
+export type RulePrecondition = 'conversion_surface' | 'distinct_product_domain';
+
 /** A single Check Register v2 rule. */
 export interface ValidationRule {
   /** Canonical Check Register ID, e.g. "L1.4" — stable identifier from the spec, shown in the technical appendix. */
@@ -129,6 +141,8 @@ export interface ValidationRule {
   platform_scope: PlatformScope;
   detectable_by: DetectionMethod;
   owner: string;
+  /** Preconditions the crawl must satisfy before test() is worth running — see RulePrecondition above. Omitted (or empty) means "always worth testing once applicable". */
+  requires?: RulePrecondition[];
   test(auditData: AuditData): ValidationResult;
 }
 

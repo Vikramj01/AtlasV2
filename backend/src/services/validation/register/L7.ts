@@ -81,6 +81,7 @@ function makeEmailCapturedRule(id: string, ruleId: string, check: string, platfo
     platform_scope: platformScope,
     detectable_by: 'crawl',
     owner: 'Backend',
+    requires: ['conversion_surface'],
 
     test(auditData: AuditData): ValidationResult {
       const events = conversionEvents(auditData);
@@ -126,6 +127,7 @@ export const PHONE_CAPTURED_WHERE_COLLECTED: ValidationRule = {
   platform_scope: ['meta', 'tiktok', 'google_ads'],
   detectable_by: 'crawl',
   owner: 'Backend',
+  requires: ['conversion_surface'],
 
   test(auditData: AuditData): ValidationResult {
     const collectedAnywhere = anyEventHasUserDataField(auditData, ['phone']) || !!auditData.test_phone;
@@ -173,6 +175,7 @@ export const NAME_AND_ADDRESS_CAPTURED_WHERE_COLLECTED: ValidationRule = {
   platform_scope: ['meta', 'google_ads'],
   detectable_by: 'crawl',
   owner: 'Backend',
+  requires: ['conversion_surface'],
 
   test(auditData: AuditData): ValidationResult {
     const collectedAnywhere = anyEventHasUserDataField(auditData, NAME_ADDRESS_KEYS);
@@ -218,6 +221,7 @@ export const EXTERNAL_ID_SET: ValidationRule = {
   platform_scope: ['meta'],
   detectable_by: 'crawl',
   owner: 'Backend',
+  requires: ['conversion_surface'],
 
   test(auditData: AuditData): ValidationResult {
     const events = conversionEvents(auditData);
@@ -256,6 +260,7 @@ export const IDENTITY_NORMALISED_BEFORE_HASHING: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Backend',
+  requires: ['conversion_surface'],
 
   test(auditData: AuditData): ValidationResult {
     const events = conversionEvents(auditData);
@@ -306,6 +311,7 @@ export const HASHED_WITH_SHA256: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Backend',
+  requires: ['conversion_surface'],
 
   test(auditData: AuditData): ValidationResult {
     const events = conversionEvents(auditData);
@@ -360,6 +366,7 @@ export const HASH_FORMAT_VALID: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Backend',
+  requires: ['conversion_surface'],
 
   test(auditData: AuditData): ValidationResult {
     const events = conversionEvents(auditData);
@@ -434,6 +441,7 @@ export const NO_PLAINTEXT_PII_IN_NETWORK_REQUEST: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Backend',
+  requires: ['conversion_surface'],
 
   test(auditData: AuditData): ValidationResult {
     const bodies = auditData.networkRequests.map((r) => r.body).filter((b): b is string => !!b);
@@ -463,6 +471,7 @@ export const NO_PII_IN_URLS_OR_QUERY_STRINGS: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  requires: ['conversion_surface'],
 
   test(auditData: AuditData): ValidationResult {
     const urls = [
@@ -499,6 +508,7 @@ export const NO_PII_IN_GA4_EVENT_PARAMETERS: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
+  requires: ['conversion_surface'],
 
   test(auditData: AuditData): ValidationResult {
     const ga4Requests = auditData.networkRequests.filter(isGa4Request);

@@ -28,10 +28,10 @@
  * the technical appendix, not a different execution mode.
  */
 import type {
-  AuditData, ValidationRule, ValidationResult, SiteType, DeclaredPlatform, PlatformScope,
+  AuditData, ValidationRule, ValidationResult, SiteType, DeclaredPlatform, PlatformScope, RulePrecondition,
 } from '@/types/audit';
 import logger from '@/utils/logger';
-import { L0_RULES } from './L0';
+import { L0_RULES, conversionSurfaceReached } from './L0';
 import { L1_RULES } from './L1';
 import { L2_RULES } from './L2';
 import { L3_RULES } from './L3';
@@ -76,15 +76,87 @@ export function isRuleApplicable(rule: ValidationRule, auditData: AuditData): bo
 }
 
 /**
+ * One evaluator per RulePrecondition value (Site Evaluation Coverage &
+ * Honesty PRD §6.3) — "skip, don't fail, what could not be tested". A
+ * Record (not a switch) so TypeScript enforces every RulePrecondition has
+ * an evaluator here, whether or not any rule currently declares it.
+ *
+ * 'conversion_surface' reuses L0.3's own conversionSurfaceReached() rather
+ * than reimplementing the check, so a rule gated on this can never disagree
+ * with what L0.3 itself reports.
+ *
+ * 'distinct_product_domain' isn't tagged on any rule yet (Phase 1 only uses
+ * 'conversion_surface' — see L4.ts/L5.ts/L6.ts/L7.ts), but is declared here
+ * for type completeness. product_domain_reachable is only ever set
+ * (non-undefined) once journeySimulator has confirmed product_domain is a
+ * genuinely distinct, reachable host, so that's a correct proxy for "was
+ * there a distinct product domain to test" if a future rule needs it.
+ */
+const PRECONDITION_CHECKS: Record<RulePrecondition, (auditData: AuditData) => boolean> = {
+  conversion_surface: conversionSurfaceReached,
+  distinct_product_domain: (auditData) => auditData.product_domain_reachable === true,
+};
+
+function unmetPreconditions(rule: ValidationRule, auditData: AuditData): RulePrecondition[] {
+  return (rule.requires ?? []).filter((precondition) => !PRECONDITION_CHECKS[precondition](auditData));
+}
+
+function unmetPreconditionEvidence(precondition: RulePrecondition, auditData: AuditData): string {
+  if (precondition === 'conversion_surface') {
+    const stepCoverage = auditData.step_coverage;
+    if (stepCoverage && stepCoverage.length > 0) {
+      const fellBack = stepCoverage.filter(
+        (s) => s.step !== 'landing' && !(s.distinct_from_landing && s.navigation_success),
+      );
+      return fellBack.length > 0
+        ? `Steps that fell back to the landing URL: ${fellBack.map((s) => s.step).join(', ')}`
+        : 'No non-landing steps were attempted';
+    }
+    return 'The crawl never progressed past the landing page';
+  }
+  return auditData.product_domain
+    ? `${auditData.product_domain} was not confirmed as a distinct, reachable host`
+    : 'No distinct product_domain was declared';
+}
+
+function skippedForPrecondition(
+  rule: ValidationRule,
+  unmet: RulePrecondition[],
+  auditData: AuditData,
+): ValidationResult {
+  return {
+    rule_id: rule.rule_id,
+    validation_layer: rule.layer,
+    status: 'skipped',
+    severity: rule.severity,
+    technical_details: {
+      found: unmet.includes('conversion_surface')
+        ? 'Not tested — the crawl never reached a page distinct from the landing page'
+        : 'Not tested — a required precondition was not met',
+      expected: rule.check,
+      evidence: unmet.map((precondition) => unmetPreconditionEvidence(precondition, auditData)),
+    },
+  };
+}
+
+/**
  * Run every applicable rule in the Check Register v2 library against the
- * given AuditData. A rule that throws is caught and returned as 'warning'
- * with the error in evidence — same failure contract as the v1 engine
- * (../engine.ts's runAllRules).
+ * given AuditData. Applicability filtering (site_type/platform_scope) runs
+ * first, exactly as before; a rule that passes that but has an unmet
+ * precondition (requires) is returned as 'skipped' rather than having
+ * test() run at all — scoring.ts's scored() already excludes 'skipped' from
+ * every denominator, so this alone is what stops a 42-rule homepage-only
+ * scan from failing checks it never had the data to answer. A rule that
+ * throws is caught and returned as 'warning' with the error in evidence —
+ * same failure contract as the v1 engine (../engine.ts's runAllRules).
  */
 export function runRegister(auditData: AuditData, rules: ValidationRule[] = REGISTER): ValidationResult[] {
   const applicable = rules.filter((rule) => isRuleApplicable(rule, auditData));
 
   return applicable.map((rule) => {
+    const unmet = unmetPreconditions(rule, auditData);
+    if (unmet.length > 0) return skippedForPrecondition(rule, unmet, auditData);
+
     try {
       return rule.test(auditData);
     } catch (err) {

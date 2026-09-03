@@ -143,6 +143,7 @@ export const GA4_CLIENT_ID_PERSISTS_ACROSS_BOUNDARY: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  requires: ['conversion_surface'],
 
   test(auditData: AuditData): ValidationResult {
     const before = auditData.marketingGa4ClientId;
@@ -194,6 +195,7 @@ export const SESSION_NOT_RESTARTED_AT_BOUNDARY: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
+  requires: ['conversion_surface'],
 
   test(auditData: AuditData): ValidationResult {
     const restarted = auditData.productDomainSessionStartDetected;
