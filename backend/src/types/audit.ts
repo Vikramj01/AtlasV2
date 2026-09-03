@@ -175,6 +175,10 @@ export interface NetworkRequest {
   timestamp: number;
   step: string;
   loadTime?: number; // ms — used by GTM_CONTAINER_LOADED rule
+  /** HTTP response status, when the response was observed (dataCapture.ts's response listener). */
+  statusCode?: number;
+  /** True when Playwright's own 'requestfailed' fired (DNS error, connection refused, blocked by client, etc.) — used by NO_TAG_LOAD_ERRORS (L1.16). */
+  failed?: boolean;
 }
 
 export interface CookieSnapshot {
@@ -334,6 +338,27 @@ export interface AuditData {
    * that as 'skipped', not as unreachable.
    */
   product_domain_reachable?: boolean;
+  /**
+   * The client's connected GTM container ID (via OAuth/manual upload —
+   * getConnectedGtmContainerId), resolved by the caller before rules run —
+   * same "resolve async, read sync" pattern as product_domain_reachable and
+   * sgtmVerified below. Used by CONTAINER_ID_MATCHES_DECLARED (L1.2) to
+   * compare against the container ID(s) actually observed loading on the
+   * page; undefined when the audit has no associated client or the client
+   * has nothing connected, in which case L1.2 has nothing to compare
+   * against and is 'skipped', not failed.
+   */
+  connected_gtm_container_id?: string;
+  /**
+   * Every journey step name the simulator actually navigated to, regardless
+   * of whether any tracking request fired there — the canonical "pages
+   * sampled" list. networkRequests only contains requests matching a
+   * tracked platform URL pattern, so it can't answer "which pages did the
+   * crawl visit" on its own (a page with a broken tag would look identical
+   * to a page the crawl never reached). Used by
+   * TAGS_PRESENT_ACROSS_SAMPLED_PAGES (L1.13).
+   */
+  steps_visited?: string[];
   checkout_domain?: string;
   additional_properties?: string[];
   declared_conversions?: DeclaredConversion[];

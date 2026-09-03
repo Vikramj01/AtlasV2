@@ -66,6 +66,8 @@ export interface SimulatorOptions {
   test_phone?: string;
   /** Check Register v2 Scan Input — see probeDomainReachable above. */
   product_domain?: string;
+  /** Resolved by the caller (getConnectedGtmContainerId) before simulation — see AuditData.connected_gtm_container_id. */
+  connected_gtm_container_id?: string;
 }
 
 /**
@@ -199,6 +201,8 @@ export async function simulateJourney(
     region: opts.region,
     product_domain: opts.product_domain,
     product_domain_reachable: productDomainReachable,
+    connected_gtm_container_id: opts.connected_gtm_container_id,
+    steps_visited: steps.map((s) => s.name),
     dataLayer,
     networkRequests,
     cookieSnapshots,

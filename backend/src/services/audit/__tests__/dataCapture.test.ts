@@ -51,15 +51,20 @@ function makeRequest(overrides: {
   };
 }
 
-function makeResponse(url: string, timingMs?: number) {
+function makeResponse(url: string, timingMs?: number, status = 200) {
   return {
     url: () => url,
+    status: () => status,
     request: () => ({
       timing: timingMs !== undefined
         ? () => ({ startTime: 0, responseEnd: timingMs })
         : undefined,
     }),
   };
+}
+
+function makeFailedRequest(url: string) {
+  return { url: () => url };
 }
 
 // ─── flushDataLayer ───────────────────────────────────────────────────────────
@@ -160,6 +165,40 @@ describe('interceptNetworkRequests — string step', () => {
     emit('response', makeResponse(url, undefined)); // no timing
 
     expect(sink[0].loadTime).toBeUndefined();
+  });
+
+  it('patches statusCode on matching response', () => {
+    const { page, emit } = makeEventEmitterPage();
+    const sink: NetworkRequest[] = [];
+    interceptNetworkRequests(page, sink, 'landing');
+
+    const url = 'https://www.googletagmanager.com/gtm.js?id=GTM-TEST';
+    emit('request', makeRequest({ url, method: 'GET' }));
+    emit('response', makeResponse(url, undefined, 404));
+
+    expect(sink[0].statusCode).toBe(404);
+  });
+
+  it('marks a request failed on requestfailed', () => {
+    const { page, emit } = makeEventEmitterPage();
+    const sink: NetworkRequest[] = [];
+    interceptNetworkRequests(page, sink, 'landing');
+
+    const url = 'https://www.facebook.com/tr/';
+    emit('request', makeRequest({ url, method: 'GET' }));
+    emit('requestfailed', makeFailedRequest(url));
+
+    expect(sink[0].failed).toBe(true);
+  });
+
+  it('ignores requestfailed for untracked URLs', () => {
+    const { page, emit } = makeEventEmitterPage();
+    const sink: NetworkRequest[] = [];
+    interceptNetworkRequests(page, sink, 'landing');
+
+    emit('requestfailed', makeFailedRequest('https://example.com/untracked'));
+
+    expect(sink).toHaveLength(0);
   });
 });
 

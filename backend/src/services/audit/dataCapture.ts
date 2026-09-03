@@ -158,6 +158,7 @@ export function interceptNetworkRequests(
   page.on('response', (rawRes: unknown) => {
     const res = rawRes as {
       url(): string;
+      status(): number;
       request(): { timing?(): { startTime: number; responseEnd: number } };
     };
     const url = res.url();
@@ -165,6 +166,11 @@ export function interceptNetworkRequests(
     const step = getStep();
     const existing = sink.find((r) => r.url === url && r.step === step);
     if (existing) {
+      try {
+        existing.statusCode = res.status();
+      } catch {
+        // Status not always available
+      }
       try {
         const timing = res.request().timing?.();
         if (timing) {
@@ -174,6 +180,19 @@ export function interceptNetworkRequests(
         // Timing not always available
       }
     }
+  });
+
+  // A request that never got a response at all (DNS failure, connection
+  // refused, blocked by the browser/an extension) — used by NO_TAG_LOAD_ERRORS
+  // (L1.16): a tag that fails to load reports as absent everywhere else, not
+  // as broken, so this is the only place that distinguishes the two.
+  page.on('requestfailed', (rawReq: unknown) => {
+    const req = rawReq as { url(): string };
+    const url = req.url();
+    if (!shouldCaptureUrl(url)) return;
+    const step = getStep();
+    const existing = sink.find((r) => r.url === url && r.step === step);
+    if (existing) existing.failed = true;
   });
 }
 
