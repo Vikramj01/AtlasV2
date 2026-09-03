@@ -364,3 +364,74 @@ describe('generatePDF — edge cases', () => {
     expect(withIssues.byteLength).toBeGreaterThan(noIssues.byteLength);
   });
 });
+
+// ── Scan Coverage section (Site Evaluation Coverage & Honesty PRD §6.4) ─────
+
+describe('generatePDF — scan coverage section', () => {
+  it('renders without the section when coverage is absent (existing reports, Journey-Builder mode)', async () => {
+    const buf = await generatePDF(makeMinimalReport());
+    expect(isPdfBuffer(buf)).toBe(true);
+  });
+
+  it('renders the section when coverage is present', async () => {
+    const report = makeMinimalReport();
+    report.executive_summary.coverage = {
+      pages_requested: 4,
+      pages_distinct: 1,
+      steps: [
+        { step: 'landing', requested_url: 'https://example.com', final_url: 'https://example.com', source: 'user_supplied', distinct_from_landing: false, navigation_success: true },
+        { step: 'product', requested_url: 'https://example.com', source: 'fallback_landing', distinct_from_landing: false, navigation_success: true },
+        { step: 'checkout', requested_url: 'https://example.com', source: 'fallback_landing', distinct_from_landing: false, navigation_success: true },
+        { step: 'confirmation', requested_url: 'https://example.com/order-confirmed', source: 'user_supplied', distinct_from_landing: true, navigation_success: false, error: 'net::ERR_NAME_NOT_RESOLVED' },
+      ],
+      layers_not_tested: [
+        { layer: 'event_firing', label: 'Event Firing', reason: 'The crawl never reached a page distinct from the landing page' },
+        { layer: 'parameter_completeness', label: 'Parameter Completeness', reason: 'The crawl never reached a page distinct from the landing page' },
+      ],
+      rules_tested: 41,
+      rules_not_tested: 42,
+    };
+    const buf = await generatePDF(report);
+    expect(isPdfBuffer(buf)).toBe(true);
+  });
+
+  it('renders correctly with full coverage and zero not-tested layers', async () => {
+    const report = makeMinimalReport();
+    report.executive_summary.coverage = {
+      pages_requested: 4,
+      pages_distinct: 4,
+      steps: [
+        { step: 'landing', requested_url: 'https://example.com', source: 'user_supplied', distinct_from_landing: false, navigation_success: true },
+        { step: 'product', requested_url: 'https://example.com/product', source: 'nav_link', distinct_from_landing: true, navigation_success: true },
+        { step: 'checkout', requested_url: 'https://example.com/checkout', source: 'sitemap', distinct_from_landing: true, navigation_success: true },
+        { step: 'confirmation', requested_url: 'https://example.com/order-confirmed', source: 'user_supplied', distinct_from_landing: true, navigation_success: true },
+      ],
+      layers_not_tested: [],
+      rules_tested: 83,
+      rules_not_tested: 0,
+    };
+    const buf = await generatePDF(report);
+    expect(isPdfBuffer(buf)).toBe(true);
+  });
+
+  it('produces a larger buffer with coverage present than without, for otherwise identical reports', async () => {
+    const withoutCoverage = await generatePDF(makeMinimalReport());
+    const withCoverage = await generatePDF(makeMinimalReport({
+      executive_summary: {
+        ...makeMinimalReport().executive_summary,
+        coverage: {
+          pages_requested: 4,
+          pages_distinct: 1,
+          steps: [
+            { step: 'landing', requested_url: 'https://example.com', source: 'user_supplied', distinct_from_landing: false, navigation_success: true },
+            { step: 'product', requested_url: 'https://example.com', source: 'fallback_landing', distinct_from_landing: false, navigation_success: true },
+          ],
+          layers_not_tested: [{ layer: 'event_firing', label: 'Event Firing', reason: 'x' }],
+          rules_tested: 41,
+          rules_not_tested: 42,
+        },
+      },
+    }));
+    expect(withCoverage.byteLength).toBeGreaterThan(withoutCoverage.byteLength);
+  });
+});

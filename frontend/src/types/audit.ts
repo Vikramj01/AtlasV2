@@ -82,6 +82,21 @@ export interface ConsentCapture {
   tags_after: string[];
 }
 
+export interface CoverageLayerNotTested {
+  layer: ValidationLayerFilter;
+  label: string;
+  reason: string;
+}
+
+export interface ReportCoverage {
+  pages_requested: number;
+  pages_distinct: number;
+  steps: StepCoverage[];
+  layers_not_tested: CoverageLayerNotTested[];
+  rules_tested: number;
+  rules_not_tested: number;
+}
+
 export interface AuditScores {
   conversion_signal_health: number;
   attribution_risk_level: 'Low' | 'Medium' | 'High' | 'Critical';
@@ -230,6 +245,7 @@ export interface ReportJSON {
     overall_status: 'healthy' | 'partially_broken' | 'critical';
     business_summary: string;
     scores: AuditScores;
+    coverage?: ReportCoverage;
   };
   journey_stages: JourneyStage[];
   platform_breakdown: PlatformBreakdown[];

@@ -638,6 +638,35 @@ export interface AuditScores {
   data_consistency_score: 'Low' | 'Medium' | 'High';
 }
 
+// ─── Report coverage (Site Evaluation Coverage & Honesty PRD §6.4) ───────────
+
+export interface CoverageLayerNotTested {
+  layer: ValidationLayerV2;
+  label: string;
+  reason: string;
+}
+
+/**
+ * "How much of the site did this scan actually reach" — additive on
+ * executive_summary, built by reporting/coverage.ts's buildCoverageSummary()
+ * from step_coverage + the register's results. Undefined (not present with
+ * zero-valued fields) whenever step_coverage itself is undefined — per
+ * CLAUDE.md rule 12 (no fabricated UI data), the frontend banner and PDF
+ * section render only when this is present, never a synthesized "0 pages"
+ * state for AuditData that never captured coverage in the first place.
+ */
+export interface ReportCoverage {
+  pages_requested: number;
+  /** Count of unique normalised URLs actually, successfully navigated to — see journeySimulator.ts's normalizeUrlForCoverage. */
+  pages_distinct: number;
+  steps: StepCoverage[];
+  layers_not_tested: CoverageLayerNotTested[];
+  /** Rules whose test() actually ran (pass/fail/warning), or that were skipped for a reason unrelated to crawl coverage. */
+  rules_tested: number;
+  /** Rules skipped specifically because a `requires` precondition (engine.ts) went unmet — the coverage-driven subset of all skips. */
+  rules_not_tested: number;
+}
+
 // ─── Report ───────────────────────────────────────────────────────────────────
 
 export interface ReportIssue {
@@ -687,6 +716,7 @@ export interface ReportJSON {
     overall_status: 'healthy' | 'partially_broken' | 'critical';
     business_summary: string;
     scores: AuditScores;
+    coverage?: ReportCoverage;
   };
   journey_stages: JourneyStage[];
   platform_breakdown: PlatformBreakdown[];
