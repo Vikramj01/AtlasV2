@@ -13,12 +13,16 @@ import { simulateJourneyFromSpec } from './stageSimulator';
 import { classifyAllStageGaps } from './gapClassifier';
 import { runAllRules, runRulesForPlatforms } from '@/services/validation/engine';
 import { calculateScores } from '@/services/scoring/engine';
+import { runRegister } from '@/services/validation/register/engine';
+import { calculateV2Scores } from '@/services/validation/register/scoring';
+import { buildV2LayerStages, buildV2PlatformBreakdown } from '@/services/validation/register/reporting';
 import { interpretResults } from '@/services/interpretation/engine';
 import { generateReport } from '@/services/reporting/generator';
 import { getConnectedGtmContainerId } from '@/services/database/gtmConnectionQueries';
+import { getNamingConvention } from '@/services/database/namingConventionQueries';
 import { buildSiteSetupSummary } from './siteSetupDetector';
 import { sanitizeForJsonb } from '@/utils/sanitizeJsonb';
-import type { JourneyStage, RuleStatus } from '@/types/audit';
+import type { AuditData, JourneyStage, RuleStatus } from '@/types/audit';
 import { getJourneyStages } from '@/services/database/journeyQueries';
 import logger from '@/utils/logger';
 
@@ -46,16 +50,26 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
       }
     }
 
-    // Resolve org_id for usage logging (non-fatal if it fails).
+    // Resolve org_id for usage logging and (for a v2 audit) the org's Naming
+    // Conventions config (non-fatal if it fails).
+    //
+    // organization_id (American spelling) — not organisation_id, which this
+    // query used before. profiles.organization_id is the actively-maintained
+    // column (see 20260702_001_fix_profiles_organization_id.sql); the rest
+    // of the codebase already selects organization_id here (e.g.
+    // audits.ts's resolveOrgId). The British spelling column was never
+    // populated for most users, so this resolution — and Browserbase usage
+    // logging, which depends on it below — was silently returning undefined
+    // org_id for most audits.
     let orgId: string | undefined;
     if (auditRow?.user_id) {
       try {
         const { data: profile } = await supabase
           .from('profiles')
-          .select('organisation_id')
+          .select('organization_id')
           .eq('id', auditRow.user_id)
           .single();
-        orgId = (profile as { organisation_id: string } | null)?.organisation_id ?? undefined;
+        orgId = (profile as { organization_id: string } | null)?.organization_id ?? undefined;
       } catch {
         // Non-fatal — usage logging degrades gracefully without org_id
       }
@@ -181,7 +195,25 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
         await saveReport(audit_id, report);
 
       } else {
-        // Legacy mode
+        // Funnel-type (v1) / site-type (v2) mode — dispatched by the audit
+        // row's rule_set_version, resolved from the DB rather than trusted
+        // from the job payload alone (audits.ts already sets it correctly,
+        // but the row is the source of truth).
+        const isV2 = auditRow?.rule_set_version === 'v2';
+
+        // Naming Conventions (L5.13) — only meaningful for v2, and only
+        // resolvable when org_id resolved above; getNamingConvention
+        // already defaults internally when the org never configured one,
+        // so this never blocks a scan on a missing config.
+        let namingConvention: Awaited<ReturnType<typeof getNamingConvention>> | undefined;
+        if (isV2 && orgId) {
+          try {
+            namingConvention = await getNamingConvention(orgId);
+          } catch (err) {
+            logger.warn({ audit_id, err: err instanceof Error ? err.message : String(err) }, 'Failed to resolve naming convention');
+          }
+        }
+
         const auditData = await simulateJourney(browser, {
           audit_id,
           website_url: data.website_url,
@@ -190,19 +222,37 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
           url_map: data.url_map,
           test_email: test_email,
           test_phone: test_phone,
+          product_domain: data.product_domain,
+          checkout_domain: data.checkout_domain,
+          connected_gtm_container_id: connectedGtmContainerId ?? undefined,
+          ...(isV2 && {
+            rule_set_version: data.rule_set_version as AuditData['rule_set_version'],
+            site_type: data.site_type as AuditData['site_type'],
+            secondary_motion: data.secondary_motion as AuditData['secondary_motion'],
+            declared_platforms: data.declared_platforms as AuditData['declared_platforms'],
+            primary_channel: data.primary_channel as AuditData['primary_channel'],
+            monthly_spend_band: data.monthly_spend_band,
+            traffic_regions: data.traffic_regions as AuditData['traffic_regions'],
+            cmp: data.cmp as AuditData['cmp'],
+            additional_properties: data.additional_properties,
+            declared_conversions: data.declared_conversions,
+            namingConvention,
+          }),
         });
         await updateAuditStatus(audit_id, 'running', { progress: 50 });
-        logger.info({ audit_id, events: auditData.dataLayer.length }, 'Journey simulation complete');
+        logger.info({ audit_id, events: auditData.dataLayer.length, rule_set_version: isV2 ? 'v2' : 'v1-legacy' }, 'Journey simulation complete');
 
-        const validationResults = runAllRules(auditData);
+        const validationResults = isV2 ? runRegister(auditData) : runAllRules(auditData);
         await saveValidationResults(audit_id, validationResults);
         await updateAuditStatus(audit_id, 'running', { progress: 75 });
 
         const siteSetup = buildSiteSetupSummary(auditData, (auditData.pageMetadata?.gtm_script_srcs as string[]) ?? [], connectedGtmContainerId);
 
-        const scores = calculateScores(validationResults);
+        const scores = isV2 ? calculateV2Scores(validationResults) : calculateScores(validationResults);
         const issues = interpretResults(validationResults);
-        const report = generateReport(auditData, scores, issues, validationResults, siteSetup);
+        const customJourneyStages = isV2 ? buildV2LayerStages(validationResults) : undefined;
+        const customPlatformBreakdown = isV2 ? buildV2PlatformBreakdown(validationResults, auditData.declared_platforms) : undefined;
+        const report = generateReport(auditData, scores, issues, validationResults, siteSetup, customJourneyStages, customPlatformBreakdown);
         await saveReport(audit_id, report);
       }
     } finally {

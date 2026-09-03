@@ -3,7 +3,11 @@
  * Drives a Playwright browser through a multi-step user journey and
  * assembles the raw AuditData needed for validation.
  */
-import type { AuditData, FunnelType, Region, DataLayerEvent, NetworkRequest, CookieSnapshot, LocalStorageSnapshot, ConsoleError } from '@/types/audit';
+import type {
+  AuditData, FunnelType, Region, DataLayerEvent, NetworkRequest, CookieSnapshot, LocalStorageSnapshot, ConsoleError,
+  RuleSetVersion, SiteType, SecondaryMotion, DeclaredPlatform, TrafficRegion, CMP, DeclaredConversion,
+} from '@/types/audit';
+import type { NamingConvention } from '@/types/taxonomy';
 import { JOURNEY_CONFIGS } from '@/services/browserbase/journeyConfigs';
 import {
   instrumentDataLayer,
@@ -133,6 +137,24 @@ export interface SimulatorOptions {
   checkout_domain?: string;
   /** Resolved by the caller (getConnectedGtmContainerId) before simulation — see AuditData.connected_gtm_container_id. */
   connected_gtm_container_id?: string;
+  /**
+   * Remaining Check Register v2 Scan Inputs — read by rules directly off
+   * AuditData (applicability filtering, declared-conversion/platform
+   * lookups, ...), not used by the simulator's own capture logic, so
+   * they're passed straight through onto the returned AuditData unchanged.
+   */
+  rule_set_version?: RuleSetVersion;
+  site_type?: SiteType;
+  secondary_motion?: SecondaryMotion;
+  declared_platforms?: DeclaredPlatform[];
+  primary_channel?: DeclaredPlatform;
+  monthly_spend_band?: string;
+  traffic_regions?: TrafficRegion[];
+  cmp?: CMP;
+  additional_properties?: string[];
+  declared_conversions?: DeclaredConversion[];
+  /** Resolved by the caller (getNamingConvention) before simulation — see AuditData.namingConvention. */
+  namingConvention?: NamingConvention;
 }
 
 /**
@@ -328,6 +350,17 @@ export async function simulateJourney(
     product_domain_reachable: productDomainReachable,
     checkout_domain: opts.checkout_domain,
     connected_gtm_container_id: opts.connected_gtm_container_id,
+    rule_set_version: opts.rule_set_version,
+    site_type: opts.site_type,
+    secondary_motion: opts.secondary_motion,
+    declared_platforms: opts.declared_platforms,
+    primary_channel: opts.primary_channel,
+    monthly_spend_band: opts.monthly_spend_band,
+    traffic_regions: opts.traffic_regions,
+    cmp: opts.cmp,
+    additional_properties: opts.additional_properties,
+    declared_conversions: opts.declared_conversions,
+    namingConvention: opts.namingConvention,
     steps_visited: steps.map((s) => s.name),
     landing_final_url: landingFinalUrl,
     landing_referrer_captured: landingReferrerCaptured,

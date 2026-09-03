@@ -497,12 +497,35 @@ export function interpretResults(results: ValidationResult[]): ReportIssue[] {
 const SEVERITY_RANK: Record<Severity, number> = { critical: 0, high: 1, medium: 2, low: 3 };
 
 /**
+ * The subset of RuleInterpretation that ranking/rendering actually needs —
+ * lets a v2 register result (no RULE_INTERPRETATIONS entry) synthesize one
+ * from its own severity + technical_details.expected instead of being
+ * silently dropped from the summary the way a bare rule_id lookup would.
+ */
+interface SummaryInput {
+  severity: Severity;
+  business_impact: string;
+  affected_platforms: string[];
+}
+
+/** RULE_INTERPRETATIONS entry when one exists (any rule set); otherwise built straight from the result itself. */
+function toSummaryInput(result: ValidationResult): SummaryInput {
+  const interp = RULE_INTERPRETATIONS[result.rule_id];
+  if (interp) return interp;
+  return {
+    severity: result.severity,
+    business_impact: result.technical_details.expected,
+    affected_platforms: [],
+  };
+}
+
+/**
  * Ranks failed-rule interpretations for the executive summary: worst
  * severity first, then broadest platform impact as a tiebreaker within a
  * severity band. Capped at the top 3 — enough to name specifics without
  * turning the summary into a list.
  */
-function rankIssuesForSummary(rules: RuleInterpretation[]): RuleInterpretation[] {
+function rankIssuesForSummary(rules: SummaryInput[]): SummaryInput[] {
   return [...rules]
     .sort((a, b) => {
       const sevDiff = SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity];
@@ -524,7 +547,7 @@ interface SeverityCounts {
  * deliberately template-based rather than an LLM call, so the wording is
  * deterministic and reviewable like the rest of this engine.
  */
-function renderSummary(rankedRules: RuleInterpretation[], counts: SeverityCounts): string {
+function renderSummary(rankedRules: SummaryInput[], counts: SeverityCounts): string {
   const total = counts.critical + counts.high + counts.medium + counts.low;
   if (total === 0) return 'All conversion signals are operating normally.';
 
@@ -554,8 +577,17 @@ function renderSummary(rankedRules: RuleInterpretation[], counts: SeverityCounts
   return `${total} minor issue${minorPlural} detected: ${top.business_impact} This has limited impact but is worth fixing when convenient.`;
 }
 
-export function generateBusinessSummary(failedRuleIds: string[]): string {
-  const rules = failedRuleIds.map((id) => RULE_INTERPRETATIONS[id]).filter(Boolean);
+/**
+ * Builds the executive-summary narrative directly from the failed/warning
+ * results — works for any rule set. A rule_id with a hand-authored
+ * RULE_INTERPRETATIONS entry (currently the v1 engine's 43 rules) gets that
+ * richer copy; anything else (the v2 Check Register) synthesizes its
+ * summary input from the result's own severity and
+ * technical_details.expected, which every rule already writes as a
+ * business-relevant sentence.
+ */
+export function generateBusinessSummary(results: ValidationResult[]): string {
+  const rules = results.filter((r) => r.status === 'fail').map(toSummaryInput);
   const counts: SeverityCounts = {
     critical: rules.filter((r) => r.severity === 'critical').length,
     high: rules.filter((r) => r.severity === 'high').length,
@@ -565,11 +597,18 @@ export function generateBusinessSummary(failedRuleIds: string[]): string {
   return renderSummary(rankIssuesForSummary(rules), counts);
 }
 
+/**
+ * Reads severity straight off each failed ValidationResult rather than
+ * through the RULE_INTERPRETATIONS lookup, so this reflects every failure
+ * regardless of rule set — a v2-only audit with critical failures no
+ * longer reports 'healthy' just because none of its rule_ids have a v1
+ * interpretation entry.
+ */
 export function determineOverallStatus(
-  failedRuleIds: string[],
+  results: ValidationResult[],
 ): 'healthy' | 'partially_broken' | 'critical' {
-  const rules = failedRuleIds.map((id) => RULE_INTERPRETATIONS[id]).filter(Boolean);
-  if (rules.some((r) => r.severity === 'critical')) return 'critical';
-  if (rules.some((r) => r.severity === 'high')) return 'partially_broken';
+  const failed = results.filter((r) => r.status === 'fail');
+  if (failed.some((r) => r.severity === 'critical')) return 'critical';
+  if (failed.some((r) => r.severity === 'high')) return 'partially_broken';
   return 'healthy';
 }
