@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import type {
   StartAuditInput,
+  StartAuditInputV2,
   AuditStartResponse,
   AuditStatusResponse,
   ReportJSON,
@@ -35,7 +36,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const auditApi = {
-  start(input: StartAuditInput): Promise<AuditStartResponse> {
+  start(input: StartAuditInput | StartAuditInputV2): Promise<AuditStartResponse> {
     return apiFetch('/api/audits/start', {
       method: 'POST',
       body: JSON.stringify(input),

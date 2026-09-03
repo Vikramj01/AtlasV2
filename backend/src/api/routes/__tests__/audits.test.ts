@@ -216,6 +216,110 @@ describe('POST /api/audits/start', () => {
     expect(payload).not.toHaveProperty('test_email');
     expect(payload).not.toHaveProperty('test_phone');
   });
+
+  // ── v2 Check Register Scan Inputs ──────────────────────────────────────────
+
+  it('accepts a v2 payload (site_type) without funnel_type and tags rule_set_version', async () => {
+    vi.mocked(dbQueries.createAudit).mockResolvedValue(MOCK_AUDIT as any);
+    vi.mocked(auditQueue.add as any).mockResolvedValue({ id: 'job-001' });
+
+    const res = await buildApp().post('/api/audits/start').send({
+      website_url: 'https://example.com',
+      site_type: 'plg_saas',
+      declared_platforms: ['google_ads', 'meta'],
+      primary_channel: 'google_ads',
+      traffic_regions: ['us'],
+      url_map: { landing: 'https://example.com' },
+    });
+
+    expect(res.status).toBe(202);
+    expect(dbQueries.createAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ rule_set_version: 'v2', site_type: 'plg_saas', funnel_type: 'saas' }),
+    );
+    const queuePayload = vi.mocked(auditQueue.add as any).mock.calls[0][0];
+    expect(queuePayload.rule_set_version).toBe('v2');
+    expect(queuePayload.declared_platforms).toEqual(['google_ads', 'meta']);
+  });
+
+  it('maps each site_type onto the legacy funnel_type column correctly', async () => {
+    vi.mocked(dbQueries.createAudit).mockResolvedValue(MOCK_AUDIT as any);
+    vi.mocked(auditQueue.add as any).mockResolvedValue({ id: 'job-001' });
+
+    const cases: Array<[string, string]> = [
+      ['plg_saas', 'saas'],
+      ['ecommerce', 'ecommerce'],
+      ['lead_gen_b2b', 'lead_gen'],
+      ['marketplace', 'ecommerce'],
+      ['app_install', 'saas'],
+      ['subscription_media', 'saas'],
+    ];
+
+    for (const [site_type, expectedFunnel] of cases) {
+      vi.mocked(dbQueries.createAudit).mockClear();
+      await buildApp().post('/api/audits/start').send({
+        website_url: 'https://example.com',
+        site_type,
+        declared_platforms: ['google_ads'],
+        primary_channel: 'google_ads',
+        traffic_regions: ['us'],
+        url_map: { landing: 'https://example.com' },
+      });
+      expect(dbQueries.createAudit).toHaveBeenCalledWith(expect.objectContaining({ funnel_type: expectedFunnel }));
+    }
+  });
+
+  it('defaults product_domain to website_url when not supplied', async () => {
+    vi.mocked(dbQueries.createAudit).mockResolvedValue(MOCK_AUDIT as any);
+    vi.mocked(auditQueue.add as any).mockResolvedValue({ id: 'job-001' });
+
+    await buildApp().post('/api/audits/start').send({
+      website_url: 'https://example.com',
+      site_type: 'plg_saas',
+      declared_platforms: ['google_ads'],
+      primary_channel: 'google_ads',
+      traffic_regions: ['us'],
+      url_map: { landing: 'https://example.com' },
+    });
+
+    expect(dbQueries.createAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ product_domain: 'https://example.com' }),
+    );
+  });
+
+  it('returns 400 when site_type is given without declared_platforms/primary_channel/traffic_regions', async () => {
+    const res = await buildApp().post('/api/audits/start').send({
+      website_url: 'https://example.com',
+      site_type: 'plg_saas',
+      url_map: { landing: 'https://example.com' },
+    });
+
+    expect(res.status).toBe(400);
+    expect(dbQueries.createAudit).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 when neither funnel_type nor site_type is supplied', async () => {
+    const res = await buildApp().post('/api/audits/start').send({
+      website_url: 'https://example.com',
+      url_map: {},
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('does not tag rule_set_version for a v1 (funnel_type) payload', async () => {
+    vi.mocked(dbQueries.createAudit).mockResolvedValue(MOCK_AUDIT as any);
+    vi.mocked(auditQueue.add as any).mockResolvedValue({ id: 'job-001' });
+
+    await buildApp().post('/api/audits/start').send({
+      website_url: 'https://example.com',
+      funnel_type: 'ecommerce',
+      url_map: { homepage: 'https://example.com' },
+    });
+
+    expect(dbQueries.createAudit).toHaveBeenCalledWith(
+      expect.not.objectContaining({ rule_set_version: expect.anything() }),
+    );
+  });
 });
 
 // ── GET /api/audits ───────────────────────────────────────────────────────────

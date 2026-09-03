@@ -1,5 +1,8 @@
 import { supabaseAdmin } from './supabase';
-import type { AuditRow, AuditStatus, FunnelType, Region, ValidationResult, ReportJSON } from '@/types/audit';
+import type {
+  AuditRow, AuditStatus, FunnelType, Region, ValidationResult, ReportJSON,
+  RuleSetVersion, SiteType, SecondaryMotion, DeclaredPlatform, TrafficRegion, CMP, DeclaredConversion,
+} from '@/types/audit';
 import { sanitizeForJsonb } from '@/utils/sanitizeJsonb';
 
 // ─── Audits ───────────────────────────────────────────────────────────────────
@@ -12,6 +15,19 @@ export async function createAudit(data: {
   test_email?: string;
   test_phone?: string;
   client_id?: string;
+  // Check Register v2 Scan Inputs — present when rule_set_version === 'v2'.
+  rule_set_version?: RuleSetVersion;
+  site_type?: SiteType;
+  secondary_motion?: SecondaryMotion;
+  declared_platforms?: DeclaredPlatform[];
+  primary_channel?: DeclaredPlatform;
+  monthly_spend_band?: string;
+  traffic_regions?: TrafficRegion[];
+  cmp?: CMP;
+  product_domain?: string;
+  checkout_domain?: string;
+  additional_properties?: string[];
+  declared_conversions?: DeclaredConversion[];
 }): Promise<AuditRow> {
   const { data: row, error } = await supabaseAdmin
     .from('audits')

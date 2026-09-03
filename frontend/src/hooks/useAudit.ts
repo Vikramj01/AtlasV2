@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { auditApi } from '@/lib/api/auditApi';
 import { useAuditStore } from '@/store/auditStore';
-import type { StartAuditInput } from '@/types/audit';
+import type { StartAuditInput, StartAuditInputV2 } from '@/types/audit';
 
 // ─── Start audit ──────────────────────────────────────────────────────────────
 
@@ -10,7 +10,7 @@ export function useAudit() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const startAudit = async (input: StartAuditInput): Promise<string | null> => {
+  const startAudit = async (input: StartAuditInput | StartAuditInputV2): Promise<string | null> => {
     setLoading(true);
     setError(null);
     try {
