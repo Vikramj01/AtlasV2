@@ -4,7 +4,7 @@
  *   - Outbound network requests (GA4, Meta, Google Ads, GTM, sGTM, LinkedIn, TikTok, Microsoft UET)
  *   - Cookies and localStorage snapshots
  */
-import type { DataLayerEvent, NetworkRequest, CookieSnapshot, LocalStorageSnapshot, DetailedCookie } from '@/types/audit';
+import type { DataLayerEvent, NetworkRequest, CookieSnapshot, LocalStorageSnapshot, DetailedCookie, ConsoleError } from '@/types/audit';
 
 // URLs we want to capture (ad/analytics platforms)
 const TRACKED_URL_PATTERNS = [
@@ -193,6 +193,36 @@ export function interceptNetworkRequests(
     const step = getStep();
     const existing = sink.find((r) => r.url === url && r.step === step);
     if (existing) existing.failed = true;
+  });
+}
+
+/**
+ * Set up console-error and uncaught-exception interception on a
+ * Playwright page — used by Hygiene & Integrity's NO_CONSOLE_ERRORS_FROM_
+ * MEASUREMENT_CODE (L12.4) and CONVERSION_SURFACE_REACHABLE_WITHOUT_
+ * JAVASCRIPT_ERRORS (L12.8). Registered once for the whole session, same
+ * StepRef pattern as interceptNetworkRequests.
+ */
+export function interceptConsoleErrors(
+  page: {
+    on: (event: string, handler: (arg: unknown) => void) => void;
+  },
+  sink: ConsoleError[],
+  stepNameOrRef: string | StepRef,
+): void {
+  const getStep = (): string =>
+    typeof stepNameOrRef === 'string' ? stepNameOrRef : stepNameOrRef.current;
+
+  page.on('console', (rawMsg: unknown) => {
+    const msg = rawMsg as { type?: () => string; text?: () => string };
+    if (msg.type?.() !== 'error') return;
+    sink.push({ message: msg.text?.() ?? '', step: getStep() });
+  });
+
+  page.on('pageerror', (rawErr: unknown) => {
+    const err = rawErr as { message?: string } | string;
+    const message = typeof err === 'string' ? err : err.message ?? String(err);
+    sink.push({ message, step: getStep() });
   });
 }
 

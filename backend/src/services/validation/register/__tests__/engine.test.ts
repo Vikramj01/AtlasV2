@@ -173,9 +173,11 @@ describe('runRegister', () => {
 
   it('defaults to the REGISTER export when no rules argument is passed', () => {
     // REGISTER now carries L0 (4), L1 (16), L2 (11), L3 (6), L4 (4), L5
-    // (12), L6 (15), and L7 (11) rules; the rest are empty until L8-L12
-    // ship. Locks in that runRegister() with no explicit rules argument
-    // actually reaches the real library, not an empty stand-in.
+    // (12), L6 (15), L7 (11), and L12 (4) rules — 83 total. L8-L11 were
+    // scoped out earlier (predominantly connector/credentials/second-pass
+    // detectable); this is the full crawl-only phase-1 register. Locks in
+    // that runRegister() with no explicit rules argument actually reaches
+    // the real library, not an empty stand-in.
     const results = runRegister(makeAuditData());
     expect(results.length).toBeGreaterThan(0);
     expect(results.map((r) => r.rule_id)).toContain('DECLARED_PLATFORM_HAS_TAG');
@@ -186,6 +188,7 @@ describe('runRegister', () => {
     expect(results.map((r) => r.rule_id)).toContain('PRIMARY_CONVERSION_EVENT_FIRES');
     expect(results.map((r) => r.rule_id)).toContain('CONVERSION_VALUE_PRESENT');
     expect(results.map((r) => r.rule_id)).toContain('EMAIL_CAPTURED_FOR_ENHANCED_CONVERSIONS');
+    expect(results.map((r) => r.rule_id)).toContain('NO_STAGING_OR_TEST_CONTAINER_IN_PRODUCTION');
   });
 
   it("a 'declared' scope rule always runs, independent of which platforms are declared", () => {

@@ -6,6 +6,7 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   flushDataLayer,
   interceptNetworkRequests,
+  interceptConsoleErrors,
   captureCookies,
   captureLocalStorage,
   captureSessionStorage,
@@ -14,7 +15,7 @@ import {
   mergeDetailedCookies,
   type StepRef,
 } from '../dataCapture';
-import type { NetworkRequest } from '@/types/audit';
+import type { NetworkRequest, ConsoleError } from '@/types/audit';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -231,6 +232,59 @@ describe('interceptNetworkRequests — StepRef (mutable step)', () => {
     emit('response', makeResponse(url, 420));
 
     expect(sink[0].loadTime).toBe(420);
+  });
+});
+
+// ─── interceptConsoleErrors ───────────────────────────────────────────────────
+
+describe('interceptConsoleErrors', () => {
+  it('captures a console.error message with its step', () => {
+    const { page, emit } = makeEventEmitterPage();
+    const sink: ConsoleError[] = [];
+    interceptConsoleErrors(page, sink, 'confirmation');
+
+    emit('console', { type: () => 'error', text: () => 'Uncaught TypeError: gtag is not a function' });
+
+    expect(sink).toHaveLength(1);
+    expect(sink[0].message).toBe('Uncaught TypeError: gtag is not a function');
+    expect(sink[0].step).toBe('confirmation');
+  });
+
+  it('ignores non-error console messages', () => {
+    const { page, emit } = makeEventEmitterPage();
+    const sink: ConsoleError[] = [];
+    interceptConsoleErrors(page, sink, 'landing');
+
+    emit('console', { type: () => 'log', text: () => 'some debug log' });
+    emit('console', { type: () => 'warning', text: () => 'a warning' });
+
+    expect(sink).toHaveLength(0);
+  });
+
+  it('captures an uncaught page exception', () => {
+    const { page, emit } = makeEventEmitterPage();
+    const sink: ConsoleError[] = [];
+    interceptConsoleErrors(page, sink, 'checkout');
+
+    emit('pageerror', new Error('dataLayer is not defined'));
+
+    expect(sink).toHaveLength(1);
+    expect(sink[0].message).toBe('dataLayer is not defined');
+    expect(sink[0].step).toBe('checkout');
+  });
+
+  it('reads the current step at error time via a StepRef', () => {
+    const { page, emit } = makeEventEmitterPage();
+    const sink: ConsoleError[] = [];
+    const stepRef: StepRef = { current: 'landing' };
+    interceptConsoleErrors(page, sink, stepRef);
+
+    emit('console', { type: () => 'error', text: () => 'first error' });
+    stepRef.current = 'confirmation';
+    emit('console', { type: () => 'error', text: () => 'second error' });
+
+    expect(sink[0].step).toBe('landing');
+    expect(sink[1].step).toBe('confirmation');
   });
 });
 

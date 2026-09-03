@@ -3,12 +3,13 @@
  * Drives a Playwright browser through a multi-step user journey and
  * assembles the raw AuditData needed for validation.
  */
-import type { AuditData, FunnelType, Region, DataLayerEvent, NetworkRequest, CookieSnapshot, LocalStorageSnapshot } from '@/types/audit';
+import type { AuditData, FunnelType, Region, DataLayerEvent, NetworkRequest, CookieSnapshot, LocalStorageSnapshot, ConsoleError } from '@/types/audit';
 import { JOURNEY_CONFIGS } from '@/services/browserbase/journeyConfigs';
 import {
   instrumentDataLayer,
   flushDataLayer,
   interceptNetworkRequests,
+  interceptConsoleErrors,
   captureCookies,
   captureLocalStorage,
   captureSessionStorage,
@@ -166,6 +167,7 @@ export async function simulateJourney(
   const cookieSnapshots: CookieSnapshot[] = [];
   const localStorageSnapshots: LocalStorageSnapshot[] = [];
   const sessionStorageSnapshots: LocalStorageSnapshot[] = [];
+  const consoleErrors: ConsoleError[] = [];
   const gtmScriptSrcs: string[] = [];
 
   const context = await browser.newContext({
@@ -180,6 +182,7 @@ export async function simulateJourney(
   // Single listener for all steps — uses a mutable ref so step name stays current
   const stepRef: StepRef = { current: 'init' };
   interceptNetworkRequests(page, networkRequests, stepRef);
+  interceptConsoleErrors(page, consoleErrors, stepRef);
 
   let landingFinalUrl: string | undefined;
   let landingReferrerCaptured: string | undefined;
@@ -344,6 +347,7 @@ export async function simulateJourney(
     sessionStorage: mergedSessionStorage,
     cookies: mergedCookies,
     detailedCookies: mergedDetailedCookies,
+    consoleErrors,
     pageMetadata: {
       pixel_fbclid: hasFBPixelOnLanding,
       gtm_script_srcs: gtmScriptSrcs,

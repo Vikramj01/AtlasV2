@@ -213,6 +213,12 @@ export interface LocalStorageSnapshot {
   entries: Record<string, string>;
 }
 
+/** A browser console error or uncaught exception observed during a step — see dataCapture.ts's interceptConsoleErrors. */
+export interface ConsoleError {
+  message: string;
+  step: string;
+}
+
 // ─── GTM container snapshot (for tag_configuration layer) ────────────────────
 
 export interface GTMConsentSettings {
@@ -484,6 +490,16 @@ export interface AuditData {
    * configured one), so this is never itself a reason to skip.
    */
   namingConvention?: NamingConvention;
+  /**
+   * Console errors and uncaught exceptions observed across the whole
+   * crawl (dataCapture.ts's interceptConsoleErrors, registered once
+   * alongside interceptNetworkRequests). Undefined — not an empty array —
+   * when console capture never ran for this AuditData (hand-built
+   * fixtures, journey-mode's proxyAuditData); the L12 rules that read this
+   * treat that as 'skipped', since an empty array from a real crawl and
+   * "we never checked" need different verdicts.
+   */
+  consoleErrors?: ConsoleError[];
 }
 
 // ─── API inputs ───────────────────────────────────────────────────────────────
