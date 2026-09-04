@@ -678,8 +678,11 @@ describe('simulateJourney — checkout_domain boundary probe', () => {
 describe('simulateJourney — additional_properties widens cross-domain targets', () => {
   it('counts an outbound link to a declared additional_properties host that product_domain/checkout_domain alone would not have covered', async () => {
     const { mockBrowser, mockPage } = makeMockBrowser();
-    mockPage.evaluate.mockImplementation(async (fn: unknown) => {
-      if (typeof fn === 'function' && fn.toString().includes('a[href]')) {
+    // Sprint 20: the outbound-link scan now goes through evaluateAcrossFrames/
+    // collectDeep, so the selector arrives as the second evaluate() argument
+    // rather than being embedded in the function source.
+    mockPage.evaluate.mockImplementation(async (_fn: unknown, arg?: { selector?: string }) => {
+      if (arg?.selector === 'a[href]') {
         return [
           'https://blog.example.net/post?_gl=1abc123', // additional_properties host, carries _gl
           'https://shop.example.com/other-page',        // same-origin — not a cross-domain target
@@ -698,8 +701,8 @@ describe('simulateJourney — additional_properties widens cross-domain targets'
 
   it('does not count that same link when additional_properties is not declared', async () => {
     const { mockBrowser, mockPage } = makeMockBrowser();
-    mockPage.evaluate.mockImplementation(async (fn: unknown) => {
-      if (typeof fn === 'function' && fn.toString().includes('a[href]')) {
+    mockPage.evaluate.mockImplementation(async (_fn: unknown, arg?: { selector?: string }) => {
+      if (arg?.selector === 'a[href]') {
         return ['https://blog.example.net/post?_gl=1abc123'];
       }
       return [];
@@ -708,6 +711,51 @@ describe('simulateJourney — additional_properties widens cross-domain targets'
     const auditData = await simulateJourney(mockBrowser as never, BASE_OPTS);
 
     expect(auditData.outboundCrossDomainLinks).toEqual({ total: 0, withGl: 0 });
+  });
+});
+
+// ─── iframe DOM-read traversal (Sprint 20 — a hosted checkout widget like
+// Stripe Elements or Shopify's checkout commonly renders its tags/links
+// inside a same-origin iframe, which a plain page.evaluate() never sees) ──
+
+describe('simulateJourney — iframe DOM-read traversal', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('captures a GTM container tag that only exists inside a same-origin iframe, not the main document', async () => {
+    const { mockBrowser, mockPage } = makeMockBrowser();
+    const mainFrame = { evaluate: vi.fn().mockResolvedValue([]) };
+    const iframeFrame = {
+      evaluate: vi.fn().mockImplementation(async (_fn: unknown, arg: { selector: string }) =>
+        arg.selector === 'script[src]' ? ['https://www.googletagmanager.com/gtm.js?id=GTM-IFRAME123'] : []),
+    };
+    (mockPage as unknown as { frames: () => unknown[] }).frames = vi.fn().mockReturnValue([mainFrame, iframeFrame]);
+
+    const auditData = await simulateJourney(mockBrowser as never, BASE_OPTS);
+
+    const scriptSrcs = (auditData.pageMetadata?.gtm_script_srcs as string[]) ?? [];
+    expect(scriptSrcs).toContain('https://www.googletagmanager.com/gtm.js?id=GTM-IFRAME123');
+    // The plain page.evaluate() path is bypassed entirely once frames() exists.
+    expect(mockPage.evaluate).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ selector: 'script[src]' }));
+  });
+
+  it('counts an outbound cross-domain link found only inside a same-origin iframe', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ status: 503 })); // product_domain reachability is irrelevant here — crossDomainTargets is built from opts directly
+    const { mockBrowser, mockPage } = makeMockBrowser();
+    const mainFrame = { evaluate: vi.fn().mockResolvedValue([]) };
+    const iframeFrame = {
+      evaluate: vi.fn().mockImplementation(async (_fn: unknown, arg: { selector: string }) =>
+        arg.selector === 'a[href]' ? ['https://app.shop.example.com/dashboard?_gl=1abc'] : []),
+    };
+    (mockPage as unknown as { frames: () => unknown[] }).frames = vi.fn().mockReturnValue([mainFrame, iframeFrame]);
+
+    const auditData = await simulateJourney(mockBrowser as never, {
+      ...BASE_OPTS,
+      product_domain: 'https://app.shop.example.com',
+    });
+
+    expect(auditData.outboundCrossDomainLinks).toEqual({ total: 1, withGl: 1 });
   });
 });
 

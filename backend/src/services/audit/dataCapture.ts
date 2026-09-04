@@ -311,6 +311,84 @@ export async function captureSessionStorage(
   }
 }
 
+// ── Deep DOM traversal (iframes + shadow DOM) ───────────────────────────────
+//
+// A plain `page.evaluate(() => document.querySelectorAll(selector))` only
+// ever sees the main frame's light DOM: it can't see into an iframe's own
+// document (a separate execution context page.evaluate never touches), and
+// document.querySelectorAll doesn't pierce open shadow roots either (unlike
+// Playwright's own selector engine, which page.fill/page.click already use
+// and which auto-pierces shadow DOM — this gap is specific to a raw
+// page.evaluate() DOM read). A hosted checkout widget (Stripe Elements,
+// Shopify's checkout) commonly renders inside one or both, so a DOM-read
+// call site that never traverses either is structurally blind to tags/links
+// living there. collectDeep runs inside the browser and pierces shadow
+// roots; evaluateAcrossFrames runs it once per same-origin frame (a
+// cross-origin frame's evaluate() throws and is skipped, not fatal) and
+// merges the results.
+
+/** Serializable args for collectDeep, passed across the page.evaluate() boundary. */
+export interface DeepQueryArgs {
+  /** CSS selector to match, at every level (main document + each nested shadow root). */
+  selector: string;
+  /** 'href' resolves HTMLAnchorElement.href (absolute URL); 'attr' reads a raw attribute (e.g. script[src]'s 'src', unresolved). */
+  mode: 'href' | 'attr';
+  /** Attribute name to read when mode is 'attr'. */
+  attr?: string;
+}
+
+/**
+ * Browser-side function — must stay self-contained (no closures over
+ * outer/Node-side variables) since Playwright serializes it via toString()
+ * and re-evaluates it inside the page/frame. Recurses into every open
+ * shadow root found under the given root; on a page with zero shadow roots
+ * this costs exactly one extra `querySelectorAll('*')` pass over the
+ * pre-Sprint-20 flat selector call (to confirm there's nothing to recurse
+ * into) and never actually recurses — cheap relative to page-load/network
+ * time, and bounded (no exponential blowup) regardless of DOM size.
+ */
+export function collectDeep(args: DeepQueryArgs): string[] {
+  const { selector, mode, attr } = args;
+  const extract = (el: Element): string =>
+    mode === 'href' ? (el as HTMLAnchorElement).href : el.getAttribute(attr ?? '') ?? '';
+
+  const walk = (root: ParentNode): string[] => {
+    const found = Array.from(root.querySelectorAll(selector)).map(extract);
+    for (const el of Array.from(root.querySelectorAll('*'))) {
+      const shadowRoot = (el as HTMLElement).shadowRoot;
+      if (shadowRoot) found.push(...walk(shadowRoot));
+    }
+    return found;
+  };
+
+  return walk(document);
+}
+
+/**
+ * Runs a serializable evaluate() function once per frame (page.frames() —
+ * the main frame plus every attached iframe) and merges the results. Falls
+ * back to a single page.evaluate() call when the page object doesn't expose
+ * frames() at all (every existing lightweight test double), so this is a
+ * strict superset of the pre-Sprint-20 behavior, not a breaking change.
+ * A frame that throws (cross-origin, detached mid-evaluate) contributes no
+ * results rather than failing the whole scan.
+ */
+export async function evaluateAcrossFrames<T, A>(
+  page: {
+    evaluate: (fn: (arg: A) => T[], arg: A) => Promise<T[]>;
+    frames?: () => Array<{ evaluate: (fn: (arg: A) => T[], arg: A) => Promise<T[]> }>;
+  },
+  fn: (arg: A) => T[],
+  arg: A,
+): Promise<T[]> {
+  const frames = page.frames?.();
+  if (!frames || frames.length === 0) {
+    return page.evaluate(fn, arg).catch(() => [] as T[]);
+  }
+  const perFrame = await Promise.all(frames.map((frame) => frame.evaluate(fn, arg).catch(() => [] as T[])));
+  return perFrame.flat();
+}
+
 /**
  * Merge all cookie snapshots into a single flat map.
  * Later steps override earlier ones (most recent wins).

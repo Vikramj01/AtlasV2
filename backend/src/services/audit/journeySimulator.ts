@@ -21,7 +21,10 @@ import {
   mergeCookies,
   mergeLocalStorage,
   mergeDetailedCookies,
+  collectDeep,
+  evaluateAcrossFrames,
   type StepRef,
+  type DeepQueryArgs,
 } from './dataCapture';
 import { extractGa4ClientId, ga4SessionStartDetected } from '@/services/detection/trackingSignals';
 import { detectConsentBanner, dismissConsentBanner, type EvaluatePage } from '@/services/detection/consentBanner';
@@ -65,6 +68,12 @@ function injectSyntheticParams(url: string, params: Record<string, string | unde
 /** Referer header set on the landing navigation — simulates arriving via an ad click, for L2.11. */
 const LANDING_REFERRER = 'https://www.google.com/';
 
+/** Minimal page shape evaluateAcrossFrames/collectDeep need — see dataCapture.ts. */
+type DeepScanPage = {
+  evaluate: (fn: (arg: DeepQueryArgs) => string[], arg: DeepQueryArgs) => Promise<string[]>;
+  frames?: () => Array<{ evaluate: (fn: (arg: DeepQueryArgs) => string[], arg: DeepQueryArgs) => Promise<string[]> }>;
+};
+
 export function hostnameOf(url: string): string | undefined {
   try {
     return new URL(url).hostname.replace(/^www\./, '');
@@ -97,20 +106,22 @@ export function normalizeUrlForCoverage(url: string | undefined): string | undef
 }
 
 /**
- * Scans the landing page's <a href> tags for links to the declared product/
- * checkout domain and checks how many carry GA4's `_gl` cross-domain linker
- * parameter — the transport mechanism CROSS_DOMAIN_LINKER_CONFIGURED (L4.1)
- * and _GL_PARAMETER_APPENDED_ON_OUTBOUND_LINKS (L4.2) both read.
+ * Scans the landing page's <a href> tags — including inside same-origin
+ * iframes and open shadow roots (Sprint 20: a hosted checkout widget like
+ * Stripe Elements or Shopify's checkout commonly renders in one or both) —
+ * for links to the declared product/checkout domain, and checks how many
+ * carry GA4's `_gl` cross-domain linker parameter — the transport mechanism
+ * CROSS_DOMAIN_LINKER_CONFIGURED (L4.1) and _GL_PARAMETER_APPENDED_ON_
+ * OUTBOUND_LINKS (L4.2) both read.
  */
 export async function scanOutboundCrossDomainLinks(
-  page: { evaluate: (fn: () => unknown) => Promise<unknown> },
+  page: DeepScanPage,
   targetHosts: string[],
 ): Promise<{ total: number; withGl: number }> {
   if (targetHosts.length === 0) return { total: 0, withGl: 0 };
   try {
-    const hrefs = await page
-      .evaluate(() => Array.from(document.querySelectorAll('a[href]')).map((a) => (a as HTMLAnchorElement).href))
-      .catch(() => []) as string[];
+    const hrefs = await evaluateAcrossFrames(page, collectDeep, { selector: 'a[href]', mode: 'href' })
+      .catch(() => []);
     let total = 0;
     let withGl = 0;
     for (const href of hrefs) {
@@ -211,6 +222,15 @@ export async function simulateJourney(
         fill?: (sel: string, value: string) => Promise<void>;
         /** Current page URL — used to detect redirects on the landing navigation (L2.9/L2.10). */
         url?: () => string;
+        /**
+         * Every frame attached to the page (main frame + iframes), each with
+         * its own evaluate() — a real Playwright Page always has this.
+         * Optional here (and unused by every existing caller/test double) so
+         * this stays backward-compatible; when present, evaluateAcrossFrames
+         * (dataCapture.ts) uses it to reach same-origin iframe content that
+         * page.evaluate() alone can never see (Sprint 20).
+         */
+        frames?: () => Array<{ evaluate: (fn: (arg: DeepQueryArgs) => string[], arg: DeepQueryArgs) => Promise<string[]> }>;
       }>;
       cookies: (urls?: string[]) => Promise<Array<{ name: string; value: string }>>;
       close: () => Promise<void>;
@@ -394,10 +414,15 @@ export async function simulateJourney(
         // Flush dataLayer events collected during this step
         await flushDataLayer(page as Parameters<typeof flushDataLayer>[0], dataLayer, step.name);
 
-        // Collect <script src> values for live GTM container ID detection
-        const stepScriptSrcs = await page
-          .evaluate(() => Array.from(document.querySelectorAll('script[src]')).map((s) => s.getAttribute('src') ?? ''))
-          .catch(() => []) as string[];
+        // Collect <script src> values for live GTM container ID detection —
+        // including scripts inside same-origin iframes and open shadow
+        // roots (Sprint 20), so a container loaded inside a hosted
+        // checkout widget isn't invisible to CONTAINER_ID_MATCHES_DECLARED.
+        const stepScriptSrcs = await evaluateAcrossFrames(
+          page as unknown as DeepScanPage,
+          collectDeep,
+          { selector: 'script[src]', mode: 'attr', attr: 'src' },
+        ).catch(() => []);
         gtmScriptSrcs.push(...stepScriptSrcs);
 
         // document.referrer for L2.11, and an outbound-link scan for L4.1/L4.2
@@ -405,7 +430,7 @@ export async function simulateJourney(
         // neither can ever intercept the dataLayer sink flush.
         if (step.name === 'landing') {
           landingReferrerCaptured = await page.evaluate(() => document.referrer).catch(() => '') as string;
-          outboundCrossDomainLinks = await scanOutboundCrossDomainLinks(page, crossDomainTargets);
+          outboundCrossDomainLinks = await scanOutboundCrossDomainLinks(page as unknown as DeepScanPage, crossDomainTargets);
         }
 
         // Snapshot cookies, localStorage, and sessionStorage
