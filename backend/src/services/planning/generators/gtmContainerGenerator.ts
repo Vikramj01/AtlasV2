@@ -1157,7 +1157,17 @@ src="https://px.ads.linkedin.com/collect/?pid={{CONST - LinkedIn Partner ID}}&fm
   // When two recommendations share an event_name (e.g., view_promotion on two pages),
   // the single deduplicated tag must map the union of all their parameters so the
   // EVENT_PARAMETERS_COMPLETENESS validator rule doesn't flag missing keys.
+  //
+  // isEcommerceByEvent is OR'd across every contributing recommendation (not just
+  // whichever one happens to be visited first): if ANY recommendation sharing this
+  // event_name is an ecommerce action_type, every ecommerce-scoped param key
+  // contributed by ANY of them (e.g. "items") must resolve to the nested
+  // "DLV - ecommerce.*" path — otherwise a differently-classified recommendation
+  // sharing the same event_name (e.g. a mislabeled non-ecommerce click reusing
+  // event_name "view_item") can make the merged tag reference an ungenerated flat
+  // "DLV - items" variable instead of the pre-created "DLV - ecommerce.items".
   const mergedParamsByEvent = new Map<string, IREvent['parameters']>();
+  const isEcommerceByEvent = new Map<string, boolean>();
   for (const rec of recommendations) {
     const irEvent = recToIREvent(rec, session.selected_platforms as Platform[]);
     const existing = mergedParamsByEvent.get(irEvent.event_name) ?? [];
@@ -1165,6 +1175,10 @@ src="https://px.ads.linkedin.com/collect/?pid={{CONST - LinkedIn Partner ID}}&fm
       if (!existing.some(p => p.key === param.key)) existing.push(param);
     }
     mergedParamsByEvent.set(irEvent.event_name, existing);
+    isEcommerceByEvent.set(
+      irEvent.event_name,
+      (isEcommerceByEvent.get(irEvent.event_name) ?? false) || ECOMMERCE_SNIPPET_ACTIONS.has(irEvent.action_type),
+    );
   }
 
   for (const rec of recommendations) {
@@ -1173,8 +1187,11 @@ src="https://px.ads.linkedin.com/collect/?pid={{CONST - LinkedIn Partner ID}}&fm
     const folderId = isConversion ? FOLDER.CONVERSION : FOLDER.ENGAGEMENT;
     const trigId = ensureEventTrigger(irEvent);
 
-    // Ensure DLVs for all IR event parameters (all recs, before dedup check)
-    const isEcommerce = ECOMMERCE_SNIPPET_ACTIONS.has(irEvent.action_type);
+    // Ensure DLVs for all IR event parameters (all recs, before dedup check).
+    // Uses the event-wide (OR'd) ecommerce flag, not this single rec's own
+    // action_type, so pre-created DLVs always match what the merged render
+    // step below will reference.
+    const isEcommerce = isEcommerceByEvent.get(irEvent.event_name) ?? ECOMMERCE_SNIPPET_ACTIONS.has(irEvent.action_type);
     for (const param of irEvent.parameters) {
       ensureDlv(dlvPathForParam(param.key, isEcommerce));
     }
@@ -1189,7 +1206,7 @@ src="https://px.ads.linkedin.com/collect/?pid={{CONST - LinkedIn Partner ID}}&fm
 
     // ── GA4 Event Tag ───────────────────────────────────────────────────────
     if (hasGA4) {
-      const ga4EventParams = renderGA4EventParameters(mergedIREvent);
+      const ga4EventParams = renderGA4EventParameters(mergedIREvent, isEcommerceByEvent.get(mergedIREvent.event_name));
       tags.push({
         ...stub(),
         tagId: tagIds.next(),

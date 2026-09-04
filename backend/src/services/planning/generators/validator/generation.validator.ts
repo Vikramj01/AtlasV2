@@ -155,8 +155,8 @@ export function validateGeneration(input: GenerationValidationInput): Validation
             rule: 'VARIABLE_RESOLUTION',
             severity: 'CRITICAL',
             location: `GTM tag: ${tag.name}`,
-            message: `Unresolved variable reference {{${ref}}} — no matching variable exists in the container.`,
-            fix_hint: `Create a GTM variable named exactly "${ref}", or update the reference to match an existing variable. Check the variable naming convention: CONST - GA4 Measurement ID, CONST - GAds Conversion Label - {event_name}.`,
+            message: `Atlas generated a tag that references {{${ref}}}, but didn't create a matching variable for it. This is a bug in the tracking plan generator — it isn't something you need to fix in GTM.`,
+            fix_hint: `Try generating again. If this keeps happening, contact support and mention this session so we can fix the generator — the container should never require you to hand-create GTM variables.`,
           });
         }
       }
