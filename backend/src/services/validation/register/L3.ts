@@ -125,8 +125,14 @@ export const STORAGE_LIFETIME_MEETS_ATTRIBUTION_WINDOW: ValidationRule = {
     }
 
     const nowSeconds = Date.now() / 1000;
+    // Rounded to whole days before comparing — maxAgeDays() measures remaining
+    // lifetime at scan time, so a cookie set with exactly a 90-day Max-Age
+    // always reads as fractionally under 90 by the time this runs. Comparing
+    // on the same rounded value shown in the evidence keeps "displays as 90d"
+    // and "needs 90d" from disagreeing with each other.
+    const roundedDays = (c: DetailedCookie) => Math.max(0, Math.round(maxAgeDays(c, nowSeconds)));
     const violations = cookies
-      .map((c) => ({ cookie: c, days: maxAgeDays(c, nowSeconds), required: requiredWindowDays(c.name) }))
+      .map((c) => ({ cookie: c, days: roundedDays(c), required: requiredWindowDays(c.name) }))
       .filter((c) => c.days < c.required);
 
     return {
@@ -136,10 +142,10 @@ export const STORAGE_LIFETIME_MEETS_ATTRIBUTION_WINDOW: ValidationRule = {
       severity: this.severity,
       technical_details: {
         found: violations.length > 0
-          ? `${violations.length} cookie(s) shorter than their attribution window: ${violations.map((v) => `${v.cookie.name} (${Math.max(0, Math.round(v.days))}d, needs ${v.required}d)`).join(', ')}`
+          ? `${violations.length} cookie(s) shorter than their attribution window: ${violations.map((v) => `${v.cookie.name} (${v.days}d, needs ${v.required}d)`).join(', ')}`
           : 'All click-ID cookies meet their platform attribution window',
         expected: 'Cookie max-age is at least as long as the platform window (90d Google, 7d Meta click)',
-        evidence: cookies.map((c) => `${c.name}: ${maxAgeDays(c, nowSeconds) <= 0 ? 'session cookie (0d)' : `${Math.round(maxAgeDays(c, nowSeconds))}d`} (needs ${requiredWindowDays(c.name)}d)`),
+        evidence: cookies.map((c) => `${c.name}: ${roundedDays(c) <= 0 ? 'session cookie (0d)' : `${roundedDays(c)}d`} (needs ${requiredWindowDays(c.name)}d)`),
       },
     };
   },
