@@ -1,7 +1,7 @@
 /**
  * GenerationValidator — pre-delivery linter for Atlas output artefacts.
  *
- * Runs synchronously after rendering, before delivery. All 10 rules must pass
+ * Runs synchronously after rendering, before delivery. All 11 rules must pass
  * or the result carries structured errors. CRITICAL errors block delivery.
  * HIGH errors surface as warnings the user must acknowledge.
  *
@@ -16,6 +16,8 @@
  *   8  METADATA_ACCURACY           — counts in guide/metadata match actual content
  *   9  PLACEHOLDER_GUIDE_CONSISTENCY — guide placeholder table matches CONST variables
  *   10 PER_EVENT_CONVERSION_LABELS — each Google Ads tag has its own label variable
+ *   11 EVENT_ACTION_TYPE_CONSISTENCY — recommendations sharing an event_name agree
+ *      on action_type (Atlas merges same-named events into one GTM tag)
  */
 
 import type { GTMContainerJSON, GTMParameter, GTMTagDef, GTMTriggerDef } from '../gtmContainerGenerator';
@@ -537,6 +539,29 @@ export function validateGeneration(input: GenerationValidationInput): Validation
           message: `conversionLabel references "{{${ref}}}" which doesn't follow the per-event convention "CONST - GAds Conversion Label - {event_name}". This may work but makes the container harder to maintain.`,
         });
       }
+    }
+  }
+
+  // ── Rule 11: Event/Action-Type Consistency ──────────────────────────────────
+  // Atlas merges every recommendation sharing an event_name into a single GTM
+  // tag, so they should represent the same kind of interaction. Flag groups
+  // with more than one distinct action_type — most often an AI misclassification,
+  // occasionally a legitimate manual-edit mismatch that's worth a human look.
+  const actionTypesByEventName = new Map<string, Set<string>>();
+  for (const rec of recommendations) {
+    const set = actionTypesByEventName.get(rec.event_name) ?? new Set<string>();
+    set.add(rec.action_type);
+    actionTypesByEventName.set(rec.event_name, set);
+  }
+  for (const [eventName, types] of actionTypesByEventName) {
+    if (types.size > 1) {
+      errors.push({
+        rule: 'EVENT_ACTION_TYPE_CONSISTENCY',
+        severity: 'HIGH',
+        location: `Recommendation group: event_name "${eventName}"`,
+        message: `Recommendations sharing event_name "${eventName}" have inconsistent action_types: ${[...types].sort().join(', ')}. Atlas merges same-named events into one GTM tag, so they're expected to represent the same kind of interaction — this usually means one of them was misclassified, though it can occasionally be a legitimate edge case.`,
+        fix_hint: `Review the recommendations for event_name "${eventName}". If one is genuinely a different interaction, give it a distinct event_name instead of reusing "${eventName}". If it looks like a misclassification, re-run the scan for that page or correct the recommendation's action_type before delivering.`,
+      });
     }
   }
 

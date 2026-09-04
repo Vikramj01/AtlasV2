@@ -325,6 +325,63 @@ describe('Merged event_name with mixed action_types (ecommerce-ness must OR, not
     const varNames = gtmContainer.containerVersion.variable.map(v => v.name);
     expect(varNames).toContain('DLV - ecommerce.items');
   });
+
+  it('Rule 11 (EVENT_ACTION_TYPE_CONSISTENCY) flags this exact scenario as a HIGH warning, without blocking generation', () => {
+    const rule11 = result.errors.filter(e => e.rule === 'EVENT_ACTION_TYPE_CONSISTENCY');
+    expect(rule11).toHaveLength(1);
+    expect(rule11[0].severity).toBe('HIGH');
+    expect(result.passed).toBe(true);
+  });
+
+  it('the Meta tag is emitted for the merged event (contributingActionTypes wiring does not break tag emission)', () => {
+    const metaTag = gtmContainer.containerVersion.tag.find(t => t.name === 'Meta - view_item');
+    expect(metaTag).toBeDefined();
+    const html = metaTag?.parameter.find(p => p.key === 'html')?.value ?? '';
+    expect(html).toContain("fbq('track', 'ViewContent'");
+  });
+});
+
+// ── Regression: conversion classification must OR across contributing recs ─────
+//
+// A merged event_name only emits GA4/Meta/TikTok/Google Ads tags once, on whichever
+// contributing recommendation the generator visits first. Before this fix,
+// is_conversion/folder placement were read off that first-visited rec alone — so a
+// real conversion (e.g. 'purchase') sharing an event_name with a non-conversion rec
+// visited first would silently never get a Google Ads conversion tag, and would be
+// filed in the Engagement folder instead of Conversion.
+describe('Merged event_name: conversion classification must OR across contributing recs', () => {
+  const session = makeSession('ecommerce', ['ga4', 'google_ads']);
+
+  const pages = [
+    makePage('p1', 'https://shop.example.com/'),
+    makePage('p2', 'https://shop.example.com/checkout/confirm', 'confirmation'),
+  ];
+
+  // The non-conversion rec is listed FIRST so it is the one `generateGTMContainer`
+  // visits first for event_name 'checkout_complete'.
+  const recs: PlanningRecommendation[] = [
+    makeRec('r1', 'p1', 'checkout_complete', 'custom', ['location'], [], ['ga4']),
+    makeRec('r2', 'p2', 'checkout_complete', 'purchase', ['transaction_id', 'value', 'currency'], [], ['ga4', 'google_ads'], true),
+  ];
+
+  const gtmContainer = generateGTMContainer(recs, session);
+
+  it('a Google Ads conversion tag is still emitted for the merged event', () => {
+    const gadsTag = gtmContainer.containerVersion.tag.find(t => t.type === 'awct' && t.name.includes('checkout_complete'));
+    expect(gadsTag).toBeDefined();
+  });
+
+  it('the Google Ads tag references ecommerce-scoped value/currency DLVs, matching the contributing purchase rec', () => {
+    const gadsTag = gtmContainer.containerVersion.tag.find(t => t.type === 'awct');
+    expect(gadsTag?.parameter.find(p => p.key === 'conversionValue')?.value).toBe('{{DLV - ecommerce.value}}');
+    expect(gadsTag?.parameter.find(p => p.key === 'currencyCode')?.value).toBe('{{DLV - ecommerce.currency}}');
+  });
+
+  it('the merged GA4 tag is filed in the Conversion folder, not Engagement', () => {
+    const ga4Tag = gtmContainer.containerVersion.tag.find(t => t.name === 'GA4 - checkout_complete');
+    const conversionFolder = gtmContainer.containerVersion.folder.find(f => f.name === 'Atlas — Conversion Events');
+    expect(ga4Tag?.folderId).toBe(conversionFolder?.folderId);
+  });
 });
 
 // ── Integration tests: Standard event alias ────────────────────────────────────

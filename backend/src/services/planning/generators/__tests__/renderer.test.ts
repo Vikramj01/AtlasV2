@@ -20,6 +20,8 @@ import {
   renderGA4EventParameters,
   renderGoogleAdsConversionTag,
   renderStandardEventAliasTag,
+  renderMetaEventTag,
+  renderTikTokEventTag,
 } from '../renderer/gtm.renderer';
 import { derivePlaceholderTable } from '../renderer/guide.renderer';
 
@@ -349,6 +351,64 @@ describe('renderGoogleAdsConversionTag', () => {
   it('tag consent status is needed — never notSet', () => {
     expect(result.tag.consentSettings?.consentStatus).toBe('needed');
   });
+
+  it('uses flat DLV paths when action_type is not purchase and no contributingActionTypes given', () => {
+    const leadEvent = makeIREvent({ event_name: 'contact_form_submit', action_type: 'form_submit', is_conversion: true });
+    const r = renderGoogleAdsConversionTag(leadEvent, 't1', 'tag1', 'var1', 'f1', 'CONST - Google Ads Conversion ID');
+    expect(r.tag.parameter.find(p => p.key === 'conversionValue')?.value).toBe('{{DLV - value}}');
+  });
+
+  it('uses ecommerce-scoped DLV paths when contributingActionTypes includes purchase, even if this event\'s own action_type does not (merged-event regression guard)', () => {
+    const mislabeledEvent = makeIREvent({ event_name: 'view_item', action_type: 'custom' as 'cta_click', is_conversion: true });
+    const r = renderGoogleAdsConversionTag(
+      mislabeledEvent, 't1', 'tag1', 'var1', 'f1', 'CONST - Google Ads Conversion ID',
+      undefined, new Set(['custom', 'purchase']),
+    );
+    expect(r.tag.parameter.find(p => p.key === 'conversionValue')?.value).toBe('{{DLV - ecommerce.value}}');
+    expect(r.tag.parameter.find(p => p.key === 'currencyCode')?.value).toBe('{{DLV - ecommerce.currency}}');
+    expect(r.tag.parameter.find(p => p.key === 'orderId')?.value).toBe('{{DLV - ecommerce.transaction_id}}');
+  });
+});
+
+describe('renderMetaEventTag', () => {
+  it('purchase event fbq params reference ecommerce-scoped DLVs', () => {
+    const event = makeIREvent({ event_name: 'purchase', action_type: 'purchase', is_conversion: true });
+    const tag = renderMetaEventTag(event, 't1', 'tag1', 'f1');
+    const html = tag.parameter.find(p => p.key === 'html')?.value ?? '';
+    expect(html).toContain('{{DLV - ecommerce.value}}');
+    expect(html).toContain('{{DLV - ecommerce.currency}}');
+    expect(html).toContain('eventID');
+  });
+
+  it('non-conversion, non-ecommerce event fbq params are empty', () => {
+    const event = makeIREvent({ event_name: 'content_scroll', action_type: 'content_engagement' });
+    const tag = renderMetaEventTag(event, 't1', 'tag1', 'f1');
+    const html = tag.parameter.find(p => p.key === 'html')?.value ?? '';
+    expect(html).toContain("fbq('track', 'CustomEvent', {})");
+  });
+
+  it('uses ecommerce-scoped DLVs when contributingActionTypes includes purchase, even if this event\'s own action_type does not (merged-event regression guard)', () => {
+    const mislabeledEvent = makeIREvent({ event_name: 'view_item', action_type: 'custom' as 'cta_click' });
+    const tag = renderMetaEventTag(mislabeledEvent, 't1', 'tag1', 'f1', new Set(['custom', 'purchase']));
+    const html = tag.parameter.find(p => p.key === 'html')?.value ?? '';
+    expect(html).toContain('{{DLV - ecommerce.value}}');
+  });
+});
+
+describe('renderTikTokEventTag', () => {
+  it('purchase event params reference ecommerce-scoped DLVs', () => {
+    const event = makeIREvent({ event_name: 'purchase', action_type: 'purchase' });
+    const tag = renderTikTokEventTag(event, 't1', 'tag1', 'f1');
+    const html = tag.parameter.find(p => p.key === 'html')?.value ?? '';
+    expect(html).toContain('{{DLV - ecommerce.value}}');
+  });
+
+  it('uses ecommerce-scoped DLVs when contributingActionTypes includes purchase, even if this event\'s own action_type does not (merged-event regression guard)', () => {
+    const mislabeledEvent = makeIREvent({ event_name: 'view_item', action_type: 'custom' as 'cta_click' });
+    const tag = renderTikTokEventTag(mislabeledEvent, 't1', 'tag1', 'f1', new Set(['custom', 'purchase']));
+    const html = tag.parameter.find(p => p.key === 'html')?.value ?? '';
+    expect(html).toContain('{{DLV - ecommerce.value}}');
+  });
 });
 
 describe('renderStandardEventAliasTag', () => {
@@ -387,6 +447,20 @@ describe('renderStandardEventAliasTag', () => {
     const event = makeIREvent({ standard_event_alias: 'sign_up' });
     const tag = renderStandardEventAliasTag(event, 't1', 'tag1', 'f1');
     expect(tag!.consentSettings?.consentStatus).toBe('needed');
+  });
+
+  it('isEcommerceOverride nests DLV paths even when this event\'s own action_type is not ecommerce (merged-event regression guard)', () => {
+    const event = makeIREvent({
+      event_name: 'view_item',
+      action_type: 'custom' as 'cta_click',
+      standard_event_alias: 'view_item_alias',
+      parameters: [makeParam('value', 'number')],
+    });
+    const tag = renderStandardEventAliasTag(event, 't1', 'tag1', 'f1', true);
+    const eventParams = tag!.parameter.find(p => p.key === 'eventParameters');
+    const valueEntry = eventParams?.list?.find(item => item.map?.some(m => m.key === 'key' && m.value === 'value'));
+    const valEntry = valueEntry?.map?.find(m => m.key === 'value');
+    expect(valEntry?.value).toBe('{{DLV - ecommerce.value}}');
   });
 });
 
