@@ -181,6 +181,17 @@ export interface SimulatorOptions {
   declared_conversions?: DeclaredConversion[];
   /** Resolved by the caller (getNamingConvention) before simulation — see AuditData.namingConvention. */
   namingConvention?: NamingConvention;
+  /**
+   * Which url_map entries were filled by stepUrlResolver.ts (Phase 2) rather
+   * than genuinely user-supplied, and by which strategy — resolved by the
+   * caller (orchestrator.ts) before simulation, same "resolve outside, read
+   * inside" pattern as namingConvention/connected_gtm_container_id above.
+   * A step key present here overrides the default 'user_supplied'
+   * classification that url_map presence alone would otherwise imply — see
+   * the source computation below. Absent (or a key not present here) means
+   * that url_map entry, if any, came from the caller/user directly.
+   */
+  resolved_sources?: Record<string, StepUrlSource>;
 }
 
 /**
@@ -252,7 +263,13 @@ export async function simulateJourney(
     for (const step of steps) {
       stepRef.current = step.name;
       const userSuppliedUrl = opts.url_map[step.urlKey];
-      const source: StepUrlSource = userSuppliedUrl ? 'user_supplied' : 'fallback_landing';
+      // A url_map entry that stepUrlResolver.ts (Phase 2) filled in is
+      // still present in url_map (the orchestrator merges it in before
+      // calling simulateJourney) but isn't genuinely user-supplied —
+      // resolved_sources is what tells the two apart.
+      const source: StepUrlSource = !userSuppliedUrl
+        ? 'fallback_landing'
+        : opts.resolved_sources?.[step.urlKey] ?? 'user_supplied';
       let url = userSuppliedUrl ?? opts.website_url;
 
       // Inject click IDs + UTM params on landing page

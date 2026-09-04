@@ -9,6 +9,8 @@ import { createBrowserbaseSession, getCDPUrl } from '@/services/browserbase/clie
 import { logUsage } from '@/services/usage/usageLogger';
 import { supabaseAdmin as supabase } from '@/services/database/supabase';
 import { simulateJourney } from './journeySimulator';
+import { resolveStepUrls } from './stepUrlResolver';
+import { JOURNEY_CONFIGS } from '@/services/browserbase/journeyConfigs';
 import { simulateJourneyFromSpec } from './stageSimulator';
 import { classifyAllStageGaps } from './gapClassifier';
 import { runAllRules, runRulesForPlatforms } from '@/services/validation/engine';
@@ -22,7 +24,7 @@ import { getConnectedGtmContainerId } from '@/services/database/gtmConnectionQue
 import { getNamingConvention } from '@/services/database/namingConventionQueries';
 import { buildSiteSetupSummary } from './siteSetupDetector';
 import { sanitizeForJsonb } from '@/utils/sanitizeJsonb';
-import type { AuditData, JourneyStage, RuleStatus } from '@/types/audit';
+import type { AuditData, JourneyStage, RuleStatus, StepUrlSource } from '@/types/audit';
 import { getJourneyStages } from '@/services/database/journeyQueries';
 import logger from '@/utils/logger';
 
@@ -214,12 +216,47 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
           }
         }
 
+        // Page discovery (Phase 2, §7) — from the bare website_url, try to
+        // resolve the funnel template's step keys the caller didn't
+        // already supply a URL for. v2-only: v1's rule library has no
+        // step-coverage-driven precondition gate to benefit from the extra
+        // Browserbase-adjacent latency this costs, so there's nothing for
+        // it to improve there. Only fills gaps — never overrides a
+        // user-supplied url_map entry (§15.6).
+        let resolvedUrlMap = data.url_map;
+        let resolvedSources: Record<string, StepUrlSource> | undefined;
+        if (isV2) {
+          try {
+            const stepKeys = (JOURNEY_CONFIGS[data.funnel_type as FunnelType] ?? JOURNEY_CONFIGS['ecommerce']).map((s) => s.urlKey);
+            const resolved = await resolveStepUrls({
+              website_url: data.website_url,
+              step_keys: stepKeys,
+              url_map: data.url_map,
+              product_domain: data.product_domain,
+              checkout_domain: data.checkout_domain,
+            });
+            if (Object.keys(resolved).length > 0) {
+              resolvedUrlMap = { ...data.url_map };
+              resolvedSources = {};
+              for (const [key, { url, source }] of Object.entries(resolved)) {
+                resolvedUrlMap[key] = url;
+                resolvedSources[key] = source;
+              }
+              logger.info({ audit_id, resolved: Object.keys(resolved) }, 'Step URL resolution filled gaps in url_map');
+            }
+          } catch (err) {
+            // Non-fatal — an unresolved key just stays fallback_landing, same as if this had never run.
+            logger.warn({ audit_id, err: err instanceof Error ? err.message : String(err) }, 'Step URL resolution failed');
+          }
+        }
+
         const auditData = await simulateJourney(browser, {
           audit_id,
           website_url: data.website_url,
           funnel_type: data.funnel_type as FunnelType,
           region: (data.region ?? 'us') as Region,
-          url_map: data.url_map,
+          url_map: resolvedUrlMap,
+          resolved_sources: resolvedSources,
           test_email: test_email,
           test_phone: test_phone,
           product_domain: data.product_domain,

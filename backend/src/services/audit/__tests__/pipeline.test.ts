@@ -358,6 +358,48 @@ describe('simulateJourney — step_coverage', () => {
     const otherSteps = coverage.filter((s) => s.step !== 'confirmation');
     expect(otherSteps.every((s) => s.navigation_success)).toBe(true);
   });
+
+  // ── resolved_sources (Phase 2, §7/§8) ─────────────────────────────────────
+  // The orchestrator merges stepUrlResolver.ts's discovered URLs directly
+  // into url_map before calling simulateJourney, so a url_map entry alone
+  // can't distinguish "the user gave us this" from "the resolver found
+  // this." resolved_sources is what carries that distinction through.
+
+  it('reports the resolver\'s source (sitemap/nav_link/heuristic) for a url_map entry it filled, not user_supplied', async () => {
+    const { mockBrowser } = makeMockBrowser();
+    const auditData = await simulateJourney(mockBrowser as never, {
+      ...BASE_OPTS,
+      url_map: {
+        landing: 'https://shop.example.com',
+        product: 'https://shop.example.com/product/widget', // genuinely user-supplied
+        checkout: 'https://shop.example.com/checkout',       // resolver-filled
+        confirmation: 'https://shop.example.com/order-confirmed', // resolver-filled
+      },
+      resolved_sources: {
+        checkout: 'sitemap',
+        confirmation: 'heuristic',
+      },
+    });
+
+    const byStep = new Map(auditData.step_coverage!.map((s) => [s.step, s]));
+    expect(byStep.get('landing')?.source).toBe('user_supplied');
+    expect(byStep.get('product')?.source).toBe('user_supplied');
+    expect(byStep.get('checkout')?.source).toBe('sitemap');
+    expect(byStep.get('confirmation')?.source).toBe('heuristic');
+  });
+
+  it('ignores a resolved_sources entry for a step key that has no url_map entry at all (nothing to mislabel)', async () => {
+    const { mockBrowser } = makeMockBrowser();
+    const auditData = await simulateJourney(mockBrowser as never, {
+      ...BASE_OPTS,
+      url_map: { landing: 'https://shop.example.com' }, // product/checkout/confirmation all absent
+      resolved_sources: { product: 'sitemap' }, // stale/inconsistent — resolver claims a source but url_map disagrees
+    });
+
+    const product = auditData.step_coverage!.find((s) => s.step === 'product')!;
+    // Absence from url_map wins — still falls back to landing, not "sitemap".
+    expect(product.source).toBe('fallback_landing');
+  });
 });
 
 // ─── Full pipeline: simulate → validate → score ───────────────────────────────
