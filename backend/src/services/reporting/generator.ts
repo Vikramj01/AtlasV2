@@ -15,6 +15,7 @@ import type {
 } from '@/types/audit';
 import { generateBusinessSummary, determineOverallStatus, getIssueHeadline, getIssueImpact } from '@/services/interpretation/engine';
 import { buildCoverageSummary } from './coverage';
+import { scanReportForPlaceholders } from './placeholderGuard';
 
 // ─── Journey stage mapping ─────────────────────────────────────────────────────
 
@@ -142,7 +143,7 @@ export function generateReport(
   const overallStatus = determineOverallStatus(results);
   const businessSummary = generateBusinessSummary(results);
 
-  return {
+  const report: ReportJSON = {
     audit_id: auditData.audit_id,
     website_url: auditData.website_url,
     generated_at: new Date().toISOString(),
@@ -163,4 +164,13 @@ export function generateReport(
       raw_datalayer_events: auditData.dataLayer,
     },
   };
+
+  // Pre-render placeholder guard (PRD "Signal Health Report" Issue 4) —
+  // flags, never blocks (see placeholderGuard.ts's docstring for why).
+  const flags = scanReportForPlaceholders(report);
+  if (flags.length > 0) {
+    report.content_quality_warning = { flagged_fields: flags.map((f) => `${f.field}: ${f.matches.join(', ')}`) };
+  }
+
+  return report;
 }

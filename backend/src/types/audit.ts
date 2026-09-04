@@ -748,6 +748,18 @@ export interface ReportJSON {
     raw_network_requests: NetworkRequest[];
     raw_datalayer_events: DataLayerEvent[];
   };
+  /**
+   * Set by the pre-render placeholder guard (PRD "Signal Health Report"
+   * Issue 4) when a narrative field contains literal placeholder-shaped
+   * text (an unfilled `{{variable}}`, an illustrative "G-XXXXXXXXXX"-style
+   * example string). Non-fatal — the report still ships; the frontend
+   * renders a visible warning banner when this is present. Absent (not
+   * `false`) when the guard found nothing, so its presence alone is the
+   * signal to check.
+   */
+  content_quality_warning?: {
+    flagged_fields: string[];
+  };
 }
 
 // ─── DB row shapes ────────────────────────────────────────────────────────────

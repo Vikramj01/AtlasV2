@@ -1,6 +1,6 @@
 # Sprint Plan: Signal Health Report — Accuracy & Output Fixes
 
-**Status:** In progress — Sprints 1-5 (Issues 1, 2, 3, 4, 6) implemented and merged into `claude/sprint-plan-prd-pu51h6`. Sprint 5's placeholder guard, and Sprints 6-7 (Issues 5, 7), remain — the latter two are gated on product decisions, see §"Open product decisions" below.
+**Status:** In progress — Sprints 1-5 (Issues 1, 2, 3, 4, 6) implemented and merged into `claude/sprint-plan-prd-pu51h6`. Sprints 6-7 (Issues 5, 7) remain — both gated on product decisions, see §"Open product decisions" below.
 **Source PRD:** `docs/atlas-signal-health-report-fixes-prd.md` (uploaded PRD, "Atlas Signal Health Report · Accuracy and Output Fixes")
 **Owner:** Vikram
 **Branch:** `claude/sprint-plan-prd-pu51h6`
@@ -49,13 +49,12 @@ Sprint 1 (Issue 3 + 6)         — DONE
 Sprint 2 (Issue 2)             — DONE
 Sprint 3 (shared v2 remediation data model)  — DONE
   → Sprint 4 (Issue 1: wire fix copy)        — DONE (shipped inside Sprint 3)
-  → Sprint 5 (Issue 4: narrator fix)         — DONE (shipped inside Sprint 3);
-                                                placeholder guard — NOT YET BUILT
+  → Sprint 5 (Issue 4: narrator fix + placeholder guard) — DONE
 Sprint 6 (Issue 5)             — NOT STARTED, pending product decision (default proposed)
 Sprint 7 (Issue 7, stretch)    — NOT STARTED, pending product sign-off on weights
 ```
 
-Sprints 1-5 are implemented and merged into `claude/sprint-plan-prd-pu51h6` as of this writing (472 backend tests passing, clean `tsc --noEmit`). Sprint 3 shipped without a separate `failure_narrative` field — see that sprint's "what actually shipped" note — which meant Sprint 4 and 5's core fixes landed in the same pass as Sprint 3 rather than as separate follow-on work. What remains from Sprint 5 is only the placeholder-pattern guard (a defense-in-depth net, not a fix for a currently-reproducing bug). Sprints 6 and 7 are each gated on a product decision from the PRD's Open Questions (§5); a recommended default is proposed for each so engineering isn't blocked, but implementation should get an explicit go-ahead on the default before starting.
+Sprints 1-5 are implemented and merged into `claude/sprint-plan-prd-pu51h6` as of this writing (480 backend tests passing, clean `tsc --noEmit` on both backend and frontend). Sprint 3 shipped without a separate `failure_narrative` field — see that sprint's "what actually shipped" note — which meant Sprint 4 and 5's narrator fix landed in the same pass as Sprint 3, with only the placeholder guard itself picked up as a distinct follow-on (also now done). Sprints 6 and 7 are each gated on a product decision from the PRD's Open Questions (§5); a recommended default is proposed for each so engineering isn't blocked, but implementation should get an explicit go-ahead on the default before starting.
 
 ---
 
@@ -132,16 +131,18 @@ The `failure_narrative` field turned out to be unnecessary. For nearly every rul
 
 ---
 
-## Sprint 5 — Narrator failure-state fix — DONE (shipped inside Sprint 3); placeholder guard — NOT YET BUILT
+## Sprint 5 — Narrator failure-state fix + placeholder guard — DONE
 
 **Priority:** P0
+**Status:** implemented and merged.
 
-**What shipped:** `toSummaryInput()` now reads `technical_details.found` unconditionally for any result without a provably-v1-originated `RULE_INTERPRETATIONS` entry (same `isV2Result()` discriminator as Sprint 4) — never `.expected`. Regression tests reproduce the PRD's exact two examples (`DECLARED_PLATFORM_HAS_TAG`'s "every declared platform has its base tag" pass-state sentence, `GA4_CONFIG_TAG_PRESENT`'s `G-XXXXXXXXXX` placeholder) and assert neither ever renders for a FAIL result.
+**Narrator fix (shipped inside Sprint 3):** `toSummaryInput()` reads `technical_details.found` unconditionally for any result without a provably-v1-originated `RULE_INTERPRETATIONS` entry (same `isV2Result()` discriminator as Sprint 4) — never `.expected`. Regression tests reproduce the PRD's exact two examples (`DECLARED_PLATFORM_HAS_TAG`'s "every declared platform has its base tag" pass-state sentence, `GA4_CONFIG_TAG_PRESENT`'s `G-XXXXXXXXXX` placeholder) and assert neither ever renders for a FAIL result.
 
-**Still open — the placeholder guard itself (PRD §4 Issue 4's third AC):** a pre-render check scanning the fully-assembled `business_summary` and `ReportIssue[]` text for literal placeholder patterns before a report ships, as a defense-in-depth net against a *future* rule's copy making the same mistake (an example string like `G-XXXXXXXXXX` baked into `.expected` or a new `remediation`). Not built yet — this is a smaller, standalone follow-up:
-- Add a scanner (`/G-X{6,}/`, `/\{\{.*?\}\}/`, a generic `X{4,}` run — extendable) run over the assembled `ReportJSON`'s narrative fields at the end of `generateReport()`.
-- Recommended default (PRD Open Question 3, still unconfirmed): **flag internally and ship with a visible warning banner**, not a hard block — blocking would mean no report ships until every one of the 90 rules' copy is re-verified, which is disproportionate for a defense-in-depth net rather than a known-broken state.
-- Test: fixture with a deliberately placeholder-shaped string in `remediation`/`found` trips the guard; the current, clean copy doesn't.
+**Placeholder guard (this sprint):** a defense-in-depth net against a *future* rule's copy making the same mistake — not a fix for a currently-reproducing bug.
+- `backend/src/services/reporting/placeholderGuard.ts` — `scanReportForPlaceholders(report)` scans every narrative field (`executive_summary.business_summary`, each `issues[].problem`/`why_it_matters`/`fix_summary`, `journey_stages[].issues[].label`, `platform_breakdown[].risk_explanation`/`failed_rule_details[].impact`) against 4 patterns (`G-X{6,}`, `AW-X{6,}`, unresolved `{{template}}`, a generic `X{4,}` run) and returns which fields matched. Deliberately excludes `technical_appendix.validation_results` — raw rule evidence can legitimately contain an X-shaped string (a genuinely malformed hash, say) without it being an authoring mistake.
+- `ReportJSON` gained `content_quality_warning?: { flagged_fields: string[] }` (backend + frontend type mirror), set by `generateReport()` when the scan finds anything. **Default implemented: flag, not block** (PRD Open Question 3's recommended default — still not formally confirmed by product, flagging here as a call to revisit if the answer comes back differently).
+- Frontend: `ContentQualityWarningBanner` renders whenever `report.content_quality_warning` is present, shown above all report pages in `ReportPage.tsx` — non-fatal, the rest of the report still renders in full below it.
+- Tests: `placeholderGuard.test.ts` (8 tests — clean report, each field type, plus a negative case proving ordinary evidence like a malformed-hash string doesn't false-positive) plus `generateReport()` wiring tests. 480 backend tests passing; clean `tsc --noEmit` on both backend and frontend.
 
 ---
 
