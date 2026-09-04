@@ -57,6 +57,25 @@ export async function discoverPages(
  * patterns on pages already in org_page_scope.
  * Called during onboarding before the first crawl.
  */
+/**
+ * Literal path fragments for stepUrlResolver.ts's path-heuristic strategy
+ * (Site Evaluation Coverage & Honesty PRD §7) — the literal-path sibling of
+ * funnelPatterns below (same funnel-relevant paths, expressed as strings to
+ * try appending to an origin and verify, rather than regexes to filter an
+ * already-known page list). Kept in sync by hand; the two lists cover the
+ * same space because they answer two different questions — "does this
+ * existing URL look like a funnel page" vs "what path should we try next" —
+ * reusing the underlying path knowledge rather than defining it twice.
+ */
+export const FUNNEL_PATH_HEURISTICS: string[] = [
+  '/cart', '/basket', '/checkout',
+  '/pricing', '/plans',
+  '/signup', '/sign-up', '/register', '/join',
+  '/login', '/signin',
+  '/demo', '/trial',
+  '/thank-you', '/order-confirmation', '/success',
+];
+
 export async function detectFunnelPages(
   domain: string,
   org_id: string,
