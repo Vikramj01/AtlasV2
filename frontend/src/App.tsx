@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from 'react';
+import { Suspense, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ProtectedRoute } from '@/components/layout/ProtectedRoute';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -9,54 +9,55 @@ import { StrategyGateGuard } from '@/components/strategy/StrategyGateGuard';
 import { BrandRedirectGuard } from '@/components/layout/BrandRedirectGuard';
 import { supabase } from '@/lib/supabase';
 import { dashboardApi } from '@/lib/api/dashboardApi';
+import { lazyWithRetry, clearChunkReloadFlag } from '@/lib/lazyWithRetry';
 
-const LoginPage                 = lazy(() => import('@/pages/LoginPage').then(m => ({ default: m.LoginPage })));
-const ShopifyWelcomePage        = lazy(() => import('@/pages/ShopifyWelcomePage').then(m => ({ default: m.ShopifyWelcomePage })));
-const ResetPasswordPage         = lazy(() => import('@/pages/ResetPasswordPage').then(m => ({ default: m.ResetPasswordPage })));
-const HomePage                  = lazy(() => import('@/pages/HomePage').then(m => ({ default: m.HomePage })));
-const DashboardPage             = lazy(() => import('@/pages/DashboardPage').then(m => ({ default: m.DashboardPage })));
-const AuditProgressPage         = lazy(() => import('@/pages/AuditProgressPage').then(m => ({ default: m.AuditProgressPage })));
-const ReportPage                = lazy(() => import('@/pages/ReportPage').then(m => ({ default: m.ReportPage })));
-const JourneyBuilderPage        = lazy(() => import('@/pages/JourneyBuilderPage').then(m => ({ default: m.JourneyBuilderPage })));
-const JourneySpecPage           = lazy(() => import('@/pages/JourneySpecPage').then(m => ({ default: m.JourneySpecPage })));
-const GapReportPage             = lazy(() => import('@/pages/GapReportPage').then(m => ({ default: m.GapReportPage })));
-const PlanningDashboard         = lazy(() => import('@/pages/PlanningDashboard').then(m => ({ default: m.PlanningDashboard })));
-const PlanningModePage          = lazy(() => import('@/pages/PlanningModePage').then(m => ({ default: m.PlanningModePage })));
-const StrategyPage              = lazy(() => import('@/pages/StrategyPage').then(m => ({ default: m.StrategyPage })));
-const StrategyBriefPage         = lazy(() => import('@/pages/StrategyBriefPage').then(m => ({ default: m.StrategyBriefPage })));
-const SettingsPage              = lazy(() => import('@/pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
-const DeveloperPortalPage       = lazy(() => import('@/pages/DeveloperPortalPage').then(m => ({ default: m.DeveloperPortalPage })));
-const OrgDashboardPage          = lazy(() => import('@/pages/OrgDashboardPage').then(m => ({ default: m.OrgDashboardPage })));
-const ClientListPage            = lazy(() => import('@/pages/ClientListPage').then(m => ({ default: m.ClientListPage })));
-const ClientDetailPage          = lazy(() => import('@/pages/ClientDetailPage').then(m => ({ default: m.ClientDetailPage })));
-const SignalLibraryPage         = lazy(() => import('@/pages/SignalLibraryPage').then(m => ({ default: m.SignalLibraryPage })));
-const SignalPacksPage           = lazy(() => import('@/pages/SignalPacksPage').then(m => ({ default: m.SignalPacksPage })));
-const PackDetailPage            = lazy(() => import('@/pages/PackDetailPage').then(m => ({ default: m.PackDetailPage })));
-const OrgSettingsPage           = lazy(() => import('@/pages/OrgSettingsPage').then(m => ({ default: m.OrgSettingsPage })));
-const ConsentPage               = lazy(() => import('@/pages/ConsentPage').then(m => ({ default: m.ConsentPage })));
-const CAPIPage                  = lazy(() => import('@/pages/CAPIPage').then(m => ({ default: m.CAPIPage })));
-const EnricherPage              = lazy(() => import('@/pages/EnricherPage').then(m => ({ default: m.EnricherPage })));
-const HealthDashboardPage       = lazy(() => import('@/pages/HealthDashboardPage'));
-const ChannelInsightsPage       = lazy(() => import('@/pages/ChannelInsightsPage').then(m => ({ default: m.ChannelInsightsPage })));
-const AdminPage                 = lazy(() => import('@/pages/AdminPage').then(m => ({ default: m.AdminPage })));
-const BillingSuccessPage        = lazy(() => import('@/pages/BillingSuccessPage').then(m => ({ default: m.BillingSuccessPage })));
-const BillingCancelPage         = lazy(() => import('@/pages/BillingCancelPage').then(m => ({ default: m.BillingCancelPage })));
-const CrawlStatusPage           = lazy(() => import('@/pages/CrawlStatusPage').then(m => ({ default: m.CrawlStatusPage })));
-const ConnectionsPage           = lazy(() => import('@/pages/ConnectionsPage').then(m => ({ default: m.ConnectionsPage })));
-const ClientConnectionsPage     = lazy(() => import('@/pages/ClientConnectionsPage').then(m => ({ default: m.ClientConnectionsPage })));
-const ReconciliationPage        = lazy(() => import('@/pages/ReconciliationPage').then(m => ({ default: m.ReconciliationPage })));
-const ImplementationHealthPage  = lazy(() => import('@/pages/ImplementationHealthPage').then(m => ({ default: m.ImplementationHealthPage })));
-const ReconciliationRunDetailPage = lazy(() => import('@/pages/ReconciliationRunDetailPage').then(m => ({ default: m.ReconciliationRunDetailPage })));
-const DataManagerConsolePage      = lazy(() => import('@/pages/DataManagerConsolePage').then(m => ({ default: m.DataManagerConsolePage })));
-const SignalTrackingDashboard     = lazy(() => import('@/pages/SignalTrackingDashboard').then(m => ({ default: m.SignalTrackingDashboard })));
-const SetupTrackingHubPage        = lazy(() => import('@/pages/SetupTrackingHubPage').then(m => ({ default: m.SetupTrackingHubPage })));
-const PublicDeliverableView       = lazy(() => import('@/pages/PublicDeliverableView').then(m => ({ default: m.PublicDeliverableView })));
-const GettingStartedPage          = lazy(() => import('@/pages/GettingStartedPage').then(m => ({ default: m.GettingStartedPage })));
-const HelpPage                    = lazy(() => import('@/pages/HelpPage').then(m => ({ default: m.HelpPage })));
-const PublicAuditPage             = lazy(() => import('@/pages/PublicAuditPage').then(m => ({ default: m.PublicAuditPage })));
-const PublicAuditResultsPage      = lazy(() => import('@/pages/PublicAuditResultsPage').then(m => ({ default: m.PublicAuditResultsPage })));
-const CampaignSignalValidatorLandingPage = lazy(() => import('@/pages/CampaignSignalValidatorLandingPage').then(m => ({ default: m.CampaignSignalValidatorLandingPage })));
-const CampaignSignalValidatorResultPage  = lazy(() => import('@/pages/CampaignSignalValidatorResultPage').then(m => ({ default: m.CampaignSignalValidatorResultPage })));
+const LoginPage                 = lazyWithRetry(() => import('@/pages/LoginPage').then(m => ({ default: m.LoginPage })));
+const ShopifyWelcomePage        = lazyWithRetry(() => import('@/pages/ShopifyWelcomePage').then(m => ({ default: m.ShopifyWelcomePage })));
+const ResetPasswordPage         = lazyWithRetry(() => import('@/pages/ResetPasswordPage').then(m => ({ default: m.ResetPasswordPage })));
+const HomePage                  = lazyWithRetry(() => import('@/pages/HomePage').then(m => ({ default: m.HomePage })));
+const DashboardPage             = lazyWithRetry(() => import('@/pages/DashboardPage').then(m => ({ default: m.DashboardPage })));
+const AuditProgressPage         = lazyWithRetry(() => import('@/pages/AuditProgressPage').then(m => ({ default: m.AuditProgressPage })));
+const ReportPage                = lazyWithRetry(() => import('@/pages/ReportPage').then(m => ({ default: m.ReportPage })));
+const JourneyBuilderPage        = lazyWithRetry(() => import('@/pages/JourneyBuilderPage').then(m => ({ default: m.JourneyBuilderPage })));
+const JourneySpecPage           = lazyWithRetry(() => import('@/pages/JourneySpecPage').then(m => ({ default: m.JourneySpecPage })));
+const GapReportPage             = lazyWithRetry(() => import('@/pages/GapReportPage').then(m => ({ default: m.GapReportPage })));
+const PlanningDashboard         = lazyWithRetry(() => import('@/pages/PlanningDashboard').then(m => ({ default: m.PlanningDashboard })));
+const PlanningModePage          = lazyWithRetry(() => import('@/pages/PlanningModePage').then(m => ({ default: m.PlanningModePage })));
+const StrategyPage              = lazyWithRetry(() => import('@/pages/StrategyPage').then(m => ({ default: m.StrategyPage })));
+const StrategyBriefPage         = lazyWithRetry(() => import('@/pages/StrategyBriefPage').then(m => ({ default: m.StrategyBriefPage })));
+const SettingsPage              = lazyWithRetry(() => import('@/pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
+const DeveloperPortalPage       = lazyWithRetry(() => import('@/pages/DeveloperPortalPage').then(m => ({ default: m.DeveloperPortalPage })));
+const OrgDashboardPage          = lazyWithRetry(() => import('@/pages/OrgDashboardPage').then(m => ({ default: m.OrgDashboardPage })));
+const ClientListPage            = lazyWithRetry(() => import('@/pages/ClientListPage').then(m => ({ default: m.ClientListPage })));
+const ClientDetailPage          = lazyWithRetry(() => import('@/pages/ClientDetailPage').then(m => ({ default: m.ClientDetailPage })));
+const SignalLibraryPage         = lazyWithRetry(() => import('@/pages/SignalLibraryPage').then(m => ({ default: m.SignalLibraryPage })));
+const SignalPacksPage           = lazyWithRetry(() => import('@/pages/SignalPacksPage').then(m => ({ default: m.SignalPacksPage })));
+const PackDetailPage            = lazyWithRetry(() => import('@/pages/PackDetailPage').then(m => ({ default: m.PackDetailPage })));
+const OrgSettingsPage           = lazyWithRetry(() => import('@/pages/OrgSettingsPage').then(m => ({ default: m.OrgSettingsPage })));
+const ConsentPage               = lazyWithRetry(() => import('@/pages/ConsentPage').then(m => ({ default: m.ConsentPage })));
+const CAPIPage                  = lazyWithRetry(() => import('@/pages/CAPIPage').then(m => ({ default: m.CAPIPage })));
+const EnricherPage              = lazyWithRetry(() => import('@/pages/EnricherPage').then(m => ({ default: m.EnricherPage })));
+const HealthDashboardPage       = lazyWithRetry(() => import('@/pages/HealthDashboardPage'));
+const ChannelInsightsPage       = lazyWithRetry(() => import('@/pages/ChannelInsightsPage').then(m => ({ default: m.ChannelInsightsPage })));
+const AdminPage                 = lazyWithRetry(() => import('@/pages/AdminPage').then(m => ({ default: m.AdminPage })));
+const BillingSuccessPage        = lazyWithRetry(() => import('@/pages/BillingSuccessPage').then(m => ({ default: m.BillingSuccessPage })));
+const BillingCancelPage         = lazyWithRetry(() => import('@/pages/BillingCancelPage').then(m => ({ default: m.BillingCancelPage })));
+const CrawlStatusPage           = lazyWithRetry(() => import('@/pages/CrawlStatusPage').then(m => ({ default: m.CrawlStatusPage })));
+const ConnectionsPage           = lazyWithRetry(() => import('@/pages/ConnectionsPage').then(m => ({ default: m.ConnectionsPage })));
+const ClientConnectionsPage     = lazyWithRetry(() => import('@/pages/ClientConnectionsPage').then(m => ({ default: m.ClientConnectionsPage })));
+const ReconciliationPage        = lazyWithRetry(() => import('@/pages/ReconciliationPage').then(m => ({ default: m.ReconciliationPage })));
+const ImplementationHealthPage  = lazyWithRetry(() => import('@/pages/ImplementationHealthPage').then(m => ({ default: m.ImplementationHealthPage })));
+const ReconciliationRunDetailPage = lazyWithRetry(() => import('@/pages/ReconciliationRunDetailPage').then(m => ({ default: m.ReconciliationRunDetailPage })));
+const DataManagerConsolePage      = lazyWithRetry(() => import('@/pages/DataManagerConsolePage').then(m => ({ default: m.DataManagerConsolePage })));
+const SignalTrackingDashboard     = lazyWithRetry(() => import('@/pages/SignalTrackingDashboard').then(m => ({ default: m.SignalTrackingDashboard })));
+const SetupTrackingHubPage        = lazyWithRetry(() => import('@/pages/SetupTrackingHubPage').then(m => ({ default: m.SetupTrackingHubPage })));
+const PublicDeliverableView       = lazyWithRetry(() => import('@/pages/PublicDeliverableView').then(m => ({ default: m.PublicDeliverableView })));
+const GettingStartedPage          = lazyWithRetry(() => import('@/pages/GettingStartedPage').then(m => ({ default: m.GettingStartedPage })));
+const HelpPage                    = lazyWithRetry(() => import('@/pages/HelpPage').then(m => ({ default: m.HelpPage })));
+const PublicAuditPage             = lazyWithRetry(() => import('@/pages/PublicAuditPage').then(m => ({ default: m.PublicAuditPage })));
+const PublicAuditResultsPage      = lazyWithRetry(() => import('@/pages/PublicAuditResultsPage').then(m => ({ default: m.PublicAuditResultsPage })));
+const CampaignSignalValidatorLandingPage = lazyWithRetry(() => import('@/pages/CampaignSignalValidatorLandingPage').then(m => ({ default: m.CampaignSignalValidatorLandingPage })));
+const CampaignSignalValidatorResultPage  = lazyWithRetry(() => import('@/pages/CampaignSignalValidatorResultPage').then(m => ({ default: m.CampaignSignalValidatorResultPage })));
 
 const PageFallback = () => <SkeletonCard variant="page" />;
 
@@ -73,6 +74,9 @@ function useRecordLogin() {
 
 export default function App() {
   useRecordLogin();
+  useEffect(() => {
+    clearChunkReloadFlag();
+  }, []);
   return (
     <AppErrorBoundary>
       <BrowserRouter>
