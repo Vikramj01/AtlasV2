@@ -2,7 +2,7 @@
  * Check Register v2 — whole-REGISTER integrity checks (Task 15 — end-to-end
  * verification of the full crawl-only register).
  *
- * Every layer file (L0-L7, L12) is unit-tested rule-by-rule elsewhere; this
+ * Every layer file (L0-L9, L12) is unit-tested rule-by-rule elsewhere; this
  * file checks properties that only make sense across the WHOLE assembled
  * REGISTER — no duplicate IDs across layers, every rule shaped correctly,
  * and the full applicability + execution pipeline holding together for a
@@ -22,8 +22,8 @@ const VALID_SEVERITIES = new Set<Severity>(['critical', 'high', 'medium', 'low']
 const VALID_DETECTION_METHODS = new Set<DetectionMethod>(['crawl', 'second_pass', 'credentials', 'connector']);
 
 describe('REGISTER — structural integrity', () => {
-  it('carries exactly 83 rules across the 9 shipped layers (L0-L7, L12)', () => {
-    expect(REGISTER).toHaveLength(83);
+  it('carries exactly 88 rules across the 11 shipped layers (L0-L9, L12)', () => {
+    expect(REGISTER).toHaveLength(88);
   });
 
   it('every rule has a unique register id (L#.#)', () => {

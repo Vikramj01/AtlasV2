@@ -9,7 +9,7 @@
  * Reuses the existing JourneyStage/PlatformBreakdown types as-is — no
  * frontend changes needed. "journey_stages" is repurposed to mean
  * "layers" for a v2 report, which is a more faithful breakdown of the
- * register's own structure than forcing 83 rules across 9 layers back
+ * register's own structure than forcing 88 rules across 11 layers back
  * into the v1 funnel-step model (Landing/Product/Checkout/Confirmation)
  * that stopped matching once site_type stopped being ecommerce-only.
  */

@@ -174,11 +174,10 @@ describe('runRegister', () => {
 
   it('defaults to the REGISTER export when no rules argument is passed', () => {
     // REGISTER now carries L0 (4), L1 (16), L2 (11), L3 (6), L4 (4), L5
-    // (12), L6 (15), L7 (11), and L12 (4) rules — 83 total. L8-L11 were
-    // scoped out earlier (predominantly connector/credentials/second-pass
-    // detectable); this is the full crawl-only phase-1 register. Locks in
-    // that runRegister() with no explicit rules argument actually reaches
-    // the real library, not an empty stand-in.
+    // (12), L6 (15), L7 (11), L8 (3), L9 (2), and L12 (4) rules — 88 total.
+    // L10-L11 are still scoped out (predominantly connector/credentials/
+    // second-pass detectable). Locks in that runRegister() with no explicit
+    // rules argument actually reaches the real library, not an empty stand-in.
     const results = runRegister(makeAuditData());
     expect(results.length).toBeGreaterThan(0);
     expect(results.map((r) => r.rule_id)).toContain('DECLARED_PLATFORM_HAS_TAG');
