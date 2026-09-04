@@ -72,6 +72,71 @@ describe('GCLID_CAPTURED_AT_LANDING (L2.1)', () => {
   });
 });
 
+// ── Three-tier capture matching (Site Evaluation Coverage & Honesty PRD §8.4) ──
+// Exercised via gclid — the matching logic (checkParamCapture) is shared by
+// every rule in this layer, so this doesn't need repeating per-platform.
+
+describe('checkParamCapture — three-tier matching (via GCLID_CAPTURED_AT_LANDING)', () => {
+  it('tier 1 (exact key, exact value): passes — unchanged baseline behavior', () => {
+    const auditData = makeAuditData({ urlParams: { gclid: 'abc123' }, storage: { gclid: 'abc123' } });
+    const result = GCLID_CAPTURED_AT_LANDING.test(auditData);
+    expect(result.status).toBe('pass');
+    expect(result.technical_details.found).not.toContain('different key');
+  });
+
+  it('tier 2: passes when the value is stored under a differently-named localStorage key (e.g. "_atlas_gclid")', () => {
+    const auditData = makeAuditData({ urlParams: { gclid: 'test_gclid_123' }, storage: { _atlas_gclid: 'test_gclid_123' } });
+    const result = GCLID_CAPTURED_AT_LANDING.test(auditData);
+    expect(result.status).toBe('pass');
+    expect(result.technical_details.found).toContain('_atlas_gclid');
+    expect(result.technical_details.evidence.some((e) => e.includes('_atlas_gclid'))).toBe(true);
+  });
+
+  it('tier 2: passes when the value is stored under a differently-named cookie', () => {
+    const auditData = makeAuditData({ urlParams: { gclid: 'test_gclid_123' }, cookies: { gads_click_id: 'test_gclid_123' } });
+    expect(GCLID_CAPTURED_AT_LANDING.test(auditData).status).toBe('pass');
+  });
+
+  it('tier 2: passes when the value is echoed into a dataLayer event under a different key', () => {
+    const auditData = makeAuditData({
+      urlParams: { gclid: 'test_gclid_123' },
+      dataLayer: [{ event: 'page_view', timestamp: Date.now(), step: 'landing', click_id: 'test_gclid_123' }],
+    });
+    expect(GCLID_CAPTURED_AT_LANDING.test(auditData).status).toBe('pass');
+  });
+
+  it('tier 2: passes when the value is nested one level inside a JSON-encoded string value', () => {
+    const auditData = makeAuditData({
+      urlParams: { gclid: 'test_gclid_123' },
+      storage: { atlas_ids: JSON.stringify({ gclid: 'test_gclid_123', fbclid: 'test_fbclid_456' }) },
+    });
+    const result = GCLID_CAPTURED_AT_LANDING.test(auditData);
+    expect(result.status).toBe('pass');
+    expect(result.technical_details.found).toContain('atlas_ids.gclid');
+  });
+
+  it('tier 3: fails when the value is genuinely absent everywhere', () => {
+    const auditData = makeAuditData({
+      urlParams: { gclid: 'test_gclid_123' },
+      storage: { some_other_key: 'unrelated_value' },
+    });
+    expect(GCLID_CAPTURED_AT_LANDING.test(auditData).status).toBe('fail');
+  });
+
+  it('negative case: tier 2 cannot false-positive — two different synthetic values present, the matcher does not cross-match them', () => {
+    // fbclid's real value lives under its own key; searching for gclid's
+    // value must not find it just because *some* capture happened.
+    const auditData = makeAuditData({
+      urlParams: { gclid: 'test_gclid_AAA', fbclid: 'test_fbclid_BBB' },
+      storage: { fbclid: 'test_fbclid_BBB' }, // only fbclid was actually captured
+    });
+    const gclidResult = GCLID_CAPTURED_AT_LANDING.test(auditData);
+    expect(gclidResult.status).toBe('fail'); // gclid's own value was never captured anywhere
+    const fbclidResult = FBCLID_CAPTURED_AT_LANDING.test(auditData);
+    expect(fbclidResult.status).toBe('pass'); // fbclid's own value was
+  });
+});
+
 describe('GBRAID_CAPTURED_AT_LANDING (L2.2)', () => {
   it('fails when gbraid is present but not captured', () => {
     expect(GBRAID_CAPTURED_AT_LANDING.test(makeAuditData({ urlParams: { gbraid: 'g1' } })).status).toBe('fail');
