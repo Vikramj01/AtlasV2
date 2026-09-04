@@ -13,8 +13,10 @@ import {
   mergeCookies,
   mergeLocalStorage,
   mergeDetailedCookies,
+  shouldCaptureUrl,
   type StepRef,
 } from '../dataCapture';
+import { ALL_DECLARED_PLATFORMS, PLATFORM_MATCHER_HOSTS, PLATFORM_LABELS } from '@/services/validation/register/platformDetection';
 import type { NetworkRequest, ConsoleError } from '@/types/audit';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -415,5 +417,29 @@ describe('mergeDetailedCookies', () => {
 
   it('returns an empty array for empty input', () => {
     expect(mergeDetailedCookies([])).toEqual([]);
+  });
+});
+
+// ── Invariant: every declared platform's matcher host is captured ─────────
+//
+// Site Evaluation Coverage & Honesty PRD §8.3, defect #4 — a declared
+// platform whose PLATFORM_MATCHERS matcher (platformDetection.ts) could
+// never actually match anything, because dataCapture.ts's own separately-
+// maintained TRACKED_URL_PATTERNS never captured a matching request into
+// AuditData.networkRequests in the first place. TRACKED_URL_PATTERNS is now
+// built by spreading PLATFORM_MATCHER_HOSTS in directly, so this should be
+// structurally impossible to reintroduce — this test is what actually
+// proves that, and what would catch it if the two ever drifted apart again
+// (e.g. someone hand-edits TRACKED_URL_PATTERNS back to a separate list).
+
+describe('shouldCaptureUrl — every declared platform is structurally capturable', () => {
+  it.each(ALL_DECLARED_PLATFORMS)('%s tag requests are captured', (platform) => {
+    for (const host of PLATFORM_MATCHER_HOSTS[platform]) {
+      expect(shouldCaptureUrl(`https://${host}/whatever`)).toBe(true);
+    }
+  });
+
+  it('covers every platform PLATFORM_LABELS declares — the two never silently drift apart in count', () => {
+    expect(ALL_DECLARED_PLATFORMS.sort()).toEqual(Object.keys(PLATFORM_LABELS).sort());
   });
 });

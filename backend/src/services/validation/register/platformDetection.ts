@@ -25,17 +25,33 @@ type HostMatcher = (req: NetworkRequest) => boolean;
 
 const includesAny = (url: string, needles: string[]): boolean => needles.some((n) => url.includes(n));
 
-const PLATFORM_MATCHERS: Record<DeclaredPlatform, HostMatcher> = {
-  google_ads: (r) => includesAny(r.url, [
-    'googleadservices.com', 'googleads.g.doubleclick.net', 'google.com/pagead', 'googletagmanager.com/gtag/js?id=AW-',
-  ]),
-  meta: (r) => r.url.includes('facebook.com/tr'),
-  tiktok: (r) => r.url.includes('analytics.tiktok.com'),
-  linkedin: (r) => includesAny(r.url, ['snap.licdn.com', 'px.ads.linkedin.com']),
-  microsoft: (r) => r.url.includes('bat.bing.com'),
-  reddit: (r) => r.url.includes('alb.reddit.com'),
-  pinterest: (r) => includesAny(r.url, ['ct.pinterest.com', 's.pinimg.com/ct/core.js']),
+/**
+ * The literal host/path substrings each platform's matcher looks for —
+ * factored out from PLATFORM_MATCHERS below (rather than duplicated) so
+ * dataCapture.ts's TRACKED_URL_PATTERNS can be built as a superset of this
+ * list. Before this, dataCapture.ts's own separately-maintained pattern
+ * list didn't include Reddit/Pinterest/LinkedIn's px.ads host at all — a
+ * declared platform whose matcher here could never actually match anything,
+ * because the network listener never captured a matching request into
+ * AuditData.networkRequests in the first place (Site Evaluation Coverage &
+ * Honesty PRD §8.3, defect #4). See the invariant test in
+ * dataCapture.test.ts that now guards against this recurring.
+ */
+export const PLATFORM_MATCHER_HOSTS: Record<DeclaredPlatform, string[]> = {
+  google_ads: ['googleadservices.com', 'googleads.g.doubleclick.net', 'google.com/pagead', 'googletagmanager.com/gtag/js?id=AW-'],
+  meta: ['facebook.com/tr'],
+  tiktok: ['analytics.tiktok.com'],
+  linkedin: ['snap.licdn.com', 'px.ads.linkedin.com'],
+  microsoft: ['bat.bing.com'],
+  reddit: ['alb.reddit.com'],
+  pinterest: ['ct.pinterest.com', 's.pinimg.com/ct/core.js'],
 };
+
+const PLATFORM_MATCHERS: Record<DeclaredPlatform, HostMatcher> = Object.fromEntries(
+  (Object.entries(PLATFORM_MATCHER_HOSTS) as Array<[DeclaredPlatform, string[]]>).map(
+    ([platform, hosts]): [DeclaredPlatform, HostMatcher] => [platform, (r) => includesAny(r.url, hosts)],
+  ),
+) as Record<DeclaredPlatform, HostMatcher>;
 
 export const ALL_DECLARED_PLATFORMS: DeclaredPlatform[] = [
   'google_ads', 'meta', 'tiktok', 'linkedin', 'microsoft', 'reddit', 'pinterest',

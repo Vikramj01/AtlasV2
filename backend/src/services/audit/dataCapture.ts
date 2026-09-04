@@ -5,28 +5,30 @@
  *   - Cookies and localStorage snapshots
  */
 import type { DataLayerEvent, NetworkRequest, CookieSnapshot, LocalStorageSnapshot, DetailedCookie, ConsoleError } from '@/types/audit';
+import { PLATFORM_MATCHER_HOSTS } from '@/services/validation/register/platformDetection';
 
-// URLs we want to capture (ad/analytics platforms)
-const TRACKED_URL_PATTERNS = [
+// URLs we want to capture (ad/analytics platforms). Built as a superset of
+// PLATFORM_MATCHER_HOSTS (every host any declared-platform matcher looks
+// for — see platformDetection.ts) plus infra this file alone cares about
+// (GA4/GTM/sGTM loader and collect endpoints, Meta's separate pixel-loader
+// script). Spreading PLATFORM_MATCHER_HOSTS in, rather than each platform's
+// hosts being hand-copied here a second time, is what makes a declared
+// platform structurally undetectable (Site Evaluation Coverage & Honesty
+// PRD §8.3, defect #4) impossible to reintroduce by omission — see the
+// invariant test below.
+export const TRACKED_URL_PATTERNS = [
   'analytics.google.com',
   'google-analytics.com',
-  'facebook.com/tr',
   'connect.facebook.net',
-  'google.com/pagead',
-  'googleadservices.com/pagead',
-  'googleads.g.doubleclick.net',
   'googletagmanager.com',
-  'bat.bing.com',
-  'analytics.tiktok.com',
-  'snap.licdn.com',
-  'linkedin.com/px',
   'sgtm',
   'gtm-msr',
   '/g/collect',
   '/mp/collect',
+  ...Object.values(PLATFORM_MATCHER_HOSTS).flat(),
 ];
 
-function shouldCaptureUrl(url: string): boolean {
+export function shouldCaptureUrl(url: string): boolean {
   return TRACKED_URL_PATTERNS.some((pattern) => url.includes(pattern));
 }
 
