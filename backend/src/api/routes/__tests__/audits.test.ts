@@ -268,7 +268,7 @@ describe('POST /api/audits/start', () => {
     }
   });
 
-  it('defaults product_domain to website_url when not supplied', async () => {
+  it('leaves product_domain unset when not supplied, rather than defaulting to website_url', async () => {
     vi.mocked(dbQueries.createAudit).mockResolvedValue(MOCK_AUDIT as any);
     vi.mocked(auditQueue.add as any).mockResolvedValue({ id: 'job-001' });
 
@@ -282,7 +282,7 @@ describe('POST /api/audits/start', () => {
     });
 
     expect(dbQueries.createAudit).toHaveBeenCalledWith(
-      expect.objectContaining({ product_domain: 'https://example.com' }),
+      expect.objectContaining({ product_domain: undefined }),
     );
   });
 

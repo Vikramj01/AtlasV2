@@ -280,10 +280,17 @@ export async function simulateJourney(
   let consentCapture: ConsentCapture | undefined;
   const stepCoverage: StepCoverage[] = [];
 
+  // Excludes the marketing site's own host — a product/checkout domain (or
+  // additional_properties entry) that resolves to the same host as
+  // website_url isn't a real cross-domain boundary, and treating every
+  // ordinary internal link as an "outbound cross-domain link" needing _gl
+  // would fail L4.1/L4.2 on any single-domain site. Mirrors the sameHost
+  // guard the boundary probe below already applies to L4.3/L4.4.
+  const websiteHost = hostnameOf(opts.website_url);
   const crossDomainTargets = [opts.product_domain, opts.checkout_domain, ...(opts.additional_properties ?? [])]
     .filter((d): d is string => !!d)
     .map(hostnameOf)
-    .filter((h): h is string => !!h);
+    .filter((h): h is string => !!h && h !== websiteHost);
 
   try {
     for (const step of steps) {

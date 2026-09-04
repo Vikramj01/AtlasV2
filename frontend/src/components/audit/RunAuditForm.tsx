@@ -95,7 +95,7 @@ export function RunAuditForm() {
       monthly_spend_band: spendBand || undefined,
       traffic_regions: trafficRegions,
       cmp: cmp || undefined,
-      product_domain: productDomain.trim() || websiteUrl,
+      product_domain: productDomain.trim() || undefined,
       checkout_domain: checkoutDomain.trim() || undefined,
       url_map: urlMap,
       test_email: testEmail || undefined,
