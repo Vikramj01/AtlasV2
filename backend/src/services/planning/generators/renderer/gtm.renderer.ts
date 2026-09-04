@@ -100,9 +100,15 @@ export function dlvPathForParam(key: string, isEcommerceEvent: boolean): string 
  * (see gtmContainerGenerator.ts), which itself prefers an explicit dataLayer
  * value over its own cookie-based estimate. This never overrides data the
  * site already provides; it only fills in when nothing was provided at all.
+ *
+ * `isEcommerceOverride`, when provided, wins over `event.action_type`. The
+ * caller passes the OR of every recommendation sharing this event_name so a
+ * merged event (e.g. two recs with the same event_name but different
+ * action_types) still nests ecommerce param keys consistently with whatever
+ * DLV variables were actually pre-created for it — see gtmContainerGenerator.ts.
  */
-export function renderGA4EventParameters(event: IREvent): GTMParameter[] {
-  const isEcommerce = ECOMMERCE_SNIPPET_ACTIONS.has(event.action_type);
+export function renderGA4EventParameters(event: IREvent, isEcommerceOverride?: boolean): GTMParameter[] {
+  const isEcommerce = isEcommerceOverride ?? ECOMMERCE_SNIPPET_ACTIONS.has(event.action_type);
   const mapItems: GTMParameter[] = event.parameters.map(param => ({
     type: 'MAP' as const,
     map: [

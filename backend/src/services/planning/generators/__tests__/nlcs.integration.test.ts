@@ -264,6 +264,69 @@ describe('Ecommerce pipeline — end-to-end validation', () => {
   });
 });
 
+// ── Regression: event_name shared across recs with different action_types ──────
+//
+// Reproduces a live bug where the AI mislabels an unrelated click (e.g. a "Log
+// in" link) with event_name 'view_item' but action_type 'custom', while a
+// genuine product-tile click also uses event_name 'view_item' with the correct
+// ecommerce action_type and an 'items' parameter. The generator deduplicates
+// tags by event_name, so both recs merge into one "GA4 - view_item" tag. If the
+// non-ecommerce rec happens to be visited first, the merged tag's ecommerce-ness
+// must still be derived from ALL contributing recs (not just the first one) —
+// otherwise the 'items' key resolves to the ungenerated flat "DLV - items"
+// instead of the pre-created "DLV - ecommerce.items", and VARIABLE_RESOLUTION
+// blocks output generation.
+describe('Merged event_name with mixed action_types (ecommerce-ness must OR, not first-wins)', () => {
+  const session = makeSession('ecommerce', ['ga4', 'meta']);
+
+  const pages = [
+    makePage('p1', 'https://shop.example.com/'),
+    makePage('p2', 'https://shop.example.com/products/widget', 'product'),
+  ];
+
+  // The non-ecommerce, mislabeled rec is listed FIRST so it is the one
+  // `generateGTMContainer` visits first for event_name 'view_item'.
+  const recs: PlanningRecommendation[] = [
+    makeRec('r1', 'p1', 'view_item', 'custom', ['location', 'user_status'], [], ['ga4']),
+    makeRec('r2', 'p2', 'view_item', 'view_item', ['item_id', 'item_name', 'items'], [], ['ga4', 'meta']),
+  ];
+
+  const gtmContainer  = generateGTMContainer(recs, session);
+  const dataLayerSpec = generateDataLayerSpec(recs, pages, session);
+  const guide         = generateDeveloperHandoffDoc(recs, pages, session, gtmContainer);
+  const result        = validateGeneration({
+    gtmContainer,
+    dataLayerSpec,
+    implementationGuide: guide,
+    recommendations: recs,
+    businessType: 'ecommerce',
+    platforms: session.selected_platforms,
+  });
+
+  it('validator passes — no unresolved variable references', () => {
+    const unresolved = result.errors.filter(e => e.rule === 'VARIABLE_RESOLUTION');
+    if (unresolved.length > 0) {
+      throw new Error(unresolved.map(e => e.message).join('\n'));
+    }
+    expect(result.passed).toBe(true);
+  });
+
+  it('the merged GA4 - view_item tag references {{DLV - ecommerce.items}}, not the flat form', () => {
+    const tag = gtmContainer.containerVersion.tag.find(t => t.name === 'GA4 - view_item');
+    const eventParams = tag?.parameter.find(p => p.key === 'eventParameters');
+    const itemsEntry = eventParams?.list?.find(item =>
+      item.map?.some(m => m.key === 'key' && m.value === 'items'),
+    );
+    const valueEntry = itemsEntry?.map?.find(m => m.key === 'value');
+    expect(valueEntry?.value).toBe('{{DLV - ecommerce.items}}');
+  });
+
+  it('a "DLV - ecommerce.items" variable exists in the container', () => {
+    const varNames = gtmContainer.containerVersion.variable.map(v => v.name);
+    expect(varNames).toContain('DLV - ecommerce.items');
+  });
+});
+
 // ── Integration tests: Standard event alias ────────────────────────────────────
 
 describe('Standard event alias — generate_lead for custom-named form event', () => {
