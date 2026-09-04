@@ -1,7 +1,7 @@
 /**
  * Sprint 2.5-E — GenerationValidator unit tests
  *
- * One describe block per rule (all 10). Each block has a "clean" test that
+ * One describe block per rule (all 11). Each block has a "clean" test that
  * asserts the rule passes, then targeted failure tests for every branch.
  */
 import { describe, it, expect } from 'vitest';
@@ -858,6 +858,81 @@ describe('Rule 10: PER_EVENT_CONVERSION_LABELS', () => {
     const hasHighOnly = result.errors.every(e => e.severity === 'HIGH');
     expect(hasHighOnly).toBe(true);
     // passed = no CRITICAL errors
+    expect(result.passed).toBe(true);
+  });
+});
+
+// ── Rule 11: EVENT_ACTION_TYPE_CONSISTENCY ──────────────────────────────────────
+
+describe('Rule 11: EVENT_ACTION_TYPE_CONSISTENCY', () => {
+  it('passes when all recommendations sharing an event_name have the same action_type', () => {
+    const recs = [
+      makeRec('view_item', 'view_item', ['item_id']),
+      makeRec('view_item', 'view_item', ['item_name']),
+    ];
+    const result = validateGeneration(makeInput({ recommendations: recs }));
+    const rule11 = result.errors.filter(e => e.rule === 'EVENT_ACTION_TYPE_CONSISTENCY');
+    expect(rule11).toHaveLength(0);
+  });
+
+  it('passes when different event_names have different action_types (no grouping conflict)', () => {
+    const recs = [
+      makeRec('page_view', 'page_view', []),
+      makeRec('hero_cta_click', 'cta_click', []),
+    ];
+    const result = validateGeneration(makeInput({ recommendations: recs }));
+    const rule11 = result.errors.filter(e => e.rule === 'EVENT_ACTION_TYPE_CONSISTENCY');
+    expect(rule11).toHaveLength(0);
+  });
+
+  it('HIGH error when two recommendations share an event_name but have different action_types', () => {
+    const recs = [
+      makeRec('view_item', 'custom', ['location']),
+      makeRec('view_item', 'view_item', ['item_id']),
+    ];
+    const result = validateGeneration(makeInput({ recommendations: recs }));
+    const rule11 = result.errors.filter(e => e.rule === 'EVENT_ACTION_TYPE_CONSISTENCY');
+    expect(rule11).toHaveLength(1);
+    expect(rule11[0].severity).toBe('HIGH');
+    expect(rule11[0].message).toContain('view_item');
+    expect(rule11[0].message).toContain('custom');
+  });
+
+  it('message lists every distinct action_type in a three-way split', () => {
+    const recs = [
+      makeRec('checkout_complete', 'custom', []),
+      makeRec('checkout_complete', 'purchase', []),
+      makeRec('checkout_complete', 'form_submit', []),
+    ];
+    const result = validateGeneration(makeInput({ recommendations: recs }));
+    const rule11 = result.errors.filter(e => e.rule === 'EVENT_ACTION_TYPE_CONSISTENCY');
+    expect(rule11).toHaveLength(1);
+    expect(rule11[0].message).toContain('custom');
+    expect(rule11[0].message).toContain('purchase');
+    expect(rule11[0].message).toContain('form_submit');
+  });
+
+  it('does not tell the user to hand-edit GTM — points at reviewing the recommendation or re-running the scan', () => {
+    const recs = [
+      makeRec('view_item', 'custom', []),
+      makeRec('view_item', 'view_item', []),
+    ];
+    const result = validateGeneration(makeInput({ recommendations: recs }));
+    const rule11 = result.errors.filter(e => e.rule === 'EVENT_ACTION_TYPE_CONSISTENCY');
+    expect(rule11[0].fix_hint.toLowerCase()).not.toContain('gtm variable');
+  });
+
+  it('a HIGH-only Rule 11 error does not fail result.passed', () => {
+    // Both action_types are non-ecommerce so this doesn't also trip Rule 7
+    // (BUSINESS_TYPE_ISOLATION, CRITICAL) on the default lead_gen businessType —
+    // isolates this assertion to Rule 11 alone.
+    const recs = [
+      makeRec('contact_click', 'custom', []),
+      makeRec('contact_click', 'form_submit', []),
+    ];
+    const result = validateGeneration(makeInput({ recommendations: recs }));
+    const rule11 = result.errors.filter(e => e.rule === 'EVENT_ACTION_TYPE_CONSISTENCY');
+    expect(rule11).toHaveLength(1);
     expect(result.passed).toBe(true);
   });
 });

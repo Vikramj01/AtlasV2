@@ -1166,8 +1166,18 @@ src="https://px.ads.linkedin.com/collect/?pid={{CONST - LinkedIn Partner ID}}&fm
   // sharing the same event_name (e.g. a mislabeled non-ecommerce click reusing
   // event_name "view_item") can make the merged tag reference an ungenerated flat
   // "DLV - items" variable instead of the pre-created "DLV - ecommerce.items".
+  // actionTypesByEvent, isConversionByEvent and standardEventAliasByEvent are all OR'd
+  // (or first-non-null'd) across every contributing recommendation for the same reason
+  // isEcommerceByEvent is: tag emission below only runs once per event_name (on
+  // whichever rec is visited first), so any per-rec field read off a single irEvent
+  // instead of these merged maps silently reflects only the first-visited rec — e.g. a
+  // real conversion sharing an event_name with a non-conversion rec that happens to be
+  // visited first would otherwise never get a Google Ads/LinkedIn conversion tag at all.
   const mergedParamsByEvent = new Map<string, IREvent['parameters']>();
   const isEcommerceByEvent = new Map<string, boolean>();
+  const actionTypesByEvent = new Map<string, Set<string>>();
+  const isConversionByEvent = new Map<string, boolean>();
+  const standardEventAliasByEvent = new Map<string, string>();
   for (const rec of recommendations) {
     const irEvent = recToIREvent(rec, session.selected_platforms as Platform[]);
     const existing = mergedParamsByEvent.get(irEvent.event_name) ?? [];
@@ -1179,11 +1189,21 @@ src="https://px.ads.linkedin.com/collect/?pid={{CONST - LinkedIn Partner ID}}&fm
       irEvent.event_name,
       (isEcommerceByEvent.get(irEvent.event_name) ?? false) || ECOMMERCE_SNIPPET_ACTIONS.has(irEvent.action_type),
     );
+    const actionTypes = actionTypesByEvent.get(irEvent.event_name) ?? new Set<string>();
+    actionTypes.add(irEvent.action_type);
+    actionTypesByEvent.set(irEvent.event_name, actionTypes);
+    isConversionByEvent.set(
+      irEvent.event_name,
+      (isConversionByEvent.get(irEvent.event_name) ?? false) || irEvent.is_conversion,
+    );
+    if (irEvent.standard_event_alias && !standardEventAliasByEvent.has(irEvent.event_name)) {
+      standardEventAliasByEvent.set(irEvent.event_name, irEvent.standard_event_alias);
+    }
   }
 
   for (const rec of recommendations) {
     const irEvent = recToIREvent(rec, session.selected_platforms as Platform[]);
-    const isConversion = irEvent.is_conversion;
+    const isConversion = isConversionByEvent.get(irEvent.event_name) ?? irEvent.is_conversion;
     const folderId = isConversion ? FOLDER.CONVERSION : FOLDER.ENGAGEMENT;
     const trigId = ensureEventTrigger(irEvent);
 
@@ -1201,8 +1221,17 @@ src="https://px.ads.linkedin.com/collect/?pid={{CONST - LinkedIn Partner ID}}&fm
     if (eventTagsSeen.has(irEvent.event_name)) continue;
     eventTagsSeen.add(irEvent.event_name);
 
-    // Use the merged parameter set so the single tag covers all pages' parameters
-    const mergedIREvent: IREvent = { ...irEvent, parameters: mergedParamsByEvent.get(irEvent.event_name) ?? irEvent.parameters };
+    // Use the merged parameter set so the single tag covers all pages' parameters.
+    // is_conversion/standard_event_alias are also overridden with the OR'd/merged
+    // values (not just the local isConversion variable above) because renderers like
+    // renderMetaEventTag read event.is_conversion directly off this object.
+    const mergedIREvent: IREvent = {
+      ...irEvent,
+      parameters: mergedParamsByEvent.get(irEvent.event_name) ?? irEvent.parameters,
+      is_conversion: isConversion,
+      standard_event_alias: standardEventAliasByEvent.get(irEvent.event_name) ?? irEvent.standard_event_alias,
+    };
+    const contributingActionTypes = actionTypesByEvent.get(mergedIREvent.event_name);
 
     // ── GA4 Event Tag ───────────────────────────────────────────────────────
     if (hasGA4) {
@@ -1225,7 +1254,7 @@ src="https://px.ads.linkedin.com/collect/?pid={{CONST - LinkedIn Partner ID}}&fm
       // Fires a second GA4 tag with the standard event name so Smart Bidding
       // can recognise the conversion without renaming the primary event.
       // e.g. GA4 - contact_form_submit (generate_lead alias)
-      const aliasTag = renderStandardEventAliasTag(mergedIREvent, trigId, tagIds.next(), folderId);
+      const aliasTag = renderStandardEventAliasTag(mergedIREvent, trigId, tagIds.next(), folderId, isEcommerceByEvent.get(mergedIREvent.event_name));
       if (aliasTag) tags.push(aliasTag);
     }
 
@@ -1239,6 +1268,7 @@ src="https://px.ads.linkedin.com/collect/?pid={{CONST - LinkedIn Partner ID}}&fm
         FOLDER.CONVERSION,
         'CONST - Google Ads Conversion ID',
         platformIds,
+        contributingActionTypes,
       );
       variables.push(labelVar);
       tags.push(gadsTag);
@@ -1246,12 +1276,12 @@ src="https://px.ads.linkedin.com/collect/?pid={{CONST - LinkedIn Partner ID}}&fm
 
     // ── Meta Event Tag ──────────────────────────────────────────────────────
     if (hasMeta) {
-      tags.push(renderMetaEventTag(mergedIREvent, trigId, tagIds.next(), folderId));
+      tags.push(renderMetaEventTag(mergedIREvent, trigId, tagIds.next(), folderId, contributingActionTypes));
     }
 
     // ── TikTok Event Tag ────────────────────────────────────────────────────
     if (hasTikTok) {
-      tags.push(renderTikTokEventTag(mergedIREvent, trigId, tagIds.next(), folderId));
+      tags.push(renderTikTokEventTag(mergedIREvent, trigId, tagIds.next(), folderId, contributingActionTypes));
     }
 
     // ── LinkedIn Conversion Tag ─────────────────────────────────────────────

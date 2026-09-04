@@ -182,6 +182,7 @@ export function renderGoogleAdsConversionTag(
   folderId: string,
   conversionIdVarName: string,
   platformIds?: GTMPlatformIds,
+  contributingActionTypes?: Set<string>,
 ): GoogleAdsConversionResult {
   const labelVarName = gadsLabelVarName(event.event_name);
 
@@ -196,7 +197,11 @@ export function renderGoogleAdsConversionTag(
     notes: `Google Ads conversion label for "${event.event_name}". Find it in Google Ads → Goals → Conversions → select conversion → Tag setup.`,
   };
 
-  const isEcommercePurchase = event.action_type === 'purchase';
+  // contributingActionTypes covers every recommendation merged into this event_name
+  // (see gtmContainerGenerator.ts) — falls back to this event's own action_type when
+  // the caller doesn't have merge context (e.g. direct unit tests).
+  const actionTypes = contributingActionTypes ?? new Set([event.action_type]);
+  const isEcommercePurchase = actionTypes.has('purchase');
 
   const tagParams: GTMParameter[] = [
     tmpl('conversionId', constRef(conversionIdVarName)),
@@ -245,12 +250,14 @@ export function renderMetaEventTag(
   trigId: string,
   tagId: string,
   folderId: string,
+  contributingActionTypes?: Set<string>,
 ): GTMTagDef {
   const metaEvent = META_EVENT_NAME[event.event_name] ?? META_EVENT_NAME[event.action_type] ?? 'CustomEvent';
-  const isEcommercePurchase = event.action_type === 'purchase';
-  const isAddToCart = event.action_type === 'add_to_cart';
+  const actionTypes = contributingActionTypes ?? new Set([event.action_type]);
+  const isEcommercePurchase = actionTypes.has('purchase');
+  const isAddToCart = actionTypes.has('add_to_cart');
   // action_type may be 'generate_lead' from the DB adapter (Sprint 2.5-C backward compat)
-  const isLead = (event.action_type as string) === 'generate_lead' || event.action_type === 'form_submit';
+  const isLead = actionTypes.has('generate_lead') || actionTypes.has('form_submit');
 
   let fbqParams = '{}';
   if (isEcommercePurchase || isAddToCart) {
@@ -288,10 +295,12 @@ export function renderTikTokEventTag(
   trigId: string,
   tagId: string,
   folderId: string,
+  contributingActionTypes?: Set<string>,
 ): GTMTagDef {
   const ttEvent = TIKTOK_EVENT_NAME[event.event_name] ?? TIKTOK_EVENT_NAME[event.action_type] ?? 'CustomEvent';
+  const actionTypes = contributingActionTypes ?? new Set([event.action_type]);
   let ttParams = '{}';
-  if (event.action_type === 'purchase') {
+  if (actionTypes.has('purchase')) {
     ttParams = `{value: ${dlvRef('ecommerce.value')}, currency: ${dlvRef('ecommerce.currency')}, content_type: 'product'}`;
   }
   return {
@@ -351,10 +360,11 @@ export function renderStandardEventAliasTag(
   trigId: string,
   tagId: string,
   folderId: string,
+  isEcommerceOverride?: boolean,
 ): GTMTagDef | null {
   if (!event.standard_event_alias) return null;
 
-  const aliasParams = renderGA4EventParameters(event);
+  const aliasParams = renderGA4EventParameters(event, isEcommerceOverride);
 
   return {
     ...stub(),
