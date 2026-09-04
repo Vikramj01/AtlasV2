@@ -10,7 +10,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { ACTION_PRIMITIVES } from '@/services/journey/actionPrimitives';
 import { callClaude } from '@/services/usage/claudeClient';
-import { IR_PROMPT_GUARDRAILS, buildIROutputSchemaSection } from './generators/prompts/ir-schema.prompt';
+import { IR_PROMPT_GUARDRAILS, buildIROutputSchemaSection, UNIVERSAL_ACTION_TYPES } from './generators/prompts/ir-schema.prompt';
 import { ATTRIBUTION_PARAMS, ECOMMERCE_ACTION_TYPES as IR_ECOMMERCE_ACTION_TYPES } from './generators/ir.types';
 import type {
   AIAnalysisRequest,
@@ -174,12 +174,12 @@ export async function analysePageWithAI(
 
 // ── Fallback recommendation ──────────────────────────────────────────────────
 
-function buildFallbackPageView(req: AIAnalysisRequest): RecommendedElement {
+export function buildFallbackPageView(req: AIAnalysisRequest): RecommendedElement {
   return {
     element_reference: 'page_level',
     selector: 'document',
     recommendation_type: 'track_page_view',
-    action_primitive_key: 'view_item',
+    action_primitive_key: 'page_view',
     suggested_event_name: 'page_view',
     suggested_event_category: 'engagement',
     business_justification: `Track page views on ${req.page_title || req.page_url} to measure traffic and support funnel analysis.`,
@@ -308,8 +308,8 @@ function stripAttributionParams(params: SuggestedParam[]): SuggestedParam[] {
 
 const ECOMMERCE_PRIMITIVE_KEYS = new Set([...IR_ECOMMERCE_ACTION_TYPES as unknown as string[]]);
 
-function sanitiseActionType(actionType: string, businessType: string): string {
-  if (ECOMMERCE_PRIMITIVE_KEYS.has(actionType) && businessType === 'lead_gen') {
+export function sanitiseActionType(actionType: string, businessType: string): string {
+  if (ECOMMERCE_PRIMITIVE_KEYS.has(actionType) && (businessType === 'lead_gen' || businessType === 'saas')) {
     return 'form_submit';
   }
   return actionType;
@@ -346,11 +346,22 @@ function parseIRParameters(raw: unknown): SuggestedParam[] {
     });
 }
 
-function validateRecommendedElements(raw: unknown, businessType = ''): RecommendedElement[] {
+export function validateRecommendedElements(raw: unknown, businessType = ''): RecommendedElement[] {
   if (!Array.isArray(raw)) return [];
 
   const validPriorities = ['must_have', 'should_have', 'nice_to_have'] as const;
-  const validActionKeys = new Set(ACTION_PRIMITIVES.map((a) => a.key).concat(['custom']));
+  // Union of: the canonical vocabulary the prompt actually instructs the AI to use
+  // (UNIVERSAL_ACTION_TYPES + ecommerce types), plus the legacy Journey Builder
+  // ACTION_PRIMITIVES keys this function still accepts via the old
+  // action_primitive_key input format. Without the canonical vocabulary here, every
+  // correctly-classified non-ecommerce recommendation was silently rewritten to
+  // 'custom' below, since none of UNIVERSAL_ACTION_TYPES overlap with ACTION_PRIMITIVES.
+  const validActionKeys = new Set<string>([
+    ...UNIVERSAL_ACTION_TYPES,
+    ...IR_ECOMMERCE_ACTION_TYPES,
+    ...ACTION_PRIMITIVES.map((a) => a.key),
+    'custom',
+  ]);
 
   return raw
     .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
