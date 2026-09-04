@@ -401,6 +401,95 @@ describe('Merged event_name: conversion classification must OR across contributi
   });
 });
 
+// ── Regression: merged event_name with genuinely different click targets ───────
+//
+// Reproduces a live pattern found in production data: an AI scan of a pricing page
+// recommends the same event_name ("select_plan") for every pricing-tier button, each
+// with its own selector (one button per tier). Before this fix, the generator created
+// exactly one GTM trigger per event_name — from whichever recommendation was visited
+// first — so clicking any button OTHER than the first tier's would never fire the tag
+// at all, even though its parameters were merged into the tag as if it did.
+describe('Merged event_name with genuinely different click targets (multi-trigger fix)', () => {
+  const session = makeSession('saas', ['ga4']);
+
+  const recs: PlanningRecommendation[] = [
+    { ...makeRec('r1', 'p1', 'select_plan', 'cta_click', ['plan_name']), element_selector: 'button:nth-of-type(13)' },
+    { ...makeRec('r2', 'p1', 'select_plan', 'cta_click', ['plan_name']), element_selector: 'button:nth-of-type(14)' },
+    { ...makeRec('r3', 'p1', 'select_plan', 'cta_click', ['plan_name']), element_selector: 'button:nth-of-type(15)' },
+  ];
+
+  const gtmContainer = generateGTMContainer(recs, session);
+
+  it('creates one trigger per distinct selector, not one trigger for the whole event_name', () => {
+    const selectPlanTriggers = gtmContainer.containerVersion.trigger.filter(t => t.name.startsWith('Click - select_plan'));
+    expect(selectPlanTriggers).toHaveLength(3);
+  });
+
+  it('trigger names are disambiguated so none collide', () => {
+    const names = gtmContainer.containerVersion.trigger
+      .filter(t => t.name.startsWith('Click - select_plan'))
+      .map(t => t.name);
+    expect(new Set(names).size).toBe(3);
+  });
+
+  it('the merged GA4 tag fires off all three triggers, not just the first', () => {
+    const tag = gtmContainer.containerVersion.tag.find(t => t.name === 'GA4 - select_plan');
+    const selectPlanTriggerIds = gtmContainer.containerVersion.trigger
+      .filter(t => t.name.startsWith('Click - select_plan'))
+      .map(t => t.triggerId);
+    expect(tag?.firingTriggerId).toHaveLength(3);
+    for (const tid of selectPlanTriggerIds) {
+      expect(tag?.firingTriggerId).toContain(tid);
+    }
+  });
+
+  it('each distinct selector actually appears in one of the triggers\' filters', () => {
+    const selectors = ['button:nth-of-type(13)', 'button:nth-of-type(14)', 'button:nth-of-type(15)'];
+    const selectPlanTriggers = gtmContainer.containerVersion.trigger.filter(t => t.name.startsWith('Click - select_plan'));
+    for (const selector of selectors) {
+      const matched = selectPlanTriggers.some(t =>
+        t.filter?.some(f => f.parameter.some(p => p.value === selector)),
+      );
+      expect(matched).toBe(true);
+    }
+  });
+});
+
+describe('Merged event_name with the SAME click target (dedup regression guard)', () => {
+  const session = makeSession('saas', ['ga4']);
+
+  // Two recs across different pages, same event_name, same selector — a genuine
+  // duplicate that should still collapse to exactly one trigger, same as before
+  // this fix.
+  const recs: PlanningRecommendation[] = [
+    { ...makeRec('r1', 'p1', 'contact_click', 'cta_click', []), element_selector: '#contact-btn' },
+    { ...makeRec('r2', 'p2', 'contact_click', 'cta_click', []), element_selector: '#contact-btn' },
+  ];
+
+  const gtmContainer = generateGTMContainer(recs, session);
+
+  it('still creates exactly one trigger for identical selectors sharing an event_name', () => {
+    const contactTriggers = gtmContainer.containerVersion.trigger.filter(t => t.name.startsWith('Click - contact_click'));
+    expect(contactTriggers).toHaveLength(1);
+  });
+
+  it('the tag fires off a single-element array, unchanged from pre-fix behavior', () => {
+    const tag = gtmContainer.containerVersion.tag.find(t => t.name === 'GA4 - contact_click');
+    expect(tag?.firingTriggerId).toHaveLength(1);
+  });
+});
+
+describe('Single, non-merged recommendation (no-op sanity check)', () => {
+  const session = makeSession('lead_gen', ['ga4']);
+  const recs: PlanningRecommendation[] = [makeRec('r1', 'p1', 'hero_cta_click', 'cta_click', [])];
+  const gtmContainer = generateGTMContainer(recs, session);
+
+  it('firingTriggerId is still a single-element array for an ordinary, non-merged event', () => {
+    const tag = gtmContainer.containerVersion.tag.find(t => t.name === 'GA4 - hero_cta_click');
+    expect(tag?.firingTriggerId).toHaveLength(1);
+  });
+});
+
 // ── Integration tests: Standard event alias ────────────────────────────────────
 
 describe('Standard event alias — generate_lead for custom-named form event', () => {

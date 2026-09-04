@@ -936,3 +936,56 @@ describe('Rule 11: EVENT_ACTION_TYPE_CONSISTENCY', () => {
     expect(result.passed).toBe(true);
   });
 });
+
+// ── Rule 12: TRIGGER_NAME_UNIQUENESS ─────────────────────────────────────────────
+
+describe('Rule 12: TRIGGER_NAME_UNIQUENESS', () => {
+  it('passes when all trigger names are unique', () => {
+    const triggers = [
+      makeTrigger({ triggerId: '1', name: 'Click - select_plan' }),
+      makeTrigger({ triggerId: '2', name: 'Click - select_plan (2)' }),
+    ];
+    const result = validateGeneration(makeInput({
+      gtmContainer: makeContainer([], [], triggers),
+    }));
+    const rule12 = result.errors.filter(e => e.rule === 'TRIGGER_NAME_UNIQUENESS');
+    expect(rule12).toHaveLength(0);
+  });
+
+  it('HIGH error when two triggers share the same name', () => {
+    const triggers = [
+      makeTrigger({ triggerId: '1', name: 'Click - select_plan' }),
+      makeTrigger({ triggerId: '2', name: 'Click - select_plan' }),
+    ];
+    const result = validateGeneration(makeInput({
+      gtmContainer: makeContainer([], [], triggers),
+    }));
+    const rule12 = result.errors.filter(e => e.rule === 'TRIGGER_NAME_UNIQUENESS');
+    expect(rule12).toHaveLength(1);
+    expect(rule12[0].severity).toBe('HIGH');
+    expect(rule12[0].message).toContain('Click - select_plan');
+  });
+
+  it('does not tell the user to hand-edit GTM — this can only ever be a generator bug', () => {
+    const triggers = [
+      makeTrigger({ triggerId: '1', name: 'Click - select_plan' }),
+      makeTrigger({ triggerId: '2', name: 'Click - select_plan' }),
+    ];
+    const result = validateGeneration(makeInput({
+      gtmContainer: makeContainer([], [], triggers),
+    }));
+    const rule12 = result.errors.filter(e => e.rule === 'TRIGGER_NAME_UNIQUENESS');
+    expect(rule12[0].fix_hint.toLowerCase()).not.toContain('gtm variable');
+  });
+
+  it('a HIGH-only Rule 12 error does not fail result.passed', () => {
+    const triggers = [
+      makeTrigger({ triggerId: '1', name: 'Click - select_plan' }),
+      makeTrigger({ triggerId: '2', name: 'Click - select_plan' }),
+    ];
+    const result = validateGeneration(makeInput({
+      gtmContainer: makeContainer([], [], triggers),
+    }));
+    expect(result.passed).toBe(true);
+  });
+});

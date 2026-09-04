@@ -176,7 +176,7 @@ export interface GoogleAdsConversionResult {
  */
 export function renderGoogleAdsConversionTag(
   event: IREvent,
-  trigId: string,
+  trigIds: string[],
   tagId: string,
   labelVarId: string,
   folderId: string,
@@ -228,7 +228,7 @@ export function renderGoogleAdsConversionTag(
     name: `Google Ads - ${event.event_name} Conversion`,
     type: 'awct',
     parameter: tagParams,
-    firingTriggerId: [trigId],
+    firingTriggerId: trigIds,
     tagFiringOption: 'oncePerEvent',
     folderId,
     consentSettings: consentSettingsForTag('awct', ''),
@@ -247,7 +247,7 @@ export function renderGoogleAdsConversionTag(
  */
 export function renderMetaEventTag(
   event: IREvent,
-  trigId: string,
+  trigIds: string[],
   tagId: string,
   folderId: string,
   contributingActionTypes?: Set<string>,
@@ -279,7 +279,7 @@ export function renderMetaEventTag(
       tmpl('html', `<script>${fbqCall};</script>`),
       bool('supportDocumentWrite', 'false'),
     ],
-    firingTriggerId: [trigId],
+    firingTriggerId: trigIds,
     tagFiringOption: 'oncePerEvent',
     folderId,
     consentSettings: consentSettingsForTag('html', `Meta - ${event.event_name}`),
@@ -292,7 +292,7 @@ export function renderMetaEventTag(
 
 export function renderTikTokEventTag(
   event: IREvent,
-  trigId: string,
+  trigIds: string[],
   tagId: string,
   folderId: string,
   contributingActionTypes?: Set<string>,
@@ -312,7 +312,7 @@ export function renderTikTokEventTag(
       tmpl('html', `<script>ttq.track('${ttEvent}', ${ttParams});</script>`),
       bool('supportDocumentWrite', 'false'),
     ],
-    firingTriggerId: [trigId],
+    firingTriggerId: trigIds,
     tagFiringOption: 'oncePerEvent',
     folderId,
     consentSettings: consentSettingsForTag('html', `TikTok - ${event.event_name}`),
@@ -325,7 +325,7 @@ export function renderTikTokEventTag(
 
 export function renderLinkedInConversionTag(
   event: IREvent,
-  trigId: string,
+  trigIds: string[],
   tagId: string,
   folderId: string,
   conversionId?: string,
@@ -340,7 +340,7 @@ export function renderLinkedInConversionTag(
       tmpl('html', `<script>lintrk('track', {conversion_id: '${lid}'});</script>`),
       bool('supportDocumentWrite', 'false'),
     ],
-    firingTriggerId: [trigId],
+    firingTriggerId: trigIds,
     tagFiringOption: 'oncePerEvent',
     folderId,
     consentSettings: consentSettingsForTag('html', `LinkedIn - ${event.event_name}`),
@@ -357,7 +357,7 @@ export function renderLinkedInConversionTag(
  */
 export function renderStandardEventAliasTag(
   event: IREvent,
-  trigId: string,
+  trigIds: string[],
   tagId: string,
   folderId: string,
   isEcommerceOverride?: boolean,
@@ -375,7 +375,7 @@ export function renderStandardEventAliasTag(
       tmpl('eventName', event.standard_event_alias),
       ...aliasParams,
     ],
-    firingTriggerId: [trigId],
+    firingTriggerId: trigIds,
     tagFiringOption: 'oncePerEvent',
     folderId,
     consentSettings: consentSettingsForTag('gaawe', ''),
