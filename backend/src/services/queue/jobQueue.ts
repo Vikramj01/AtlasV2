@@ -90,6 +90,14 @@ function makeBullOpts(defaultJobOptions?: Bull.JobOptions): Bull.QueueOptions {
 export const auditQueue = new Bull<AuditJobData>('audit', makeBullOpts({
   attempts: 2,
   backoff: { type: 'exponential', delay: 5000 },
+  // 8 minutes — a 4-step crawl's own worst case is ~20s nav + settle per
+  // step (journeySimulator.ts's per-step timeouts) plus stepUrlResolver.ts's
+  // 15s discovery budget, with headroom. There was no timeout at all here
+  // before (Site Evaluation Coverage & Honesty PRD §8.1) — a hung
+  // Browserbase session held a worker slot indefinitely, and at
+  // AUDIT_WORKER_CONCURRENCY: 2 (see config/env.ts), one hung session
+  // stalled half the pool.
+  timeout: 8 * 60 * 1000,
   removeOnComplete: 100,
   removeOnFail: 50,
 }));
@@ -114,7 +122,7 @@ export interface PlanningJobData {
 
 export const planningQueue = new Bull<PlanningJobData>('planning', makeBullOpts({
   attempts: 1,                              // No retry — failed sessions must be restarted by user
-  timeout: 10 * 60 * 1000,                 // 10-minute timeout (vs 5 min for audits)
+  timeout: 10 * 60 * 1000,                 // 10-minute timeout (vs 8 min for audits)
   removeOnComplete: 100,
   removeOnFail: 50,
 }));

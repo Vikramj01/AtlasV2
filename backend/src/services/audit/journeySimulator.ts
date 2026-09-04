@@ -229,9 +229,13 @@ export async function simulateJourney(
   const consoleErrors: ConsoleError[] = [];
   const gtmScriptSrcs: string[] = [];
 
+  // Do NOT override userAgent — let Browserbase's fingerprint setting supply
+  // a realistic Windows/macOS Chrome UA. Overriding with a Linux string is a
+  // common bot signal and defeats the stealth proxy configuration (see
+  // planning/pageCaptureService.ts's identical reasoning; Site Evaluation
+  // Coverage & Honesty PRD §8.2).
   const context = await browser.newContext({
     locale: 'en-US',
-    userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   });
   const page = await context.newPage();
 

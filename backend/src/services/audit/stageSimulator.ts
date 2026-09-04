@@ -77,10 +77,12 @@ export async function simulateJourneyFromSpec(
   const injected = makeSyntheticIds();
   const captures: StageCapture[] = [];
 
+  // Do NOT override userAgent — let Browserbase's fingerprint setting supply
+  // a realistic Windows/macOS Chrome UA (see journeySimulator.ts/
+  // planning/pageCaptureService.ts's identical reasoning; Site Evaluation
+  // Coverage & Honesty PRD §8.2).
   const context = await browser.newContext({
     locale: 'en-US',
-    userAgent:
-      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     extraHTTPHeaders: { 'x-test-email': testEmail ?? '', 'x-test-phone': testPhone ?? '' },
   });
 
