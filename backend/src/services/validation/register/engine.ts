@@ -41,12 +41,13 @@ import { L6_RULES } from './L6';
 import { L7_RULES } from './L7';
 import { L8_RULES } from './L8';
 import { L9_RULES } from './L9';
+import { L10_RULES } from './L10';
 import { L12_RULES } from './L12';
 
 /** The full Check Register v2 rule library. Populated as each layer (L0-L12) ships. */
 export const REGISTER: ValidationRule[] = [
   ...L0_RULES, ...L1_RULES, ...L2_RULES, ...L3_RULES, ...L4_RULES, ...L5_RULES, ...L6_RULES, ...L7_RULES,
-  ...L8_RULES, ...L9_RULES, ...L12_RULES,
+  ...L8_RULES, ...L9_RULES, ...L10_RULES, ...L12_RULES,
 ];
 
 export function isApplicableToSiteType(
