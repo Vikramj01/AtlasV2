@@ -234,7 +234,7 @@ export const TOOLTIPS = {
   // Audit Report — Executive Summary scores
   conversionSignalHealth: {
     label: 'Conversion Signal Health',
-    what: 'The percentage of tracking checks that passed for this audit — higher is better.',
+    what: 'A severity-weighted score of the tracking checks that passed for this audit — a critical failure (e.g. zero measurement on a platform) costs more than a low-severity one, so this reflects business risk rather than a flat pass count. Higher is better.',
     why: 'A lower score means ad platforms are missing conversion data they need to report and optimise accurately.',
   },
   attributionRisk: {

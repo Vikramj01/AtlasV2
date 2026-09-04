@@ -10,7 +10,8 @@
  * thresholds over each score's associated layer(s) generalize to any
  * layer's rule count instead.
  */
-import type { AuditScores, ValidationResult, ValidationLayerV2 } from '@/types/audit';
+import type { AuditScores, ValidationResult, ValidationLayerV2, Severity } from '@/types/audit';
+import { DEFAULT_SEVERITY_WEIGHTS } from '@/config/scoringWeights';
 
 function layerResults(results: ValidationResult[], layers: ValidationLayerV2[]): ValidationResult[] {
   return results.filter((r) => layers.includes(r.validation_layer as ValidationLayerV2));
@@ -50,10 +51,34 @@ const OPTIMIZATION_LAYERS: ValidationLayerV2[] = ['parameter_completeness', 'ide
 // L12 (hygiene_integrity): duplicate/malformed/broken delivery — the layer most directly about data integrity.
 const CONSISTENCY_LAYERS: ValidationLayerV2[] = ['hygiene_integrity'];
 
-export function calculateV2Scores(results: ValidationResult[]): AuditScores {
+/**
+ * Severity-weighted pass rate over non-skipped results (PRD "Signal
+ * Health Report" Issue 7) — each result contributes its severity's weight
+ * to the denominator, and that same weight to the numerator only if it
+ * passed (a 'fail' or 'warning' contributes zero credit, same treatment
+ * the old flat formula gave both). Setting every weight to the same
+ * number makes this identical to a flat pass-rate — a passing/applicable
+ * count ratio scaled by a constant factor cancels out — which is the
+ * acceptance test proving this is a strict generalisation, not a
+ * behaviour change, for anyone who wants all severities weighted equally.
+ */
+function weightedSignalHealth(applicable: ValidationResult[], weights: Record<Severity, number>): number {
+  let totalWeight = 0;
+  let passingWeight = 0;
+  for (const r of applicable) {
+    const weight = weights[r.severity];
+    totalWeight += weight;
+    if (r.status === 'pass') passingWeight += weight;
+  }
+  return totalWeight > 0 ? Math.round((passingWeight / totalWeight) * 100) : 0;
+}
+
+export function calculateV2Scores(
+  results: ValidationResult[],
+  severityWeights: Record<Severity, number> = DEFAULT_SEVERITY_WEIGHTS,
+): AuditScores {
   const applicable = scored(results);
-  const passingCount = applicable.filter((r) => r.status === 'pass').length;
-  const conversionSignalHealth = applicable.length > 0 ? Math.round((passingCount / applicable.length) * 100) : 0;
+  const conversionSignalHealth = weightedSignalHealth(applicable, severityWeights);
 
   const attribution = scored(layerResults(results, ATTRIBUTION_LAYERS));
   const attributionFailRate = attribution.length > 0 ? attribution.filter((r) => r.status !== 'pass').length / attribution.length : 0;

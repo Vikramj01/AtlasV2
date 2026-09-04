@@ -1,6 +1,6 @@
 # Sprint Plan: Signal Health Report — Accuracy & Output Fixes
 
-**Status:** In progress — Sprints 1-5 (Issues 1, 2, 3, 4, 6) implemented and merged into `claude/sprint-plan-prd-pu51h6`. Sprints 6-7 (Issues 5, 7) remain — both gated on product decisions, see §"Open product decisions" below.
+**Status:** In progress — Sprints 1-5 and 7 (Issues 1, 2, 3, 4, 6, 7) implemented and merged into `claude/sprint-plan-prd-pu51h6`. Sprint 6 (Issue 5) remains, gated on a product decision — see §"Open product decisions" below.
 **Source PRD:** `docs/atlas-signal-health-report-fixes-prd.md` (uploaded PRD, "Atlas Signal Health Report · Accuracy and Output Fixes")
 **Owner:** Vikram
 **Branch:** `claude/sprint-plan-prd-pu51h6`
@@ -51,10 +51,10 @@ Sprint 3 (shared v2 remediation data model)  — DONE
   → Sprint 4 (Issue 1: wire fix copy)        — DONE (shipped inside Sprint 3)
   → Sprint 5 (Issue 4: narrator fix + placeholder guard) — DONE
 Sprint 6 (Issue 5)             — NOT STARTED, pending product decision (default proposed)
-Sprint 7 (Issue 7, stretch)    — NOT STARTED, pending product sign-off on weights
+Sprint 7 (Issue 7, stretch)    — DONE (weights + rollout confirmed in-session)
 ```
 
-Sprints 1-5 are implemented and merged into `claude/sprint-plan-prd-pu51h6` as of this writing (480 backend tests passing, clean `tsc --noEmit` on both backend and frontend). Sprint 3 shipped without a separate `failure_narrative` field — see that sprint's "what actually shipped" note — which meant Sprint 4 and 5's narrator fix landed in the same pass as Sprint 3, with only the placeholder guard itself picked up as a distinct follow-on (also now done). Sprints 6 and 7 are each gated on a product decision from the PRD's Open Questions (§5); a recommended default is proposed for each so engineering isn't blocked, but implementation should get an explicit go-ahead on the default before starting.
+Sprints 1-5 and 7 are implemented and merged into `claude/sprint-plan-prd-pu51h6` as of this writing (485 backend tests passing, clean `tsc --noEmit` on both backend and frontend). Sprint 3 shipped without a separate `failure_narrative` field — see that sprint's "what actually shipped" note — which meant Sprint 4 and 5's narrator fix landed in the same pass as Sprint 3, with only the placeholder guard itself picked up as a distinct follow-on (also now done). Sprint 6 remains, gated on a product decision from the PRD's Open Questions (§5) that hasn't been made yet — a recommended default is proposed so engineering isn't blocked once it's picked up, but it should get an explicit go-ahead before starting, the same way Sprint 7's weight table and rollout approach were confirmed before that sprint began.
 
 ---
 
@@ -163,21 +163,26 @@ The `failure_narrative` field turned out to be unnecessary. For nearly every rul
 
 ---
 
-## Sprint 7 (stretch) — Severity-weighted scoring (Issue 7)
+## Sprint 7 (stretch) — Severity-weighted scoring (Issue 7) — DONE
 
-**Priority:** P2 · stretch, pending product sign-off (PRD §4 explicitly gates engineering start on this)
-**Depends on:** none
+**Priority:** P2 · stretch
+**Status:** implemented and merged, per explicit user sign-off on the weight table and rollout approach (see below) — product's formal sign-off on the PRD's own Open Question 2 is still worth a final confirm, but engineering proceeded on direction given in this session rather than staying blocked.
 
-**Scope**
-- `backend/src/services/validation/register/scoring.ts` — add a configurable per-severity weight table (not hardcoded per rule — PRD requirement) feeding a new weighted-score calculation alongside (not replacing, until sign-off) `calculateV2Scores`'s existing flat pass-rate `conversion_signal_health`.
-- Recommended default weight table for product sign-off, taken directly from the PRD's own example (§5 Open Questions): `critical: 4, high: 2, medium: 1, low: 0.5, warning: 0.25` (warning added since the current model already distinguishes `fail`/`warning` status). This is a proposal, not an engineering decision — confirm before implementing (PRD Open Question 2 explicitly calls this out as needing "an actual decision, not an engineering guess").
-- Weight table as configuration (JSON in a new `backend/src/config/` module, or a DB-backed table if per-org tuning is ever wanted — DB is over-scoped for this PRD's stated need, recommend a static config file unless product asks for per-org tuning).
-- Recompute path: since `audit_findings` already persists rule-level results (per PRD AC), a weighted score for a historical audit should be derivable from stored findings without re-running the scan — build the weighted calculation as a pure function over `ValidationResult[]` (same shape `calculateV2Scores` already takes) so it can run against either a fresh register run or a stored `audit_findings` read.
+**Decisions made (in this session, not by the PRD itself):**
+- Weight table: `critical: 4, high: 2, medium: 1, low: 0.5` — the PRD's own proposed default, confirmed.
+- Rollout: **replaces** `conversion_signal_health` directly rather than shipping alongside it as a second field — confirmed. Setting all weights equal reproduces the exact old number, so this was treated as a safe drop-in rather than a breaking change.
 
-**Acceptance criteria (PRD §4 Issue 7)**
-- Scoring function accepts a per-severity weight table as configuration.
-- Setting all weights equal reproduces the current flat pass-rate score exactly (regression/rollback test).
-- A historical audit's stored `audit_findings` can be re-scored against a new weight table without re-running the scan (test: same fixture, two weight tables, two different scores, no crawl invoked).
+**What shipped**
+- `backend/src/config/scoringWeights.ts` — new config module exporting `DEFAULT_SEVERITY_WEIGHTS`. Configuration, not hardcoded per rule (the PRD's explicit requirement) — tuning the score's severity sensitivity is a one-file edit, no rule touched.
+- `backend/src/services/validation/register/scoring.ts` — `calculateV2Scores(results, severityWeights = DEFAULT_SEVERITY_WEIGHTS)` now takes an optional weight table; `conversion_signal_health` is computed by a new `weightedSignalHealth()` (each non-skipped result contributes its severity's weight to the denominator, and that weight to the numerator only if it passed — `fail`/`warning` both contribute zero credit, same treatment the old flat formula gave both). The three categorical scores (`attribution_risk_level`/`optimization_strength`/`data_consistency_score`) are untouched — Issue 7 is specifically about the headline number, not those.
+- `frontend/src/lib/ui-copy.ts` — updated the Conversion Signal Health tooltip copy to describe the weighted formula instead of "the percentage of tracking checks that passed," so the UI doesn't quietly misdescribe its own number.
+- Tests (`scoring.test.ts`): a mixed-severity fixture shaped like the PRD's own openart.ai example (9 critical fails, 7 low-severity passes) proving the weighted score drags down harder than a flat pass rate would; equal-weights-reproduces-flat-exactly on that same mixed fixture (not just the pre-existing uniform-severity fixture, which couldn't have caught a real regression here); a warning contributing zero credit like a fail; two different weight tables producing two different scores from the *same* stored `ValidationResult[]` with no re-scan (satisfies the "historical audit re-scoring" AC directly, since `calculateV2Scores` is already a pure function over exactly the shape `audit_results` persists — no new recompute endpoint was needed to prove this). 485 backend tests passing; clean `tsc --noEmit` on both backend and frontend.
+- Checked `worker.ts`'s scheduled-audit regression comparator (alerts when score drops ≥5 points between runs) — unaffected structurally, since it only ever compares two scores computed by the same current formula; a real regression still shows as a drop, just possibly a larger one now that a single critical rule flipping status moves the score more than it used to. Left the ≥5 threshold as-is — retuning it is a product call this PRD didn't ask for.
+
+**Acceptance criteria — met**
+- Scoring function accepts a per-severity weight table as configuration. ✓
+- Setting all weights equal reproduces the flat pass-rate score exactly, including on a mixed-severity fixture. ✓
+- A historical audit's stored results can be re-scored against a new weight table without re-running the scan. ✓ (proven directly — `calculateV2Scores` is pure over `ValidationResult[]`, which is exactly what `audit_results` persists; no new endpoint required to satisfy this, though a "re-score this old audit" UI/API action would need one if product wants it as a feature.)
 
 ---
 
@@ -189,10 +194,10 @@ The regression fixture built in Sprint 2 (full-taxonomy synthetic `AuditData` ru
 
 ## Open product decisions carried into this plan (PRD §5)
 
-| # | Question | Default proposed here | Where it's gated |
+| # | Question | Default proposed here | Status |
 |---|---|---|---|
-| 1 | Exclude substituted routes from route-level findings, or label and keep them? | **Label and keep** (Sprint 6) | Sprint 6, before merge |
-| 2 | Severity weighting for Issue 7? | critical×4 / high×2 / medium×1 / low×0.5 / warning×0.25 (Sprint 7) | Sprint 7, before implementation starts |
-| 3 | Should the Issue 4 placeholder guard block delivery, or flag + ship with a warning banner? | **Flag + banner** (Sprint 5) | Sprint 5, before merge |
+| 1 | Exclude substituted routes from route-level findings, or label and keep them? | **Label and keep** (Sprint 6) | Not yet confirmed — Sprint 6 not started |
+| 2 | Severity weighting for Issue 7? | critical×4 / high×2 / medium×1 / low×0.5 | **Confirmed in-session** — implemented, replacing the flat score directly (also confirmed, see Sprint 7) |
+| 3 | Should the Issue 4 placeholder guard block delivery, or flag + ship with a warning banner? | **Flag + banner** | Implemented per this default — not separately re-confirmed with product, worth a final check |
 
-None of these defaults should be treated as decided — they're proposed so Sprints 5-7 aren't blocked on a meeting before they can even be scoped, per the PRD's own framing that engineering shouldn't guess on Issue 7's weights specifically. Confirm each before the sprint that depends on it merges.
+Row 2 (Issue 7's weight table, plus the flat-vs-weighted rollout question raised alongside it) is now implemented per explicit confirmation in this session. Row 3 (Issue 4's guard behaviour) was implemented per the recommended default without a separate confirmation round — flag before shipping if product wants block-instead-of-flag reconsidered. Row 1 (Issue 5, Sprint 6) remains genuinely open — confirm before that sprint starts.
