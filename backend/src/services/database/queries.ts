@@ -63,6 +63,30 @@ export async function updateAuditStatus(
   if (error) throw new Error(`Failed to update audit status: ${error.message}`);
 }
 
+/**
+ * Persists coverage_fingerprint/pages_distinct (Site Evaluation Coverage &
+ * Honesty PRD §9) onto the audits row — see
+ * 20260903002_audit_coverage_fingerprint.sql. Both undefined for an
+ * AuditData with no step_coverage (Journey-Builder mode, a run predating
+ * this field); called unconditionally by the orchestrator regardless, so
+ * the columns are simply left null rather than needing a separate
+ * skip-if-absent branch at every call site.
+ */
+export async function updateAuditCoverage(
+  audit_id: string,
+  coverage: { coverage_fingerprint?: string; pages_distinct?: number },
+): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from('audits')
+    .update({
+      coverage_fingerprint: coverage.coverage_fingerprint ?? null,
+      pages_distinct: coverage.pages_distinct ?? null,
+    })
+    .eq('id', audit_id);
+
+  if (error) throw new Error(`Failed to update audit coverage: ${error.message}`);
+}
+
 export async function countAuditsThisMonth(user_id: string): Promise<number> {
   const startOfMonth = new Date();
   startOfMonth.setDate(1);

@@ -4,7 +4,7 @@
 import type { AuditJobData } from '@/services/queue/jobQueue';
 import type { FunnelType, Region } from '@/types/audit';
 import type { ValidationSpec } from '@/types/journey';
-import { updateAuditStatus, saveValidationResults, saveReport, getAudit } from '@/services/database/queries';
+import { updateAuditStatus, saveValidationResults, saveReport, getAudit, updateAuditCoverage } from '@/services/database/queries';
 import { createBrowserbaseSession, getCDPUrl } from '@/services/browserbase/client';
 import { logUsage } from '@/services/usage/usageLogger';
 import { supabaseAdmin as supabase } from '@/services/database/supabase';
@@ -20,6 +20,7 @@ import { calculateV2Scores } from '@/services/validation/register/scoring';
 import { buildV2LayerStages, buildV2PlatformBreakdown } from '@/services/validation/register/reporting';
 import { interpretResults } from '@/services/interpretation/engine';
 import { generateReport } from '@/services/reporting/generator';
+import { computeCoverageFingerprint } from '@/services/reporting/coverage';
 import { getConnectedGtmContainerId } from '@/services/database/gtmConnectionQueries';
 import { getNamingConvention } from '@/services/database/namingConventionQueries';
 import { buildSiteSetupSummary } from './siteSetupDetector';
@@ -291,6 +292,21 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
         const customPlatformBreakdown = isV2 ? buildV2PlatformBreakdown(validationResults, auditData.declared_platforms) : undefined;
         const report = generateReport(auditData, scores, issues, validationResults, siteSetup, customJourneyStages, customPlatformBreakdown);
         await saveReport(audit_id, report);
+
+        // coverage_fingerprint/pages_distinct (§9) — persisted for every
+        // audit, not just v2: step_coverage itself is captured
+        // unconditionally by simulateJourney, so there's no reason to
+        // special-case this write. Undefined for an AuditData with no
+        // step_coverage (Journey-Builder mode never reaches this branch
+        // anyway) simply persists as null.
+        try {
+          await updateAuditCoverage(audit_id, {
+            coverage_fingerprint: computeCoverageFingerprint(auditData),
+            pages_distinct: report.executive_summary.coverage?.pages_distinct,
+          });
+        } catch (err) {
+          logger.warn({ audit_id, err: err instanceof Error ? err.message : String(err) }, 'Failed to persist audit coverage fingerprint');
+        }
       }
     } finally {
       try { await (browser as { close?: () => Promise<void> }).close?.(); } catch { /* ignore */ }

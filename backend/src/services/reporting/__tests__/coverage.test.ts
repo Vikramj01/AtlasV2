@@ -1,9 +1,9 @@
 /**
  * Unit tests for buildCoverageSummary (Site Evaluation Coverage & Honesty
- * PRD §6.4).
+ * PRD §6.4) and computeCoverageFingerprint (§9).
  */
 import { describe, it, expect } from 'vitest';
-import { buildCoverageSummary } from '../coverage';
+import { buildCoverageSummary, computeCoverageFingerprint } from '../coverage';
 import type { AuditData, StepCoverage, ValidationResult } from '@/types/audit';
 
 function makeStep(overrides: Partial<StepCoverage> = {}): StepCoverage {
@@ -153,5 +153,60 @@ describe('buildCoverageSummary', () => {
     const auditData = makeAuditData({ step_coverage: [makeStep(), makeStep({ step: 'product', distinct_from_landing: true, requested_url: 'https://example.com/product', final_url: 'https://example.com/product' })] });
     const results: ValidationResult[] = [makeResult({ rule_id: 'A', status: 'pass' }), makeResult({ rule_id: 'B', status: 'fail' })];
     expect(buildCoverageSummary(auditData, results)?.layers_not_tested).toEqual([]);
+  });
+});
+
+// ── computeCoverageFingerprint (§9) ─────────────────────────────────────────
+
+describe('computeCoverageFingerprint', () => {
+  it('returns undefined when step_coverage is absent', () => {
+    expect(computeCoverageFingerprint(makeAuditData({ step_coverage: undefined }))).toBeUndefined();
+  });
+
+  it('returns undefined when every step failed to navigate (nothing was actually visited)', () => {
+    const auditData = makeAuditData({
+      step_coverage: [makeStep({ navigation_success: false, final_url: undefined })],
+    });
+    expect(computeCoverageFingerprint(auditData)).toBeUndefined();
+  });
+
+  it('is stable across two runs that visited the same page set, regardless of step order', () => {
+    const runA = makeAuditData({
+      step_coverage: [
+        makeStep({ step: 'landing', requested_url: 'https://shop.example.com', final_url: 'https://shop.example.com' }),
+        makeStep({ step: 'checkout', requested_url: 'https://shop.example.com/checkout', final_url: 'https://shop.example.com/checkout' }),
+      ],
+    });
+    const runB = makeAuditData({
+      step_coverage: [
+        // Same two pages, reversed order and different step labels — the
+        // fingerprint is a hash of the sorted URL set, not the steps array.
+        makeStep({ step: 'confirmation', requested_url: 'https://shop.example.com/checkout', final_url: 'https://shop.example.com/checkout' }),
+        makeStep({ step: 'landing', requested_url: 'https://shop.example.com', final_url: 'https://shop.example.com' }),
+      ],
+    });
+    expect(computeCoverageFingerprint(runA)).toBe(computeCoverageFingerprint(runB));
+  });
+
+  it('differs when the set of pages visited differs — the page-discovery-improved-coverage case', () => {
+    const homepageOnly = makeAuditData({
+      step_coverage: [
+        makeStep({ step: 'landing', requested_url: 'https://shop.example.com', final_url: 'https://shop.example.com' }),
+        makeStep({ step: 'checkout', requested_url: 'https://shop.example.com', final_url: 'https://shop.example.com' }),
+      ],
+    });
+    const discoveredCheckout = makeAuditData({
+      step_coverage: [
+        makeStep({ step: 'landing', requested_url: 'https://shop.example.com', final_url: 'https://shop.example.com' }),
+        makeStep({ step: 'checkout', requested_url: 'https://shop.example.com/checkout', final_url: 'https://shop.example.com/checkout', source: 'sitemap', distinct_from_landing: true }),
+      ],
+    });
+    expect(computeCoverageFingerprint(homepageOnly)).not.toBe(computeCoverageFingerprint(discoveredCheckout));
+  });
+
+  it('returns a hex string', () => {
+    const auditData = makeAuditData({ step_coverage: [makeStep()] });
+    const fingerprint = computeCoverageFingerprint(auditData);
+    expect(fingerprint).toMatch(/^[0-9a-f]+$/);
   });
 });

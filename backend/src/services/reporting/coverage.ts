@@ -7,6 +7,7 @@
  * is omitted from the report rather than rendering a synthesized "0 pages"
  * state — per CLAUDE.md rule 12 (no fabricated UI data).
  */
+import crypto from 'crypto';
 import type { AuditData, ValidationResult, ValidationLayerV2, StepCoverage, ReportCoverage, CoverageLayerNotTested } from '@/types/audit';
 import { normalizeUrlForCoverage } from '@/services/audit/journeySimulator';
 
@@ -39,12 +40,38 @@ function isCoverageSkip(result: ValidationResult): boolean {
 }
 
 /** Unique normalised URLs actually, successfully navigated to — a step that failed to navigate contributed no page. */
-function computePagesDistinct(steps: StepCoverage[]): number {
+function distinctNormalizedUrls(steps: StepCoverage[]): Set<string> {
   const normalized = steps
     .filter((s) => s.navigation_success)
     .map((s) => normalizeUrlForCoverage(s.final_url ?? s.requested_url))
     .filter((u): u is string => !!u);
-  return new Set(normalized).size;
+  return new Set(normalized);
+}
+
+function computePagesDistinct(steps: StepCoverage[]): number {
+  return distinctNormalizedUrls(steps).size;
+}
+
+/**
+ * A stable hash of the sorted set of normalised URLs a run actually,
+ * successfully visited (§9) — what the scheduled-audit regression
+ * comparator (queue/worker.ts) compares between two runs of the same
+ * schedule to tell "the score genuinely regressed" apart from "Phase 2's
+ * page discovery started finding real pages that used to be scored as the
+ * homepage." Same distinctNormalizedUrls() computation buildCoverageSummary
+ * uses for pages_distinct — two runs that visited the same page set always
+ * produce the same fingerprint regardless of visit order. Undefined under
+ * the same conditions buildCoverageSummary itself returns undefined —
+ * never fabricate a fingerprint for an AuditData with no step_coverage.
+ */
+export function computeCoverageFingerprint(auditData: AuditData): string | undefined {
+  const steps = auditData.step_coverage;
+  if (!steps || steps.length === 0) return undefined;
+
+  const sorted = [...distinctNormalizedUrls(steps)].sort();
+  if (sorted.length === 0) return undefined;
+
+  return crypto.createHash('sha256').update(sorted.join('|')).digest('hex');
 }
 
 /** A layer counts as not-tested only when EVERY result in it was a coverage-driven skip — a layer with a mix of tested and skipped rules was still meaningfully exercised. */

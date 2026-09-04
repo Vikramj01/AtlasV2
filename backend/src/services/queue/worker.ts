@@ -19,7 +19,7 @@ import {
   getScheduleByAuditId,
   updateScheduleScore,
 } from '@/services/database/scheduleQueries';
-import { createAudit, getReport } from '@/services/database/queries';
+import { createAudit, getReport, getAudit } from '@/services/database/queries';
 import { isRegressionComparable } from './regressionComparability';
 import type { FunnelType, Region } from '@/types/audit';
 import type { PlanningSession, PlanningPage } from '@/types/planning';
@@ -52,15 +52,25 @@ auditQueue.on('completed', async (job) => {
 
     const previousScore = schedule.last_audit_score;
     const currentRuleSetVersion = report.rule_set_version;
+    // coverage_fingerprint lives on the audits row (§9), not the report
+    // JSON — a second lookup, but only for a scheduled audit's completion,
+    // not every audit.
+    const auditRow = await getAudit(audit_id);
+    const currentCoverageFingerprint = auditRow?.coverage_fingerprint ?? undefined;
 
-    // Update the stored score (+ which rule library produced it, so next
-    // time's comparison can tell a v1-scored run apart from a v2-scored one)
-    await updateScheduleScore(scheduled_audit_id, currentScore, currentRuleSetVersion);
+    // Update the stored score (+ which rule library produced it and which
+    // pages it examined, so next time's comparison can tell a v1-scored
+    // run apart from a v2-scored one, and a discovery-driven coverage
+    // change from a real regression)
+    await updateScheduleScore(scheduled_audit_id, currentScore, currentRuleSetVersion, currentCoverageFingerprint);
 
     // Fire regression alert if score dropped ≥5 points, and the two runs are
     // actually comparable (see isRegressionComparable's docstring)
     if (
-      isRegressionComparable(schedule.last_audit_rule_set_version, currentRuleSetVersion) &&
+      isRegressionComparable(
+        { rule_set_version: schedule.last_audit_rule_set_version, coverage_fingerprint: schedule.last_audit_coverage_fingerprint },
+        { rule_set_version: currentRuleSetVersion, coverage_fingerprint: currentCoverageFingerprint },
+      ) &&
       previousScore !== null &&
       currentScore < previousScore - 5
     ) {

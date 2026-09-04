@@ -195,20 +195,24 @@ export async function markScheduleRan(
 }
 
 /**
- * Update last_audit_score (and last_audit_rule_set_version, when known)
- * after a scheduled audit completes. Storing the rule_set_version alongside
- * the score is what lets the regression comparator (worker.ts) tell a
- * v1-scored previous run apart from a v2-scored one before comparing
- * scores — otherwise a rule-library change alone looks like a real
- * regression. See 20260903001_scheduled_audit_scan_inputs.sql.
+ * Update last_audit_score (and last_audit_rule_set_version /
+ * last_audit_coverage_fingerprint, when known) after a scheduled audit
+ * completes. Storing these alongside the score is what lets the
+ * regression comparator (worker.ts) tell a v1-scored run apart from a
+ * v2-scored one, and a discovery-driven coverage change from a real
+ * regression, before comparing scores — otherwise either alone would look
+ * like a real regression. See 20260903001_scheduled_audit_scan_inputs.sql
+ * and 20260903002_audit_coverage_fingerprint.sql.
  */
 export async function updateScheduleScore(
   scheduleId: string,
   score: number,
   ruleSetVersion?: RuleSetVersion,
+  coverageFingerprint?: string,
 ): Promise<void> {
   const updates: Record<string, unknown> = { last_audit_score: score, updated_at: new Date().toISOString() };
   if (ruleSetVersion) updates.last_audit_rule_set_version = ruleSetVersion;
+  if (coverageFingerprint) updates.last_audit_coverage_fingerprint = coverageFingerprint;
 
   const { error } = await supabaseAdmin
     .from('scheduled_audits')

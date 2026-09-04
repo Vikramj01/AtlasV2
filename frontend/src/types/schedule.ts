@@ -39,6 +39,7 @@ export interface Schedule extends ScheduleScanInputs {
   last_audit_id: string | null;
   last_audit_score: number | null;
   last_audit_rule_set_version?: RuleSetVersion | null;
+  last_audit_coverage_fingerprint?: string | null;
   created_at: string;
   updated_at: string;
 }

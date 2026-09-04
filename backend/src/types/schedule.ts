@@ -53,6 +53,8 @@ export interface ScheduleRow extends ScheduleScanInputs {
   last_audit_score: number | null;
   /** Set alongside last_audit_score by updateScheduleScore() — lets the regression comparator skip a false alert when the compared runs used different rule libraries. */
   last_audit_rule_set_version?: RuleSetVersion | null;
+  /** Set alongside last_audit_score by updateScheduleScore() — lets the regression comparator skip a false alert when the compared runs examined a different set of pages (e.g. Phase 2 page discovery found real pages this run that a previous run scored as the homepage). See reporting/coverage.ts's computeCoverageFingerprint. */
+  last_audit_coverage_fingerprint?: string | null;
   created_at: string;
   updated_at: string;
 }

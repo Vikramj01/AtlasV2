@@ -759,6 +759,11 @@ export interface AuditRow {
   checkout_domain?: string | null;
   additional_properties?: string[];
   declared_conversions?: DeclaredConversion[] | null;
+  // Coverage columns (20260903002_audit_coverage_fingerprint.sql) — null
+  // when step_coverage was never captured for this audit. See
+  // reporting/coverage.ts's computeCoverageFingerprint.
+  coverage_fingerprint?: string | null;
+  pages_distinct?: number | null;
 }
 
 /** POST /api/audits/start payload for a Check Register v2 scan. */
