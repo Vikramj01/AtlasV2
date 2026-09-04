@@ -156,8 +156,15 @@ export function IssuesFixes({ report }: Props) {
     all.map((i) => i.validation_layer).filter(Boolean) as ValidationLayerFilter[],
   );
 
+  // Defaults to every layer actually present in this report, not a fixed
+  // list — LAYER_CHIPS only names the 5 v1 layers, and a v2 (Check
+  // Register) report's issues carry one of 13 different layer values, only
+  // one of which ('parameter_completeness') happens to share a literal
+  // with v1. Defaulting to the hardcoded v1 list meant a v2 report showed
+  // only the handful of issues landing in that one shared layer and
+  // silently hid the rest.
   const [activeLayers, setActiveLayers] = useState<Set<ValidationLayerFilter>>(
-    () => new Set(LAYER_CHIPS.map((c) => c.value)),
+    () => new Set(availableLayers),
   );
 
   const sorted = all.filter(
