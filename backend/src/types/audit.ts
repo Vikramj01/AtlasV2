@@ -143,6 +143,19 @@ export interface ValidationRule {
   owner: string;
   /** Preconditions the crawl must satisfy before test() is worth running — see RulePrecondition above. Omitted (or empty) means "always worth testing once applicable". */
   requires?: RulePrecondition[];
+  /**
+   * Rule-specific remediation copy shown as the report's "How to fix it"
+   * text (PRD "Signal Health Report" Issue 1 — every issue used to render
+   * the same "Contact support for details on this rule." placeholder,
+   * because this content didn't exist anywhere for the v2 register). A
+   * plain string for a rule whose fix doesn't vary by evidence (e.g. "add
+   * gtag('event', 'purchase', ...) on the confirmation page"); a function
+   * of the result for a rule whose fix names something that varies per
+   * audit (a specific platform, cookie, or endpoint) — read
+   * technical_details.found/evidence to interpolate it, never .expected
+   * (that's the rule's ideal-state text, not evidence).
+   */
+  remediation: string | ((result: ValidationResult) => string);
   test(auditData: AuditData): ValidationResult;
 }
 

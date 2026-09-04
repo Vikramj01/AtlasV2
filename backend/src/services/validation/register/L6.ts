@@ -86,6 +86,7 @@ export const CONVERSION_VALUE_PRESENT: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Backend',
   requires: ['conversion_surface'],
+  remediation: 'Attach a value to the conversion event (order total for ecommerce, an estimated lead/plan value for SaaS or lead gen): {value: ...}. Without it, value-based bidding and ROAS reporting have nothing to work from.',
 
   test(auditData: AuditData): ValidationResult {
     const events = conversionEvents(auditData);
@@ -120,6 +121,11 @@ export const VALUE_NON_ZERO_AND_PLAUSIBLE: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Backend',
   requires: ['conversion_surface'],
+  remediation: (result) => {
+    const badLine = result.technical_details.evidence.find((e) => e.startsWith('Observed value(s):'));
+    const bad = badLine ? badLine.replace('Observed value(s): ', '') : 'the value field';
+    return `Replace the placeholder/zero/implausible value (${bad}) with the real conversion amount pulled from the order/lead record — a constant value is functionally the same as no value at all for bidding purposes.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const events = conversionEvents(auditData).filter((e) => e.value !== undefined && e.value !== null && e.value !== '');
@@ -161,6 +167,7 @@ export const VALUE_DIFFERENTIATES_OUTCOMES: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
   requires: ['conversion_surface'],
+  remediation: 'Set distinct values for the primary conversion and the declared secondary/micro-conversion — where every outcome is worth the same, value-based bidding can\'t learn to prefer better customers over worse ones.',
 
   test(auditData: AuditData): ValidationResult {
     const primaryValue = conversionEvents(auditData).find((e) => e.value !== undefined && e.value !== null)?.value;
@@ -213,6 +220,7 @@ export const CURRENCY_PRESENT_AND_VALID: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Backend',
   requires: ['conversion_surface'],
+  remediation: 'Add a valid 3-letter ISO 4217 currency code to the conversion event: {currency: "USD"} — without it (or with an invalid one), multi-currency revenue reports are silently wrong.',
 
   test(auditData: AuditData): ValidationResult {
     const events = conversionEvents(auditData);
@@ -247,6 +255,7 @@ export const TRANSACTION_ID_PRESENT: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Backend',
   requires: ['conversion_surface'],
+  remediation: 'Attach the order/lead system\'s own unique ID to the conversion event: {transaction_id: order.id}. This is the key used for deduplication and for reconciling reported conversions against actual billing records.',
 
   test(auditData: AuditData): ValidationResult {
     const events = conversionEvents(auditData);
@@ -281,6 +290,7 @@ export const EVENT_ID_PRESENT: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Frontend',
   requires: ['conversion_surface'],
+  remediation: 'Generate a unique event_id (a UUID, or a timestamp+random combination) for each conversion event: {event_id: crypto.randomUUID()}. This is what lets client-side and server-side delivery of the same conversion be deduplicated instead of double-counted.',
 
   test(auditData: AuditData): ValidationResult {
     const events = conversionEvents(auditData);
@@ -329,6 +339,7 @@ function makeCandidateKeyRule(opts: {
     detectable_by: 'crawl',
     owner: 'Backend',
     requires: ['conversion_surface'],
+    remediation: `Add one of these fields to the conversion event: ${opts.candidateKeys.join(', ')} — pick whichever name best fits the existing dataLayer schema; the rule accepts any of them.`,
 
     test(auditData: AuditData): ValidationResult {
       const scanEvents = opts.scanScope === 'all' ? auditData.dataLayer : conversionEvents(auditData);
@@ -424,6 +435,7 @@ export const ITEMS_ARRAY_POPULATED: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Backend',
   requires: ['conversion_surface'],
+  remediation: 'Include the full cart contents on the conversion event: {items: [{id, price, quantity}, ...]} for every line item. Without it, ROI and return-rate analysis can\'t be broken down by product/SKU.',
 
   test(auditData: AuditData): ValidationResult {
     const events = conversionEvents(auditData);
@@ -460,6 +472,11 @@ export const PROXY_VALUE_ON_STAGE_EVENTS: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
   requires: ['conversion_surface'],
+  remediation: (result) => {
+    const stepsLine = result.technical_details.evidence.find((e) => e.startsWith('Steps:'));
+    const steps = stepsLine ? stepsLine.replace('Steps: ', '') : 'the intermediate funnel-stage events';
+    return `Push a value or proxy_value onto the intermediate stage events at ${steps} — an estimated dollar value per stage (see the journey template's declared proxy_value_gbp, if configured) gives bidding models early signal instead of waiting for the final, much rarer, conversion.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const completion = completionStep(auditData);
@@ -508,6 +525,7 @@ export const SHIPPING_AND_TAX_SEPARATED: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Backend',
   requires: ['conversion_surface'],
+  remediation: 'Record shipping and tax as separate fields on the conversion event: {shipping: order.shipping_cost, tax: order.tax_amount} — bundled into value, they inflate the reported margin/ROAS above the real number.',
 
   test(auditData: AuditData): ValidationResult {
     const events = conversionEvents(auditData);

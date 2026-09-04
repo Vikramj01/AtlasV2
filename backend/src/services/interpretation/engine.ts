@@ -21,7 +21,27 @@ import { REGISTER } from '@/services/validation/register/engine';
 // counts as v2-originated when its rule_id AND its validation_layer match a
 // real register entry; a v1 result that happens to reuse a colliding
 // rule_id carries its own (different) v1 layer, so it never matches here.
-const REGISTER_LAYER_BY_RULE_ID = new Map(REGISTER.map((rule) => [rule.rule_id, rule.layer]));
+const REGISTER_RULE_BY_RULE_ID = new Map(REGISTER.map((rule) => [rule.rule_id, rule]));
+
+function isV2Result(result: ValidationResult): boolean {
+  return REGISTER_RULE_BY_RULE_ID.get(result.rule_id)?.layer === result.validation_layer;
+}
+
+/**
+ * The "How to fix it" text for a v2-originated result — its own rule's
+ * authored remediation (PRD "Signal Health Report" Issue 1; every v2 rule
+ * has one, see register.integrity.test.ts's coverage assertion), evaluated
+ * against this specific result so a rule whose remediation interpolates an
+ * evidence value (a platform name, a cookie name) gets the real one. Only
+ * falls through to the placeholder if a result's rule_id somehow isn't in
+ * the register at all — shouldn't happen for a genuine v2 result, but
+ * guards against a future rule shipping without one slipping past review.
+ */
+function v2Remediation(result: ValidationResult): string {
+  const rule = REGISTER_RULE_BY_RULE_ID.get(result.rule_id);
+  if (!rule) return 'Contact support for details on this rule.';
+  return typeof rule.remediation === 'function' ? rule.remediation(result) : rule.remediation;
+}
 
 interface RuleInterpretation {
   rule_id: string;
@@ -487,16 +507,18 @@ export function interpretResults(results: ValidationResult[]): ReportIssue[] {
     .filter((r) => r.status === 'fail' || r.status === 'warning')  // 'skipped' excluded
     .map((r) => {
       const interp = RULE_INTERPRETATIONS[r.rule_id];
+      const v2 = isV2Result(r);
       // A v2-register result never uses the v1 dict's business_impact/headline
-      // for its evidence — even when a same-named v1 entry exists — because
-      // that text is static/generic while journey_stages always shows this
-      // same result's real technical_details.found. Using v1's text here
-      // would make the two report sections disagree for that rule_id (the
-      // exact defect shape PRD Issue 2 describes). fix_summary/owner/effort
-      // still come from the v1 entry when one exists — that authored content
-      // isn't evidence, so it can't go stale the same way.
-      const isV2Result = REGISTER_LAYER_BY_RULE_ID.get(r.rule_id) === r.validation_layer;
-      if (!interp || isV2Result) {
+      // (or its generic fix_summary) — even when a same-named v1 entry
+      // exists — because that text is static/generic while journey_stages
+      // always shows this same result's real technical_details.found, and
+      // the register itself now carries authored, evidence-aware
+      // remediation for every rule (PRD Issue 1). Using v1's text here
+      // would make report sections disagree for that rule_id (Issue 2's
+      // defect shape) and lose the more specific v2 fix copy. recommended_owner/
+      // estimated_effort still borrow the v1 entry when one exists — the
+      // register doesn't carry those fields, and they're not evidence.
+      if (!interp || v2) {
         return {
           rule_id: r.rule_id,
           validation_layer: r.validation_layer,
@@ -504,7 +526,7 @@ export function interpretResults(results: ValidationResult[]): ReportIssue[] {
           problem: interp?.headline ?? `Validation failed: ${r.rule_id}`,
           why_it_matters: r.technical_details.found,
           recommended_owner: interp?.recommended_owner ?? 'Frontend Developer',
-          fix_summary: interp?.fix_summary ?? 'Contact support for details on this rule.',
+          fix_summary: v2 ? v2Remediation(r) : (interp?.fix_summary ?? 'Contact support for details on this rule.'),
           estimated_effort: interp?.estimated_effort ?? ('medium' as const),
         };
       }
@@ -535,13 +557,26 @@ interface SummaryInput {
   affected_platforms: string[];
 }
 
-/** RULE_INTERPRETATIONS entry when one exists (any rule set); otherwise built straight from the result itself. */
+/**
+ * RULE_INTERPRETATIONS entry when one exists for a provably v1-originated
+ * result (same rule_id + validation_layer match as interpretResults()
+ * above); otherwise built straight from the result itself.
+ *
+ * business_impact reads result.technical_details.found — never .expected.
+ * .expected is written throughout the v2 register as the rule's
+ * ideal/passing-state description (e.g. GA4_CONFIG_TAG_PRESENT.expected is
+ * literally "GA4 config fires and a measurement ID (G-XXXXXXXXXX)
+ * resolves"), so using it here for a FAIL result put the narrator in the
+ * position of describing what *should* happen instead of what did — PRD
+ * "Signal Health Report" Issue 4. .found is written as the actual observed
+ * state either way, so it's the only field safe to read unconditionally.
+ */
 function toSummaryInput(result: ValidationResult): SummaryInput {
   const interp = RULE_INTERPRETATIONS[result.rule_id];
-  if (interp) return interp;
+  if (interp && !isV2Result(result)) return interp;
   return {
     severity: result.severity,
-    business_impact: result.technical_details.expected,
+    business_impact: result.technical_details.found,
     affected_platforms: [],
   };
 }
@@ -607,11 +642,11 @@ function renderSummary(rankedRules: SummaryInput[], counts: SeverityCounts): str
 /**
  * Builds the executive-summary narrative directly from the failed/warning
  * results — works for any rule set. A rule_id with a hand-authored
- * RULE_INTERPRETATIONS entry (currently the v1 engine's 43 rules) gets that
- * richer copy; anything else (the v2 Check Register) synthesizes its
- * summary input from the result's own severity and
- * technical_details.expected, which every rule already writes as a
- * business-relevant sentence.
+ * RULE_INTERPRETATIONS entry for a provably v1-originated result gets that
+ * richer copy; anything else (including every v2 Check Register result)
+ * synthesizes its summary input from the result's own severity and
+ * technical_details.found — the actual observed state, not the rule's
+ * ideal/passing-state .expected text (see toSummaryInput's docstring).
  */
 export function generateBusinessSummary(results: ValidationResult[]): string {
   const rules = results.filter((r) => r.status === 'fail').map(toSummaryInput);

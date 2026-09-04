@@ -1,6 +1,6 @@
 # Sprint Plan: Signal Health Report — Accuracy & Output Fixes
 
-**Status:** Draft — ready for implementation
+**Status:** In progress — Sprints 1-5 (Issues 1, 2, 3, 4, 6) implemented and merged into `claude/sprint-plan-prd-pu51h6`. Sprint 5's placeholder guard, and Sprints 6-7 (Issues 5, 7), remain — the latter two are gated on product decisions, see §"Open product decisions" below.
 **Source PRD:** `docs/atlas-signal-health-report-fixes-prd.md` (uploaded PRD, "Atlas Signal Health Report · Accuracy and Output Fixes")
 **Owner:** Vikram
 **Branch:** `claude/sprint-plan-prd-pu51h6`
@@ -45,17 +45,17 @@ Both known render paths — `reporting.ts`'s `buildV2LayerStages()` (funnel/L3 b
 ## Dependency graph
 
 ```
-Sprint 1 (Issue 3 + 6)         — independent, ships first
-Sprint 2 (Issue 2)             — independent of 1, but should land before the
-                                  taxonomy-wide regression fixture is trusted
-Sprint 3 (shared v2 remediation/narrative data model)
-  → Sprint 4 (Issue 1: author + wire fix copy)
-  → Sprint 5 (Issue 4: narrator failure-state branching + placeholder guard)
-Sprint 6 (Issue 5)             — independent, pending product decision (default proposed)
-Sprint 7 (Issue 7, stretch)    — independent, pending product sign-off on weights
+Sprint 1 (Issue 3 + 6)         — DONE
+Sprint 2 (Issue 2)             — DONE
+Sprint 3 (shared v2 remediation data model)  — DONE
+  → Sprint 4 (Issue 1: wire fix copy)        — DONE (shipped inside Sprint 3)
+  → Sprint 5 (Issue 4: narrator fix)         — DONE (shipped inside Sprint 3);
+                                                placeholder guard — NOT YET BUILT
+Sprint 6 (Issue 5)             — NOT STARTED, pending product decision (default proposed)
+Sprint 7 (Issue 7, stretch)    — NOT STARTED, pending product sign-off on weights
 ```
 
-Sprints 1 and 2 have no dependencies and can run in parallel or in either order. Sprint 3 is a prerequisite for both 4 and 5 — building it once avoids doing the v1→v2 wiring twice (see finding above). Sprints 6 and 7 are each gated on a product decision from the PRD's Open Questions (§5); a recommended default is proposed for each so engineering isn't blocked, but implementation should get an explicit go-ahead on the default before merging.
+Sprints 1-5 are implemented and merged into `claude/sprint-plan-prd-pu51h6` as of this writing (472 backend tests passing, clean `tsc --noEmit`). Sprint 3 shipped without a separate `failure_narrative` field — see that sprint's "what actually shipped" note — which meant Sprint 4 and 5's core fixes landed in the same pass as Sprint 3 rather than as separate follow-on work. What remains from Sprint 5 is only the placeholder-pattern guard (a defense-in-depth net, not a fix for a currently-reproducing bug). Sprints 6 and 7 are each gated on a product decision from the PRD's Open Questions (§5); a recommended default is proposed for each so engineering isn't blocked, but implementation should get an explicit go-ahead on the default before starting.
 
 ---
 
@@ -76,7 +76,7 @@ Sprints 1 and 2 have no dependencies and can run in parallel or in either order.
 - Unit test: re-running the fix against fixture data equivalent to the openart.ai audit flips gclid/gbraid/wbraid/_gcl_au/_gcl_aw to `PASS`; only `ttclid` (1d actual vs. 7d required) remains `FAIL`.
 - Unit test: `computeRuleOverviewStats` pluralisation — 0 warnings → "0 warnings", 1 → "1 warning", 2+ → "N warnings" (extend `pdfGenerator.test.ts`, which already has a regression test for the adjacent "N rules validated" bug).
 
-**Note:** this sprint is scoped for implementation in this same session (see below).
+**Status: implemented and merged into this branch** — see commit history on `claude/sprint-plan-prd-pu51h6`.
 
 ---
 
@@ -101,57 +101,47 @@ Sprints 1 and 2 have no dependencies and can run in parallel or in either order.
 
 ---
 
-## Sprint 3 — Structural fix: co-locate remediation + failure-narrative copy with each v2 rule
+## Sprint 3 — Structural fix: co-locate remediation copy with each v2 rule — DONE
 
 **Priority:** enables P0 Issues 1 and 4
-**Depends on:** none, but should land before Sprints 4 and 5
+**Status:** implemented and merged.
 
-**Why this shape, not "add 90 entries to `RULE_INTERPRETATIONS`":** the v1 dict already drifted 90 rules out of sync with the register once, silently, with no test catching it until a human read a report. A separate lookup table keyed by string `rule_id` has no compiler-enforced link to the register that defines those same `rule_id`s. Putting remediation and failure-narrative copy directly on each `ValidationRule` object in `L0.ts`–`L12.ts` (next to `check`, `severity`, `owner` — fields that already live there) means a new rule literally cannot ship without the fields the report needs, and `register.integrity.test.ts` (which already asserts structural invariants across the register — see its existing evidence-shape checks) can enforce it with a single "every rule has non-empty remediation/failure_narrative" assertion.
+**Why this shape, not "add 90 entries to `RULE_INTERPRETATIONS`":** the v1 dict already drifted 90 rules out of sync with the register once, silently, with no test catching it until a human read a report. A separate lookup table keyed by string `rule_id` has no compiler-enforced link to the register that defines those same `rule_id`s. Putting remediation copy directly on each `ValidationRule` object in `L0.ts`–`L12.ts` (next to `check`, `severity`, `owner` — fields that already live there) means a new rule literally cannot ship without the field the report needs, and `register.integrity.test.ts` enforces it with a single "every rule has non-empty remediation" assertion.
 
-**Scope**
-- `backend/src/types/audit.ts` — extend `ValidationRule` with two new required fields:
-  - `remediation: (result: ValidationResult) => string` — rule-specific fix copy, written as a function of the result so it can interpolate the offending value (platform name, cookie name, missing endpoint — per PRD Issue 1 AC) directly from `technical_details`/`evidence`, rather than a static string.
-  - `failure_narrative: (result: ValidationResult) => string` — one-sentence description of what actually happened, for narrator consumption (this is what Sprint 5 wires into `generateBusinessSummary`'s fallback instead of `technical_details.expected`).
-- Author these two fields for all 90 rules across `L0.ts`–`L12.ts`. This is the bulk of the work in this sprint — plan for it as content authoring, not just type plumbing, same caveat the PRD raises for Issue 1 ("may need content authoring alongside engineering").
-- `register.integrity.test.ts` — add an invariant test asserting every rule in `REGISTER` has both fields defined and that calling them against a representative fail-state result never returns an empty string.
-- Add a placeholder-pattern guard here too (shared with Sprint 5's Issue 4 guard) since this is where the copy is authored: a test scanning every rule's `remediation`/`failure_narrative` output (against fixture fail results) for literal placeholder patterns (`G-XXXXXXXXXX`, unresolved `{{...}}`, `XXXXXXXX`-style stand-ins) — catches new rules that copy-paste a placeholder-style example into narrative copy the way `GA4_CONFIG_TAG_PRESENT.expected` did.
+**What actually shipped (leaner than the original plan, in a good way):**
 
-**Acceptance criteria**
-- `REGISTER` (all 90 rules) has `remediation` and `failure_narrative` defined; integrity test enforces this for any future rule.
-- Fix-copy content review: for a sample of rules with evidence carrying a specific value (a platform name, cookie name, missing endpoint), the rendered `remediation` string names that value — not a generic sentence.
+The `failure_narrative` field turned out to be unnecessary. For nearly every rule in the register, `technical_details.found` already reads as a correct, evidence-grounded description of the actual observed state — for both pass and fail — because that's what the field is *for*. The narrator's bug (Issue 4) was never "missing narrative content," it was "reading the wrong existing field" (`.expected`, the ideal-state text, instead of `.found`). Adding a whole second authored field per rule to fix a one-line field-selection bug would have been unjustified scope. So Sprint 3 shipped as:
+
+- `backend/src/types/audit.ts` — `ValidationRule` gained one new field: `remediation: string | ((result: ValidationResult) => string)`. A plain string for a rule whose fix doesn't vary by evidence; a function for a rule whose fix names something that varies per audit (a platform, a cookie, an endpoint) — those read `technical_details.found`/`evidence` to interpolate the real value.
+- Authored `remediation` for all 90 rules across `L0.ts`–`L12.ts`, including through the register's shared rule-factories (`makeClickIdCaptureRule`, `makePixelPresenceRule`, `makeConversionFiresRule`, `makeCandidateKeyRule`, `makeEmailCapturedRule`) where a single generic, closure-based remediation covers every rule the factory produces.
+- `register.integrity.test.ts` — new invariant test asserting every rule in `REGISTER` has non-empty `remediation`, and that calling it (function or string) against a real `test()` result never throws or returns an empty string. 472 backend tests green, clean `tsc --noEmit`.
+- This closed Issue 1 and Issue 4 together, ahead of the plan's schedule — see below.
 
 ---
 
-## Sprint 4 — Wire fix copy into the report (Issue 1)
+## Sprint 4 — Wire fix copy into the report (Issue 1) — DONE (shipped inside Sprint 3)
 
 **Priority:** P0
-**Depends on:** Sprint 3
 
-**Scope**
-- `backend/src/services/interpretation/engine.ts` — `interpretResults()`: when a `rule_id` has no `RULE_INTERPRETATIONS` entry (i.e. every v2 rule), call the register rule's own `remediation(result)` instead of returning the hardcoded `'Contact support for details on this rule.'` string. Requires threading the matching `ValidationRule` (from `REGISTER`) alongside each `ValidationResult` — a `rule_id → ValidationRule` map built once from `REGISTER` is the simplest approach.
-- Leave the 43-entry v1 `RULE_INTERPRETATIONS` dict as-is for the v1 rule set (still used by whatever older audits or Journey Builder flows still run v1) — no need to migrate it, just make sure v2 no longer falls through to the placeholder.
+`backend/src/services/interpretation/engine.ts` — `interpretResults()` now resolves a `rule_id → ValidationRule` map from `REGISTER` (`REGISTER_RULE_BY_RULE_ID`) and an `isV2Result()` helper (rule_id **and** validation_layer both match a register entry — see Sprint 2's collision finding for why layer alone isn't enough). For any v2-originated result — whether or not a same-named v1 `RULE_INTERPRETATIONS` entry exists — `fix_summary` now comes from that rule's own `remediation`, evaluated against the live result, instead of the placeholder string. `recommended_owner`/`estimated_effort` still borrow the v1 entry when one happens to exist (that content isn't evidence, so it has no staleness risk), but v1's fix_summary is never used for a v2 result even for the three collision rule_ids (`GTM_CONTAINER_LOADED`, `GCLID_CAPTURED_AT_LANDING`, `FBCLID_CAPTURED_AT_LANDING`) — the v2 rule's own remediation is more specific.
 
-**Acceptance criteria (PRD §4 Issue 1)**
-- No issue in a generated report renders the literal string `'Contact support for details on this rule.'` for any v2 rule.
-- Fix copy exists (via Sprint 3) for all 41 applicable rules in the openart.ai audit's rule set (16 fails + 1 warning minimum, per PRD).
-- Extend `interpretation/__tests__/engine.test.ts`'s existing placeholder-string assertion (currently `expect(issue.fix_summary).toBe('Contact support for details on this rule.')` — flip this to a negative assertion once the fix lands, and add a positive case proving a v2 rule's `fix_summary` matches its rule's `remediation()` output).
+**Acceptance criteria — met**
+- No issue in a generated report renders `'Contact support for details on this rule.'` for any v2 rule (only the true fallback path — a rule_id matching neither the v1 dict nor the register — can still produce it, and that can't happen for a real v2 audit).
+- Fix copy exists for all 90 register rules (exceeds the PRD's 41-rule minimum).
+- `interpretation/__tests__/engine.test.ts` extended with the collision-case tests from Sprint 2 plus assertions proving `fix_summary` matches the rule's own `remediation()` output.
 
 ---
 
-## Sprint 5 — Narrator failure-state branching + placeholder guard (Issue 4)
+## Sprint 5 — Narrator failure-state fix — DONE (shipped inside Sprint 3); placeholder guard — NOT YET BUILT
 
 **Priority:** P0
-**Depends on:** Sprint 3
 
-**Scope**
-- `backend/src/services/interpretation/engine.ts` — `toSummaryInput()`: when a `rule_id` has no `RULE_INTERPRETATIONS` entry, use the register rule's `failure_narrative(result)` (Sprint 3) instead of `result.technical_details.expected`.
-- Pre-render placeholder guard (PRD §4 Issue 4 AC): add a check that runs over the fully-assembled `business_summary` string (and, while touching this, the assembled `ReportIssue[]` text fields too, since Issue 1's copy is exposed to the same risk) before a report is considered complete. Recommended default behaviour — **flag internally and ship with a visible warning banner**, not a hard block, because blocking entirely would mean *no* report ships until every one of the 90 rules' copy is verified placeholder-free; flagging surfaces the defect immediately (satisfying the PRD's real goal — nothing ships silently broken) without an all-or-nothing gate. This is one of the PRD's explicit Open Questions (§5) — confirm this default before merging, or implement whichever alternative is chosen.
-- Guard pattern list: `/G-X{6,}/`, `/\{\{.*?\}\}/`, and a generic `X{4,}` run — extendable as new placeholder styles are found in authored copy.
+**What shipped:** `toSummaryInput()` now reads `technical_details.found` unconditionally for any result without a provably-v1-originated `RULE_INTERPRETATIONS` entry (same `isV2Result()` discriminator as Sprint 4) — never `.expected`. Regression tests reproduce the PRD's exact two examples (`DECLARED_PLATFORM_HAS_TAG`'s "every declared platform has its base tag" pass-state sentence, `GA4_CONFIG_TAG_PRESENT`'s `G-XXXXXXXXXX` placeholder) and assert neither ever renders for a FAIL result.
 
-**Acceptance criteria (PRD §4 Issue 4)**
-- For every `FAIL` rule surfaced in the business summary, the sentence describes the actual observed failure (asserted via the two exact PRD examples — `DECLARED_PLATFORM_HAS_TAG` and `GA4_CONFIG_TAG_PRESENT` — as regression tests).
-- No literal placeholder tokens ever render in a shipped report — test asserts the guard fires on a fixture deliberately containing `G-XXXXXXXXXX`-style text and passes clean on the fixed copy.
-- Guard behaviour (flag+banner vs. hard block) implemented per whichever answer Open Question 3 receives.
+**Still open — the placeholder guard itself (PRD §4 Issue 4's third AC):** a pre-render check scanning the fully-assembled `business_summary` and `ReportIssue[]` text for literal placeholder patterns before a report ships, as a defense-in-depth net against a *future* rule's copy making the same mistake (an example string like `G-XXXXXXXXXX` baked into `.expected` or a new `remediation`). Not built yet — this is a smaller, standalone follow-up:
+- Add a scanner (`/G-X{6,}/`, `/\{\{.*?\}\}/`, a generic `X{4,}` run — extendable) run over the assembled `ReportJSON`'s narrative fields at the end of `generateReport()`.
+- Recommended default (PRD Open Question 3, still unconfirmed): **flag internally and ship with a visible warning banner**, not a hard block — blocking would mean no report ships until every one of the 90 rules' copy is re-verified, which is disproportionate for a defense-in-depth net rather than a known-broken state.
+- Test: fixture with a deliberately placeholder-shaped string in `remediation`/`found` trips the guard; the current, clean copy doesn't.
 
 ---
 

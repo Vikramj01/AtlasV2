@@ -35,6 +35,7 @@ export const CONSENT_BANNER_PRESENT_WHEN_REQUIRED: ValidationRule = {
   platform_scope: 'n/a',
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
+  remediation: 'Install a consent management platform (OneTrust, Cookiebot, Usercentrics, or a custom banner) on the landing page — a declared CMP or EEA/UK/Switzerland traffic both mean visitors need to see a consent choice before marketing tags fire.',
 
   test(auditData: AuditData): ValidationResult {
     const capture = auditData.consent_capture;
@@ -104,6 +105,13 @@ export const DECLARED_CMP_MATCHES_DETECTED_VENDOR: ValidationRule = {
   platform_scope: 'n/a',
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
+  remediation: (result) => {
+    const declaredLine = result.technical_details.evidence.find((e) => e.startsWith('Declared:'));
+    const detectedLine = result.technical_details.evidence.find((e) => e.startsWith('Detected:'));
+    const declared = declaredLine ? declaredLine.replace('Declared: ', '') : 'the declared CMP';
+    const detected = detectedLine ? detectedLine.replace('Detected: ', '') : 'the site\'s actual CMP';
+    return `Update Scan Inputs' declared CMP to match what's actually live (${detected}), or correct the CMP configuration if ${declared} was meant to be installed. A mismatch here is usually a stale Scan Inputs value after a CMP migration, not a broken banner.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const capture = auditData.consent_capture;
@@ -176,6 +184,11 @@ export const NO_DECLARED_PLATFORM_TAGS_FIRE_BEFORE_CONSENT: ValidationRule = {
   platform_scope: 'n/a',
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
+  remediation: (result) => {
+    const firedLine = result.technical_details.evidence.find((e) => e.startsWith('Fired pre-consent:'));
+    const fired = firedLine ? firedLine.replace('Fired pre-consent: ', '') : 'the affected platform(s)';
+    return `Add consent-gating to the ${fired} tag(s) in GTM — require ad_storage and ad_user_data (for marketing pixels) or analytics_storage (for GA4) before they're allowed to fire. This is a live compliance violation under GDPR/ePrivacy, not just a data-quality issue.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const capture = auditData.consent_capture;

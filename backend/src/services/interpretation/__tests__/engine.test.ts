@@ -100,10 +100,13 @@ describe('interpretResults', () => {
 
       const [issue] = interpretResults([v2Result]);
       expect(issue.why_it_matters).toBe('gclid present in the landing URL but never read into storage, a cookie, or dataLayer');
-      // fix_summary/owner are still borrowed from the v1 entry — that authored
-      // content isn't evidence, so it doesn't go stale the same way.
+      // recommended_owner still borrows the v1 entry — the register doesn't
+      // carry that field. fix_summary comes from the v2 rule's own authored
+      // remediation (L2.1's, not v1's) — now that every register rule has
+      // one, it's more specific than v1's generic auto-tagging copy, which
+      // describes a check the v2 rule doesn't even make.
       expect(issue.recommended_owner).toBe('Frontend Developer');
-      expect(issue.fix_summary).toContain('auto-tagging');
+      expect(issue.fix_summary).toContain('Read the injected gclid URL parameter');
     });
 
     it('still uses the v1 dict\'s business_impact for a genuine v1 result on the same colliding rule_id', () => {
@@ -128,7 +131,7 @@ describe('generateBusinessSummary', () => {
     expect(generateBusinessSummary(results)).toBe('All conversion signals are operating normally.');
   });
 
-  it('synthesizes a summary input from severity + technical_details.expected for a rule_id with no RULE_INTERPRETATIONS entry (e.g. the v2 register)', () => {
+  it('synthesizes a summary input from severity + technical_details.found (the actual observed state) for a rule_id with no RULE_INTERPRETATIONS entry (e.g. the v2 register)', () => {
     const result: ValidationResult = {
       rule_id: 'SOME_V2_RULE',
       validation_layer: 'click_id_capture',
@@ -138,7 +141,49 @@ describe('generateBusinessSummary', () => {
     };
     const summary = generateBusinessSummary([result]);
     expect(summary).toContain('Your tracking has 1 critical issue.');
-    expect(summary).toContain('gclid is captured at landing');
+    expect(summary).toContain('gclid missing');
+    expect(summary).not.toContain('gclid is captured at landing');
+  });
+
+  // Regression coverage for PRD "Signal Health Report" Issue 4 — the
+  // narrator was reading technical_details.expected (the rule's
+  // ideal/passing-state description) instead of .found (what actually
+  // happened) for any rule with no v1 RULE_INTERPRETATIONS entry, which is
+  // every v2 Check Register rule. These are the PRD's own two cited
+  // examples, reproduced with the real register rules' actual .expected
+  // text (both contain the exact wording PRD quoted as the bug).
+  it('never describes DECLARED_PLATFORM_HAS_TAG\'s passing state ("every declared platform has its base tag") for a failing result', () => {
+    const result: ValidationResult = {
+      rule_id: 'DECLARED_PLATFORM_HAS_TAG',
+      validation_layer: 'scope_configuration',
+      status: 'fail',
+      severity: 'critical',
+      technical_details: {
+        found: '1 of 2 declared platforms missing a base tag',
+        expected: 'Every declared platform has its base tag/pixel firing on the site',
+        evidence: ['meta: MISSING'],
+      },
+    };
+    const summary = generateBusinessSummary([result]);
+    expect(summary).toContain('1 of 2 declared platforms missing a base tag');
+    expect(summary).not.toContain('Every declared platform has its base tag');
+  });
+
+  it('never ships GA4_CONFIG_TAG_PRESENT\'s unfilled-looking placeholder ID ("G-XXXXXXXXXX") for a failing result', () => {
+    const result: ValidationResult = {
+      rule_id: 'GA4_CONFIG_TAG_PRESENT',
+      validation_layer: 'foundation_tags',
+      status: 'fail',
+      severity: 'critical',
+      technical_details: {
+        found: 'No GA4 collect request detected',
+        expected: 'GA4 config fires and a measurement ID (G-XXXXXXXXXX) resolves',
+        evidence: ['No requests to google-analytics.com/g/collect or analytics.google.com/g/collect'],
+      },
+    };
+    const summary = generateBusinessSummary([result]);
+    expect(summary).toContain('No GA4 collect request detected');
+    expect(summary).not.toContain('G-XXXXXXXXXX');
   });
 
   it('leads with a critical count and the single most urgent full impact sentence', () => {

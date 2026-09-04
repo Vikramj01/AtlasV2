@@ -48,6 +48,7 @@ export const NO_STAGING_OR_TEST_CONTAINER_IN_PRODUCTION: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
+  remediation: 'Publish the GTM container\'s live version to production and remove gtm_preview/gtm_auth from the loader snippet — a preview/debug container serving real traffic sends events nowhere real platforms can see, while looking like everything is working.',
 
   test(auditData: AuditData): ValidationResult {
     const srcs = (auditData.pageMetadata?.gtm_script_srcs as string[] | undefined) ?? [];
@@ -100,6 +101,11 @@ export const NO_CONSOLE_ERRORS_FROM_MEASUREMENT_CODE: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  remediation: (result) => {
+    const errors = result.technical_details.evidence.filter((e) => e.startsWith('['));
+    if (errors.length === 0) return 'Fix the JavaScript error(s) thrown by measurement code — check the browser console for the exact stack trace. A tag that errors out reports as simply absent everywhere else in this register, not as broken.';
+    return `Fix these console error(s): ${errors.slice(0, 2).join('; ')}${errors.length > 2 ? ', and others' : ''}. A tag that throws reports as simply absent everywhere else in this register, not as broken — this is often the root cause behind an otherwise-unexplained missing tag.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     if (auditData.consoleErrors === undefined) {
@@ -152,6 +158,11 @@ export const TAG_LOAD_DOES_NOT_MATERIALLY_DELAY_PAGE: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  remediation: (result) => {
+    const slow = result.technical_details.evidence.filter((e) => e.includes('ms'));
+    if (slow.length === 0) return `Move the affected tag(s) to load asynchronously (async/defer, or via GTM which already does this) rather than blocking rendering — a tag that takes longer than ${SLOW_LOAD_THRESHOLD_MS}ms risks timing out on slow connections entirely.`;
+    return `Move these tag(s) to load asynchronously: ${slow.slice(0, 3).join('; ')}${slow.length > 3 ? ', and others' : ''} — a request this slow risks timing out on a slow connection before it ever fires, which reports as a missing tag with no error.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const timed = auditData.networkRequests.filter((r) => r.loadTime !== undefined);
@@ -199,6 +210,11 @@ export const CONVERSION_SURFACE_REACHABLE_WITHOUT_JS_ERRORS: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  remediation: (result) => {
+    const errors = result.technical_details.evidence.filter((e) => !e.startsWith('No '));
+    if (errors.length === 0) return 'Fix the JavaScript error(s) on the conversion/confirmation page — an intermittently-erroring confirmation page is an intermittently-failing conversion, even when the tag configuration itself is correct.';
+    return `Fix these error(s) on the conversion surface: ${errors.slice(0, 2).join('; ')}${errors.length > 2 ? ', and others' : ''}. An intermittently-erroring confirmation page is an intermittently-failing conversion, even when the tag configuration itself is correct.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const completion = completionStep(auditData);

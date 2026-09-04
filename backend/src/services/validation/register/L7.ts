@@ -82,6 +82,7 @@ function makeEmailCapturedRule(id: string, ruleId: string, check: string, platfo
     detectable_by: 'crawl',
     owner: 'Backend',
     requires: ['conversion_surface'],
+    remediation: 'Capture customer email on the conversion event, hashed with SHA-256: {user_data: {email: sha256(customer.email.trim().toLowerCase())}}. Normalize (trim + lowercase) before hashing — an unnormalized value hashes to something that never matches.',
 
     test(auditData: AuditData): ValidationResult {
       const events = conversionEvents(auditData);
@@ -128,6 +129,7 @@ export const PHONE_CAPTURED_WHERE_COLLECTED: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Backend',
   requires: ['conversion_surface'],
+  remediation: 'Carry the phone number already collected earlier in the journey through to the conversion event, hashed and normalized to E.164 format: {user_data: {phone: sha256("+15551234567")}}. Since the site already collects it, this is usually a data-plumbing gap rather than a new capture point.',
 
   test(auditData: AuditData): ValidationResult {
     const collectedAnywhere = anyEventHasUserDataField(auditData, ['phone']) || !!auditData.test_phone;
@@ -176,6 +178,7 @@ export const NAME_AND_ADDRESS_CAPTURED_WHERE_COLLECTED: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Backend',
   requires: ['conversion_surface'],
+  remediation: 'Carry the name/address fields already collected earlier in the journey through to the conversion event, hashed: {user_data: {first_name: sha256(...), zip: sha256(...), ...}}. Lowest priority of the identity fields — worth doing once email/phone are already in place.',
 
   test(auditData: AuditData): ValidationResult {
     const collectedAnywhere = anyEventHasUserDataField(auditData, NAME_ADDRESS_KEYS);
@@ -222,6 +225,7 @@ export const EXTERNAL_ID_SET: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Backend',
   requires: ['conversion_surface'],
+  remediation: 'Send a stable internal user/customer ID (not PII — e.g. a database primary key) as external_id on the conversion event: {user_data: {external_id: customer.id}}. This improves match rate and enables Meta to stitch sessions from the same user together.',
 
   test(auditData: AuditData): ValidationResult {
     const events = conversionEvents(auditData);
@@ -261,6 +265,11 @@ export const IDENTITY_NORMALISED_BEFORE_HASHING: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Backend',
   requires: ['conversion_surface'],
+  remediation: (result) => {
+    const violations = result.technical_details.evidence.filter((e) => e.includes('is not'));
+    if (violations.length === 0) return 'Normalize email (lowercase + trim) and phone (E.164 format, digits with a leading +country code) before hashing — a correctly-hashed but unnormalized value never matches, since a different casing/format hashes to a completely different string.';
+    return `Fix normalization before hashing: ${violations.join('; ')}. Lowercase and trim email; convert phone to E.164 (e.g. +15551234567) before hashing — otherwise the hash never matches the platform's own hash of the normalized value.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const events = conversionEvents(auditData);
@@ -312,6 +321,11 @@ export const HASHED_WITH_SHA256: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Backend',
   requires: ['conversion_surface'],
+  remediation: (result) => {
+    const plaintext = result.technical_details.evidence.filter((e) => e.startsWith('email') || e.startsWith('phone'));
+    if (plaintext.length === 0) return 'Hash email and phone with SHA-256 before sending: crypto.createHash("sha256").update(email).digest("hex") — sending them in the clear violates both a legal requirement (GDPR/CCPA) and platform policy.';
+    return `Hash before sending: ${plaintext.join(', ')} — crypto.createHash("sha256").update(normalizedValue).digest("hex"). These are currently sent in the clear, which violates both a legal requirement (GDPR/CCPA) and platform policy.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const events = conversionEvents(auditData);
@@ -367,6 +381,11 @@ export const HASH_FORMAT_VALID: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Backend',
   requires: ['conversion_surface'],
+  remediation: (result) => {
+    const malformed = result.technical_details.evidence.filter((e) => e.includes('is not a 64-char'));
+    if (malformed.length === 0) return 'Ensure the hashing function produces a standard SHA-256 output: 64 lowercase hexadecimal characters. Check for a different algorithm, uppercase hex, or truncation somewhere in the pipeline.';
+    return `Fix the malformed hash(es): ${malformed.join('; ')}. A hash that isn't 64 lowercase hex characters fails silently — the platform just reports a lower match rate with no error, so this can go unnoticed for a long time.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const events = conversionEvents(auditData);
@@ -442,6 +461,11 @@ export const NO_PLAINTEXT_PII_IN_NETWORK_REQUEST: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Backend',
   requires: ['conversion_surface'],
+  remediation: (result) => {
+    const emails = result.technical_details.evidence.filter((e) => e.includes('@'));
+    const which = emails.length > 0 ? emails.join(', ') : 'the offending value(s)';
+    return `Hash ${which} with SHA-256 before it goes into any outbound request body — sending plaintext email/phone/name in a tracking payload is a legal exposure (GDPR/CCPA) and grounds for platform account suspension.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const bodies = auditData.networkRequests.map((r) => r.body).filter((b): b is string => !!b);
@@ -472,6 +496,11 @@ export const NO_PII_IN_URLS_OR_QUERY_STRINGS: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Frontend',
   requires: ['conversion_surface'],
+  remediation: (result) => {
+    const emails = result.technical_details.evidence.filter((e) => e.includes('@'));
+    const which = emails.length > 0 ? emails.join(', ') : 'the offending value(s)';
+    return `Remove ${which} from the page URL/query string — a query parameter is visible in browser history, referrer headers sent to every third-party script on the page, and server access logs. Pass identity data in a request body instead, hashed.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const urls = [
@@ -509,6 +538,11 @@ export const NO_PII_IN_GA4_EVENT_PARAMETERS: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
   requires: ['conversion_surface'],
+  remediation: (result) => {
+    const emails = result.technical_details.evidence.filter((e) => e.includes('@'));
+    const which = emails.length > 0 ? emails.join(', ') : 'the offending value(s)';
+    return `Remove ${which} from the GA4 event — it's currently going into a custom dimension, event parameter, or the hit URL directly. This is a direct violation of Google's Terms of Service; repeated breaches can lead to data deletion or account suspension, not just a warning.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const ga4Requests = auditData.networkRequests.filter(isGa4Request);

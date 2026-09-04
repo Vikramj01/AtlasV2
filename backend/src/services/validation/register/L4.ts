@@ -49,6 +49,7 @@ export const CROSS_DOMAIN_LINKER_CONFIGURED: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
+  remediation: 'Configure GA4\'s cross-domain measurement (Admin > Data Streams > Configure tag settings > Configure your domains) to include the product/checkout domain — without it, GA4 treats the app or checkout as an entirely separate site and starts a new session for every visitor who crosses the boundary.',
 
   test(auditData: AuditData): ValidationResult {
     const links = auditData.outboundCrossDomainLinks;
@@ -101,6 +102,12 @@ export const GL_PARAMETER_APPENDED_ON_OUTBOUND_LINKS: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  remediation: (result) => {
+    const totalLine = result.technical_details.evidence.find((e) => e.startsWith('Outbound links to product/checkout domain:'));
+    const withGlLine = result.technical_details.evidence.find((e) => e.startsWith('Carrying _gl:'));
+    if (!totalLine || !withGlLine) return 'Make sure GA4\'s auto-linking script decorates every outbound link to the product/checkout domain with _gl, not just some of them — a partial rollout (e.g. only links rendered server-side, or only ones present at page load) still loses attribution for whichever links it misses.';
+    return `${withGlLine.replace('Carrying _gl: ', '')} of ${totalLine.replace('Outbound links to product/checkout domain: ', '')} outbound links carry _gl. Check for links added dynamically after GA4's auto-linker script runs, or rendered outside its scope (e.g. inside an iframe) — those are the usual cause of a partial rollout.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const links = auditData.outboundCrossDomainLinks;
@@ -150,6 +157,7 @@ export const GA4_CLIENT_ID_PERSISTS_ACROSS_BOUNDARY: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Frontend',
   requires: ['conversion_surface'],
+  remediation: 'Turn on GA4\'s cross-domain measurement for the product/checkout domain (Admin > Data Streams > Configure tag settings > Configure your domains) and confirm the linker mechanism (_gl parameter, see L4.1/L4.2) is actually appending to links that cross it — the client_id change usually traces back to one of those two being off.',
 
   test(auditData: AuditData): ValidationResult {
     const before = auditData.marketingGa4ClientId;
@@ -203,6 +211,7 @@ export const SESSION_NOT_RESTARTED_AT_BOUNDARY: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
   requires: ['conversion_surface'],
+  remediation: 'Fix cross-domain measurement (Admin > Data Streams > Configure tag settings > Configure your domains) so GA4 recognizes the product/checkout domain as part of the same site rather than a new referral — a self-referral session restart is almost always this setting missing the domain, not a code-level bug.',
 
   test(auditData: AuditData): ValidationResult {
     const restarted = auditData.productDomainSessionStartDetected ?? auditData.checkoutDomainSessionStartDetected;

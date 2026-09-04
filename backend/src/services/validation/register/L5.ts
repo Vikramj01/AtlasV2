@@ -58,6 +58,11 @@ export const PRIMARY_CONVERSION_EVENT_FIRES: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Frontend',
   requires: ['conversion_surface'],
+  remediation: (result) => {
+    const declaredLine = result.technical_details.evidence.find((e) => e.startsWith('Declared primary conversion:'));
+    const name = declaredLine ? declaredLine.replace('Declared primary conversion: ', '') : 'the declared conversion event';
+    return `Push a dataLayer event named "${name}" on the conversion surface (e.g. dataLayer.push({event: "${name}", ...})) once the conversion is confirmed — everything downstream (platform delivery, parameter completeness, dedup) depends on this firing.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const name = primaryConversionName(auditData);
@@ -101,6 +106,7 @@ function makeConversionFiresRule(opts: {
   detect: (requests: AuditData['networkRequests']) => trackingSignals.TagMatch;
   expected: string;
   noneFoundMessage: string;
+  remediation: string;
 }): ValidationRule {
   return {
     id: opts.id,
@@ -113,6 +119,7 @@ function makeConversionFiresRule(opts: {
     detectable_by: 'crawl',
     owner: 'Frontend',
     requires: ['conversion_surface'],
+    remediation: opts.remediation,
 
     test(auditData: AuditData): ValidationResult {
       const match = opts.detect(auditData.networkRequests);
@@ -141,6 +148,7 @@ export const GOOGLE_ADS_CONVERSION_EVENT_FIRES = makeConversionFiresRule({
   detect: trackingSignals.detectGoogleAds,
   expected: 'A conversion hit reaches googleadservices.com or google.com/pagead — without it Smart Bidding has no training data',
   noneFoundMessage: 'No request to googleadservices.com/pagead/conversion or google.com/pagead/conversion detected',
+  remediation: 'Add a Google Ads Conversion Tracking tag in GTM firing on the confirmed conversion event, with the correct Conversion ID/Label from the Google Ads account — check GTM Preview for the tag actually firing on this specific page, not just being configured.',
 });
 
 export const META_CONVERSION_EVENT_FIRES = makeConversionFiresRule({
@@ -151,6 +159,7 @@ export const META_CONVERSION_EVENT_FIRES = makeConversionFiresRule({
   detect: trackingSignals.detectMetaConversionEvent,
   expected: 'A Meta conversion event (not just the base PageView pixel call) is observed',
   noneFoundMessage: 'No facebook.com/tr request carrying a tracked event (ev != PageView) detected',
+  remediation: 'Add an fbq(\'track\', \'Purchase\', {...}) (or the relevant standard event) on the confirmed conversion page — the Pixel base code alone only sends PageView, which doesn\'t count as a conversion event on its own.',
 });
 
 export const TIKTOK_CONVERSION_EVENT_FIRES = makeConversionFiresRule({
@@ -161,6 +170,7 @@ export const TIKTOK_CONVERSION_EVENT_FIRES = makeConversionFiresRule({
   detect: trackingSignals.detectTikTokConversionEvent,
   expected: 'A TikTok pixel conversion event (a POST to the tracking endpoint, not just the loader script) is observed',
   noneFoundMessage: 'No POST request to analytics.tiktok.com detected',
+  remediation: 'Add a ttq.track(\'CompletePayment\', {...}) (or the relevant standard event) on the confirmed conversion page — the base pixel snippet alone only loads the library, it doesn\'t send a conversion event by itself.',
 });
 
 // GA4 isn't a DeclaredPlatform (Scan Inputs models ad platforms only) —
@@ -176,6 +186,11 @@ export const GA4_CONVERSION_EVENT_FIRES: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Frontend',
   requires: ['conversion_surface'],
+  remediation: (result) => {
+    const nameMatch = result.technical_details.found.match(/en="([^"]+)"/);
+    const name = nameMatch ? nameMatch[1] : 'the declared conversion event';
+    return `Add a GA4 event tag firing "${name}" on the confirmed conversion — either via a GTM GA4 Event tag reading from dataLayer, or gtag('event', '${name}', {...}) directly. GA4 needs its own event even when the dataLayer push (see PRIMARY_CONVERSION_EVENT_FIRES) is already correct.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const name = primaryConversionName(auditData);
@@ -226,6 +241,11 @@ export const EVENT_FIRES_EXACTLY_ONCE: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Frontend',
   requires: ['conversion_surface'],
+  remediation: (result) => {
+    const dupLine = result.technical_details.evidence.find((e) => /: \d+ fire\(s\)/.test(e) && !e.endsWith(': 1 fire(s)'));
+    if (!dupLine) return 'Guard the conversion push so it can only fire once per page load — check for a duplicate tag (both GTM and a hardcoded snippet), or a component that re-renders and re-fires the same dataLayer.push().';
+    return `Guard against the duplicate fire on ${dupLine.split(':')[0]} — check for both a GTM-managed tag and a hardcoded snippet on the same page, or a component/effect that re-fires on re-render. Add a client-side dedup flag (e.g. a sessionStorage marker set on first fire) if the duplicate trigger can't be removed outright.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const name = primaryConversionName(auditData);
@@ -306,6 +326,11 @@ export const FIRES_ON_COMPLETION_NOT_ON_INTENT: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Frontend',
   requires: ['conversion_surface'],
+  remediation: (result) => {
+    const stepsLine = result.technical_details.found.match(/fired at (.+?) — before/);
+    const steps = stepsLine ? stepsLine[1] : 'the earlier step(s)';
+    return `Move the conversion push from ${steps} to the actual completion step (a confirmed order, a submitted form the server accepted, an activated trial) — firing on click/submit intent counts abandoned and failed attempts as real conversions, inflating results and misleading Smart Bidding.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const name = primaryConversionName(auditData);
@@ -352,6 +377,11 @@ export const NO_CONVERSION_FIRES_ON_NON_CONVERSION_PAGES: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Frontend',
   requires: ['conversion_surface'],
+  remediation: (result) => {
+    const stepsLine = result.technical_details.evidence.find((e) => e.startsWith('False-positive steps:'));
+    const steps = stepsLine ? stepsLine.replace('False-positive steps: ', '') : 'the affected page(s)';
+    return `Remove the conversion push from ${steps} — a trigger scoped too broadly (e.g. "all pages" instead of the specific conversion URL) is the usual cause. Every fire here silently inflates the conversion count with no corresponding real conversion.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const name = primaryConversionName(auditData);
@@ -401,6 +431,11 @@ export const PAGE_VIEW_FIRES_ON_EVERY_ROUTE: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Frontend',
   requires: ['conversion_surface'],
+  remediation: (result) => {
+    const missingLine = result.technical_details.evidence.find((e) => e.startsWith('Missing page_view:'));
+    const missing = missingLine ? missingLine.replace('Missing page_view: ', '') : 'the affected route(s)';
+    return `Fire a page_view (or the GA4 equivalent) on ${missing} — for a client-side router, this means a route-change listener pushing page_view to dataLayer, not just relying on GTM's default History Change trigger, which many SPA frameworks don't emit standard events for.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const steps = (auditData.steps_visited ?? []).filter((s) => s !== 'init');
@@ -454,6 +489,11 @@ export const MICRO_CONVERSIONS_FIRE: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Frontend',
   requires: ['conversion_surface'],
+  remediation: (result) => {
+    const missing = result.technical_details.evidence.filter((e) => e.endsWith(': missing')).map((e) => e.split(':')[0]);
+    if (missing.length === 0) return 'Push a dataLayer event for each declared micro-conversion at the point it happens (e.g. add_to_cart, sign_up_started).';
+    return `Push a dataLayer event for: ${missing.join(', ')} — at the point each one happens. These give early optimisation signal on longer consideration cycles, so missing them isn't as urgent as the primary conversion, but still worth fixing.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const names = secondaryConversionNames(auditData);
@@ -502,6 +542,11 @@ export const EVENT_NAMES_MATCH_DECLARED_TAXONOMY: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
   requires: ['conversion_surface'],
+  remediation: (result) => {
+    const violations = result.technical_details.evidence.filter((e) => e.startsWith('"'));
+    if (violations.length === 0) return 'Rename the observed event(s) to match the org\'s naming convention (see Naming Conventions settings) — inconsistent naming makes cross-property and cross-client comparison impossible.';
+    return `Rename these events to match the org's naming convention: ${violations.join('; ')}. Check Naming Conventions settings for the exact pattern expected.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const convention = auditData.namingConvention ?? DEFAULT_CONVENTION;
@@ -562,6 +607,7 @@ export const EVENT_ORDERING_IS_CORRECT: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Frontend',
   requires: ['conversion_surface'],
+  remediation: 'Move the conversion dataLayer.push() to fire after GTM (and any consent-gating logic) has finished initializing, not before — an event fired before its own config loads is silently discarded by tags that depend on that config, rather than queued and retried.',
 
   test(auditData: AuditData): ValidationResult {
     const name = primaryConversionName(auditData);

@@ -26,6 +26,13 @@ export const DECLARED_PLATFORM_HAS_TAG: ValidationRule = {
   platform_scope: 'declared',
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
+  remediation: (result) => {
+    const missing = result.technical_details.evidence
+      .filter((e) => e.includes('NO TAG DETECTED'))
+      .map((e) => e.split(':')[0]);
+    if (missing.length === 0) return "Install the base tag/pixel for every declared platform — verify with each platform's own tag helper (GTM Preview, Meta Pixel Helper, etc.) that it fires on page load.";
+    return `Install the base tag/pixel for ${missing.join(', ')} — verify with GTM Preview mode or the platform's own pixel-helper extension that it actually fires on page load, not just that a container is present.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const declared = auditData.declared_platforms ?? [];
@@ -71,6 +78,13 @@ export const UNDECLARED_PLATFORM_TAG_DETECTED: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
+  remediation: (result) => {
+    const names = result.technical_details.evidence
+      .filter((e) => e.includes('tag detected but not declared'))
+      .map((e) => e.split(':')[0]);
+    if (names.length === 0) return 'Confirm this rogue/legacy tag is intentional, or remove it if not.';
+    return `Confirm whether ${names.join(', ')} should be a declared, actively-managed channel. If not, remove the tag — a rogue pixel still sends the site's traffic data to that platform. If so, add it to Scan Inputs' declared platforms so future audits check it properly.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const declared = new Set(auditData.declared_platforms ?? []);
@@ -148,6 +162,7 @@ export const CONVERSION_SURFACE_IDENTIFIED: ValidationRule = {
   platform_scope: 'n/a',
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
+  remediation: 'Supply a direct URL for the conversion step in Scan Inputs\' url_map (the real checkout/thank-you/signup page — not the homepage), or fix the site\'s own navigation so that page is actually reachable by clicking through from landing. Every rule below this one depends on a real conversion surface being reached, so this is worth fixing before trusting anything else in this report.',
 
   test(auditData: AuditData): ValidationResult {
     const stepCoverage = auditData.step_coverage;
@@ -221,6 +236,11 @@ export const PRODUCT_DOMAIN_REACHABLE: ValidationRule = {
   platform_scope: 'n/a',
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
+  remediation: (result) => {
+    const domainLine = result.technical_details.evidence.find((e) => e.startsWith('product_domain:'));
+    const domain = domainLine ? domainLine.replace('product_domain: ', '') : 'the declared product domain';
+    return `Verify ${domain} is publicly reachable — not behind a VPN, staging password, or auth wall the crawler can't get past — and that DNS/SSL resolve correctly. If it's intentionally gated, remove it from product_domain in Scan Inputs so this rule is skipped rather than failed.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const reachable = auditData.product_domain_reachable;
