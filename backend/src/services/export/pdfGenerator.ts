@@ -3,8 +3,23 @@
  * Generates a 5-page PDF from a ReportJSON using PDFKit.
  */
 import PDFDocument from 'pdfkit';
-import type { ReportJSON, ValidationResult } from '@/types/audit';
+import type { ReportJSON, ValidationResult, StepCoverage, StepUrlSource } from '@/types/audit';
 import { getIssueHeadline } from '@/services/interpretation/engine';
+
+/** Per-step provenance label for the Scan Coverage section — see StepUrlSource's docstring in types/audit.ts. */
+const STEP_SOURCE_LABELS: Record<StepUrlSource, string> = {
+  user_supplied: 'user-supplied URL',
+  sitemap: 'found via sitemap',
+  nav_link: 'found via page link',
+  heuristic: 'found via path guess',
+  fallback_landing: 'not found — used the landing page',
+};
+
+function stepCoverageLine(step: StepCoverage): string {
+  const sourceLabel = STEP_SOURCE_LABELS[step.source] ?? step.source;
+  const navSuffix = step.navigation_success ? '' : ' — navigation failed';
+  return `${step.step.replace(/_/g, ' ')} — ${sourceLabel}${navSuffix}`;
+}
 
 /**
  * Rule Overview stats for page 1 (and the row set for the Technical Appendix
@@ -242,6 +257,34 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
     });
 
     doc.y = gridStartY + 2 * (cardH + 8) + 6;
+
+    // Scan Coverage — omitted entirely when the report has no coverage data
+    // (Journey-Builder mode, an audit predating this field) rather than
+    // rendering a fabricated "0 pages" state, per CLAUDE.md rule 12.
+    const coverage = report.executive_summary.coverage;
+    if (coverage) {
+      sectionHeading('Scan Coverage');
+      doc.fillColor(C.midText).fontSize(10).font('Helvetica')
+        .text(
+          `This scan examined ${coverage.pages_distinct} of ${coverage.pages_requested} requested page${coverage.pages_requested !== 1 ? 's' : ''}.`,
+          LEFT, doc.y, { width: CONTENT_W },
+        );
+
+      if (coverage.layers_not_tested.length > 0) {
+        doc.moveDown(0.3);
+        doc.fillColor(C.atRisk).fontSize(9).font('Helvetica-Bold')
+          .text(
+            `${coverage.layers_not_tested.map((l) => l.label).join(', ')} could not be tested — ${coverage.rules_not_tested} check${coverage.rules_not_tested !== 1 ? 's' : ''} skipped rather than scored as failing.`,
+            LEFT, doc.y, { width: CONTENT_W },
+          );
+      }
+
+      doc.moveDown(0.35);
+      for (const step of coverage.steps) {
+        doc.fillColor(C.lightText).fontSize(8.5).font('Helvetica')
+          .text(`• ${stepCoverageLine(step)}`, LEFT + 4, doc.y, { width: CONTENT_W - 8 });
+      }
+    }
 
     // Business summary
     sectionHeading('Business Summary');

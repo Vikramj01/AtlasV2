@@ -17,46 +17,130 @@
  * phase (crawl-only rules; second-pass detection deferred, same as every
  * other non-crawl detection method). Not included in L2_RULES.
  */
-import type { AuditData, ValidationRule, ValidationResult, RuleStatus } from '@/types/audit';
+import type { AuditData, ValidationRule, ValidationResult, RuleStatus, DataLayerEvent } from '@/types/audit';
 
 const SYNTHETIC_PARAMS = [
   'gclid', 'fbclid', 'gbraid', 'wbraid', 'ttclid', 'li_fat_id', 'msclkid',
   'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term',
 ] as const;
 
+/**
+ * 'exact'       — found under the expected key name, exact value match.
+ * 'value_match' — found under a *different* key name (or one level inside
+ *                 a JSON-encoded string value), but the value itself
+ *                 matches exactly. Still counts as captured (§8.4) — a
+ *                 site storing gclid as `_atlas_gclid`, or bundling several
+ *                 IDs into one JSON blob, has still captured it.
+ * 'not_found'   — the synthetic value never showed up anywhere.
+ */
+export type CaptureTier = 'exact' | 'value_match' | 'not_found';
+
 interface CaptureCheck {
   inUrl: boolean;
   captured: boolean;
+  tier: CaptureTier;
   storageHit: boolean;
   cookieHit: boolean;
   dataLayerHit: boolean;
+  /** The actual key name the value was found under — only set for tier 'value_match', where it differs from paramName. */
+  matchedKey?: string;
+}
+
+/**
+ * Scans a flat key→value record for a key (other than the expected one)
+ * whose value equals target, including one level of JSON-parsing a string
+ * value (e.g. a site storing `{"gclid":"...","fbclid":"..."}` as a single
+ * localStorage entry). Matching on the *value* — unique per run
+ * (test_gclid_${ts}, never shared across different synthetic params even
+ * within the same run) — is what keeps this safe from a false positive:
+ * two different params can never coincidentally share a value to cross-match.
+ */
+function findValueUnderDifferentKey(record: Record<string, string> | undefined, expectedKey: string, target: string): string | undefined {
+  if (!record) return undefined;
+  for (const [key, value] of Object.entries(record)) {
+    if (key === expectedKey) continue; // that's tier 1's job, not this
+    if (value === target) return key;
+    try {
+      const parsed: unknown = JSON.parse(value);
+      if (parsed && typeof parsed === 'object') {
+        for (const [nestedKey, nestedValue] of Object.entries(parsed as Record<string, unknown>)) {
+          if (String(nestedValue) === target) return `${key}.${nestedKey}`;
+        }
+      }
+    } catch {
+      // Not JSON — nothing more to check for this key
+    }
+  }
+  return undefined;
+}
+
+/** Same idea as findValueUnderDifferentKey, but over dataLayer's array-of-event shape rather than a flat record. */
+function findValueInDataLayerUnderDifferentKey(events: DataLayerEvent[], expectedKey: string, target: string): string | undefined {
+  for (const event of events) {
+    for (const [key, value] of Object.entries(event)) {
+      if (key === expectedKey) continue;
+      if (String(value) === target) return key;
+    }
+  }
+  return undefined;
 }
 
 /**
  * Whether a synthetic param Atlas injected at landing was actually read and
- * stored somewhere by the site — localStorage/cookies under the same key,
- * or echoed into a dataLayer event — rather than just sitting unread in the
- * URL. Shared by every per-identifier rule in this layer (L2.1-2.8) and by
- * the redirect-timing check (L2.10).
+ * stored somewhere by the site — localStorage/cookies/dataLayer, under the
+ * expected key (tier 'exact') or a differently-named one (tier
+ * 'value_match') — rather than just sitting unread in the URL. Shared by
+ * every per-identifier rule in this layer (L2.1-2.8) and by the
+ * redirect-timing check (L2.10).
  */
 function checkParamCapture(auditData: AuditData, paramName: string): CaptureCheck {
   const sentValue = auditData.urlParams?.[paramName];
-  const inUrl = !!sentValue;
-  const storageHit = !!sentValue && auditData.storage?.[paramName] === sentValue;
-  const cookieHit = !!sentValue && auditData.cookies?.[paramName] === sentValue;
-  const dataLayerHit = !!sentValue && auditData.dataLayer.some(
+  if (!sentValue) {
+    return { inUrl: false, captured: false, tier: 'not_found', storageHit: false, cookieHit: false, dataLayerHit: false };
+  }
+
+  // Tier 1 — exact key, exact value
+  const storageExact = auditData.storage?.[paramName] === sentValue;
+  const cookieExact = auditData.cookies?.[paramName] === sentValue;
+  const dataLayerExact = auditData.dataLayer.some(
     (e) => Object.entries(e).some(([k, v]) => k === paramName && String(v) === sentValue),
   );
-  return { inUrl, captured: storageHit || cookieHit || dataLayerHit, storageHit, cookieHit, dataLayerHit };
+  if (storageExact || cookieExact || dataLayerExact) {
+    return { inUrl: true, captured: true, tier: 'exact', storageHit: storageExact, cookieHit: cookieExact, dataLayerHit: dataLayerExact };
+  }
+
+  // Tier 2 — same value, different key (or one level of JSON nesting)
+  const storageKey = findValueUnderDifferentKey(auditData.storage, paramName, sentValue);
+  const cookieKey = findValueUnderDifferentKey(auditData.cookies, paramName, sentValue);
+  const dataLayerKey = findValueInDataLayerUnderDifferentKey(auditData.dataLayer, paramName, sentValue);
+  if (storageKey || cookieKey || dataLayerKey) {
+    return {
+      inUrl: true,
+      captured: true,
+      tier: 'value_match',
+      storageHit: !!storageKey,
+      cookieHit: !!cookieKey,
+      dataLayerHit: !!dataLayerKey,
+      matchedKey: storageKey ?? cookieKey ?? dataLayerKey,
+    };
+  }
+
+  // Tier 3 — not found anywhere
+  return { inUrl: true, captured: false, tier: 'not_found', storageHit: false, cookieHit: false, dataLayerHit: false };
 }
 
 function captureEvidence(paramName: string, check: CaptureCheck): string[] {
-  return [
+  const lines = [
     `In landing URL: ${check.inUrl}`,
-    `Stored in localStorage["${paramName}"]: ${check.storageHit}`,
-    `Stored in a cookie["${paramName}"]: ${check.cookieHit}`,
-    `Echoed into a dataLayer event: ${check.dataLayerHit}`,
+    `Stored in localStorage["${paramName}"]: ${check.tier === 'exact' && check.storageHit}`,
+    `Stored in a cookie["${paramName}"]: ${check.tier === 'exact' && check.cookieHit}`,
+    `Echoed into a dataLayer event: ${check.tier === 'exact' && check.dataLayerHit}`,
   ];
+  if (check.tier === 'value_match' && check.matchedKey) {
+    const mechanism = check.storageHit ? 'localStorage' : check.cookieHit ? 'a cookie' : 'a dataLayer event';
+    lines.push(`Value found under a different key ("${check.matchedKey}") in ${mechanism} — captured, just not under the expected name`);
+  }
+  return lines;
 }
 
 // ── L2.1-2.7 — Per-platform click ID captured at landing ─────────────────────
@@ -94,7 +178,9 @@ function makeClickIdCaptureRule(opts: {
           found: !result.inUrl
             ? `${opts.paramName} was never injected into the landing URL for this run`
             : result.captured
-              ? `${opts.paramName} captured (${[result.storageHit && 'localStorage', result.cookieHit && 'cookie', result.dataLayerHit && 'dataLayer'].filter(Boolean).join(', ')})`
+              ? result.tier === 'exact'
+                ? `${opts.paramName} captured (${[result.storageHit && 'localStorage', result.cookieHit && 'cookie', result.dataLayerHit && 'dataLayer'].filter(Boolean).join(', ')})`
+                : `${opts.paramName} captured under a different key ("${result.matchedKey}") — the value matches exactly`
               : `${opts.paramName} present in the landing URL but never read into storage, a cookie, or dataLayer`,
           expected: opts.why,
           evidence: captureEvidence(opts.paramName, result),
@@ -221,7 +307,11 @@ export const UTM_PARAMETERS_CAPTURED: ValidationRule = {
       technical_details: {
         found: `${checks.filter((c) => c.captured).length}/${checks.length} UTM parameters captured`,
         expected: 'utm_source, utm_medium, utm_campaign, utm_content, utm_term are all read',
-        evidence: checks.map((c) => `${c.param}: ${c.captured ? 'captured' : c.inUrl ? 'in URL but not captured' : 'not injected'}`),
+        evidence: checks.map((c) => `${c.param}: ${
+          c.captured
+            ? c.tier === 'exact' ? 'captured' : `captured (as "${c.matchedKey}")`
+            : c.inUrl ? 'in URL but not captured' : 'not injected'
+        }`),
       },
     };
   },

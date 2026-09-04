@@ -4,6 +4,11 @@ import path from 'path';
 export default defineConfig({
   test: {
     globals: true,
+    // journeySimulator's landing-step consent-banner settle wait (2-3.5s,
+    // real setTimeout — see services/detection/consentBanner.ts) stacks with
+    // this suite's other already-real step-action waits; the 5s default
+    // starts clipping tests that hit both. See pipeline.test.ts.
+    testTimeout: 15000,
     include: [
       'src/**/*.{test,spec}.?(c|m)[jt]s?(x)',
       '../audit/tests/**/*.{test,spec}.?(c|m)[jt]s?(x)',

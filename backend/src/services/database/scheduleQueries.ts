@@ -8,7 +8,7 @@
 
 import { supabaseAdmin } from './supabase';
 import type { ScheduleRow, CreateScheduleInput, UpdateScheduleInput } from '@/types/schedule';
-import type { Region } from '@/types/audit';
+import type { Region, RuleSetVersion } from '@/types/audit';
 
 // ── next_run_at computation ───────────────────────────────────────────────────
 
@@ -69,6 +69,21 @@ export async function createSchedule(
       next_run_at: nextRunAt.toISOString(),
       test_email: input.test_email ?? null,
       test_phone: input.test_phone ?? null,
+      // Check Register v2 Scan Inputs — all optional; a schedule that omits
+      // them is a plain v1-legacy schedule, same as before this field
+      // existed. See ScheduleScanInputs's docstring (types/schedule.ts).
+      rule_set_version: input.rule_set_version ?? 'v1-legacy',
+      site_type: input.site_type ?? null,
+      secondary_motion: input.secondary_motion ?? null,
+      declared_platforms: input.declared_platforms ?? [],
+      primary_channel: input.primary_channel ?? null,
+      monthly_spend_band: input.monthly_spend_band ?? null,
+      traffic_regions: input.traffic_regions ?? [],
+      cmp: input.cmp ?? null,
+      product_domain: input.product_domain ?? null,
+      checkout_domain: input.checkout_domain ?? null,
+      additional_properties: input.additional_properties ?? [],
+      declared_conversions: input.declared_conversions ?? null,
     })
     .select()
     .single();
@@ -179,14 +194,29 @@ export async function markScheduleRan(
   if (error) throw new Error(`Failed to mark schedule ran: ${error.message}`);
 }
 
-/** Update last_audit_score after a scheduled audit completes. */
+/**
+ * Update last_audit_score (and last_audit_rule_set_version /
+ * last_audit_coverage_fingerprint, when known) after a scheduled audit
+ * completes. Storing these alongside the score is what lets the
+ * regression comparator (worker.ts) tell a v1-scored run apart from a
+ * v2-scored one, and a discovery-driven coverage change from a real
+ * regression, before comparing scores — otherwise either alone would look
+ * like a real regression. See 20260903001_scheduled_audit_scan_inputs.sql
+ * and 20260903002_audit_coverage_fingerprint.sql.
+ */
 export async function updateScheduleScore(
   scheduleId: string,
   score: number,
+  ruleSetVersion?: RuleSetVersion,
+  coverageFingerprint?: string,
 ): Promise<void> {
+  const updates: Record<string, unknown> = { last_audit_score: score, updated_at: new Date().toISOString() };
+  if (ruleSetVersion) updates.last_audit_rule_set_version = ruleSetVersion;
+  if (coverageFingerprint) updates.last_audit_coverage_fingerprint = coverageFingerprint;
+
   const { error } = await supabaseAdmin
     .from('scheduled_audits')
-    .update({ last_audit_score: score, updated_at: new Date().toISOString() })
+    .update(updates)
     .eq('id', scheduleId);
 
   if (error) throw new Error(`Failed to update schedule score: ${error.message}`);

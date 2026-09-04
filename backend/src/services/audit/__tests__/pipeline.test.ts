@@ -7,10 +7,12 @@
  * No real browser or network connections are used — all Playwright objects are
  * mocked inline with the exact method signatures that dataCapture.ts expects.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { simulateJourney, type SimulatorOptions } from '../journeySimulator';
 import { runAllRules } from '@/services/validation/engine';
 import { calculateScores } from '@/services/scoring/engine';
+import { runRegister } from '@/services/validation/register/engine';
+import { calculateV2Scores } from '@/services/validation/register/scoring';
 
 // ─── Mock browser factory ─────────────────────────────────────────────────────
 
@@ -274,6 +276,132 @@ describe('simulateJourney — AuditData assembly', () => {
   });
 });
 
+// ─── step_coverage (Site Evaluation Coverage & Honesty PRD, Phase 1) ─────────
+
+describe('simulateJourney — step_coverage', () => {
+  it('marks every step user_supplied and distinct from landing when url_map gives each a real, different URL', async () => {
+    const { mockBrowser } = makeMockBrowser();
+    const auditData = await simulateJourney(mockBrowser as never, BASE_OPTS);
+
+    expect(auditData.step_coverage).toHaveLength(4);
+    const [landing, product, checkout, confirmation] = auditData.step_coverage!;
+
+    expect(landing.step).toBe('landing');
+    expect(landing.source).toBe('user_supplied');
+    expect(landing.distinct_from_landing).toBe(false); // never distinct from itself
+    expect(landing.navigation_success).toBe(true);
+
+    for (const step of [product, checkout, confirmation]) {
+      expect(step.source).toBe('user_supplied');
+      expect(step.distinct_from_landing).toBe(true);
+      expect(step.navigation_success).toBe(true);
+    }
+  });
+
+  it('marks a step fallback_landing and NOT distinct when url_map omits its key entirely', async () => {
+    const { mockBrowser } = makeMockBrowser();
+    const auditData = await simulateJourney(mockBrowser as never, {
+      ...BASE_OPTS,
+      url_map: { landing: 'https://shop.example.com' }, // product/checkout/confirmation all fall back
+    });
+
+    const nonLanding = auditData.step_coverage!.filter((s) => s.step !== 'landing');
+    expect(nonLanding).toHaveLength(3);
+    for (const step of nonLanding) {
+      expect(step.source).toBe('fallback_landing');
+      expect(step.distinct_from_landing).toBe(false);
+    }
+  });
+
+  it('marks every step NOT distinct when url_map points every key at the same homepage URL (the defect this PRD exists to fix)', async () => {
+    const { mockBrowser } = makeMockBrowser();
+    const auditData = await simulateJourney(mockBrowser as never, {
+      ...BASE_OPTS,
+      url_map: {
+        landing: 'https://shop.example.com',
+        product: 'https://shop.example.com',
+        checkout: 'https://shop.example.com',
+        confirmation: 'https://shop.example.com',
+      },
+    });
+
+    // These are 'user_supplied' — the URL was explicitly given — but still
+    // not distinct, because it's the same page as landing. source and
+    // distinct_from_landing are independent signals.
+    const nonLanding = auditData.step_coverage!.filter((s) => s.step !== 'landing');
+    expect(nonLanding.every((s) => s.source === 'user_supplied')).toBe(true);
+    expect(nonLanding.every((s) => s.distinct_from_landing === false)).toBe(true);
+  });
+
+  it('a step whose navigation fails entirely does not abort the other steps (defect #1)', async () => {
+    const { mockBrowser, mockPage } = makeMockBrowser();
+    mockPage.goto.mockImplementation(async (url: string) => {
+      if (url.includes('order-confirmed')) {
+        throw new Error('net::ERR_NAME_NOT_RESOLVED');
+      }
+      return null;
+    });
+
+    const auditData = await simulateJourney(mockBrowser as never, BASE_OPTS);
+
+    // landing, product, checkout each navigate once; confirmation is tried
+    // twice (primary + domcontentloaded fallback), both of which fail.
+    expect(mockPage.goto).toHaveBeenCalledTimes(5);
+
+    const coverage = auditData.step_coverage!;
+    expect(coverage).toHaveLength(4);
+
+    const confirmation = coverage.find((s) => s.step === 'confirmation')!;
+    expect(confirmation.navigation_success).toBe(false);
+    expect(confirmation.error).toBeTruthy();
+
+    const otherSteps = coverage.filter((s) => s.step !== 'confirmation');
+    expect(otherSteps.every((s) => s.navigation_success)).toBe(true);
+  });
+
+  // ── resolved_sources (Phase 2, §7/§8) ─────────────────────────────────────
+  // The orchestrator merges stepUrlResolver.ts's discovered URLs directly
+  // into url_map before calling simulateJourney, so a url_map entry alone
+  // can't distinguish "the user gave us this" from "the resolver found
+  // this." resolved_sources is what carries that distinction through.
+
+  it('reports the resolver\'s source (sitemap/nav_link/heuristic) for a url_map entry it filled, not user_supplied', async () => {
+    const { mockBrowser } = makeMockBrowser();
+    const auditData = await simulateJourney(mockBrowser as never, {
+      ...BASE_OPTS,
+      url_map: {
+        landing: 'https://shop.example.com',
+        product: 'https://shop.example.com/product/widget', // genuinely user-supplied
+        checkout: 'https://shop.example.com/checkout',       // resolver-filled
+        confirmation: 'https://shop.example.com/order-confirmed', // resolver-filled
+      },
+      resolved_sources: {
+        checkout: 'sitemap',
+        confirmation: 'heuristic',
+      },
+    });
+
+    const byStep = new Map(auditData.step_coverage!.map((s) => [s.step, s]));
+    expect(byStep.get('landing')?.source).toBe('user_supplied');
+    expect(byStep.get('product')?.source).toBe('user_supplied');
+    expect(byStep.get('checkout')?.source).toBe('sitemap');
+    expect(byStep.get('confirmation')?.source).toBe('heuristic');
+  });
+
+  it('ignores a resolved_sources entry for a step key that has no url_map entry at all (nothing to mislabel)', async () => {
+    const { mockBrowser } = makeMockBrowser();
+    const auditData = await simulateJourney(mockBrowser as never, {
+      ...BASE_OPTS,
+      url_map: { landing: 'https://shop.example.com' }, // product/checkout/confirmation all absent
+      resolved_sources: { product: 'sitemap' }, // stale/inconsistent — resolver claims a source but url_map disagrees
+    });
+
+    const product = auditData.step_coverage!.find((s) => s.step === 'product')!;
+    // Absence from url_map wins — still falls back to landing, not "sitemap".
+    expect(product.source).toBe('fallback_landing');
+  });
+});
+
 // ─── Full pipeline: simulate → validate → score ───────────────────────────────
 
 describe('Full pipeline — mock browser → validation → scoring', () => {
@@ -368,5 +496,378 @@ describe('Full pipeline — mock browser → validation → scoring', () => {
     const auditData = await simulateJourney(mockBrowser as never, BASE_OPTS);
     const results = runAllRules(auditData);
     expect(results).toHaveLength(43);
+  });
+});
+
+// ─── consent_capture (Site Evaluation Coverage & Honesty PRD §6.5) ──────────
+//
+// makeMockBrowser's generic evaluate() mock (drains dataLayerEvents
+// regardless of which call site invoked it) can't distinguish a consent
+// detection/dismissal call from any other evaluate() call, so this uses a
+// purpose-built mock that inspects the second argument — only
+// consentBanner.ts's functions ever call page.evaluate(fn, arg) with an arg
+// in this codebase, so an arg carrying `.selectors` unambiguously identifies
+// a consent-related call.
+
+function makeConsentAwareMockBrowser() {
+  const pageListeners: Record<string, Array<(arg: unknown) => void>> = {};
+  let consentEvaluateCalls = 0;
+
+  const mockPage = {
+    addInitScript: vi.fn().mockResolvedValue(undefined),
+    exposeFunction: vi.fn().mockResolvedValue(undefined),
+    waitForSelector: vi.fn().mockResolvedValue(undefined),
+    click: vi.fn().mockResolvedValue(undefined),
+    fill: vi.fn().mockResolvedValue(undefined),
+    on(event: string, handler: (arg: unknown) => void) {
+      pageListeners[event] = pageListeners[event] ?? [];
+      pageListeners[event].push(handler);
+    },
+    goto: vi.fn().mockResolvedValue(null),
+    evaluate: vi.fn().mockImplementation(async (_fn: unknown, arg?: unknown) => {
+      if (arg && typeof arg === 'object' && 'selectors' in (arg as object)) {
+        consentEvaluateCalls += 1;
+        if (consentEvaluateCalls === 1) {
+          // detectConsentBanner's call
+          return { present: true, vendor: 'onetrust', selector: '#onetrust-accept-btn-handler' };
+        }
+        // dismissConsentBanner's call — simulate the click causing a
+        // previously-gated Google Ads tag to fire for the first time.
+        const fakeReq = {
+          url: () => 'https://www.googleadservices.com/pagead/conversion/123',
+          method: () => 'GET',
+          headers: () => ({}),
+          postData: () => null,
+        };
+        (pageListeners['request'] ?? []).forEach((h) => h(fakeReq));
+        return true;
+      }
+      return []; // dataLayer flush / script-src collection / localStorage — not under test here
+    }),
+  };
+
+  const mockContext = {
+    newPage: vi.fn().mockResolvedValue(mockPage),
+    cookies: vi.fn().mockResolvedValue([]),
+    close: vi.fn().mockResolvedValue(undefined),
+  };
+  const mockBrowser = { newContext: vi.fn().mockResolvedValue(mockContext) };
+  return { mockBrowser, mockPage };
+}
+
+describe('simulateJourney — consent_capture', () => {
+  it('records the detected vendor/dismissal outcome, and a tag gated behind the banner appears in tags_after but not tags_before', async () => {
+    const { mockBrowser } = makeConsentAwareMockBrowser();
+    const auditData = await simulateJourney(mockBrowser as never, {
+      ...BASE_OPTS,
+      declared_platforms: ['google_ads'],
+      cmp: 'onetrust',
+    });
+
+    expect(auditData.consent_capture).toBeDefined();
+    expect(auditData.consent_capture?.banner_present).toBe(true);
+    expect(auditData.consent_capture?.vendor).toBe('onetrust');
+    expect(auditData.consent_capture?.dismissed).toBe(true);
+    expect(auditData.consent_capture?.declared_cmp).toBe('onetrust');
+    expect(auditData.consent_capture?.tags_before).not.toContain('google_ads');
+    expect(auditData.consent_capture?.tags_after).toContain('google_ads');
+  });
+
+  it('reports no banner and empty tags_before/tags_after when nothing was ever detected or fired', async () => {
+    const { mockBrowser, mockPage } = makeConsentAwareMockBrowser();
+    // Override: neither detect nor dismiss finds anything, and dismiss never fires a network request.
+    let consentCalls = 0;
+    mockPage.evaluate.mockImplementation(async (_fn: unknown, arg?: unknown) => {
+      if (arg && typeof arg === 'object' && 'selectors' in (arg as object)) {
+        consentCalls += 1;
+        return consentCalls === 1 ? { present: false } : false;
+      }
+      return [];
+    });
+
+    const auditData = await simulateJourney(mockBrowser as never, { ...BASE_OPTS, declared_platforms: ['google_ads'] });
+
+    expect(auditData.consent_capture?.banner_present).toBe(false);
+    expect(auditData.consent_capture?.dismissed).toBe(false);
+    expect(auditData.consent_capture?.tags_before).toEqual([]);
+    expect(auditData.consent_capture?.tags_after).toEqual([]);
+  });
+});
+
+// ─── checkout_domain boundary probe (Sprint 18 — wiring the previously-dead
+// checkout_domain Scan Input; mirrors the existing product_domain probe) ────
+
+describe('simulateJourney — checkout_domain boundary probe', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('navigates to a distinct, reachable checkout_domain and captures its GA4 client_id/session_start', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ status: 200 }));
+    const { mockBrowser, mockPage } = makeMockBrowser({
+      networkRequests: [
+        { url: 'https://www.google-analytics.com/g/collect?v=2&tid=G-TEST&cid=555.666&_ss=1', method: 'GET' },
+      ],
+    });
+
+    const auditData = await simulateJourney(mockBrowser as never, {
+      ...BASE_OPTS,
+      checkout_domain: 'https://checkout.stripe-hosted.com',
+    });
+
+    expect(mockPage.goto).toHaveBeenCalledWith(
+      'https://checkout.stripe-hosted.com',
+      expect.objectContaining({ waitUntil: 'networkidle' }),
+    );
+    expect(auditData.checkoutDomainGa4ClientId).toBe('555.666');
+    expect(auditData.checkoutDomainSessionStartDetected).toBe(true);
+    expect(auditData.marketingGa4ClientId).toBe('555.666');
+  });
+
+  it('does not visit checkout_domain when the reachability probe fails', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ status: 503 }));
+    const { mockBrowser, mockPage } = makeMockBrowser();
+
+    const auditData = await simulateJourney(mockBrowser as never, {
+      ...BASE_OPTS,
+      checkout_domain: 'https://checkout.stripe-hosted.com',
+    });
+
+    expect(mockPage.goto).toHaveBeenCalledTimes(4); // only the 4 ecommerce steps — no boundary visit
+    expect(auditData.checkoutDomainGa4ClientId).toBeUndefined();
+  });
+
+  it('does not probe or visit checkout_domain when it is the same host as website_url', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ status: 200 });
+    vi.stubGlobal('fetch', fetchMock);
+    const { mockBrowser, mockPage } = makeMockBrowser();
+
+    await simulateJourney(mockBrowser as never, {
+      ...BASE_OPTS,
+      checkout_domain: 'https://shop.example.com/checkout-hosted',
+    });
+
+    expect(mockPage.goto).toHaveBeenCalledTimes(4);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('visits both product_domain and checkout_domain when both are set and distinct', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ status: 200 }));
+    const { mockBrowser, mockPage } = makeMockBrowser({
+      networkRequests: [
+        { url: 'https://www.google-analytics.com/g/collect?v=2&tid=G-TEST&cid=555.666&_ss=1', method: 'GET' },
+      ],
+    });
+
+    const auditData = await simulateJourney(mockBrowser as never, {
+      ...BASE_OPTS,
+      product_domain: 'https://app.shop.example.com',
+      checkout_domain: 'https://checkout.stripe-hosted.com',
+    });
+
+    expect(mockPage.goto).toHaveBeenCalledTimes(6); // 4 steps + product_domain + checkout_domain
+    expect(auditData.product_domain_reachable).toBe(true);
+    expect(auditData.productDomainGa4ClientId).toBeDefined();
+    expect(auditData.checkoutDomainGa4ClientId).toBeDefined();
+  });
+});
+
+// ─── additional_properties (Sprint 18 — wiring the previously-dead
+// additional_properties Scan Input into the outbound cross-domain link scan) ─
+
+describe('simulateJourney — additional_properties widens cross-domain targets', () => {
+  it('counts an outbound link to a declared additional_properties host that product_domain/checkout_domain alone would not have covered', async () => {
+    const { mockBrowser, mockPage } = makeMockBrowser();
+    // Sprint 20: the outbound-link scan now goes through evaluateAcrossFrames/
+    // collectDeep, so the selector arrives as the second evaluate() argument
+    // rather than being embedded in the function source.
+    mockPage.evaluate.mockImplementation(async (_fn: unknown, arg?: { selector?: string }) => {
+      if (arg?.selector === 'a[href]') {
+        return [
+          'https://blog.example.net/post?_gl=1abc123', // additional_properties host, carries _gl
+          'https://shop.example.com/other-page',        // same-origin — not a cross-domain target
+        ];
+      }
+      return [];
+    });
+
+    const auditData = await simulateJourney(mockBrowser as never, {
+      ...BASE_OPTS,
+      additional_properties: ['https://blog.example.net'],
+    });
+
+    expect(auditData.outboundCrossDomainLinks).toEqual({ total: 1, withGl: 1 });
+  });
+
+  it('does not count that same link when additional_properties is not declared', async () => {
+    const { mockBrowser, mockPage } = makeMockBrowser();
+    mockPage.evaluate.mockImplementation(async (_fn: unknown, arg?: { selector?: string }) => {
+      if (arg?.selector === 'a[href]') {
+        return ['https://blog.example.net/post?_gl=1abc123'];
+      }
+      return [];
+    });
+
+    const auditData = await simulateJourney(mockBrowser as never, BASE_OPTS);
+
+    expect(auditData.outboundCrossDomainLinks).toEqual({ total: 0, withGl: 0 });
+  });
+});
+
+// ─── iframe DOM-read traversal (Sprint 20 — a hosted checkout widget like
+// Stripe Elements or Shopify's checkout commonly renders its tags/links
+// inside a same-origin iframe, which a plain page.evaluate() never sees) ──
+
+describe('simulateJourney — iframe DOM-read traversal', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('captures a GTM container tag that only exists inside a same-origin iframe, not the main document', async () => {
+    const { mockBrowser, mockPage } = makeMockBrowser();
+    const mainFrame = { evaluate: vi.fn().mockResolvedValue([]) };
+    const iframeFrame = {
+      evaluate: vi.fn().mockImplementation(async (_fn: unknown, arg: { selector: string }) =>
+        arg.selector === 'script[src]' ? ['https://www.googletagmanager.com/gtm.js?id=GTM-IFRAME123'] : []),
+    };
+    (mockPage as unknown as { frames: () => unknown[] }).frames = vi.fn().mockReturnValue([mainFrame, iframeFrame]);
+
+    const auditData = await simulateJourney(mockBrowser as never, BASE_OPTS);
+
+    const scriptSrcs = (auditData.pageMetadata?.gtm_script_srcs as string[]) ?? [];
+    expect(scriptSrcs).toContain('https://www.googletagmanager.com/gtm.js?id=GTM-IFRAME123');
+    // The plain page.evaluate() path is bypassed entirely once frames() exists.
+    expect(mockPage.evaluate).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ selector: 'script[src]' }));
+  });
+
+  it('counts an outbound cross-domain link found only inside a same-origin iframe', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ status: 503 })); // product_domain reachability is irrelevant here — crossDomainTargets is built from opts directly
+    const { mockBrowser, mockPage } = makeMockBrowser();
+    const mainFrame = { evaluate: vi.fn().mockResolvedValue([]) };
+    const iframeFrame = {
+      evaluate: vi.fn().mockImplementation(async (_fn: unknown, arg: { selector: string }) =>
+        arg.selector === 'a[href]' ? ['https://app.shop.example.com/dashboard?_gl=1abc'] : []),
+    };
+    (mockPage as unknown as { frames: () => unknown[] }).frames = vi.fn().mockReturnValue([mainFrame, iframeFrame]);
+
+    const auditData = await simulateJourney(mockBrowser as never, {
+      ...BASE_OPTS,
+      product_domain: 'https://app.shop.example.com',
+    });
+
+    expect(auditData.outboundCrossDomainLinks).toEqual({ total: 1, withGl: 1 });
+  });
+});
+
+// ─── lead_gen form fill (Sprint 18 — wiring the previously-dead
+// test_email/test_phone Scan Inputs into the fill/click step actions) ───────
+
+describe('simulateJourney — lead_gen form fill (test_email/test_phone)', () => {
+  const LEAD_GEN_OPTS: SimulatorOptions = {
+    ...BASE_OPTS,
+    funnel_type: 'lead_gen',
+    url_map: {
+      landing: 'https://lead.example.com',
+      thank_you: 'https://lead.example.com/thank-you',
+    },
+  };
+
+  it('fills the email/phone fields and clicks submit on the landing step when test_email/test_phone are set', async () => {
+    const { mockBrowser, mockPage } = makeMockBrowser();
+    await simulateJourney(mockBrowser as never, LEAD_GEN_OPTS);
+
+    expect(mockPage.fill).toHaveBeenCalledWith('input[type="email"], input[name*="email" i]', LEAD_GEN_OPTS.test_email);
+    expect(mockPage.fill).toHaveBeenCalledWith('input[type="tel"], input[name*="phone" i]', LEAD_GEN_OPTS.test_phone);
+    expect(mockPage.click).toHaveBeenCalledWith('button[type="submit"], input[type="submit"]');
+  });
+
+  it('does not attempt any form fill or submit when neither test_email nor test_phone is set', async () => {
+    const { mockBrowser, mockPage } = makeMockBrowser();
+    await simulateJourney(mockBrowser as never, { ...LEAD_GEN_OPTS, test_email: undefined, test_phone: undefined });
+
+    expect(mockPage.fill).not.toHaveBeenCalled();
+    expect(mockPage.click).not.toHaveBeenCalled();
+  });
+
+  it('fills only the phone field when test_email is not set', async () => {
+    const { mockBrowser, mockPage } = makeMockBrowser();
+    await simulateJourney(mockBrowser as never, { ...LEAD_GEN_OPTS, test_email: undefined });
+
+    expect(mockPage.fill).not.toHaveBeenCalledWith('input[type="email"], input[name*="email" i]', expect.anything());
+    expect(mockPage.fill).toHaveBeenCalledWith('input[type="tel"], input[name*="phone" i]', LEAD_GEN_OPTS.test_phone);
+    expect(mockPage.click).toHaveBeenCalledWith('button[type="submit"], input[type="submit"]');
+  });
+
+  it('does not run the lead-gen form fill for other funnel types, even when test_email/test_phone are set', async () => {
+    const { mockBrowser, mockPage } = makeMockBrowser();
+    await simulateJourney(mockBrowser as never, BASE_OPTS); // funnel_type: 'ecommerce', has test_email/test_phone
+
+    expect(mockPage.fill).not.toHaveBeenCalled();
+    expect(mockPage.click).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Full v2 pipeline: step_coverage → runRegister precondition gating ──────
+//
+// Site Evaluation Coverage & Honesty PRD, Phase 1 (§13 test plan): a
+// homepage-only scan must skip every conversion_surface-gated rule rather
+// than fail it, and a scan reaching real distinct pages must skip none of
+// them. Unlike the v1 pipeline above, this exercises the Check Register v2
+// path (runRegister/calculateV2Scores) end-to-end from simulateJourney's
+// real step_coverage output — not a hand-built AuditData fixture.
+
+const V2_BASE_OPTS: SimulatorOptions = {
+  ...BASE_OPTS,
+  site_type: 'ecommerce',
+  rule_set_version: 'v2',
+  declared_platforms: ['google_ads'],
+  primary_channel: 'google_ads',
+  traffic_regions: ['us'],
+  declared_conversions: [{ name: 'purchase', kind: 'primary' }],
+};
+
+/** Rules skipped specifically by the new precondition engine — not a rule that self-skips for an unrelated reason (e.g. no product_domain declared). */
+function skippedForConversionSurface(results: ReturnType<typeof runRegister>) {
+  return results.filter(
+    (r) => r.status === 'skipped' && r.technical_details.found.startsWith('Not tested — the crawl never reached'),
+  );
+}
+
+describe('Full v2 pipeline — step_coverage → runRegister precondition gating', () => {
+  it('a homepage-only scan yields L0.3 fail and skips (not fails) every conversion_surface-gated rule', async () => {
+    const { mockBrowser } = makeMockBrowser();
+    const auditData = await simulateJourney(mockBrowser as never, {
+      ...V2_BASE_OPTS,
+      url_map: { landing: 'https://shop.example.com' }, // product/checkout/confirmation all fall back to it
+    });
+
+    expect(auditData.step_coverage?.some((s) => s.distinct_from_landing)).toBe(false);
+
+    const results = runRegister(auditData);
+    expect(results.find((r) => r.rule_id === 'CONVERSION_SURFACE_IDENTIFIED')?.status).toBe('fail');
+
+    const skipped = skippedForConversionSurface(results);
+    // L4.3, L4.4, all of L5 (12), L6 (10), L7 (10) that are applicable to an
+    // ecommerce/google_ads audit — a large majority of the register, per the
+    // PRD's own "~42 skipped" estimate for a homepage-only ecommerce scan.
+    expect(skipped.length).toBeGreaterThanOrEqual(25);
+
+    // scoring.ts's scored() excludes 'skipped' from every denominator — this
+    // is the observable effect: far fewer rules count toward the score.
+    const scoredCount = results.filter((r) => r.status !== 'skipped').length;
+    expect(scoredCount).toBeLessThan(results.length - 20);
+    expect(() => calculateV2Scores(results)).not.toThrow();
+  });
+
+  it('a scan reaching real, distinct step URLs yields L0.3 pass and zero precondition-driven skips', async () => {
+    const { mockBrowser } = makeMockBrowser();
+    // V2_BASE_OPTS inherits BASE_OPTS's url_map, which already gives product/checkout/confirmation distinct paths.
+    const auditData = await simulateJourney(mockBrowser as never, V2_BASE_OPTS);
+
+    expect(auditData.step_coverage?.filter((s) => s.distinct_from_landing).length).toBe(3);
+
+    const results = runRegister(auditData);
+    expect(results.find((r) => r.rule_id === 'CONVERSION_SURFACE_IDENTIFIED')?.status).toBe('pass');
+    expect(skippedForConversionSurface(results)).toHaveLength(0);
   });
 });

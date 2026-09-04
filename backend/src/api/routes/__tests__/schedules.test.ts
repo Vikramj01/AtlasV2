@@ -273,4 +273,43 @@ describe('POST /api/schedules/:id/run', () => {
 
     expect(res.status).toBe(404);
   });
+
+  // Site Evaluation Coverage & Honesty PRD §6.7 — a scheduled re-run of a v2
+  // audit must be scored by v2, not silently fall back to the legacy engine.
+  it('threads the schedule\'s v2 Scan Inputs through to createAudit and the queued job', async () => {
+    const v2Schedule = {
+      ...MOCK_SCHEDULE,
+      rule_set_version: 'v2',
+      site_type: 'ecommerce',
+      declared_platforms: ['google_ads', 'meta'],
+      primary_channel: 'google_ads',
+      traffic_regions: ['us'],
+      cmp: 'onetrust',
+    };
+    vi.mocked(scheduleQueries.getSchedule).mockResolvedValue(v2Schedule as any);
+    vi.mocked(dbQueries.createAudit).mockResolvedValue({ id: 'audit-002', created_at: '2026-01-01' } as any);
+    vi.mocked(scheduleQueries.markScheduleRan).mockResolvedValue(undefined);
+
+    const res = await buildApp().post('/api/schedules/sched-001/run');
+
+    expect(res.status).toBe(202);
+    expect(dbQueries.createAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ rule_set_version: 'v2', site_type: 'ecommerce', declared_platforms: ['google_ads', 'meta'] }),
+    );
+    expect(auditQueue.add).toHaveBeenCalledWith(
+      expect.objectContaining({ rule_set_version: 'v2', site_type: 'ecommerce', cmp: 'onetrust' }),
+    );
+  });
+
+  it('a v1-legacy schedule (no v2 fields set) passes undefined through, not a fabricated v2 config', async () => {
+    vi.mocked(scheduleQueries.getSchedule).mockResolvedValue(MOCK_SCHEDULE as any);
+    vi.mocked(dbQueries.createAudit).mockResolvedValue({ id: 'audit-003', created_at: '2026-01-01' } as any);
+    vi.mocked(scheduleQueries.markScheduleRan).mockResolvedValue(undefined);
+
+    await buildApp().post('/api/schedules/sched-001/run');
+
+    expect(dbQueries.createAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ rule_set_version: undefined, site_type: undefined }),
+    );
+  });
 });

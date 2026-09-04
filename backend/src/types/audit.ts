@@ -115,6 +115,18 @@ export type PlatformScope = 'declared' | 'any' | 'n/a' | DeclaredPlatform[];
 /** What the rule needs beyond a single browser pass — see the "Beyond the Crawl" sheet. */
 export type DetectionMethod = 'crawl' | 'second_pass' | 'credentials' | 'connector';
 
+/**
+ * A precondition the crawl must have satisfied before a rule's test() is
+ * even worth running — see engine.ts's runRegister() and the "skip, don't
+ * fail, what could not be tested" design (Site Evaluation Coverage & Honesty
+ * PRD §6.3). 'conversion_surface' is the only value today: it gates every
+ * rule that needs a real conversion event/page (L5-L7, L4.3/L4.4) behind
+ * step_coverage actually having reached one, per L0.3's own definition of
+ * that (see L0.ts) — declared here as an open union so a future phase can
+ * add another precondition without changing this shape.
+ */
+export type RulePrecondition = 'conversion_surface' | 'distinct_product_domain';
+
 /** A single Check Register v2 rule. */
 export interface ValidationRule {
   /** Canonical Check Register ID, e.g. "L1.4" — stable identifier from the spec, shown in the technical appendix. */
@@ -129,6 +141,8 @@ export interface ValidationRule {
   platform_scope: PlatformScope;
   detectable_by: DetectionMethod;
   owner: string;
+  /** Preconditions the crawl must satisfy before test() is worth running — see RulePrecondition above. Omitted (or empty) means "always worth testing once applicable". */
+  requires?: RulePrecondition[];
   test(auditData: AuditData): ValidationResult;
 }
 
@@ -340,6 +354,63 @@ export interface SiteSetupSummary {
   possible_server_side_gtm: PossibleServerSideGtm;
 }
 
+// ─── Step coverage (Site Evaluation Coverage & Honesty PRD, Phase 1) ─────────
+
+/**
+ * How a journey step's URL was resolved. Phase 1 (journeySimulator.ts) only
+ * ever produces 'user_supplied' (present in the caller's url_map) or
+ * 'fallback_landing' (silently substituted the homepage). 'sitemap',
+ * 'nav_link' and 'heuristic' are Phase 2 values, populated once
+ * stepUrlResolver.ts ships — declared here now so StepCoverage.source's
+ * type doesn't need to change shape when Phase 2 lands.
+ */
+export type StepUrlSource = 'user_supplied' | 'sitemap' | 'nav_link' | 'heuristic' | 'fallback_landing';
+
+/**
+ * Per-step provenance for one journey step — did the crawl actually reach a
+ * page distinct from the landing page, or silently fall back to it? This is
+ * the data L0.3 (CONVERSION_SURFACE_IDENTIFIED) is rewritten against: without
+ * it, a step relabelled 'checkout' that never left the homepage is
+ * indistinguishable from a real checkout visit.
+ */
+export interface StepCoverage {
+  step: string;
+  requested_url: string;
+  /** Playwright's page.url() after navigation settled — reflects any redirect the site performed. Absent when navigation never completed. */
+  final_url?: string;
+  source: StepUrlSource;
+  /**
+   * Whether this step's URL (final_url when available, else requested_url)
+   * differs from the landing step's, on a normalised comparison — lowercase
+   * origin + pathname, trailing slash stripped, hash/query removed (query
+   * must be dropped because the landing URL carries injected synthetic
+   * click-ID/UTM params). Always false for the landing step itself.
+   */
+  distinct_from_landing: boolean;
+  navigation_success: boolean;
+  error?: string;
+}
+
+/**
+ * What journeySimulator.ts observed dismissing a consent banner on the
+ * landing step (Site Evaluation Coverage & Honesty PRD §6.5) —
+ * detectConsentBanner/dismissConsentBanner in services/detection/
+ * consentBanner.ts. tags_before/tags_after are DeclaredPlatform keys (not
+ * display labels) so a future rule can compare them directly against
+ * AuditData.declared_platforms. Undefined AuditData.consent_capture (not
+ * this interface's own fields) is what a caller checks for "was consent
+ * handling attempted at all" — see AuditData.consent_capture's docstring.
+ */
+export interface ConsentCapture {
+  banner_present: boolean;
+  vendor?: CMP;
+  dismissed: boolean;
+  /** The declared Scan Input, threaded through for convenience — same value as AuditData.cmp. */
+  declared_cmp?: CMP;
+  tags_before: string[];
+  tags_after: string[];
+}
+
 // ─── AuditData passed to validation engine ───────────────────────────────────
 
 export interface AuditData {
@@ -387,6 +458,22 @@ export interface AuditData {
    * TAGS_PRESENT_ACROSS_SAMPLED_PAGES (L1.13).
    */
   steps_visited?: string[];
+  /**
+   * Per-step URL provenance — see StepCoverage above. Undefined for AuditData
+   * built outside journeySimulator.ts (Journey-Builder mode's proxyAuditData,
+   * hand-built test fixtures); L0.3 falls back to its old label-based logic
+   * in that case rather than treating a missing array as "nothing distinct".
+   */
+  step_coverage?: StepCoverage[];
+  /**
+   * Consent-banner detection/dismissal observed on the landing step — see
+   * ConsentCapture above. Undefined means consent handling was never
+   * attempted for this AuditData (Journey-Builder mode, hand-built
+   * fixtures, or an AuditData predating this field) — distinct from a
+   * ConsentCapture with banner_present: false, which means handling ran
+   * and genuinely found no banner.
+   */
+  consent_capture?: ConsentCapture;
   /**
    * The landing page's URL after navigation settled (Playwright's page.url()
    * — reflects any redirect chain the site itself performed), captured by
@@ -459,16 +546,24 @@ export interface AuditData {
   detailedCookies?: DetailedCookie[];
   /**
    * Check Register v2 Cross-Domain Continuity (L4) inputs — all captured by
-   * journeySimulator.ts only when product_domain is set to a genuinely
-   * distinct, reachable host (reusing the L0.4 reachability probe); left
-   * undefined otherwise, which the L4 rules that read them treat as
-   * 'skipped', not a failure. outboundCrossDomainLinks comes from a DOM
-   * scan of the landing page's <a href> tags, not from the product-domain
-   * visit itself.
+   * journeySimulator.ts only when product_domain and/or checkout_domain is
+   * set to a genuinely distinct, reachable host (reusing the L0.4/L0.4-style
+   * reachability probe); left undefined otherwise, which the L4 rules that
+   * read them treat as 'skipped', not a failure. outboundCrossDomainLinks
+   * comes from a DOM scan of the landing page's <a href> tags, not from
+   * either boundary-domain visit itself. marketingGa4ClientId is the single
+   * "before" baseline shared by both boundary checks (captured once, right
+   * before the first of the two domains is visited). L4.3/L4.4 read
+   * whichever of the product/checkout pair actually got populated — an
+   * ecommerce site boundary-checks checkout_domain (hosted checkout), a
+   * plg_saas/marketplace site boundary-checks product_domain (app
+   * subdomain); a site with both set has product_domain take precedence.
    */
   marketingGa4ClientId?: string;
   productDomainGa4ClientId?: string;
   productDomainSessionStartDetected?: boolean;
+  checkoutDomainGa4ClientId?: string;
+  checkoutDomainSessionStartDetected?: boolean;
   outboundCrossDomainLinks?: { total: number; withGl: number };
   pageMetadata?: Record<string, unknown>;  // Misc page metadata
   // IHC extensions — absent when the respective data source is not connected
@@ -551,6 +646,35 @@ export interface AuditScores {
   data_consistency_score: 'Low' | 'Medium' | 'High';
 }
 
+// ─── Report coverage (Site Evaluation Coverage & Honesty PRD §6.4) ───────────
+
+export interface CoverageLayerNotTested {
+  layer: ValidationLayerV2;
+  label: string;
+  reason: string;
+}
+
+/**
+ * "How much of the site did this scan actually reach" — additive on
+ * executive_summary, built by reporting/coverage.ts's buildCoverageSummary()
+ * from step_coverage + the register's results. Undefined (not present with
+ * zero-valued fields) whenever step_coverage itself is undefined — per
+ * CLAUDE.md rule 12 (no fabricated UI data), the frontend banner and PDF
+ * section render only when this is present, never a synthesized "0 pages"
+ * state for AuditData that never captured coverage in the first place.
+ */
+export interface ReportCoverage {
+  pages_requested: number;
+  /** Count of unique normalised URLs actually, successfully navigated to — see journeySimulator.ts's normalizeUrlForCoverage. */
+  pages_distinct: number;
+  steps: StepCoverage[];
+  layers_not_tested: CoverageLayerNotTested[];
+  /** Rules whose test() actually ran (pass/fail/warning), or that were skipped for a reason unrelated to crawl coverage. */
+  rules_tested: number;
+  /** Rules skipped specifically because a `requires` precondition (engine.ts) went unmet — the coverage-driven subset of all skips. */
+  rules_not_tested: number;
+}
+
 // ─── Report ───────────────────────────────────────────────────────────────────
 
 export interface ReportIssue {
@@ -600,6 +724,7 @@ export interface ReportJSON {
     overall_status: 'healthy' | 'partially_broken' | 'critical';
     business_summary: string;
     scores: AuditScores;
+    coverage?: ReportCoverage;
   };
   journey_stages: JourneyStage[];
   platform_breakdown: PlatformBreakdown[];
@@ -642,6 +767,11 @@ export interface AuditRow {
   checkout_domain?: string | null;
   additional_properties?: string[];
   declared_conversions?: DeclaredConversion[] | null;
+  // Coverage columns (20260903002_audit_coverage_fingerprint.sql) — null
+  // when step_coverage was never captured for this audit. See
+  // reporting/coverage.ts's computeCoverageFingerprint.
+  coverage_fingerprint?: string | null;
+  pages_distinct?: number | null;
 }
 
 /** POST /api/audits/start payload for a Check Register v2 scan. */

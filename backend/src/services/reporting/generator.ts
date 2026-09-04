@@ -14,6 +14,7 @@ import type {
   SiteSetupSummary,
 } from '@/types/audit';
 import { generateBusinessSummary, determineOverallStatus, getIssueHeadline, getIssueImpact } from '@/services/interpretation/engine';
+import { buildCoverageSummary } from './coverage';
 
 // ─── Journey stage mapping ─────────────────────────────────────────────────────
 
@@ -150,6 +151,7 @@ export function generateReport(
       overall_status: overallStatus,
       business_summary: businessSummary,
       scores,
+      coverage: buildCoverageSummary(auditData, results),
     },
     journey_stages: customJourneyStages ?? buildJourneyStages(auditData.funnel_type, resultMap),
     platform_breakdown: customPlatformBreakdown ?? buildPlatformBreakdown(resultMap),

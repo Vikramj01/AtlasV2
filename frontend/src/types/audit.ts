@@ -59,6 +59,44 @@ export interface ScanInputs {
   declared_conversions?: DeclaredConversion[];
 }
 
+// ─── Step coverage (Site Evaluation Coverage & Honesty PRD, Phase 1) ─────────
+
+export type StepUrlSource = 'user_supplied' | 'sitemap' | 'nav_link' | 'heuristic' | 'fallback_landing';
+
+export interface StepCoverage {
+  step: string;
+  requested_url: string;
+  final_url?: string;
+  source: StepUrlSource;
+  distinct_from_landing: boolean;
+  navigation_success: boolean;
+  error?: string;
+}
+
+export interface ConsentCapture {
+  banner_present: boolean;
+  vendor?: CMP;
+  dismissed: boolean;
+  declared_cmp?: CMP;
+  tags_before: string[];
+  tags_after: string[];
+}
+
+export interface CoverageLayerNotTested {
+  layer: ValidationLayerFilter;
+  label: string;
+  reason: string;
+}
+
+export interface ReportCoverage {
+  pages_requested: number;
+  pages_distinct: number;
+  steps: StepCoverage[];
+  layers_not_tested: CoverageLayerNotTested[];
+  rules_tested: number;
+  rules_not_tested: number;
+}
+
 export interface AuditScores {
   conversion_signal_health: number;
   attribution_risk_level: 'Low' | 'Medium' | 'High' | 'Critical';
@@ -207,6 +245,7 @@ export interface ReportJSON {
     overall_status: 'healthy' | 'partially_broken' | 'critical';
     business_summary: string;
     scores: AuditScores;
+    coverage?: ReportCoverage;
   };
   journey_stages: JourneyStage[];
   platform_breakdown: PlatformBreakdown[];

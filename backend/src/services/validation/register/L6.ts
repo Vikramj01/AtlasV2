@@ -85,6 +85,7 @@ export const CONVERSION_VALUE_PRESENT: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Backend',
+  requires: ['conversion_surface'],
 
   test(auditData: AuditData): ValidationResult {
     const events = conversionEvents(auditData);
@@ -118,6 +119,7 @@ export const VALUE_NON_ZERO_AND_PLAUSIBLE: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Backend',
+  requires: ['conversion_surface'],
 
   test(auditData: AuditData): ValidationResult {
     const events = conversionEvents(auditData).filter((e) => e.value !== undefined && e.value !== null && e.value !== '');
@@ -158,6 +160,7 @@ export const VALUE_DIFFERENTIATES_OUTCOMES: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
+  requires: ['conversion_surface'],
 
   test(auditData: AuditData): ValidationResult {
     const primaryValue = conversionEvents(auditData).find((e) => e.value !== undefined && e.value !== null)?.value;
@@ -209,6 +212,7 @@ export const CURRENCY_PRESENT_AND_VALID: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Backend',
+  requires: ['conversion_surface'],
 
   test(auditData: AuditData): ValidationResult {
     const events = conversionEvents(auditData);
@@ -242,6 +246,7 @@ export const TRANSACTION_ID_PRESENT: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Backend',
+  requires: ['conversion_surface'],
 
   test(auditData: AuditData): ValidationResult {
     const events = conversionEvents(auditData);
@@ -275,6 +280,7 @@ export const EVENT_ID_PRESENT: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  requires: ['conversion_surface'],
 
   test(auditData: AuditData): ValidationResult {
     const events = conversionEvents(auditData);
@@ -322,6 +328,7 @@ function makeCandidateKeyRule(opts: {
     platform_scope: 'any',
     detectable_by: 'crawl',
     owner: 'Backend',
+    requires: ['conversion_surface'],
 
     test(auditData: AuditData): ValidationResult {
       const scanEvents = opts.scanScope === 'all' ? auditData.dataLayer : conversionEvents(auditData);
@@ -416,6 +423,7 @@ export const ITEMS_ARRAY_POPULATED: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Backend',
+  requires: ['conversion_surface'],
 
   test(auditData: AuditData): ValidationResult {
     const events = conversionEvents(auditData);
@@ -451,6 +459,7 @@ export const PROXY_VALUE_ON_STAGE_EVENTS: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
+  requires: ['conversion_surface'],
 
   test(auditData: AuditData): ValidationResult {
     const completion = completionStep(auditData);
@@ -498,6 +507,7 @@ export const SHIPPING_AND_TAX_SEPARATED: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Backend',
+  requires: ['conversion_surface'],
 
   test(auditData: AuditData): ValidationResult {
     const events = conversionEvents(auditData);

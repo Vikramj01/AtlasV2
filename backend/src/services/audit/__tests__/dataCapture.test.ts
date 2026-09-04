@@ -2,7 +2,7 @@
  * Unit tests for dataCapture helpers.
  * All Playwright types are mocked inline — no real browser required.
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   flushDataLayer,
   interceptNetworkRequests,
@@ -13,8 +13,12 @@ import {
   mergeCookies,
   mergeLocalStorage,
   mergeDetailedCookies,
+  shouldCaptureUrl,
+  collectDeep,
+  evaluateAcrossFrames,
   type StepRef,
 } from '../dataCapture';
+import { ALL_DECLARED_PLATFORMS, PLATFORM_MATCHER_HOSTS, PLATFORM_LABELS } from '@/services/validation/register/platformDetection';
 import type { NetworkRequest, ConsoleError } from '@/types/audit';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -415,5 +419,147 @@ describe('mergeDetailedCookies', () => {
 
   it('returns an empty array for empty input', () => {
     expect(mergeDetailedCookies([])).toEqual([]);
+  });
+});
+
+// ── Invariant: every declared platform's matcher host is captured ─────────
+//
+// Site Evaluation Coverage & Honesty PRD §8.3, defect #4 — a declared
+// platform whose PLATFORM_MATCHERS matcher (platformDetection.ts) could
+// never actually match anything, because dataCapture.ts's own separately-
+// maintained TRACKED_URL_PATTERNS never captured a matching request into
+// AuditData.networkRequests in the first place. TRACKED_URL_PATTERNS is now
+// built by spreading PLATFORM_MATCHER_HOSTS in directly, so this should be
+// structurally impossible to reintroduce — this test is what actually
+// proves that, and what would catch it if the two ever drifted apart again
+// (e.g. someone hand-edits TRACKED_URL_PATTERNS back to a separate list).
+
+describe('shouldCaptureUrl — every declared platform is structurally capturable', () => {
+  it.each(ALL_DECLARED_PLATFORMS)('%s tag requests are captured', (platform) => {
+    for (const host of PLATFORM_MATCHER_HOSTS[platform]) {
+      expect(shouldCaptureUrl(`https://${host}/whatever`)).toBe(true);
+    }
+  });
+
+  it('covers every platform PLATFORM_LABELS declares — the two never silently drift apart in count', () => {
+    expect(ALL_DECLARED_PLATFORMS.sort()).toEqual(Object.keys(PLATFORM_LABELS).sort());
+  });
+});
+
+// ── collectDeep / evaluateAcrossFrames (Sprint 20 — iframe + shadow DOM
+// traversal) ────────────────────────────────────────────────────────────
+//
+// collectDeep runs inside a real browser via Playwright's evaluate(), so
+// these tests stub the global `document` with a minimal fake implementing
+// just the querySelectorAll/shadowRoot/getAttribute surface collectDeep
+// actually touches — a faithful test of the real recursive walk logic
+// without needing a jsdom dependency.
+
+describe('collectDeep', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('finds a shadow-DOM-encapsulated form element the flat selector alone would miss', () => {
+    const emailInput = { getAttribute: (name: string) => (name === 'name' ? 'lead_email' : null) };
+    const shadowRoot = {
+      querySelectorAll: (sel: string) => (sel === 'input[type="email"]' ? [emailInput] : []),
+    };
+    const shadowHost = { shadowRoot };
+    const doc = {
+      querySelectorAll: (sel: string) => (sel === '*' ? [shadowHost] : []), // nothing matches at the light-DOM level
+    };
+    vi.stubGlobal('document', doc);
+
+    const result = collectDeep({ selector: 'input[type="email"]', mode: 'attr', attr: 'name' });
+    expect(result).toEqual(['lead_email']);
+  });
+
+  it('finds a script tag inside a nested (two-levels-deep) shadow root', () => {
+    const script = { getAttribute: (name: string) => (name === 'src' ? 'https://www.googletagmanager.com/gtm.js?id=GTM-DEEP' : null) };
+    const innerShadowRoot = { querySelectorAll: (sel: string) => (sel === 'script[src]' ? [script] : []) };
+    const innerHost = { shadowRoot: innerShadowRoot };
+    const outerShadowRoot = { querySelectorAll: (sel: string) => (sel === '*' ? [innerHost] : []) };
+    const outerHost = { shadowRoot: outerShadowRoot };
+    const doc = { querySelectorAll: (sel: string) => (sel === '*' ? [outerHost] : []) };
+    vi.stubGlobal('document', doc);
+
+    const result = collectDeep({ selector: 'script[src]', mode: 'attr', attr: 'src' });
+    expect(result).toEqual(['https://www.googletagmanager.com/gtm.js?id=GTM-DEEP']);
+  });
+
+  it('resolves href via mode: href rather than a raw attribute read', () => {
+    const anchor = { href: 'https://app.example.com/dashboard?_gl=1abc' };
+    const doc = { querySelectorAll: (sel: string) => (sel === 'a[href]' ? [anchor] : []) };
+    vi.stubGlobal('document', doc);
+
+    expect(collectDeep({ selector: 'a[href]', mode: 'href' })).toEqual(['https://app.example.com/dashboard?_gl=1abc']);
+  });
+
+  it('never recurses when nothing in the tree has a shadowRoot — one pass for the selector plus one "*" check, no deeper walk', () => {
+    const anchor = { href: 'https://example.com/plain' };
+    const plainEl = {}; // no .shadowRoot at all
+    const querySelectorAll = vi.fn((sel: string) => {
+      if (sel === 'a[href]') return [anchor];
+      if (sel === '*') return [plainEl];
+      return [];
+    });
+    vi.stubGlobal('document', { querySelectorAll });
+
+    const result = collectDeep({ selector: 'a[href]', mode: 'href' });
+
+    expect(result).toEqual(['https://example.com/plain']);
+    // One call for the selector itself, one for '*' to check for shadow
+    // hosts — no recursive walk(shadowRoot) call, since plainEl has no
+    // shadowRoot. This is the "short-circuit cheaply" cost bound.
+    expect(querySelectorAll).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('evaluateAcrossFrames', () => {
+  it('falls back to a single page.evaluate() call when the page exposes no frames() — every existing caller/test double', async () => {
+    const evaluate = vi.fn().mockResolvedValue(['https://example.com/a']);
+    const page = { evaluate };
+
+    const result = await evaluateAcrossFrames<string, { selector: string; mode: 'href' }>(
+      page, () => [], { selector: 'a[href]', mode: 'href' },
+    );
+
+    expect(result).toEqual(['https://example.com/a']);
+    expect(evaluate).toHaveBeenCalledTimes(1);
+  });
+
+  it('merges results across every frame, including a same-origin iframe the main page.evaluate() alone would never see', async () => {
+    const mainFrame = { evaluate: vi.fn().mockResolvedValue(['https://www.googletagmanager.com/gtm.js?id=GTM-MAIN']) };
+    const iframeFrame = { evaluate: vi.fn().mockResolvedValue(['https://www.googletagmanager.com/gtm.js?id=GTM-IFRAME']) };
+    const page = {
+      evaluate: vi.fn(), // should not be called — frames() takes priority
+      frames: vi.fn().mockReturnValue([mainFrame, iframeFrame]),
+    };
+
+    const result = await evaluateAcrossFrames<string, { selector: string; mode: 'attr'; attr: string }>(
+      page, () => [], { selector: 'script[src]', mode: 'attr', attr: 'src' },
+    );
+
+    expect(result).toEqual([
+      'https://www.googletagmanager.com/gtm.js?id=GTM-MAIN',
+      'https://www.googletagmanager.com/gtm.js?id=GTM-IFRAME',
+    ]);
+    expect(page.evaluate).not.toHaveBeenCalled();
+  });
+
+  it('skips a frame whose evaluate() throws (cross-origin, detached mid-evaluate) instead of failing the whole scan', async () => {
+    const okFrame = { evaluate: vi.fn().mockResolvedValue(['https://example.com/found']) };
+    const crossOriginFrame = { evaluate: vi.fn().mockRejectedValue(new Error('cross-origin')) };
+    const page = {
+      evaluate: vi.fn(),
+      frames: vi.fn().mockReturnValue([okFrame, crossOriginFrame]),
+    };
+
+    const result = await evaluateAcrossFrames<string, { selector: string; mode: 'href' }>(
+      page, () => [], { selector: 'a[href]', mode: 'href' },
+    );
+
+    expect(result).toEqual(['https://example.com/found']);
   });
 });

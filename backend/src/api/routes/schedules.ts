@@ -156,11 +156,26 @@ schedulesRouter.post('/:id/run', async (req: Request, res: Response): Promise<vo
     const schedule = await getSchedule(req.params.id, userId);
     if (!schedule) { res.status(404).json({ error: 'Schedule not found' }); return; }
 
+    // Threads the schedule's own v2 Scan Inputs through — same fix as the
+    // schedule runner (queue/worker.ts) for the identical bug: a manual
+    // "run now" of a v2 schedule must not silently fall back to v1 either.
     const audit = await createAudit({
       user_id: userId,
       website_url: schedule.website_url,
       funnel_type: schedule.funnel_type as FunnelType,
       region: schedule.region as Region,
+      rule_set_version: schedule.rule_set_version,
+      site_type: schedule.site_type,
+      secondary_motion: schedule.secondary_motion,
+      declared_platforms: schedule.declared_platforms,
+      primary_channel: schedule.primary_channel,
+      monthly_spend_band: schedule.monthly_spend_band,
+      traffic_regions: schedule.traffic_regions,
+      cmp: schedule.cmp,
+      product_domain: schedule.product_domain,
+      checkout_domain: schedule.checkout_domain,
+      additional_properties: schedule.additional_properties,
+      declared_conversions: schedule.declared_conversions,
     });
 
     await auditQueue.add({
@@ -170,6 +185,18 @@ schedulesRouter.post('/:id/run', async (req: Request, res: Response): Promise<vo
       region: schedule.region,
       url_map: schedule.url_map,
       scheduled_audit_id: schedule.id,
+      rule_set_version: schedule.rule_set_version,
+      site_type: schedule.site_type,
+      secondary_motion: schedule.secondary_motion,
+      declared_platforms: schedule.declared_platforms,
+      primary_channel: schedule.primary_channel,
+      monthly_spend_band: schedule.monthly_spend_band,
+      traffic_regions: schedule.traffic_regions,
+      cmp: schedule.cmp,
+      product_domain: schedule.product_domain,
+      checkout_domain: schedule.checkout_domain,
+      additional_properties: schedule.additional_properties,
+      declared_conversions: schedule.declared_conversions,
     });
 
     await markScheduleRan(

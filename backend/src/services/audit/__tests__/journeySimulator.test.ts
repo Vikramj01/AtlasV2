@@ -1,10 +1,12 @@
 /**
  * Unit tests for journeySimulator's probeDomainReachable (Check Register v2
- * L0.4 — "Product domain reachable") and scanOutboundCrossDomainLinks
- * (L4.1/L4.2). global.fetch is mocked; no network or browser required.
+ * L0.4 — "Product domain reachable"), scanOutboundCrossDomainLinks
+ * (L4.1/L4.2), and normalizeUrlForCoverage (StepCoverage's distinct-from-
+ * landing comparison — Site Evaluation Coverage & Honesty PRD, Phase 1).
+ * global.fetch is mocked; no network or browser required.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { probeDomainReachable, hostnameOf, scanOutboundCrossDomainLinks } from '../journeySimulator';
+import { probeDomainReachable, hostnameOf, scanOutboundCrossDomainLinks, normalizeUrlForCoverage } from '../journeySimulator';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -84,5 +86,44 @@ describe('scanOutboundCrossDomainLinks', () => {
   it('returns zero counts when page.evaluate throws', async () => {
     const page = { evaluate: vi.fn().mockRejectedValue(new Error('detached')) };
     await expect(scanOutboundCrossDomainLinks(page, ['app.example.com'])).resolves.toEqual({ total: 0, withGl: 0 });
+  });
+});
+
+describe('normalizeUrlForCoverage', () => {
+  it('strips a trailing slash', () => {
+    expect(normalizeUrlForCoverage('https://example.com/path/')).toBe(normalizeUrlForCoverage('https://example.com/path'));
+  });
+
+  it('never strips the root path down to nothing', () => {
+    expect(normalizeUrlForCoverage('https://example.com')).toBe(normalizeUrlForCoverage('https://example.com/'));
+  });
+
+  it('drops the hash', () => {
+    expect(normalizeUrlForCoverage('https://example.com/path#section')).toBe(normalizeUrlForCoverage('https://example.com/path'));
+  });
+
+  it('drops query params — required so injected synthetic click IDs/UTMs never affect the comparison', () => {
+    expect(normalizeUrlForCoverage('https://example.com/path?gclid=test_gclid_123&utm_source=atlas_audit'))
+      .toBe(normalizeUrlForCoverage('https://example.com/path'));
+  });
+
+  it('lowercases the host and path', () => {
+    expect(normalizeUrlForCoverage('https://EXAMPLE.com/Path')).toBe(normalizeUrlForCoverage('https://example.com/path'));
+  });
+
+  it('resolves a protocol-relative URL against the placeholder base', () => {
+    expect(normalizeUrlForCoverage('//example.com/path')).toBe(normalizeUrlForCoverage('https://example.com/path'));
+  });
+
+  it('distinguishes genuinely different paths', () => {
+    expect(normalizeUrlForCoverage('https://example.com/checkout')).not.toBe(normalizeUrlForCoverage('https://example.com/'));
+  });
+
+  it('returns undefined for an unparseable URL', () => {
+    expect(normalizeUrlForCoverage('not a url')).toBeUndefined();
+  });
+
+  it('returns undefined for undefined input', () => {
+    expect(normalizeUrlForCoverage(undefined)).toBeUndefined();
   });
 });

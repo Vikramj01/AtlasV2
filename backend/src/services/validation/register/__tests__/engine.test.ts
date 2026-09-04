@@ -10,7 +10,8 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   isApplicableToSiteType, isApplicableToDeclaredPlatforms, isRuleApplicable, runRegister,
 } from '../engine';
-import type { AuditData, ValidationRule, DeclaredPlatform } from '@/types/audit';
+import { calculateV2Scores } from '../scoring';
+import type { AuditData, ValidationRule, DeclaredPlatform, StepCoverage } from '@/types/audit';
 
 vi.mock('@/utils/logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -173,11 +174,10 @@ describe('runRegister', () => {
 
   it('defaults to the REGISTER export when no rules argument is passed', () => {
     // REGISTER now carries L0 (4), L1 (16), L2 (11), L3 (6), L4 (4), L5
-    // (12), L6 (15), L7 (11), and L12 (4) rules — 83 total. L8-L11 were
-    // scoped out earlier (predominantly connector/credentials/second-pass
-    // detectable); this is the full crawl-only phase-1 register. Locks in
-    // that runRegister() with no explicit rules argument actually reaches
-    // the real library, not an empty stand-in.
+    // (12), L6 (15), L7 (11), L8 (3), L9 (2), L10 (2), and L12 (4) rules —
+    // 90 total. L11 is still scoped out (needs platform connectors, not
+    // crawl data). Locks in that runRegister() with no explicit rules
+    // argument actually reaches the real library, not an empty stand-in.
     const results = runRegister(makeAuditData());
     expect(results.length).toBeGreaterThan(0);
     expect(results.map((r) => r.rule_id)).toContain('DECLARED_PLATFORM_HAS_TAG');
@@ -195,5 +195,90 @@ describe('runRegister', () => {
     const declaredScopeRule = makeRule({ id: 'L0.1', rule_id: 'DECLARED_PLATFORM_HAS_TAG', platform_scope: 'declared' });
     const results = runRegister(makeAuditData({ declared_platforms: [] as DeclaredPlatform[] }), [declaredScopeRule]);
     expect(results).toHaveLength(1);
+  });
+});
+
+// ── requires (precondition gating) — Site Evaluation Coverage & Honesty PRD §6.3 ──
+
+function makeStep(overrides: Partial<StepCoverage> = {}): StepCoverage {
+  return {
+    step: 'checkout',
+    requested_url: 'https://example.com/checkout',
+    source: 'user_supplied',
+    distinct_from_landing: true,
+    navigation_success: true,
+    ...overrides,
+  };
+}
+
+describe('runRegister — requires (precondition gating)', () => {
+  it("a rule requiring 'conversion_surface' is skipped — not run, not failed — when the crawl never left landing", () => {
+    let testWasCalled = false;
+    const gatedRule = makeRule({
+      id: 'L6.99',
+      rule_id: 'REQUIRES_CONVERSION_SURFACE',
+      layer: 'parameter_completeness',
+      requires: ['conversion_surface'],
+      test: () => { testWasCalled = true; return { rule_id: 'REQUIRES_CONVERSION_SURFACE', validation_layer: 'parameter_completeness', status: 'pass', severity: 'high', technical_details: { found: '', expected: '', evidence: [] } }; },
+    });
+
+    const results = runRegister(
+      makeAuditData({ step_coverage: [makeStep({ step: 'landing', distinct_from_landing: false })] }),
+      [gatedRule],
+    );
+
+    expect(results).toHaveLength(1);
+    expect(results[0].status).toBe('skipped');
+    expect(results[0].technical_details.found).toContain('the crawl never reached a page distinct from the landing page');
+    expect(testWasCalled).toBe(false); // test() never even runs — precondition gate is checked first
+  });
+
+  it("a rule requiring 'conversion_surface' runs normally once a distinct, successfully-navigated step exists", () => {
+    const gatedRule = makeRule({ id: 'L6.99', rule_id: 'REQUIRES_CONVERSION_SURFACE', requires: ['conversion_surface'] });
+
+    const results = runRegister(
+      makeAuditData({ step_coverage: [makeStep({ step: 'landing', distinct_from_landing: false }), makeStep()] }),
+      [gatedRule],
+    );
+
+    expect(results[0].status).toBe('pass'); // makeRule's default test() always returns 'pass'
+  });
+
+  it('a rule with no requires is unaffected by step_coverage', () => {
+    const ungatedRule = makeRule({ rule_id: 'UNGATED' });
+    const results = runRegister(
+      makeAuditData({ step_coverage: [makeStep({ step: 'landing', distinct_from_landing: false })] }),
+      [ungatedRule],
+    );
+    expect(results[0].status).toBe('pass');
+  });
+
+  it('demonstrates the scoring consequence: a skipped-for-precondition rule drops out of the conversion_signal_health denominator, a genuinely-failing one does not', () => {
+    // GATED would fail if it ever ran — models an L6 rule whose data (e.g.
+    // transaction_id) genuinely never showed up because the crawl never
+    // reached the page that would carry it.
+    const gatedRule = makeRule({
+      rule_id: 'GATED',
+      requires: ['conversion_surface'],
+      test: () => ({ rule_id: 'GATED', validation_layer: 'parameter_completeness', status: 'fail', severity: 'high', technical_details: { found: '', expected: '', evidence: [] } }),
+    });
+    const passingRule = makeRule({ rule_id: 'PASSES' });
+
+    const homepageOnly = makeAuditData({ step_coverage: [makeStep({ step: 'landing', distinct_from_landing: false })] });
+    const results = runRegister(homepageOnly, [gatedRule, passingRule]);
+
+    expect(results.map((r) => r.status)).toEqual(['skipped', 'pass']);
+    // Denominator is 1 (PASSES only) — GATED is excluded entirely, never
+    // counted as a failure just because the crawl couldn't reach it.
+    expect(calculateV2Scores(results).conversion_signal_health).toBe(100);
+
+    // Same two rules, but the crawl DID reach a real conversion surface —
+    // GATED's test() now actually runs, and its genuine 'fail' correctly
+    // drags the score down. Precondition gating only ever removes rules
+    // from the denominator; it never protects a real failure from scoring.
+    const reachedConversionSurface = makeAuditData({ step_coverage: [makeStep({ step: 'landing', distinct_from_landing: false }), makeStep()] });
+    const resultsReached = runRegister(reachedConversionSurface, [gatedRule, passingRule]);
+    expect(resultsReached.map((r) => r.status)).toEqual(['fail', 'pass']);
+    expect(calculateV2Scores(resultsReached).conversion_signal_health).toBe(50);
   });
 });

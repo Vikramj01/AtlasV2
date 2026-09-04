@@ -15,11 +15,32 @@ interface Props {
 
 export function ExecutiveSummary({ report }: Props) {
   const { executive_summary, comparison } = report;
-  const { scores } = executive_summary;
+  const { scores, coverage } = executive_summary;
+
+  // Undefined coverage (Journey-Builder mode, an audit predating this field)
+  // renders nothing here — per CLAUDE.md rule 12, never fabricate a coverage
+  // claim for an AuditData that never captured it.
+  const limitedCoverage = coverage && coverage.pages_distinct < coverage.pages_requested;
 
   return (
     <div className="space-y-6">
       <p className="text-sm font-medium text-muted-foreground">{report.website_url}</p>
+
+      {limitedCoverage && coverage && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4">
+          <p className="text-sm font-semibold text-amber-900">Limited scan coverage</p>
+          <p className="mt-1 text-sm leading-relaxed text-amber-800">
+            This scan examined {coverage.pages_distinct} of {coverage.pages_requested} requested page{coverage.pages_requested !== 1 ? 's' : ''}.
+            {coverage.layers_not_tested.length > 0 && (
+              <>
+                {' '}
+                {coverage.layers_not_tested.map((l) => l.label).join(', ')} could not be tested because no conversion surface was reached — {coverage.rules_not_tested} check{coverage.rules_not_tested !== 1 ? 's' : ''} {coverage.rules_not_tested !== 1 ? 'were' : 'was'} skipped rather than scored as failing.
+              </>
+            )}
+          </p>
+        </div>
+      )}
+
       <StatusBanner
         status={executive_summary.overall_status}
         summary={executive_summary.business_summary}
