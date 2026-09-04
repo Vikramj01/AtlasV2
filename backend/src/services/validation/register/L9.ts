@@ -35,6 +35,7 @@ export const SERVER_SIDE_GTM_CONNECTION_VERIFIED: ValidationRule = {
   platform_scope: 'n/a',
   detectable_by: 'crawl',
   owner: 'Backend',
+  remediation: 'Re-verify the sGTM endpoint from Client Settings > Platforms — check that the server container is still deployed, its transport URL hasn\'t changed, and it\'s publicly reachable (not behind a firewall or VPN the verification probe can\'t reach).',
 
   test(auditData: AuditData): ValidationResult {
     const verified = auditData.sgtmVerified;
@@ -88,6 +89,7 @@ export const VERIFIED_SGTM_TRAFFIC_OBSERVED: ValidationRule = {
   platform_scope: 'n/a',
   detectable_by: 'crawl',
   owner: 'Backend',
+  remediation: 'Confirm the client-side dataLayer/tags are actually configured to route through the sGTM endpoint for this specific site_type/funnel — the connection itself verifies fine, but nothing observed during this crawl actually used it. Check GTM Preview for the sGTM-forwarding tag firing on this journey.',
 
   test(auditData: AuditData): ValidationResult {
     if (auditData.sgtmVerified !== true) {

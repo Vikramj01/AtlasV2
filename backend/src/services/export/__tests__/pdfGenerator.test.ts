@@ -4,7 +4,7 @@
  * ReportJSON inputs — from minimal to full 26-rule reports.
  */
 import { describe, it, expect } from 'vitest';
-import { generatePDF, computeRuleOverviewStats } from '../pdfGenerator';
+import { generatePDF, computeRuleOverviewStats, formatWarningsLabel } from '../pdfGenerator';
 import type { ReportJSON, ValidationResult, ReportIssue } from '@/types/audit';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -118,6 +118,24 @@ describe('computeRuleOverviewStats', () => {
     const stats = computeRuleOverviewStats(results);
     expect(stats.validated).toHaveLength(0);
     expect(stats.passed + stats.failed + stats.warnings).toBe(0);
+  });
+});
+
+// ── formatWarningsLabel ──────────────────────────────────────────────────────
+// Regression coverage for PRD Issue 6: the Rule Overview headline hardcoded
+// "warnings" regardless of count, rendering "1 warnings" for a single warning.
+
+describe('formatWarningsLabel', () => {
+  it('uses the singular for exactly 1 warning', () => {
+    expect(formatWarningsLabel(1)).toBe('1 warning');
+  });
+
+  it('uses the plural for 0 warnings', () => {
+    expect(formatWarningsLabel(0)).toBe('0 warnings');
+  });
+
+  it('uses the plural for more than 1 warning', () => {
+    expect(formatWarningsLabel(2)).toBe('2 warnings');
   });
 });
 

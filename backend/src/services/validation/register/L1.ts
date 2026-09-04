@@ -56,6 +56,7 @@ export const GTM_CONTAINER_LOADED: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
+  remediation: 'Ensure the GTM snippet (gtm.js) is installed in the <head>, loads before other scripts, and isn\'t blocked by a Content Security Policy, ad blocker, or consent gate. Confirm it connects with GTM Preview mode.',
 
   test(auditData: AuditData): ValidationResult {
     const ids = trackingSignals.extractGtmContainerIdsFromScriptSrcs(gtmScriptSrcs(auditData));
@@ -92,6 +93,11 @@ export const CONTAINER_ID_MATCHES_DECLARED: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
+  remediation: (result) => {
+    const declaredLine = result.technical_details.evidence.find((e) => e.startsWith('Declared:'));
+    const declared = declaredLine ? declaredLine.replace('Declared: ', '') : 'the connected container';
+    return `Publish the correct GTM container (${declared}) to this site, or update the connected container in Atlas if the live site is intentionally running a different one.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const declared = auditData.connected_gtm_container_id;
@@ -144,6 +150,10 @@ export const DATALAYER_INITIALISED: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  remediation: (result) =>
+    result.technical_details.found.includes('never received a push')
+      ? "Initialize window.dataLayer = window.dataLayer || []; before GTM loads, and push at least a page_view-shaped event on landing — GTM's own tags read from this array, so nothing else can fire correctly without it."
+      : 'Move the first dataLayer.push() earlier in the page load — before GTM initializes — so tags evaluating on the landing page see real data instead of falling back to defaults.',
 
   test(auditData: AuditData): ValidationResult {
     const early = auditData.dataLayer.filter((e) => e.step === 'landing' || e.step === 'init');
@@ -179,6 +189,7 @@ export const GA4_CONFIG_TAG_PRESENT: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
+  remediation: 'Add a GA4 Configuration tag in GTM (or the gtag(\'config\', \'G-XXXXXXX\') snippet directly) firing on All Pages, and confirm in the Network tab that requests reach google-analytics.com/g/collect with a resolved measurement ID.',
 
   test(auditData: AuditData): ValidationResult {
     const match = trackingSignals.detectGa4(auditData.networkRequests);
@@ -212,6 +223,7 @@ export const GOOGLE_GLOBAL_SITE_TAG_PRESENT: ValidationRule = {
   platform_scope: ['google_ads'],
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
+  remediation: 'Add the Google Ads gtag.js loader (googletagmanager.com/gtag/js?id=AW-XXXXXXXXX) via GTM\'s Google Tag or a direct gtag.js snippet, firing on every page — without it, no Google Ads conversion or remarketing tag downstream of this one can work.',
 
   test(auditData: AuditData): ValidationResult {
     const hits = auditData.networkRequests.filter(
@@ -250,6 +262,7 @@ export const CONVERSION_LINKER_ENABLED: ValidationRule = {
   platform_scope: ['google_ads'],
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
+  remediation: 'Enable Auto-tagging and Conversion Linker in the Google Tag (or add the standalone Conversion Linker GTM tag) firing on All Pages — this writes the _gcl_au cookie that later steps rely on to bridge a click ID across pages, even ones that never see a gclid directly.',
 
   test(auditData: AuditData): ValidationResult {
     const hasLinkerCookie = !!auditData.cookies?.['_gcl_au'];
@@ -278,6 +291,7 @@ function makePixelPresenceRule(opts: {
   detect: (requests: NetworkRequest[]) => trackingSignals.TagMatch;
   expected: string;
   noneFoundMessage: string;
+  remediation: string;
 }): ValidationRule {
   return {
     id: opts.id,
@@ -289,6 +303,7 @@ function makePixelPresenceRule(opts: {
     platform_scope: [opts.platform],
     detectable_by: 'crawl',
     owner: 'Marketing Ops',
+    remediation: opts.remediation,
 
     test(auditData: AuditData): ValidationResult {
       const match = opts.detect(auditData.networkRequests);
@@ -319,6 +334,7 @@ export const META_PIXEL_PRESENT = makePixelPresenceRule({
   detect: trackingSignals.detectMetaPixel,
   expected: 'fbevents.js loads and a pixel ID resolves',
   noneFoundMessage: 'No requests to facebook.com/tr or connect.facebook.net detected',
+  remediation: 'Install the Meta Pixel (via GTM\'s Meta Pixel tag or the fbevents.js base snippet) firing on every page, with the correct Pixel ID from Events Manager. Verify with the Meta Pixel Helper browser extension.',
 });
 
 export const TIKTOK_PIXEL_PRESENT = makePixelPresenceRule({
@@ -329,6 +345,7 @@ export const TIKTOK_PIXEL_PRESENT = makePixelPresenceRule({
   detect: trackingSignals.detectTikTokPixel,
   expected: 'TikTok pixel script loads and a pixel ID resolves',
   noneFoundMessage: 'No requests to analytics.tiktok.com detected',
+  remediation: 'Install the TikTok Pixel base code (via GTM\'s TikTok Pixel tag or the ttq snippet) firing on every page, with the correct Pixel ID from TikTok Events Manager.',
 });
 
 export const LINKEDIN_INSIGHT_TAG_PRESENT = makePixelPresenceRule({
@@ -339,6 +356,7 @@ export const LINKEDIN_INSIGHT_TAG_PRESENT = makePixelPresenceRule({
   detect: trackingSignals.detectLinkedInInsight,
   expected: 'Insight tag loads with a partner ID',
   noneFoundMessage: 'No requests to snap.licdn.com or linkedin.com/px detected',
+  remediation: 'Install the LinkedIn Insight Tag (via GTM\'s LinkedIn tag or the base snippet from Campaign Manager) firing on every page, with the correct Partner ID.',
 });
 
 export const MICROSOFT_UET_TAG_PRESENT = makePixelPresenceRule({
@@ -349,6 +367,7 @@ export const MICROSOFT_UET_TAG_PRESENT = makePixelPresenceRule({
   detect: trackingSignals.detectMicrosoftUet,
   expected: 'UET tag loads with a tag ID',
   noneFoundMessage: 'No requests to bat.bing.com detected',
+  remediation: 'Install the Microsoft UET tag (via GTM\'s Microsoft Advertising UET tag or the base snippet from Microsoft Ads) firing on every page, with the correct UET Tag ID.',
 });
 
 // ── L1.11 — No duplicate container ───────────────────────────────────────────
@@ -366,6 +385,11 @@ export const NO_DUPLICATE_CONTAINER: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
+  remediation: (result) => {
+    const idsLine = result.technical_details.evidence.find((e) => e.startsWith('Container IDs observed:'));
+    const ids = idsLine ? idsLine.replace('Container IDs observed: ', '') : 'the extra container';
+    return `Remove the extra GTM container(s) (${ids}) — likely a leftover from a migration, a duplicate install by two teams, or a CMS/theme default. Keep only the one intended for production; a second container doubles every tag that fires from it.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const ids = trackingSignals.extractGtmContainerIdsFromScriptSrcs(gtmScriptSrcs(auditData));
@@ -425,6 +449,11 @@ export const NO_DUPLICATE_BASE_TAG: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
+  remediation: (result) => {
+    const dupes = result.technical_details.evidence.filter((e) => e.includes('distinct IDs firing'));
+    if (dupes.length === 0) return 'Remove the duplicate base tag installation for the affected platform(s) — check for both a GTM-managed tag and a hardcoded script tag on the page, which is the most common cause.';
+    return `Remove the duplicate base tag installation: ${dupes.join('; ')}. Check for both a GTM-managed tag and a hardcoded script tag on the page — that combination is the most common cause of two IDs firing for the same platform.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const violations: string[] = [];
@@ -481,6 +510,11 @@ export const TAGS_PRESENT_ACROSS_SAMPLED_PAGES: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
+  remediation: (result) => {
+    const gapsLine = result.technical_details.evidence.find((e) => e.startsWith('Steps with no tracking:'));
+    const gaps = gapsLine ? gapsLine.replace('Steps with no tracking: ', '') : 'the affected page(s)';
+    return `Check tag triggers for the page(s) with zero tracking (${gaps}) — a trigger scoped too narrowly (a specific URL path, a CSS selector that changed) is the most common cause of a tag working on some pages but not others.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const steps = [...new Set(auditData.steps_visited ?? [])].filter((s) => s !== 'init');
@@ -529,6 +563,7 @@ export const SERVER_CONTAINER_ENDPOINT_CONFIGURED: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Backend',
+  remediation: 'Stand up a server-side GTM (sGTM) container and route client-side events to it via a first-party endpoint — this enables server-side deduplication and gives Meta/TikTok CAPI and Google Ads Enhanced Conversions a durable, cookie-independent delivery path. If sGTM is deliberately out of scope for this site, this can be deprioritized relative to the client-side rules above it.',
 
   test(auditData: AuditData): ValidationResult {
     const hostname = safeHostname(auditData.website_url);
@@ -565,6 +600,11 @@ export const SERVER_CONTAINER_FIRST_PARTY_DOMAIN: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Backend',
+  remediation: (result) => {
+    const hostsLine = result.technical_details.evidence.find((e) => e.startsWith('All candidate hosts:'));
+    const hosts = hostsLine ? hostsLine.replace('All candidate hosts: ', '') : 'the third-party sGTM endpoint';
+    return `Repoint the server container's subdomain (${hosts}) at the advertiser's own domain via a CNAME, rather than the vendor's shared hosting — a third-party sGTM host doesn't get first-party cookie durability, defeating much of the point of running server-side.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const hostname = safeHostname(auditData.website_url);
@@ -621,6 +661,11 @@ export const NO_TAG_LOAD_ERRORS: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  remediation: (result) => {
+    const failed = result.technical_details.evidence.slice(0, 3);
+    if (failed.length === 0) return 'Investigate the failed tag request(s) reported above — check for CSP blocks, ad-blocker interference, or a stale/incorrect endpoint URL.';
+    return `Fix the failing request(s): ${failed.join('; ')}${result.technical_details.evidence.length > 3 ? ', and others' : ''}. A 4xx/5xx status usually means a stale or incorrect endpoint URL; a network failure usually means CSP or an ad blocker is intercepting the request.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const violations = auditData.networkRequests.filter(

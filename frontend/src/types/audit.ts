@@ -256,6 +256,10 @@ export interface ReportJSON {
     raw_network_requests: unknown[];
     raw_datalayer_events: unknown[];
   };
+  /** Set by the backend's pre-render placeholder guard when a narrative field contains literal placeholder-shaped text. Non-fatal — render a visible warning banner when present. */
+  content_quality_warning?: {
+    flagged_fields: string[];
+  };
   comparison?: AuditComparison | null;
 }
 

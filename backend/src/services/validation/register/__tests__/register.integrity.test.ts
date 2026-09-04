@@ -62,20 +62,42 @@ describe('REGISTER — structural integrity', () => {
     }
   });
 
+  const minimal: AuditData = {
+    audit_id: 'audit-minimal',
+    website_url: 'https://example.com',
+    funnel_type: 'saas',
+    region: 'us',
+    dataLayer: [],
+    networkRequests: [],
+    cookieSnapshots: [],
+    localStorageSnapshots: [],
+    injected: { gclid: '', fbclid: '' },
+  };
+
   it('every rule is a function that can be invoked without throwing on a minimal AuditData', () => {
-    const minimal: AuditData = {
-      audit_id: 'audit-minimal',
-      website_url: 'https://example.com',
-      funnel_type: 'saas',
-      region: 'us',
-      dataLayer: [],
-      networkRequests: [],
-      cookieSnapshots: [],
-      localStorageSnapshots: [],
-      injected: { gclid: '', fbclid: '' },
-    };
     for (const rule of REGISTER) {
       expect(() => rule.test(minimal), `${rule.id} (${rule.rule_id}) threw on a minimal AuditData`).not.toThrow();
+    }
+  });
+
+  // Regression coverage for PRD "Signal Health Report" Issue 1 — every
+  // "Fix" field used to render the literal placeholder
+  // "Contact support for details on this rule." because remediation copy
+  // didn't exist anywhere for the v2 register. Every rule now carries its
+  // own authored remediation; this asserts that stays true and that a
+  // function-shaped one (which reads technical_details.found/evidence to
+  // interpolate a specific value) never throws or returns empty, even
+  // against the minimal, mostly-'skipped' result set above where those
+  // fields are terse.
+  it('every rule has non-empty remediation, and it never throws or returns empty when evaluated', () => {
+    for (const rule of REGISTER) {
+      expect(rule.remediation, `${rule.id} (${rule.rule_id}) has no remediation`).toBeTruthy();
+      const result = rule.test(minimal);
+      let text = '';
+      expect(() => {
+        text = typeof rule.remediation === 'function' ? rule.remediation(result) : rule.remediation;
+      }, `${rule.id} (${rule.rule_id})'s remediation threw`).not.toThrow();
+      expect(text.length, `${rule.id} (${rule.rule_id})'s remediation returned an empty string`).toBeGreaterThan(0);
     }
   });
 });

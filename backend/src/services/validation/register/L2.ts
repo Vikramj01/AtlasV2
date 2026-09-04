@@ -164,6 +164,7 @@ function makeClickIdCaptureRule(opts: {
     platform_scope: opts.platform_scope,
     detectable_by: 'crawl',
     owner: 'Frontend',
+    remediation: `Read the injected ${opts.paramName} URL parameter on page load and persist it — a first-party cookie or localStorage, before the user can navigate away. A value sitting only in the URL is lost the moment they click through to another page.`,
 
     test(auditData: AuditData): ValidationResult {
       const result = checkParamCapture(auditData, opts.paramName);
@@ -275,6 +276,13 @@ export const UTM_PARAMETERS_CAPTURED: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  remediation: (result) => {
+    const missing = result.technical_details.evidence
+      .filter((e) => e.endsWith('in URL but not captured'))
+      .map((e) => e.split(':')[0]);
+    if (missing.length === 0) return 'Read the UTM parameters present in the landing URL and persist them (localStorage and/or a first-party cookie) before the user navigates away.';
+    return `Read and persist these UTM parameters on landing: ${missing.join(', ')}. They're present in the URL but never make it into storage, a cookie, or dataLayer.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const checks = [...REQUIRED_UTM_PARAMS, ...OPTIONAL_UTM_PARAMS].map(
@@ -349,6 +357,11 @@ export const LANDING_REDIRECT_PRESERVES_QUERY_STRING: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  remediation: (result) => {
+    const strippedLine = result.technical_details.evidence.find((e) => e.startsWith('Stripped:'));
+    const stripped = strippedLine ? strippedLine.replace('Stripped: ', '') : 'the affected parameter(s)';
+    return `Check the redirect chain on entry (www/non-www, HTTP→HTTPS, a marketing-page or CDN redirect, a CMP/consent interstitial) for one that rewrites the URL without forwarding its query string. Preserve ${stripped} through every hop, or capture them before the first redirect fires.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     if (!auditData.landing_final_url) {
@@ -393,6 +406,11 @@ export const CAPTURE_OCCURS_BEFORE_REDIRECT_COMPLETES: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  remediation: (result) => {
+    const strippedLine = result.technical_details.evidence.find((e) => e.startsWith('Stripped by redirect:'));
+    const stripped = strippedLine ? strippedLine.replace('Stripped by redirect: ', '') : 'the affected click ID(s)';
+    return `Capture ${stripped} on the very first response the browser receives — before any redirect fires — rather than waiting for the page that finally renders. A script tag or edge/middleware read at the entry point, ahead of the redirect chain, fixes this.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     if (!auditData.landing_final_url) {
@@ -455,6 +473,7 @@ export const REFERRER_PRESERVED_THROUGH_ENTRY: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  remediation: 'Avoid a client-side redirect or meta-refresh on entry that clears document.referrer — use a server-side (HTTP) redirect instead, which preserves it. This is a fallback attribution signal for visits with no click ID, so it\'s lower priority than the click-ID capture rules above.',
 
   test(auditData: AuditData): ValidationResult {
     const referrer = auditData.landing_referrer_captured;

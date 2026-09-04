@@ -43,6 +43,11 @@ export function computeRuleOverviewStats(validationResults: ValidationResult[]):
   };
 }
 
+/** "1 warning" / "0 warnings" / "2 warnings" — the Rule Overview headline's warning count needs the same singular/plural agreement its "passed"/"failed" neighbours never needed (they're rarely 1 in practice, but count-dependent nouns should agree regardless). */
+export function formatWarningsLabel(warnings: number): string {
+  return `${warnings} warning${warnings === 1 ? '' : 's'}`;
+}
+
 // ── Colour palette ─────────────────────────────────────────────────────────────
 const C = {
   brand:    '#4F46E5',
@@ -301,7 +306,7 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
       .text(`${validatedResults.length} rules validated  ·  `, LEFT, doc.y, { continued: true })
       .fillColor(C.healthy).text(`${passed} passed  ·  `, { continued: true })
       .fillColor(C.broken).text(`${failed} failed  ·  `, { continued: true })
-      .fillColor(C.atRisk).text(`${warnings} warnings`);
+      .fillColor(C.atRisk).text(formatWarningsLabel(warnings));
 
     // ══════════════════════════════════════════════════════════════════════
     // PAGE 2 — Journey Breakdown

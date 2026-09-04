@@ -83,9 +83,44 @@ describe('STORAGE_LIFETIME_MEETS_ATTRIBUTION_WINDOW (L3.2)', () => {
     expect(STORAGE_LIFETIME_MEETS_ATTRIBUTION_WINDOW.test(auditData).status).toBe('pass');
   });
 
+  it('passes when the cookie lifetime exactly equals the required window (boundary — PRD Issue 3)', () => {
+    const auditData = makeAuditData({ detailedCookies: [makeCookie({ name: '_gcl_aw', expires: Math.floor(Date.now() / 1000) + 90 * 86_400 })] });
+    const result = STORAGE_LIFETIME_MEETS_ATTRIBUTION_WINDOW.test(auditData);
+    expect(result.status).toBe('pass');
+    expect(result.technical_details.evidence[0]).toBe('_gcl_aw: 90d (needs 90d)');
+  });
+
+  it('fails when the cookie lifetime is exactly one day short of the required window', () => {
+    const auditData = makeAuditData({ detailedCookies: [makeCookie({ name: '_gcl_aw', expires: Math.floor(Date.now() / 1000) + 89 * 86_400 })] });
+    expect(STORAGE_LIFETIME_MEETS_ATTRIBUTION_WINDOW.test(auditData).status).toBe('fail');
+  });
+
   it('fails when the Google cookie is shorter than 90 days', () => {
     const auditData = makeAuditData({ detailedCookies: [makeCookie({ name: '_gcl_aw', expires: Math.floor(Date.now() / 1000) + 1 * 86_400 })] });
     expect(STORAGE_LIFETIME_MEETS_ATTRIBUTION_WINDOW.test(auditData).status).toBe('fail');
+  });
+
+  it('reproduces the openart.ai audit fixture: gclid/gbraid/wbraid/_gcl_au/_gcl_aw pass at 90d, ttclid fails at 1d vs 7d required', () => {
+    const now = Math.floor(Date.now() / 1000);
+    const auditData = makeAuditData({
+      detailedCookies: [
+        makeCookie({ name: 'gclid', expires: now + 90 * 86_400 }),
+        makeCookie({ name: 'gbraid', expires: now + 90 * 86_400 }),
+        makeCookie({ name: 'wbraid', expires: now + 90 * 86_400 }),
+        makeCookie({ name: '_gcl_au', expires: now + 90 * 86_400 }),
+        makeCookie({ name: '_gcl_aw', expires: now + 90 * 86_400 }),
+        makeCookie({ name: 'ttclid', expires: now + 1 * 86_400 }),
+      ],
+    });
+    const result = STORAGE_LIFETIME_MEETS_ATTRIBUTION_WINDOW.test(auditData);
+    expect(result.status).toBe('fail');
+    expect(result.technical_details.found).toContain('1 cookie(s) shorter than their attribution window');
+    expect(result.technical_details.found).toContain('ttclid');
+    expect(result.technical_details.found).not.toContain('gclid (');
+    expect(result.technical_details.found).not.toContain('gbraid');
+    expect(result.technical_details.found).not.toContain('wbraid');
+    expect(result.technical_details.found).not.toContain('_gcl_au');
+    expect(result.technical_details.found).not.toContain('_gcl_aw');
   });
 
   it('fails when the cookie is a session cookie (no max-age at all)', () => {

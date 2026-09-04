@@ -53,6 +53,13 @@ export const CLICK_ID_WRITTEN_TO_DURABLE_STORAGE: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  remediation: (result) => {
+    const sessionOnlyLine = result.technical_details.found.includes(':')
+      ? result.technical_details.found.split(': ')[1]
+      : undefined;
+    const params = sessionOnlyLine ?? 'the affected identifier(s)';
+    return `Write ${params} to a first-party cookie (or localStorage) instead of only sessionStorage — sessionStorage is cleared the moment the tab closes, so the identifier can't survive to a later session where the conversion actually happens.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const checks = SYNTHETIC_PARAMS.map((param) => {
@@ -106,6 +113,14 @@ export const STORAGE_LIFETIME_MEETS_ATTRIBUTION_WINDOW: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  remediation: (result) => {
+    const violations = result.technical_details.evidence.filter((e) => {
+      const match = e.match(/(\d+)d \(needs (\d+)d\)/);
+      return match && Number(match[1]) < Number(match[2]);
+    });
+    if (violations.length === 0) return 'Increase the Max-Age on the affected cookie(s) to at least cover the platform\'s attribution window (90 days for Google\'s own click IDs, 7 days for Meta\'s).';
+    return `Increase the Max-Age on: ${violations.join(', ')} — set it to at least the platform's attribution window (90 days for Google's click IDs via _gcl_aw/_gcl_au, 7 days for Meta's via _fbc, similarly for other platforms' equivalents).`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const cookies = relevantCookies(auditData);
@@ -125,8 +140,14 @@ export const STORAGE_LIFETIME_MEETS_ATTRIBUTION_WINDOW: ValidationRule = {
     }
 
     const nowSeconds = Date.now() / 1000;
+    // Rounded to whole days before comparing — maxAgeDays() measures remaining
+    // lifetime at scan time, so a cookie set with exactly a 90-day Max-Age
+    // always reads as fractionally under 90 by the time this runs. Comparing
+    // on the same rounded value shown in the evidence keeps "displays as 90d"
+    // and "needs 90d" from disagreeing with each other.
+    const roundedDays = (c: DetailedCookie) => Math.max(0, Math.round(maxAgeDays(c, nowSeconds)));
     const violations = cookies
-      .map((c) => ({ cookie: c, days: maxAgeDays(c, nowSeconds), required: requiredWindowDays(c.name) }))
+      .map((c) => ({ cookie: c, days: roundedDays(c), required: requiredWindowDays(c.name) }))
       .filter((c) => c.days < c.required);
 
     return {
@@ -136,10 +157,10 @@ export const STORAGE_LIFETIME_MEETS_ATTRIBUTION_WINDOW: ValidationRule = {
       severity: this.severity,
       technical_details: {
         found: violations.length > 0
-          ? `${violations.length} cookie(s) shorter than their attribution window: ${violations.map((v) => `${v.cookie.name} (${Math.max(0, Math.round(v.days))}d, needs ${v.required}d)`).join(', ')}`
+          ? `${violations.length} cookie(s) shorter than their attribution window: ${violations.map((v) => `${v.cookie.name} (${v.days}d, needs ${v.required}d)`).join(', ')}`
           : 'All click-ID cookies meet their platform attribution window',
         expected: 'Cookie max-age is at least as long as the platform window (90d Google, 7d Meta click)',
-        evidence: cookies.map((c) => `${c.name}: ${maxAgeDays(c, nowSeconds) <= 0 ? 'session cookie (0d)' : `${Math.round(maxAgeDays(c, nowSeconds))}d`} (needs ${requiredWindowDays(c.name)}d)`),
+        evidence: cookies.map((c) => `${c.name}: ${roundedDays(c) <= 0 ? 'session cookie (0d)' : `${roundedDays(c)}d`} (needs ${requiredWindowDays(c.name)}d)`),
       },
     };
   },
@@ -157,6 +178,7 @@ export const GCL_AW_COOKIE_PRESENT: ValidationRule = {
   platform_scope: ['google_ads'],
   detectable_by: 'crawl',
   owner: 'Frontend',
+  remediation: 'Enable Auto-tagging and add the Conversion Linker tag (via GTM or gtag.js) firing on every page — it\'s the mechanism that sets _gcl_aw, and Google Ads Enhanced Conversions reads this cookie directly.',
 
   test(auditData: AuditData): ValidationResult {
     const value = auditData.cookies?.['_gcl_aw'];
@@ -188,6 +210,10 @@ export const FBP_AND_FBC_COOKIES_PRESENT: ValidationRule = {
   platform_scope: ['meta'],
   detectable_by: 'crawl',
   owner: 'Frontend',
+  remediation: (result) => {
+    const missing = result.technical_details.found.startsWith('Missing:') ? result.technical_details.found.replace('Missing: ', '') : '_fbp and _fbc';
+    return `Ensure the Meta Pixel base code is installed and firing on every page — ${missing} ${missing.includes(' and ') ? 'are' : 'is'} set automatically by the Pixel itself, so a missing cookie almost always means the Pixel isn't loading on this page at all, not a separate cookie bug.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const hasFbp = !!auditData.cookies?.['_fbp'];
@@ -224,6 +250,10 @@ export const COOKIE_SCOPED_TO_PARENT_DOMAIN: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  remediation: (result) => {
+    const names = result.technical_details.found.includes(': ') ? result.technical_details.found.split(': ')[1] : 'the affected cookie(s)';
+    return `Set the Domain attribute explicitly to the parent domain (e.g. ".example.com") when writing ${names} — without it, the browser scopes the cookie to the exact host it was set on, and it silently disappears the moment the journey crosses to an app or checkout subdomain.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const cookies = relevantCookies(auditData);
@@ -278,6 +308,11 @@ export const COOKIE_ATTRIBUTES_CORRECT: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  remediation: (result) => {
+    const violations = result.technical_details.evidence.filter((e) => e.includes('SameSite=None') || e.includes('SameSite=Strict'));
+    if (violations.length === 0) return 'Set SameSite=Lax (or None with Secure) on the affected cookie(s) — Strict drops the cookie on return from a third-party payment or SSO host, and None without Secure is rejected by the browser outright.';
+    return `Fix the SameSite/Secure attributes on: ${violations.join(', ')}. SameSite=None requires Secure or the browser rejects the cookie outright; SameSite=Strict drops it on return navigation from a third-party host (e.g. a payment processor) — SameSite=Lax is the safe default for a click-ID cookie.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const cookies = relevantCookies(auditData);

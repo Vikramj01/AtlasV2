@@ -76,6 +76,7 @@ function makeIssue(rule_id: string): ReportIssue {
     rule_id,
     severity: 'high',
     problem: `${rule_id} is broken`,
+    why_it_matters: `${rule_id} being broken matters because conversions go untracked`,
     fix_summary: `Fix ${rule_id}`,
     recommended_owner: 'Frontend Developer',
     estimated_effort: 'medium',

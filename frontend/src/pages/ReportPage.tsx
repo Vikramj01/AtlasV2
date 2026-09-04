@@ -7,6 +7,7 @@ import { ExecutiveSummary } from '@/components/audit/ReportPages/ExecutiveSummar
 import { JourneyBreakdown } from '@/components/audit/ReportPages/JourneyBreakdown';
 import { PlatformImpact } from '@/components/audit/ReportPages/PlatformImpact';
 import { IssuesFixes } from '@/components/audit/ReportPages/IssuesFixes';
+import { ContentQualityWarningBanner } from '@/components/audit/ContentQualityWarningBanner';
 import { SiteSetup } from '@/components/audit/ReportPages/SiteSetup';
 import { TechnicalAppendix } from '@/components/audit/ReportPages/TechnicalAppendix';
 import { auditApi } from '@/lib/api/auditApi';
@@ -110,6 +111,11 @@ export function ReportPage() {
 
       {/* Page content */}
       <div className="flex-1 px-6 py-8 max-w-5xl">
+        {report.content_quality_warning && (
+          <div className="mb-6">
+            <ContentQualityWarningBanner warning={report.content_quality_warning} />
+          </div>
+        )}
         {currentPage === 1 && <ExecutiveSummary report={report} />}
         {currentPage === 2 && <JourneyBreakdown report={report} />}
         {currentPage === 3 && <PlatformImpact report={report} />}

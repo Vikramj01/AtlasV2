@@ -53,6 +53,11 @@ export const EVENT_ID_CONSISTENT_CLIENT_TO_SERVER: ValidationRule = {
   platform_scope: 'n/a',
   detectable_by: 'crawl',
   owner: 'Backend',
+  remediation: (result) => {
+    const idLine = result.technical_details.evidence.find((e) => e.startsWith('Client event_id:'));
+    const id = idLine ? idLine.replace('Client event_id: ', '') : 'the client-side event_id';
+    return `Pass ${id} through to the server-side (sGTM/CAPI) delivery call for this same conversion — both sides of a dedup pair need the identical event_id, or the platform can't tell the client and server hits are the same event and counts both.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const clientEventId = primaryConversionEventId(auditData);
@@ -123,6 +128,11 @@ export const EVENT_ID_FORWARDED_TO_PLATFORM_REQUESTS: ValidationRule = {
   platform_scope: 'n/a',
   detectable_by: 'crawl',
   owner: 'Backend',
+  remediation: (result) => {
+    const idLine = result.technical_details.evidence.find((e) => e.startsWith('Platforms checked:'));
+    const platforms = idLine ? idLine.replace('Platforms checked: ', '') : 'the declared platform(s)';
+    return `Pass the same event_id used elsewhere in this conversion into the direct pixel/tag call for ${platforms} (e.g. fbq's eventID option, or the equivalent parameter for other platforms) — without it, that platform's own client-side hit can't be deduplicated against a server-side delivery of the same event.`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const clientEventId = primaryConversionEventId(auditData);

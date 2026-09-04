@@ -88,3 +88,48 @@ describe('calculateV2Scores', () => {
     expect(calculateV2Scores(results).data_consistency_score).toBe('Low');
   });
 });
+
+// ── Severity-weighted conversion_signal_health (PRD "Signal Health Report" Issue 7) ──
+
+describe('calculateV2Scores — severity weighting', () => {
+  // 9 critical fails + 7 passes (of assorted lower severity) — deliberately
+  // shaped like the PRD's own openart.ai example: a flat pass rate reads as
+  // "middling" while the real picture is "core measurement is broken."
+  const mostlyPassingButCriticallyBroken = [
+    ...Array.from({ length: 7 }, (_, i) => makeResult({ rule_id: `pass-${i}`, severity: 'low', status: 'pass' })),
+    ...Array.from({ length: 9 }, (_, i) => makeResult({ rule_id: `crit-fail-${i}`, severity: 'critical', status: 'fail' })),
+  ];
+
+  it('a severity-weighted score drags down harder on critical failures than the flat pass rate would', () => {
+    const flatPassRate = Math.round((7 / 16) * 100); // 44
+    const weighted = calculateV2Scores(mostlyPassingButCriticallyBroken).conversion_signal_health;
+    expect(weighted).toBeLessThan(flatPassRate);
+  });
+
+  it('setting every severity weight equal reproduces the flat pass-rate score exactly, for a mixed-severity result set', () => {
+    const equalWeights = { critical: 1, high: 1, medium: 1, low: 1 };
+    const flatPassRate = Math.round((7 / 16) * 100);
+    expect(calculateV2Scores(mostlyPassingButCriticallyBroken, equalWeights).conversion_signal_health).toBe(flatPassRate);
+  });
+
+  it('a warning contributes zero credit toward the weighted score, same as a fail', () => {
+    const results = [
+      makeResult({ rule_id: 'A', severity: 'medium', status: 'pass' }),
+      makeResult({ rule_id: 'B', severity: 'medium', status: 'warning' }),
+    ];
+    expect(calculateV2Scores(results).conversion_signal_health).toBe(50);
+  });
+
+  it('the same stored results can be re-scored against a different weight table with no crawl invoked — a historical audit can be re-weighted from audit_findings alone', () => {
+    const results = mostlyPassingButCriticallyBroken;
+    const gentle = calculateV2Scores(results, { critical: 2, high: 2, medium: 1, low: 1 }).conversion_signal_health;
+    const harsh = calculateV2Scores(results, { critical: 10, high: 2, medium: 1, low: 1 }).conversion_signal_health;
+    expect(harsh).toBeLessThan(gentle);
+  });
+
+  it('defaults to the DEFAULT_SEVERITY_WEIGHTS config when no weight table is passed', () => {
+    const withDefault = calculateV2Scores(mostlyPassingButCriticallyBroken).conversion_signal_health;
+    const withExplicitDefault = calculateV2Scores(mostlyPassingButCriticallyBroken, { critical: 4, high: 2, medium: 1, low: 0.5 }).conversion_signal_health;
+    expect(withDefault).toBe(withExplicitDefault);
+  });
+});
