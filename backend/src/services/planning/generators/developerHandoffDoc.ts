@@ -10,6 +10,8 @@
 import type { PlanningRecommendation, PlanningPage, PlanningSession } from '@/types/planning';
 import type { GTMContainerJSON } from './gtmContainerGenerator';
 import { derivePlaceholderTable } from './renderer/guide.renderer';
+import { renderCodeSnippet } from './renderer/spec.renderer';
+import { recToIREventForSpec } from './dataLayerSpecGenerator';
 
 // ── TrackingPlan type ─────────────────────────────────────────────────────────
 
@@ -22,6 +24,14 @@ export interface TrackingPlanEvent {
   required_params: string[];
   optional_params: string[];
   priority:        'must_have' | 'should_have' | 'nice_to_have';
+  /**
+   * The full dataLayer.push() snippet for this event, already ecommerce-aware
+   * (nests purchase/add_to_cart/view_item/etc. params under an `ecommerce:`
+   * object) — reuses the same renderer dataLayerSpecGenerator.ts uses, so this
+   * doc and the DataLayer spec never show a developer two different shapes of
+   * code for the same event.
+   */
+  code_snippet:    string;
 }
 
 export interface TrackingPlan {
@@ -57,6 +67,7 @@ function buildTrackingPlan(
       required_params: rec.required_params.map((p) => p.param_key),
       optional_params: rec.optional_params.map((p) => p.param_key),
       priority:        'should_have',
+      code_snippet:    `\`\`\`js\n${renderCodeSnippet(recToIREventForSpec(rec))}\n\`\`\``,
     };
   });
 
@@ -76,11 +87,6 @@ function buildTrackingPlan(
     platform_count:  allPlatforms.size,
     conversion_count: conversionCount,
   };
-}
-
-function dataLayerSnippet(eventName: string, params: string[]): string {
-  const paramLines = params.map((k) => `  ${k}: '{{${k.toUpperCase()}}}'`).join(',\n');
-  return `\`\`\`js\nwindow.dataLayer = window.dataLayer || [];\nwindow.dataLayer.push({\n  event: '${eventName}'${paramLines ? `,\n${paramLines}` : ''}\n});\n\`\`\``;
 }
 
 function platformBadges(platforms: string[]): string {
@@ -156,7 +162,7 @@ export function generateDeveloperHandoffDoc(
       lines.push(``);
       lines.push(`**dataLayer snippet:**`);
       lines.push(``);
-      lines.push(dataLayerSnippet(evt.event_name, evt.required_params));
+      lines.push(evt.code_snippet);
       lines.push(``);
     }
 
