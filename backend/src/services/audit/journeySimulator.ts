@@ -254,11 +254,13 @@ export async function simulateJourney(
   let marketingGa4ClientId: string | undefined;
   let productDomainGa4ClientId: string | undefined;
   let productDomainSessionStartDetected: boolean | undefined;
+  let checkoutDomainGa4ClientId: string | undefined;
+  let checkoutDomainSessionStartDetected: boolean | undefined;
   let landingNormalizedUrl: string | undefined;
   let consentCapture: ConsentCapture | undefined;
   const stepCoverage: StepCoverage[] = [];
 
-  const crossDomainTargets = [opts.product_domain, opts.checkout_domain]
+  const crossDomainTargets = [opts.product_domain, opts.checkout_domain, ...(opts.additional_properties ?? [])]
     .filter((d): d is string => !!d)
     .map(hostnameOf)
     .filter((h): h is string => !!h);
@@ -365,6 +367,30 @@ export async function simulateJourney(
           }
         }
 
+        // Lead-gen form fill (test_email/test_phone Scan Inputs) — best-effort
+        // attempt to fill and submit a lead-gen form on the landing page using
+        // common field selectors, via the same fill/click action semantics as
+        // step.actions above (a missing selector is swallowed by .catch, not
+        // fatal to the step). Only runs when at least one of test_email/
+        // test_phone is set, so a lead_gen audit that declares neither behaves
+        // exactly as before this was wired in. Known limitation: the step
+        // loop always navigates the *next* step via url_map rather than
+        // following wherever this submission's own navigation lands, so
+        // lead_gen's thank_you step still relies on url_map/step-resolution
+        // to find the real post-submit page — this only proves the form
+        // fields accept and forward the synthetic values.
+        if (step.name === 'landing' && opts.funnel_type === 'lead_gen' && (opts.test_email || opts.test_phone)) {
+          if (opts.test_email && page.fill) {
+            await page.fill('input[type="email"], input[name*="email" i]', opts.test_email).catch(() => {});
+          }
+          if (opts.test_phone && page.fill) {
+            await page.fill('input[type="tel"], input[name*="phone" i]', opts.test_phone).catch(() => {});
+          }
+          if (page.click) {
+            await page.click('button[type="submit"], input[type="submit"]').catch(() => {});
+          }
+        }
+
         // Flush dataLayer events collected during this step
         await flushDataLayer(page as Parameters<typeof flushDataLayer>[0], dataLayer, step.name);
 
@@ -420,36 +446,59 @@ export async function simulateJourney(
       });
     }
 
-    // Cross-Domain Continuity probe (L4.3/L4.4) — only when product_domain
-    // is a genuinely distinct, reachable host (reuses the same
-    // reachability probe L0.4 needs, computed once here rather than
-    // twice). Navigates the SAME context/page there, as a real cross-
-    // domain click would, so cookies that are actually parent-domain-
-    // scoped carry over exactly as they would for a real visitor.
-    if (opts.product_domain) {
+    // Cross-Domain Continuity probe (L4.3/L4.4) — navigates to product_domain
+    // and/or checkout_domain, each only when it's a genuinely distinct,
+    // reachable host (reuses the same reachability probe L0.4 needs,
+    // computed once per domain rather than twice). Navigates the SAME
+    // context/page there, as a real cross-domain click would, so cookies
+    // that are actually parent-domain-scoped carry over exactly as they
+    // would for a real visitor. ecommerce sites boundary-check
+    // checkout_domain (hosted checkout); plg_saas/marketplace sites
+    // boundary-check product_domain (app subdomain) — L4.3/L4.4 read
+    // whichever of the two field pairs actually got populated.
+    const boundaryDomains: Array<{ domain: string | undefined; label: 'product_domain' | 'checkout_domain' }> = [
+      { domain: opts.product_domain, label: 'product_domain' },
+      { domain: opts.checkout_domain, label: 'checkout_domain' },
+    ];
+
+    for (const { domain, label } of boundaryDomains) {
+      if (!domain) continue;
       try {
-        const sameHost = new URL(opts.product_domain).host === new URL(opts.website_url).host;
-        if (!sameHost) {
-          productDomainReachable = await probeDomainReachable(opts.product_domain);
-          if (productDomainReachable) {
-            marketingGa4ClientId = extractGa4ClientId(networkRequests, mergeCookies(cookieSnapshots));
+        const sameHost = new URL(domain).host === new URL(opts.website_url).host;
+        if (sameHost) continue;
 
-            stepRef.current = 'product_domain';
-            const productDomain = opts.product_domain;
-            await page.goto(productDomain, { waitUntil: 'networkidle' }).catch(() =>
-              page.goto(productDomain, { waitUntil: 'domcontentloaded' }),
-            );
-            await flushDataLayer(page as Parameters<typeof flushDataLayer>[0], dataLayer, 'product_domain');
-            const productCookieSnapshot = await captureCookies(context, 'product_domain');
-            cookieSnapshots.push(productCookieSnapshot);
+        const reachable = await probeDomainReachable(domain);
+        if (label === 'product_domain') productDomainReachable = reachable;
+        if (!reachable) continue;
 
-            const productDomainRequests = networkRequests.filter((r) => r.step === 'product_domain');
-            productDomainGa4ClientId = extractGa4ClientId(productDomainRequests, productCookieSnapshot.cookies);
-            productDomainSessionStartDetected = ga4SessionStartDetected(productDomainRequests);
-          }
+        // Captured once, right before the first boundary domain is visited
+        // — the shared "before" baseline for whichever boundary(ies) run.
+        if (marketingGa4ClientId === undefined) {
+          marketingGa4ClientId = extractGa4ClientId(networkRequests, mergeCookies(cookieSnapshots));
+        }
+
+        stepRef.current = label;
+        await page.goto(domain, { waitUntil: 'networkidle' }).catch(() =>
+          page.goto(domain, { waitUntil: 'domcontentloaded' }),
+        );
+        await flushDataLayer(page as Parameters<typeof flushDataLayer>[0], dataLayer, label);
+        const boundaryCookieSnapshot = await captureCookies(context, label);
+        cookieSnapshots.push(boundaryCookieSnapshot);
+
+        const boundaryRequests = networkRequests.filter((r) => r.step === label);
+        const boundaryClientId = extractGa4ClientId(boundaryRequests, boundaryCookieSnapshot.cookies);
+        const boundarySessionStart = ga4SessionStartDetected(boundaryRequests);
+
+        if (label === 'product_domain') {
+          productDomainGa4ClientId = boundaryClientId;
+          productDomainSessionStartDetected = boundarySessionStart;
+        } else {
+          checkoutDomainGa4ClientId = boundaryClientId;
+          checkoutDomainSessionStartDetected = boundarySessionStart;
         }
       } catch {
-        productDomainReachable = false; // product_domain wasn't a parseable URL — treat as unreachable, not skipped
+        // domain wasn't a parseable URL — treat as unreachable, not skipped
+        if (label === 'product_domain') productDomainReachable = false;
       }
     }
   } finally {
@@ -502,6 +551,8 @@ export async function simulateJourney(
     marketingGa4ClientId,
     productDomainGa4ClientId,
     productDomainSessionStartDetected,
+    checkoutDomainGa4ClientId,
+    checkoutDomainSessionStartDetected,
     dataLayer,
     networkRequests,
     cookieSnapshots,

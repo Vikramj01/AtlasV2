@@ -546,16 +546,24 @@ export interface AuditData {
   detailedCookies?: DetailedCookie[];
   /**
    * Check Register v2 Cross-Domain Continuity (L4) inputs — all captured by
-   * journeySimulator.ts only when product_domain is set to a genuinely
-   * distinct, reachable host (reusing the L0.4 reachability probe); left
-   * undefined otherwise, which the L4 rules that read them treat as
-   * 'skipped', not a failure. outboundCrossDomainLinks comes from a DOM
-   * scan of the landing page's <a href> tags, not from the product-domain
-   * visit itself.
+   * journeySimulator.ts only when product_domain and/or checkout_domain is
+   * set to a genuinely distinct, reachable host (reusing the L0.4/L0.4-style
+   * reachability probe); left undefined otherwise, which the L4 rules that
+   * read them treat as 'skipped', not a failure. outboundCrossDomainLinks
+   * comes from a DOM scan of the landing page's <a href> tags, not from
+   * either boundary-domain visit itself. marketingGa4ClientId is the single
+   * "before" baseline shared by both boundary checks (captured once, right
+   * before the first of the two domains is visited). L4.3/L4.4 read
+   * whichever of the product/checkout pair actually got populated — an
+   * ecommerce site boundary-checks checkout_domain (hosted checkout), a
+   * plg_saas/marketplace site boundary-checks product_domain (app
+   * subdomain); a site with both set has product_domain take precedence.
    */
   marketingGa4ClientId?: string;
   productDomainGa4ClientId?: string;
   productDomainSessionStartDetected?: boolean;
+  checkoutDomainGa4ClientId?: string;
+  checkoutDomainSessionStartDetected?: boolean;
   outboundCrossDomainLinks?: { total: number; withGl: number };
   pageMetadata?: Record<string, unknown>;  // Misc page metadata
   // IHC extensions — absent when the respective data source is not connected

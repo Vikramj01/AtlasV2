@@ -90,6 +90,38 @@ describe('GA4_CLIENT_ID_PERSISTS_ACROSS_BOUNDARY (L4.3)', () => {
     const auditData = makeAuditData({ marketingGa4ClientId: '123.456', productDomainGa4ClientId: '789.012' });
     expect(GA4_CLIENT_ID_PERSISTS_ACROSS_BOUNDARY.test(auditData).status).toBe('fail');
   });
+
+  it('applies to ecommerce sites too, reading checkout_domain data when product_domain data is absent', () => {
+    expect(GA4_CLIENT_ID_PERSISTS_ACROSS_BOUNDARY.applies_to).toContain('ecommerce');
+    const auditData = makeAuditData({
+      site_type: 'ecommerce',
+      marketingGa4ClientId: '123.456',
+      checkoutDomainGa4ClientId: '123.456',
+    });
+    const result = GA4_CLIENT_ID_PERSISTS_ACROSS_BOUNDARY.test(auditData);
+    expect(result.status).toBe('pass');
+    expect(result.technical_details.evidence).toContain('checkout domain client_id: 123.456');
+  });
+
+  it('fails an ecommerce site when the client_id changes across the checkout boundary', () => {
+    const auditData = makeAuditData({
+      site_type: 'ecommerce',
+      marketingGa4ClientId: '123.456',
+      checkoutDomainGa4ClientId: '789.012',
+    });
+    expect(GA4_CLIENT_ID_PERSISTS_ACROSS_BOUNDARY.test(auditData).status).toBe('fail');
+  });
+
+  it('prefers product_domain data over checkout_domain data when both are present', () => {
+    const auditData = makeAuditData({
+      marketingGa4ClientId: '123.456',
+      productDomainGa4ClientId: '123.456',
+      checkoutDomainGa4ClientId: '999.999',
+    });
+    const result = GA4_CLIENT_ID_PERSISTS_ACROSS_BOUNDARY.test(auditData);
+    expect(result.status).toBe('pass');
+    expect(result.technical_details.evidence).toContain('product domain client_id: 123.456');
+  });
 });
 
 // ── L4.4 — Session not restarted at the boundary ─────────────────────────────
@@ -107,6 +139,26 @@ describe('SESSION_NOT_RESTARTED_AT_BOUNDARY (L4.4)', () => {
   it('fails when a session_start fired on the product domain', () => {
     const auditData = makeAuditData({ productDomainSessionStartDetected: true });
     expect(SESSION_NOT_RESTARTED_AT_BOUNDARY.test(auditData).status).toBe('fail');
+  });
+
+  it('applies to ecommerce sites too, reading checkout_domain data when product_domain data is absent', () => {
+    expect(SESSION_NOT_RESTARTED_AT_BOUNDARY.applies_to).toContain('ecommerce');
+    const auditData = makeAuditData({ site_type: 'ecommerce', checkoutDomainSessionStartDetected: false });
+    const result = SESSION_NOT_RESTARTED_AT_BOUNDARY.test(auditData);
+    expect(result.status).toBe('pass');
+    expect(result.technical_details.evidence).toContain('session_start detected on checkout domain: false');
+  });
+
+  it('fails an ecommerce site when a session_start fired on the checkout domain', () => {
+    const auditData = makeAuditData({ site_type: 'ecommerce', checkoutDomainSessionStartDetected: true });
+    expect(SESSION_NOT_RESTARTED_AT_BOUNDARY.test(auditData).status).toBe('fail');
+  });
+
+  it('prefers product_domain data over checkout_domain data when both are present', () => {
+    const auditData = makeAuditData({ productDomainSessionStartDetected: false, checkoutDomainSessionStartDetected: true });
+    const result = SESSION_NOT_RESTARTED_AT_BOUNDARY.test(auditData);
+    expect(result.status).toBe('pass');
+    expect(result.technical_details.evidence).toContain('session_start detected on product domain: false');
   });
 });
 

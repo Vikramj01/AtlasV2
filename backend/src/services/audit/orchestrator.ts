@@ -235,6 +235,7 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
               url_map: data.url_map,
               product_domain: data.product_domain,
               checkout_domain: data.checkout_domain,
+              additional_properties: data.additional_properties,
             });
             if (Object.keys(resolved).length > 0) {
               resolvedUrlMap = { ...data.url_map };

@@ -62,6 +62,8 @@ export interface StepUrlResolverOptions {
   /** Scan Input domains — a candidate on one of these hosts is accepted even though it's cross-origin from website_url. */
   product_domain?: string;
   checkout_domain?: string;
+  /** Other domains/URLs the advertiser owns (blog, docs, other brand sites) — same cross-origin allowlist treatment as product_domain/checkout_domain. */
+  additional_properties?: string[];
 }
 
 interface Candidate {
@@ -213,10 +215,11 @@ function isAcceptableOrigin(
   websiteHost: string | undefined,
   productDomainHost: string | undefined,
   checkoutDomainHost: string | undefined,
+  additionalPropertyHosts: Set<string>,
 ): boolean {
   const host = hostnameOf(candidateUrl);
   if (!host) return false;
-  return host === websiteHost || host === productDomainHost || host === checkoutDomainHost;
+  return host === websiteHost || host === productDomainHost || host === checkoutDomainHost || additionalPropertyHosts.has(host);
 }
 
 /**
@@ -275,6 +278,9 @@ export async function resolveStepUrls(opts: StepUrlResolverOptions): Promise<Rec
   const websiteHost = hostnameOf(opts.website_url);
   const productDomainHost = opts.product_domain ? hostnameOf(opts.product_domain) : undefined;
   const checkoutDomainHost = opts.checkout_domain ? hostnameOf(opts.checkout_domain) : undefined;
+  const additionalPropertyHosts = new Set(
+    (opts.additional_properties ?? []).map(hostnameOf).filter((h): h is string => !!h),
+  );
   const landingUrl = opts.url_map['landing'] ?? opts.website_url;
 
   let origin: string;
@@ -292,7 +298,7 @@ export async function resolveStepUrls(opts: StepUrlResolverOptions): Promise<Rec
     const sitemapCandidates = await discoverViaSitemap(origin, budget);
     assign(
       stillMissing(),
-      sitemapCandidates.filter((c) => isAcceptableOrigin(c.url, websiteHost, productDomainHost, checkoutDomainHost)),
+      sitemapCandidates.filter((c) => isAcceptableOrigin(c.url, websiteHost, productDomainHost, checkoutDomainHost, additionalPropertyHosts)),
       resolved,
     );
     if (stillMissing().length === 0) return resolved;
@@ -301,7 +307,7 @@ export async function resolveStepUrls(opts: StepUrlResolverOptions): Promise<Rec
     const linkCandidates = await discoverViaLandingLinks(landingUrl, budget);
     assign(
       stillMissing(),
-      linkCandidates.filter((c) => isAcceptableOrigin(c.url, websiteHost, productDomainHost, checkoutDomainHost)),
+      linkCandidates.filter((c) => isAcceptableOrigin(c.url, websiteHost, productDomainHost, checkoutDomainHost, additionalPropertyHosts)),
       resolved,
     );
     if (stillMissing().length === 0) return resolved;

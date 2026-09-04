@@ -14,6 +14,12 @@
  *    product_domain, in the same browser context, only when it's a
  *    genuinely distinct and reachable host (L4.3/L4.4).
  *
+ * L4.3/L4.4 read whichever of product_domain's or checkout_domain's
+ * captured continuity data journeySimulator.ts actually populated for this
+ * site — an ecommerce site boundary-checks checkout_domain (hosted
+ * checkout), a plg_saas/marketplace site boundary-checks product_domain
+ * (app subdomain); a site with both set has product_domain take precedence.
+ *
  * L4.5 ("referral exclusion configured") is Connector-detectable — it
  * lives in GA4's own admin settings, not observable from a crawl. L4.6
  * ("click ID readable inside the product"), L4.7 ("auth boundary does not
@@ -139,7 +145,7 @@ export const GA4_CLIENT_ID_PERSISTS_ACROSS_BOUNDARY: ValidationRule = {
   layer: 'cross_domain_continuity',
   check: 'GA4 client_id persists across the boundary',
   severity: 'critical',
-  applies_to: ['plg_saas', 'marketplace'],
+  applies_to: ['plg_saas', 'marketplace', 'ecommerce'],
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
@@ -147,7 +153,8 @@ export const GA4_CLIENT_ID_PERSISTS_ACROSS_BOUNDARY: ValidationRule = {
 
   test(auditData: AuditData): ValidationResult {
     const before = auditData.marketingGa4ClientId;
-    const after = auditData.productDomainGa4ClientId;
+    const after = auditData.productDomainGa4ClientId ?? auditData.checkoutDomainGa4ClientId;
+    const boundaryLabel = auditData.productDomainGa4ClientId !== undefined ? 'product domain' : 'checkout domain';
 
     if (!before || !after) {
       return {
@@ -160,8 +167,8 @@ export const GA4_CLIENT_ID_PERSISTS_ACROSS_BOUNDARY: ValidationRule = {
             ? 'No GA4 client_id observed on either side of the domain boundary'
             : !before
               ? 'No GA4 client_id observed on the marketing site'
-              : 'No GA4 client_id observed on the product domain (unreachable, same-host, or GA4 not firing there)',
-          expected: 'Same client_id observed on marketing site and product domain',
+              : `No GA4 client_id observed on the ${boundaryLabel} (unreachable, same-host, or GA4 not firing there)`,
+          expected: 'Same client_id observed on marketing site and product/checkout domain',
           evidence: ['Rule skipped — nothing to compare'],
         },
       };
@@ -177,7 +184,7 @@ export const GA4_CLIENT_ID_PERSISTS_ACROSS_BOUNDARY: ValidationRule = {
       technical_details: {
         found: matches ? `Same client_id (${before}) on both sides of the boundary` : `client_id changed: ${before} → ${after}`,
         expected: 'A new client_id means the journey is recorded as two unrelated users',
-        evidence: [`Marketing site client_id: ${before}`, `Product domain client_id: ${after}`],
+        evidence: [`Marketing site client_id: ${before}`, `${boundaryLabel} client_id: ${after}`],
       },
     };
   },
@@ -191,14 +198,15 @@ export const SESSION_NOT_RESTARTED_AT_BOUNDARY: ValidationRule = {
   layer: 'cross_domain_continuity',
   check: 'Session not restarted at the boundary',
   severity: 'high',
-  applies_to: ['plg_saas', 'marketplace'],
+  applies_to: ['plg_saas', 'marketplace', 'ecommerce'],
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
   requires: ['conversion_surface'],
 
   test(auditData: AuditData): ValidationResult {
-    const restarted = auditData.productDomainSessionStartDetected;
+    const restarted = auditData.productDomainSessionStartDetected ?? auditData.checkoutDomainSessionStartDetected;
+    const boundaryLabel = auditData.productDomainSessionStartDetected !== undefined ? 'product domain' : 'checkout domain';
 
     if (restarted === undefined) {
       return {
@@ -207,8 +215,8 @@ export const SESSION_NOT_RESTARTED_AT_BOUNDARY: ValidationRule = {
         status: 'skipped',
         severity: this.severity,
         technical_details: {
-          found: 'No product-domain visit was made (unreachable, same-host, or not set)',
-          expected: 'No new session_start on crossing to the product domain',
+          found: 'No product/checkout-domain visit was made (unreachable, same-host, or not set)',
+          expected: 'No new session_start on crossing to the product/checkout domain',
           evidence: ['Rule skipped — nothing to check'],
         },
       };
@@ -220,9 +228,9 @@ export const SESSION_NOT_RESTARTED_AT_BOUNDARY: ValidationRule = {
       status: restarted ? 'fail' : 'pass',
       severity: this.severity,
       technical_details: {
-        found: restarted ? 'A GA4 session_start hit fired on the product domain visit' : 'No session_start hit fired on the product domain visit — the session continued',
+        found: restarted ? `A GA4 session_start hit fired on the ${boundaryLabel} visit` : `No session_start hit fired on the ${boundaryLabel} visit — the session continued`,
         expected: 'Self-referral session restarts inflate session counts and destroy funnel analysis',
-        evidence: [`session_start detected on product domain: ${restarted}`],
+        evidence: [`session_start detected on ${boundaryLabel}: ${restarted}`],
       },
     };
   },

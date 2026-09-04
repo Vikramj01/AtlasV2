@@ -7,7 +7,7 @@
  * No real browser or network connections are used — all Playwright objects are
  * mocked inline with the exact method signatures that dataCapture.ts expects.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { simulateJourney, type SimulatorOptions } from '../journeySimulator';
 import { runAllRules } from '@/services/validation/engine';
 import { calculateScores } from '@/services/scoring/engine';
@@ -591,6 +591,171 @@ describe('simulateJourney — consent_capture', () => {
     expect(auditData.consent_capture?.dismissed).toBe(false);
     expect(auditData.consent_capture?.tags_before).toEqual([]);
     expect(auditData.consent_capture?.tags_after).toEqual([]);
+  });
+});
+
+// ─── checkout_domain boundary probe (Sprint 18 — wiring the previously-dead
+// checkout_domain Scan Input; mirrors the existing product_domain probe) ────
+
+describe('simulateJourney — checkout_domain boundary probe', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('navigates to a distinct, reachable checkout_domain and captures its GA4 client_id/session_start', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ status: 200 }));
+    const { mockBrowser, mockPage } = makeMockBrowser({
+      networkRequests: [
+        { url: 'https://www.google-analytics.com/g/collect?v=2&tid=G-TEST&cid=555.666&_ss=1', method: 'GET' },
+      ],
+    });
+
+    const auditData = await simulateJourney(mockBrowser as never, {
+      ...BASE_OPTS,
+      checkout_domain: 'https://checkout.stripe-hosted.com',
+    });
+
+    expect(mockPage.goto).toHaveBeenCalledWith(
+      'https://checkout.stripe-hosted.com',
+      expect.objectContaining({ waitUntil: 'networkidle' }),
+    );
+    expect(auditData.checkoutDomainGa4ClientId).toBe('555.666');
+    expect(auditData.checkoutDomainSessionStartDetected).toBe(true);
+    expect(auditData.marketingGa4ClientId).toBe('555.666');
+  });
+
+  it('does not visit checkout_domain when the reachability probe fails', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ status: 503 }));
+    const { mockBrowser, mockPage } = makeMockBrowser();
+
+    const auditData = await simulateJourney(mockBrowser as never, {
+      ...BASE_OPTS,
+      checkout_domain: 'https://checkout.stripe-hosted.com',
+    });
+
+    expect(mockPage.goto).toHaveBeenCalledTimes(4); // only the 4 ecommerce steps — no boundary visit
+    expect(auditData.checkoutDomainGa4ClientId).toBeUndefined();
+  });
+
+  it('does not probe or visit checkout_domain when it is the same host as website_url', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ status: 200 });
+    vi.stubGlobal('fetch', fetchMock);
+    const { mockBrowser, mockPage } = makeMockBrowser();
+
+    await simulateJourney(mockBrowser as never, {
+      ...BASE_OPTS,
+      checkout_domain: 'https://shop.example.com/checkout-hosted',
+    });
+
+    expect(mockPage.goto).toHaveBeenCalledTimes(4);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('visits both product_domain and checkout_domain when both are set and distinct', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ status: 200 }));
+    const { mockBrowser, mockPage } = makeMockBrowser({
+      networkRequests: [
+        { url: 'https://www.google-analytics.com/g/collect?v=2&tid=G-TEST&cid=555.666&_ss=1', method: 'GET' },
+      ],
+    });
+
+    const auditData = await simulateJourney(mockBrowser as never, {
+      ...BASE_OPTS,
+      product_domain: 'https://app.shop.example.com',
+      checkout_domain: 'https://checkout.stripe-hosted.com',
+    });
+
+    expect(mockPage.goto).toHaveBeenCalledTimes(6); // 4 steps + product_domain + checkout_domain
+    expect(auditData.product_domain_reachable).toBe(true);
+    expect(auditData.productDomainGa4ClientId).toBeDefined();
+    expect(auditData.checkoutDomainGa4ClientId).toBeDefined();
+  });
+});
+
+// ─── additional_properties (Sprint 18 — wiring the previously-dead
+// additional_properties Scan Input into the outbound cross-domain link scan) ─
+
+describe('simulateJourney — additional_properties widens cross-domain targets', () => {
+  it('counts an outbound link to a declared additional_properties host that product_domain/checkout_domain alone would not have covered', async () => {
+    const { mockBrowser, mockPage } = makeMockBrowser();
+    mockPage.evaluate.mockImplementation(async (fn: unknown) => {
+      if (typeof fn === 'function' && fn.toString().includes('a[href]')) {
+        return [
+          'https://blog.example.net/post?_gl=1abc123', // additional_properties host, carries _gl
+          'https://shop.example.com/other-page',        // same-origin — not a cross-domain target
+        ];
+      }
+      return [];
+    });
+
+    const auditData = await simulateJourney(mockBrowser as never, {
+      ...BASE_OPTS,
+      additional_properties: ['https://blog.example.net'],
+    });
+
+    expect(auditData.outboundCrossDomainLinks).toEqual({ total: 1, withGl: 1 });
+  });
+
+  it('does not count that same link when additional_properties is not declared', async () => {
+    const { mockBrowser, mockPage } = makeMockBrowser();
+    mockPage.evaluate.mockImplementation(async (fn: unknown) => {
+      if (typeof fn === 'function' && fn.toString().includes('a[href]')) {
+        return ['https://blog.example.net/post?_gl=1abc123'];
+      }
+      return [];
+    });
+
+    const auditData = await simulateJourney(mockBrowser as never, BASE_OPTS);
+
+    expect(auditData.outboundCrossDomainLinks).toEqual({ total: 0, withGl: 0 });
+  });
+});
+
+// ─── lead_gen form fill (Sprint 18 — wiring the previously-dead
+// test_email/test_phone Scan Inputs into the fill/click step actions) ───────
+
+describe('simulateJourney — lead_gen form fill (test_email/test_phone)', () => {
+  const LEAD_GEN_OPTS: SimulatorOptions = {
+    ...BASE_OPTS,
+    funnel_type: 'lead_gen',
+    url_map: {
+      landing: 'https://lead.example.com',
+      thank_you: 'https://lead.example.com/thank-you',
+    },
+  };
+
+  it('fills the email/phone fields and clicks submit on the landing step when test_email/test_phone are set', async () => {
+    const { mockBrowser, mockPage } = makeMockBrowser();
+    await simulateJourney(mockBrowser as never, LEAD_GEN_OPTS);
+
+    expect(mockPage.fill).toHaveBeenCalledWith('input[type="email"], input[name*="email" i]', LEAD_GEN_OPTS.test_email);
+    expect(mockPage.fill).toHaveBeenCalledWith('input[type="tel"], input[name*="phone" i]', LEAD_GEN_OPTS.test_phone);
+    expect(mockPage.click).toHaveBeenCalledWith('button[type="submit"], input[type="submit"]');
+  });
+
+  it('does not attempt any form fill or submit when neither test_email nor test_phone is set', async () => {
+    const { mockBrowser, mockPage } = makeMockBrowser();
+    await simulateJourney(mockBrowser as never, { ...LEAD_GEN_OPTS, test_email: undefined, test_phone: undefined });
+
+    expect(mockPage.fill).not.toHaveBeenCalled();
+    expect(mockPage.click).not.toHaveBeenCalled();
+  });
+
+  it('fills only the phone field when test_email is not set', async () => {
+    const { mockBrowser, mockPage } = makeMockBrowser();
+    await simulateJourney(mockBrowser as never, { ...LEAD_GEN_OPTS, test_email: undefined });
+
+    expect(mockPage.fill).not.toHaveBeenCalledWith('input[type="email"], input[name*="email" i]', expect.anything());
+    expect(mockPage.fill).toHaveBeenCalledWith('input[type="tel"], input[name*="phone" i]', LEAD_GEN_OPTS.test_phone);
+    expect(mockPage.click).toHaveBeenCalledWith('button[type="submit"], input[type="submit"]');
+  });
+
+  it('does not run the lead-gen form fill for other funnel types, even when test_email/test_phone are set', async () => {
+    const { mockBrowser, mockPage } = makeMockBrowser();
+    await simulateJourney(mockBrowser as never, BASE_OPTS); // funnel_type: 'ecommerce', has test_email/test_phone
+
+    expect(mockPage.fill).not.toHaveBeenCalled();
+    expect(mockPage.click).not.toHaveBeenCalled();
   });
 });
 
