@@ -4,6 +4,24 @@
  * Ported from rule-interpretations.ts (root).
  */
 import type { ValidationResult, ReportIssue, Severity } from '@/types/audit';
+import { REGISTER } from '@/services/validation/register/engine';
+
+// A handful of rule_ids exist in both the v1 RULE_INTERPRETATIONS dict below
+// and the v2 Check Register (GCLID_CAPTURED_AT_LANDING, GTM_CONTAINER_LOADED,
+// ...) — same name, different implementation, different evidence. A plain
+// rule_id lookup can't tell which engine actually produced a given result,
+// so it silently overlays v1's static, generic business_impact text onto a
+// v2 result's real run-specific evidence — evidence that then disagrees
+// with the same rule_id's entry in the journey_stages/layer breakdown
+// (which always reads the live result, never this dict).
+//
+// validation_layer alone can't disambiguate — v1 and v2 both use the
+// literal layer name 'parameter_completeness', so a rule_id+layer pair is
+// the only combination that's actually unique to one engine. A result only
+// counts as v2-originated when its rule_id AND its validation_layer match a
+// real register entry; a v1 result that happens to reuse a colliding
+// rule_id carries its own (different) v1 layer, so it never matches here.
+const REGISTER_LAYER_BY_RULE_ID = new Map(REGISTER.map((rule) => [rule.rule_id, rule.layer]));
 
 interface RuleInterpretation {
   rule_id: string;
@@ -469,16 +487,25 @@ export function interpretResults(results: ValidationResult[]): ReportIssue[] {
     .filter((r) => r.status === 'fail' || r.status === 'warning')  // 'skipped' excluded
     .map((r) => {
       const interp = RULE_INTERPRETATIONS[r.rule_id];
-      if (!interp) {
+      // A v2-register result never uses the v1 dict's business_impact/headline
+      // for its evidence — even when a same-named v1 entry exists — because
+      // that text is static/generic while journey_stages always shows this
+      // same result's real technical_details.found. Using v1's text here
+      // would make the two report sections disagree for that rule_id (the
+      // exact defect shape PRD Issue 2 describes). fix_summary/owner/effort
+      // still come from the v1 entry when one exists — that authored content
+      // isn't evidence, so it can't go stale the same way.
+      const isV2Result = REGISTER_LAYER_BY_RULE_ID.get(r.rule_id) === r.validation_layer;
+      if (!interp || isV2Result) {
         return {
           rule_id: r.rule_id,
           validation_layer: r.validation_layer,
           severity: r.severity,
-          problem: `Validation failed: ${r.rule_id}`,
+          problem: interp?.headline ?? `Validation failed: ${r.rule_id}`,
           why_it_matters: r.technical_details.found,
-          recommended_owner: 'Frontend Developer',
-          fix_summary: 'Contact support for details on this rule.',
-          estimated_effort: 'medium' as const,
+          recommended_owner: interp?.recommended_owner ?? 'Frontend Developer',
+          fix_summary: interp?.fix_summary ?? 'Contact support for details on this rule.',
+          estimated_effort: interp?.estimated_effort ?? ('medium' as const),
         };
       }
       return {

@@ -81,6 +81,39 @@ describe('interpretResults', () => {
     const [issue] = interpretResults([makeResult('GA4_PURCHASE_EVENT_FIRED', 'fail')]);
     expect(issue.validation_layer).toBe('parameter_completeness');
   });
+
+  // Regression coverage for PRD "Signal Health Report" Issue 2 — a handful
+  // of rule_ids (GTM_CONTAINER_LOADED, GCLID_CAPTURED_AT_LANDING, ...) exist
+  // in both the v1 RULE_INTERPRETATIONS dict above and the v2 Check
+  // Register, with different implementations. Before this fix, any v2
+  // result for one of these rule_ids silently got the v1 dict's static
+  // business_impact text as why_it_matters instead of its own real
+  // technical_details.found — which then disagreed with the same rule_id's
+  // entry in journey_stages (buildV2LayerStages always uses the live
+  // result). Found via the full-taxonomy regression fixture in
+  // reporting/__tests__/evidenceConsistency.test.ts.
+  describe('rule_id collisions between the v1 dict and the v2 register', () => {
+    it('uses the live result\'s own evidence, not the v1 dict\'s static text, for a v2-originated result sharing a v1 rule_id', () => {
+      const v2Result = makeResult('GCLID_CAPTURED_AT_LANDING', 'fail');
+      v2Result.validation_layer = 'click_id_capture'; // L2.1's real declared layer
+      v2Result.technical_details.found = 'gclid present in the landing URL but never read into storage, a cookie, or dataLayer';
+
+      const [issue] = interpretResults([v2Result]);
+      expect(issue.why_it_matters).toBe('gclid present in the landing URL but never read into storage, a cookie, or dataLayer');
+      // fix_summary/owner are still borrowed from the v1 entry — that authored
+      // content isn't evidence, so it doesn't go stale the same way.
+      expect(issue.recommended_owner).toBe('Frontend Developer');
+      expect(issue.fix_summary).toContain('auto-tagging');
+    });
+
+    it('still uses the v1 dict\'s business_impact for a genuine v1 result on the same colliding rule_id', () => {
+      const v1Result = makeResult('GCLID_CAPTURED_AT_LANDING', 'fail');
+      v1Result.validation_layer = 'signal_initiation'; // v1's own layer for this rule — does not match L2.1's
+
+      const [issue] = interpretResults([v1Result]);
+      expect(issue.why_it_matters).toBe('Google Ads cannot attribute conversions to ad clicks. Attribution is completely broken.');
+    });
+  });
 });
 
 // ── generateBusinessSummary ───────────────────────────────────────────────────
