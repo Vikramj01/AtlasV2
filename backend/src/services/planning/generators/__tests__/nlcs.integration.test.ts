@@ -199,6 +199,10 @@ describe('Lead gen pipeline — end-to-end validation', () => {
     }
   });
 
+  it('guide never shows a nested ecommerce: object on a lead_gen site', () => {
+    expect(guide).not.toContain('ecommerce:');
+  });
+
   it('dataLayer spec has pages for the scanned URLs', () => {
     expect(dataLayerSpec.machine_spec.pages.length).toBeGreaterThan(0);
   });
@@ -261,6 +265,19 @@ describe('Ecommerce pipeline — end-to-end validation', () => {
   it('no ecommerce action_type errors on ecommerce site', () => {
     const rule7 = result.errors.filter(e => e.rule === 'BUSINESS_TYPE_ISOLATION');
     expect(rule7).toHaveLength(0);
+  });
+
+  it('guide\'s dataLayer snippet for purchase nests params under a real ecommerce: object', () => {
+    const purchaseSection = guide.slice(guide.indexOf('#### `purchase`'));
+    const snippet = purchaseSection.slice(0, purchaseSection.indexOf('\n---\n'));
+    expect(snippet).toContain('ecommerce:');
+    expect(snippet).toContain('transaction_id');
+  });
+
+  it('guide\'s dataLayer snippet for a non-ecommerce event (page_view) is flat, not nested', () => {
+    const pageViewSection = guide.slice(guide.indexOf('#### `page_view`'));
+    const snippet = pageViewSection.slice(0, pageViewSection.indexOf('\n---\n'));
+    expect(snippet).not.toContain('ecommerce:');
   });
 });
 
