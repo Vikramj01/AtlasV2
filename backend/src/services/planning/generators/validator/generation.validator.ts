@@ -1,7 +1,7 @@
 /**
  * GenerationValidator — pre-delivery linter for Atlas output artefacts.
  *
- * Runs synchronously after rendering, before delivery. All 11 rules must pass
+ * Runs synchronously after rendering, before delivery. All 12 rules must pass
  * or the result carries structured errors. CRITICAL errors block delivery.
  * HIGH errors surface as warnings the user must acknowledge.
  *
@@ -18,6 +18,7 @@
  *   10 PER_EVENT_CONVERSION_LABELS — each Google Ads tag has its own label variable
  *   11 EVENT_ACTION_TYPE_CONSISTENCY — recommendations sharing an event_name agree
  *      on action_type (Atlas merges same-named events into one GTM tag)
+ *   12 TRIGGER_NAME_UNIQUENESS      — no two GTM triggers share the same name
  */
 
 import type { GTMContainerJSON, GTMParameter, GTMTagDef, GTMTriggerDef } from '../gtmContainerGenerator';
@@ -561,6 +562,28 @@ export function validateGeneration(input: GenerationValidationInput): Validation
         location: `Recommendation group: event_name "${eventName}"`,
         message: `Recommendations sharing event_name "${eventName}" have inconsistent action_types: ${[...types].sort().join(', ')}. Atlas merges same-named events into one GTM tag, so they're expected to represent the same kind of interaction — this usually means one of them was misclassified, though it can occasionally be a legitimate edge case.`,
         fix_hint: `Review the recommendations for event_name "${eventName}". If one is genuinely a different interaction, give it a distinct event_name instead of reusing "${eventName}". If it looks like a misclassification, re-run the scan for that page or correct the recommendation's action_type before delivering.`,
+      });
+    }
+  }
+
+  // ── Rule 12: Trigger Name Uniqueness ─────────────────────────────────────────
+  // Mirrors Rule 2 (tag names) for triggers. GTM requires trigger names to be
+  // unique within a container — a collision here (e.g. a bug in the disambiguation
+  // suffix the generator adds when two recommendations sharing an event_name click
+  // different elements) either fails import or GTM silently auto-renames one,
+  // undermining the human-readable naming this whole system is built around.
+  const triggerNameCounts = new Map<string, number>();
+  for (const trigger of triggers) {
+    triggerNameCounts.set(trigger.name, (triggerNameCounts.get(trigger.name) ?? 0) + 1);
+  }
+  for (const [name, count] of triggerNameCounts) {
+    if (count > 1) {
+      errors.push({
+        rule: 'TRIGGER_NAME_UNIQUENESS',
+        severity: 'HIGH',
+        location: `GTM trigger: ${name}`,
+        message: `Trigger name "${name}" appears ${count} times. Duplicate trigger names make GTM workspaces unmaintainable and can cause GTM to reject the import or silently rename one on import.`,
+        fix_hint: `This is a bug in the tracking plan generator, not something you need to fix — please retry, or contact support if it persists.`,
       });
     }
   }

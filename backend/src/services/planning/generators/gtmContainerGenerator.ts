@@ -1140,17 +1140,31 @@ src="https://px.ads.linkedin.com/collect/?pid={{CONST - LinkedIn Partner ID}}&fm
 
   // ── Per-recommendation: triggers + event tags ─────────────────────────────
 
-  // Deduplicate by event_name — one trigger and one set of platform tags per unique event name
-  const eventTriggerMap = new Map<string, string>(); // event_name → triggerId
+  // Deduplicate tags by event_name — one set of platform tags per unique event name.
+  // Triggers are deduplicated more finely, by (event_name, trigger shape) — see
+  // triggerDedupKey below: two recommendations can share an event_name but click
+  // genuinely different elements, and a tag needs to fire on all of them.
   const eventTagsSeen = new Set<string>(); // event_name → tags already emitted
 
-  function ensureEventTrigger(irEvent: IREvent): string {
-    if (eventTriggerMap.has(irEvent.event_name)) return eventTriggerMap.get(irEvent.event_name)!;
-    const tid = trigIds.next();
-    const trigDef = renderGTMTrigger(irEvent.trigger, irEvent.event_name, tid, FOLDER.TRIGGERS);
-    triggers.push(trigDef);
-    eventTriggerMap.set(irEvent.event_name, tid);
-    return tid;
+  // Identifies a trigger's actual firing condition, independent of which
+  // recommendation produced it. Recommendations sharing an event_name AND this key
+  // are truly duplicates (same click target/condition); recommendations sharing an
+  // event_name but NOT this key represent different real interactions that must each
+  // get their own trigger, or the second interaction would silently never fire the tag.
+  function triggerDedupKey(t: IRTrigger): string {
+    switch (t.trigger_type) {
+      case 'click_css':
+      case 'form_submit':
+        return `${t.trigger_type}::${t.selector ?? ''}`;
+      case 'click_text':
+        return `${t.trigger_type}::${t.click_text ?? ''}`;
+      case 'click_url':
+        return `${t.trigger_type}::${t.click_url_pattern ?? ''}`;
+      default:
+        // page_load/custom_event/scroll_depth fire on the event name alone —
+        // one trigger per event_name is correct for these.
+        return t.trigger_type;
+    }
   }
 
   // Pre-merge parameters across all recommendations with the same event_name.
@@ -1178,6 +1192,10 @@ src="https://px.ads.linkedin.com/collect/?pid={{CONST - LinkedIn Partner ID}}&fm
   const actionTypesByEvent = new Map<string, Set<string>>();
   const isConversionByEvent = new Map<string, boolean>();
   const standardEventAliasByEvent = new Map<string, string>();
+  // event_name → (trigger dedup key → the first IRTrigger seen with that key).
+  // Insertion order of the inner Map drives the disambiguation suffix below, so a
+  // given fixture's trigger naming stays stable across runs.
+  const triggersByEvent = new Map<string, Map<string, IRTrigger>>();
   for (const rec of recommendations) {
     const irEvent = recToIREvent(rec, session.selected_platforms as Platform[]);
     const existing = mergedParamsByEvent.get(irEvent.event_name) ?? [];
@@ -1199,13 +1217,36 @@ src="https://px.ads.linkedin.com/collect/?pid={{CONST - LinkedIn Partner ID}}&fm
     if (irEvent.standard_event_alias && !standardEventAliasByEvent.has(irEvent.event_name)) {
       standardEventAliasByEvent.set(irEvent.event_name, irEvent.standard_event_alias);
     }
+    const triggerGroup = triggersByEvent.get(irEvent.event_name) ?? new Map<string, IRTrigger>();
+    const key = triggerDedupKey(irEvent.trigger);
+    if (!triggerGroup.has(key)) triggerGroup.set(key, irEvent.trigger);
+    triggersByEvent.set(irEvent.event_name, triggerGroup);
+  }
+
+  // Materialize one GTMTriggerDef per distinct trigger shape found above. Names are
+  // disambiguated with a "(2)", "(3)", ... suffix beyond the first so that two
+  // distinct triggers sharing an event_name never collide on name (GTM requires
+  // trigger names to be unique within a container, same as tag names).
+  const eventTriggerIds = new Map<string, string[]>(); // event_name → all its trigger IDs
+  for (const [eventName, group] of triggersByEvent) {
+    const ids: string[] = [];
+    let i = 0;
+    for (const trig of group.values()) {
+      i++;
+      const tid = trigIds.next();
+      const trigDef = renderGTMTrigger(trig, eventName, tid, FOLDER.TRIGGERS);
+      if (i > 1) trigDef.name = `${trigDef.name} (${i})`;
+      triggers.push(trigDef);
+      ids.push(tid);
+    }
+    eventTriggerIds.set(eventName, ids);
   }
 
   for (const rec of recommendations) {
     const irEvent = recToIREvent(rec, session.selected_platforms as Platform[]);
     const isConversion = isConversionByEvent.get(irEvent.event_name) ?? irEvent.is_conversion;
     const folderId = isConversion ? FOLDER.CONVERSION : FOLDER.ENGAGEMENT;
-    const trigId = ensureEventTrigger(irEvent);
+    const trigIdsForEvent = eventTriggerIds.get(irEvent.event_name)!;
 
     // Ensure DLVs for all IR event parameters (all recs, before dedup check).
     // Uses the event-wide (OR'd) ecommerce flag, not this single rec's own
@@ -1242,7 +1283,7 @@ src="https://px.ads.linkedin.com/collect/?pid={{CONST - LinkedIn Partner ID}}&fm
         name: `GA4 - ${mergedIREvent.event_name}`,
         type: 'gaawe',
         parameter: [tmpl('eventName', mergedIREvent.event_name), ...ga4EventParams],
-        firingTriggerId: [trigId],
+        firingTriggerId: trigIdsForEvent,
         tagFiringOption: 'oncePerEvent',
         folderId,
         consentSettings: consentSettingsForTag('gaawe', ''),
@@ -1254,7 +1295,7 @@ src="https://px.ads.linkedin.com/collect/?pid={{CONST - LinkedIn Partner ID}}&fm
       // Fires a second GA4 tag with the standard event name so Smart Bidding
       // can recognise the conversion without renaming the primary event.
       // e.g. GA4 - contact_form_submit (generate_lead alias)
-      const aliasTag = renderStandardEventAliasTag(mergedIREvent, trigId, tagIds.next(), folderId, isEcommerceByEvent.get(mergedIREvent.event_name));
+      const aliasTag = renderStandardEventAliasTag(mergedIREvent, trigIdsForEvent, tagIds.next(), folderId, isEcommerceByEvent.get(mergedIREvent.event_name));
       if (aliasTag) tags.push(aliasTag);
     }
 
@@ -1262,7 +1303,7 @@ src="https://px.ads.linkedin.com/collect/?pid={{CONST - LinkedIn Partner ID}}&fm
     if (hasGoogleAds && isConversion) {
       const { tag: gadsTag, labelVar } = renderGoogleAdsConversionTag(
         mergedIREvent,
-        trigId,
+        trigIdsForEvent,
         tagIds.next(),
         varIds.next(),
         FOLDER.CONVERSION,
@@ -1276,19 +1317,19 @@ src="https://px.ads.linkedin.com/collect/?pid={{CONST - LinkedIn Partner ID}}&fm
 
     // ── Meta Event Tag ──────────────────────────────────────────────────────
     if (hasMeta) {
-      tags.push(renderMetaEventTag(mergedIREvent, trigId, tagIds.next(), folderId, contributingActionTypes));
+      tags.push(renderMetaEventTag(mergedIREvent, trigIdsForEvent, tagIds.next(), folderId, contributingActionTypes));
     }
 
     // ── TikTok Event Tag ────────────────────────────────────────────────────
     if (hasTikTok) {
-      tags.push(renderTikTokEventTag(mergedIREvent, trigId, tagIds.next(), folderId, contributingActionTypes));
+      tags.push(renderTikTokEventTag(mergedIREvent, trigIdsForEvent, tagIds.next(), folderId, contributingActionTypes));
     }
 
     // ── LinkedIn Conversion Tag ─────────────────────────────────────────────
     if (hasLinkedIn && isConversion) {
       tags.push(renderLinkedInConversionTag(
         mergedIREvent,
-        trigId,
+        trigIdsForEvent,
         tagIds.next(),
         folderId,
         platformIds?.linkedin_conversion_id,
@@ -1301,8 +1342,8 @@ src="https://px.ads.linkedin.com/collect/?pid={{CONST - LinkedIn Partner ID}}&fm
   // fires, so metaDelivery can look up the same event_id from Redis and include
   // it in the CAPI payload for deduplication.
   // Uses fetch + keepalive (not sendBeacon) to support the required header.
-  if (hasMeta && eventTriggerMap.size > 0) {
-    const allEventTrigIds = [...eventTriggerMap.values()];
+  if (hasMeta && eventTriggerIds.size > 0) {
+    const allEventTrigIds = [...eventTriggerIds.values()].flat();
     tags.push({
       ...stub(),
       tagId: tagIds.next(),
