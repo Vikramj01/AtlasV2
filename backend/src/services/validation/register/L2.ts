@@ -92,6 +92,25 @@ function findValueInDataLayerUnderDifferentKey(events: DataLayerEvent[], expecte
  * 'value_match') — rather than just sitting unread in the URL. Shared by
  * every per-identifier rule in this layer (L2.1-2.8) and by the
  * redirect-timing check (L2.10).
+ *
+ * Diagnostic note (Signal Health Report: Evidence Integrity & Presentation
+ * PRD W9 — investigation only, no rule-semantics change): this checks
+ * VALUE equality against the synthetic value Atlas injected in the landing
+ * URL (`auditData.urlParams`), read against `auditData.cookies` — merged
+ * across every step, last-write-wins per name (see AuditData.cookies'
+ * docstring). A real tracking pixel (e.g. TikTok's) that sets its OWN
+ * same-NAMED cookie with a DIFFERENT value later in the journey (after
+ * landing) overwrites the synthetic value in that merged map, so this rule
+ * correctly reports "not captured" for the synthetic value even though a
+ * genuinely-named cookie exists — which is exactly what
+ * STORAGE_LIFETIME_MEETS_ATTRIBUTION_WINDOW (L3.2, name+lifetime only, no
+ * value check) goes on to find and report a real lifetime for. Confirmed
+ * against the openart.ai reference audit's ttclid disagreement: both
+ * results are correct, they're answering different questions ("did we
+ * capture the click ID we sent" vs. "does a click-ID-shaped cookie meet
+ * its window") about what can be the same cookie at different times. Not a
+ * bug in either rule — a report-copy improvement (stating what each rule
+ * actually observed and when) is a presentation follow-up, not a fix here.
  */
 function checkParamCapture(auditData: AuditData, paramName: string): CaptureCheck {
   const sentValue = auditData.urlParams?.[paramName];

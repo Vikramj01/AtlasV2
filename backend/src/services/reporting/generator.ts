@@ -12,6 +12,7 @@ import type {
   PlatformBreakdown,
   RuleStatus,
   SiteSetupSummary,
+  UnassessableFinding,
 } from '@/types/audit';
 import { generateBusinessSummary, determineOverallStatus, getIssueHeadline, getIssueImpact } from '@/services/interpretation/engine';
 import { buildCoverageSummary } from './coverage';
@@ -138,6 +139,7 @@ export function generateReport(
   siteSetup: SiteSetupSummary,
   customJourneyStages?: JourneyStage[],
   customPlatformBreakdown?: PlatformBreakdown[],
+  unassessable?: UnassessableFinding[],
 ): ReportJSON {
   const resultMap = new Map(results.map((r) => [r.rule_id, r]));
   const overallStatus = determineOverallStatus(results);
@@ -164,6 +166,10 @@ export function generateReport(
       raw_datalayer_events: auditData.dataLayer,
     },
   };
+
+  if (unassessable && unassessable.length > 0) {
+    report.could_not_be_assessed = unassessable;
+  }
 
   // Pre-render placeholder guard (PRD "Signal Health Report" Issue 4) —
   // flags, never blocks (see placeholderGuard.ts's docstring for why).

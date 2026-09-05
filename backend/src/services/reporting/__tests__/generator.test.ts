@@ -349,3 +349,31 @@ describe('generateReport — integration with scoring engine', () => {
     expect(report.executive_summary.scores).toEqual(scores);
   });
 });
+
+// ── Could Not Be Assessed (PRD §5/W3 — "suppress, do not annotate") ───────────
+
+describe('generateReport — could_not_be_assessed', () => {
+  it('omits the field entirely when no unassessable param is passed', () => {
+    const report = generateReport(makeAuditData(), makeScores(), [], [], makeSiteSetup());
+    expect(report.could_not_be_assessed).toBeUndefined();
+  });
+
+  it('omits the field when an empty unassessable array is passed', () => {
+    const report = generateReport(makeAuditData(), makeScores(), [], [], makeSiteSetup(), undefined, undefined, []);
+    expect(report.could_not_be_assessed).toBeUndefined();
+  });
+
+  it('surfaces unassessable findings when present', () => {
+    const unassessable = [
+      { rule_id: 'JAVASCRIPT_ERRORS_ON_CONVERSION_SURFACE', step: 'onboarding', reason: 'substituted landing page' },
+    ];
+    const report = generateReport(makeAuditData(), makeScores(), [], [], makeSiteSetup(), undefined, undefined, unassessable);
+    expect(report.could_not_be_assessed).toEqual(unassessable);
+  });
+
+  it('the technical_appendix reflects whatever `results` it was given — the caller (orchestrator) is responsible for passing the assessable-only subset', () => {
+    const allResults = [makeResult('A', 'pass'), makeResult('B', 'fail')];
+    const report = generateReport(makeAuditData(), makeScores(), [], allResults, makeSiteSetup());
+    expect(report.technical_appendix.validation_results).toEqual(allResults);
+  });
+});
