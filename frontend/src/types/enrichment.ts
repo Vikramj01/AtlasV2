@@ -92,6 +92,7 @@ export interface SignalEnrichmentConfig {
   content_config: ContentConfig | null;
   enabled_for_meta: boolean;
   enabled_for_google: boolean;
+  enabled_for_tiktok: boolean;
   validated_at: string | null;
   validation_score: number | null;
   validation_warnings: EnrichmentWarning[];
@@ -163,6 +164,7 @@ export interface SaveSignalEnrichmentRequest {
   content_config: ContentConfig | null;
   enabled_for_meta: boolean;
   enabled_for_google: boolean;
+  enabled_for_tiktok: boolean;
 }
 
 export interface ValidateFieldPathRequest {

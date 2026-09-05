@@ -112,6 +112,7 @@ const SignalEnrichmentSchema = z.object({
   content_config: ContentConfigSchema,
   enabled_for_meta: z.boolean(),
   enabled_for_google: z.boolean(),
+  enabled_for_tiktok: z.boolean(),
 });
 
 const ValidateFieldPathSchema = z.object({
@@ -331,6 +332,7 @@ router.put(
         content_config: parsed.data.content_config,
         enabled_for_meta: parsed.data.enabled_for_meta,
         enabled_for_google: parsed.data.enabled_for_google,
+        enabled_for_tiktok: parsed.data.enabled_for_tiktok,
         validated_at: null,
         validation_score: null,
         validation_warnings: [],

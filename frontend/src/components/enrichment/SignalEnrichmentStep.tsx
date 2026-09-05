@@ -46,6 +46,7 @@ interface SignalFormState {
   num_items_field: string;
   enabled_for_meta: boolean;
   enabled_for_google: boolean;
+  enabled_for_tiktok: boolean;
 }
 
 const DEFAULT_FORM: SignalFormState = {
@@ -62,6 +63,7 @@ const DEFAULT_FORM: SignalFormState = {
   num_items_field: '',
   enabled_for_meta: true,
   enabled_for_google: true,
+  enabled_for_tiktok: false,
 };
 
 function configToForm(config: SignalEnrichmentConfig | null): SignalFormState {
@@ -80,6 +82,7 @@ function configToForm(config: SignalEnrichmentConfig | null): SignalFormState {
     num_items_field: config.content_config?.num_items_field ?? '',
     enabled_for_meta: config.enabled_for_meta,
     enabled_for_google: config.enabled_for_google,
+    enabled_for_tiktok: config.enabled_for_tiktok,
   };
 }
 
@@ -114,6 +117,7 @@ function formToRequest(deploymentId: string, signalKey: string, form: SignalForm
     content_config,
     enabled_for_meta: form.enabled_for_meta,
     enabled_for_google: form.enabled_for_google,
+    enabled_for_tiktok: form.enabled_for_tiktok,
   };
 }
 
@@ -435,6 +439,13 @@ export function SignalEnrichmentStep({
                     onCheckedChange={(v) => updateForm(signal.signal_key, { enabled_for_google: v })}
                   />
                   <Label className="text-sm">Send enriched signal to Google Enhanced Conversions</Label>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Switch
+                    checked={form.enabled_for_tiktok}
+                    onCheckedChange={(v) => updateForm(signal.signal_key, { enabled_for_tiktok: v })}
+                  />
+                  <Label className="text-sm">Send enriched signal to TikTok Events API</Label>
                 </div>
               </div>
             </TabsContent>

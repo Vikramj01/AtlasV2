@@ -38,6 +38,7 @@ const purchaseEnrichment: SignalEnrichmentConfig = {
   content_config: null,
   enabled_for_meta: true,
   enabled_for_google: true,
+  enabled_for_tiktok: false,
   validated_at: null,
   validation_score: 85,
   validation_warnings: [],
@@ -120,5 +121,55 @@ describe('evaluateEnrichmentRules', () => {
     const report = evaluateEnrichmentRules(identity, []);
     const rule = report.rule_results.find((r) => r.rule_id === 'IDENT_03');
     expect(rule?.passed).toBe(true);
+  });
+
+  // ── TikTok coverage ──────────────────────────────────────────────────────────
+
+  it('passes CROSS_01 and SIG_04 for a TikTok-only deployment with identity mapped', () => {
+    const sig = { ...purchaseEnrichment, enabled_for_meta: false, enabled_for_google: false, enabled_for_tiktok: true };
+    const report = evaluateEnrichmentRules(baseIdentity, [sig]);
+    const cross01 = report.rule_results.find((r) => r.rule_id === 'CROSS_01');
+    const sig04 = report.rule_results.find((r) => r.rule_id === 'SIG_04');
+    expect(cross01?.passed).toBe(true);
+    expect(sig04?.passed).toBe(true);
+    expect(sig04?.message).toContain('1 for TikTok');
+  });
+
+  it('fails CROSS_01 for a TikTok-only deployment with no email or phone mapped — regression test', () => {
+    const sig = { ...purchaseEnrichment, enabled_for_meta: false, enabled_for_google: false, enabled_for_tiktok: true };
+    const report = evaluateEnrichmentRules(
+      { ...baseIdentity, email_field: null, phone_field: null },
+      [sig],
+    );
+    const rule = report.rule_results.find((r) => r.rule_id === 'CROSS_01');
+    expect(rule?.passed).toBe(false);
+    expect(rule?.severity).toBe('error');
+    expect(report.passed).toBe(false);
+  });
+
+  it('warns CROSS_02 when a TikTok-enabled signal lacks a dedup field', () => {
+    const sig = {
+      ...purchaseEnrichment,
+      enabled_for_meta: false,
+      enabled_for_google: false,
+      enabled_for_tiktok: true,
+      dedup_config: null,
+    };
+    const report = evaluateEnrichmentRules(baseIdentity, [sig]);
+    const rule = report.rule_results.find((r) => r.rule_id === 'CROSS_02');
+    expect(rule?.passed).toBe(false);
+    expect(rule?.severity).toBe('warning');
+    expect(rule?.message).toContain('TikTok');
+  });
+
+  it('leaves existing Meta and Google cases unchanged', () => {
+    const report = evaluateEnrichmentRules(baseIdentity, [purchaseEnrichment]);
+    const sig04 = report.rule_results.find((r) => r.rule_id === 'SIG_04');
+    const cross01 = report.rule_results.find((r) => r.rule_id === 'CROSS_01');
+    const cross02 = report.rule_results.find((r) => r.rule_id === 'CROSS_02');
+    expect(sig04?.passed).toBe(true);
+    expect(sig04?.message).toBe('1 signal(s) enabled for Meta, 1 for Google, 0 for TikTok');
+    expect(cross01?.passed).toBe(true);
+    expect(cross02?.passed).toBe(true);
   });
 });
