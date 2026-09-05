@@ -21,6 +21,7 @@ import { buildV2LayerStages, buildV2PlatformBreakdown } from '@/services/validat
 import { interpretResults } from '@/services/interpretation/engine';
 import { generateReport } from '@/services/reporting/generator';
 import { computeCoverageFingerprint } from '@/services/reporting/coverage';
+import { partitionCoverageAffected } from '@/services/reporting/coverageSuppression';
 import { getConnectedGtmContainerId } from '@/services/database/gtmConnectionQueries';
 import { getNamingConvention } from '@/services/database/namingConventionQueries';
 import { buildSiteSetupSummary } from './siteSetupDetector';
@@ -287,11 +288,20 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
 
         const siteSetup = buildSiteSetupSummary(auditData, (auditData.pageMetadata?.gtm_script_srcs as string[]) ?? [], connectedGtmContainerId);
 
-        const scores = isV2 ? calculateV2Scores(validationResults) : calculateScores(validationResults);
-        const issues = interpretResults(validationResults);
-        const customJourneyStages = isV2 ? buildV2LayerStages(validationResults) : undefined;
-        const customPlatformBreakdown = isV2 ? buildV2PlatformBreakdown(validationResults, auditData.declared_platforms) : undefined;
-        const report = generateReport(auditData, scores, issues, validationResults, siteSetup, customJourneyStages, customPlatformBreakdown);
+        // Coverage suppression (Signal Health Report: Evidence Integrity &
+        // Presentation PRD §5/W3) — a result whose evidence names a step
+        // that resolved to fallback_landing is excluded from scores, issue
+        // counts, and journey/platform breakdowns; v1 has no step_coverage
+        // concept, so its results pass through unfiltered.
+        const { assessable, unassessable } = isV2
+          ? partitionCoverageAffected(validationResults, auditData.step_coverage)
+          : { assessable: validationResults, unassessable: [] };
+
+        const scores = isV2 ? calculateV2Scores(assessable) : calculateScores(assessable);
+        const issues = interpretResults(assessable);
+        const customJourneyStages = isV2 ? buildV2LayerStages(assessable) : undefined;
+        const customPlatformBreakdown = isV2 ? buildV2PlatformBreakdown(assessable, auditData.declared_platforms) : undefined;
+        const report = generateReport(auditData, scores, issues, assessable, siteSetup, customJourneyStages, customPlatformBreakdown, unassessable);
         await saveReport(audit_id, report);
 
         // coverage_fingerprint/pages_distinct (§9) — persisted for every

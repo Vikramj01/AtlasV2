@@ -133,3 +133,56 @@ describe('calculateV2Scores — severity weighting', () => {
     expect(withDefault).toBe(withExplicitDefault);
   });
 });
+
+// ── Per-score layer coverage (Signal Health Report: Evidence Integrity & ──────
+// Presentation PRD §3.6/W5) — each composite score reports how many of its
+// constituent layers actually produced a non-skipped result, so a consumer
+// (the PDF generator) can withhold a confident label computed from only
+// part of what the score's name claims to cover. The openart.ai reference
+// case: L6 (parameter_completeness) excluded entirely, L7
+// (identity_match_quality) passed everything — Optimization Strength
+// scored 'Strong' from L7 alone.
+
+describe('calculateV2Scores — per-score layer coverage', () => {
+  it('reports full coverage for Optimization Strength when both L6 and L7 ran', () => {
+    const results = [
+      makeResult({ rule_id: 'A', validation_layer: 'parameter_completeness', status: 'pass' }),
+      makeResult({ rule_id: 'B', validation_layer: 'identity_match_quality', status: 'pass' }),
+    ];
+    const coverage = calculateV2Scores(results).optimization_strength_coverage;
+    expect(coverage).toEqual({ layers_tested: 2, layers_total: 2 });
+  });
+
+  it('reports partial coverage for Optimization Strength when L6 never ran (the openart.ai shape)', () => {
+    const results = [
+      makeResult({ rule_id: 'A', validation_layer: 'identity_match_quality', status: 'pass' }),
+    ];
+    const scores = calculateV2Scores(results);
+    expect(scores.optimization_strength).toBe('Strong'); // the categorical label is unchanged — presentation decides what to do with partial coverage
+    expect(scores.optimization_strength_coverage).toEqual({ layers_tested: 1, layers_total: 2 });
+  });
+
+  it('treats a layer with only skipped results the same as a layer that never ran', () => {
+    const results = [
+      makeResult({ rule_id: 'A', validation_layer: 'parameter_completeness', status: 'skipped' }),
+      makeResult({ rule_id: 'B', validation_layer: 'identity_match_quality', status: 'pass' }),
+    ];
+    expect(calculateV2Scores(results).optimization_strength_coverage).toEqual({ layers_tested: 1, layers_total: 2 });
+  });
+
+  it('reports full coverage for Data Consistency (single-layer score) whenever L12 has any non-skipped result', () => {
+    const results = [makeResult({ rule_id: 'A', validation_layer: 'hygiene_integrity', status: 'pass' })];
+    expect(calculateV2Scores(results).data_consistency_coverage).toEqual({ layers_tested: 1, layers_total: 1 });
+  });
+
+  it('reports the header composite coverage as distinct layers tested vs. distinct layers present at all', () => {
+    const results = [
+      makeResult({ rule_id: 'A', validation_layer: 'click_id_capture', status: 'pass' }),
+      makeResult({ rule_id: 'B', validation_layer: 'click_id_capture', status: 'skipped' }),
+      makeResult({ rule_id: 'C', validation_layer: 'foundation_tags', status: 'skipped' }),
+    ];
+    const coverage = calculateV2Scores(results).conversion_signal_health_coverage;
+    // click_id_capture has a non-skipped result (tested); foundation_tags is all-skipped (present but not tested)
+    expect(coverage).toEqual({ layers_tested: 1, layers_total: 2 });
+  });
+});

@@ -1,6 +1,6 @@
 # Sprint Plan: Signal Health Report — Accuracy & Output Fixes
 
-**Status:** In progress — Sprints 1-5 and 7 (Issues 1, 2, 3, 4, 6, 7) implemented and merged into `claude/sprint-plan-prd-pu51h6`. Sprint 6 (Issue 5) remains, gated on a product decision — see §"Open product decisions" below.
+**Status:** All 7 sprints done. Sprints 1-5 and 7 (Issues 1, 2, 3, 4, 6, 7) implemented and merged into `claude/sprint-plan-prd-pu51h6`. Sprint 6 (Issue 5) was folded into `ATLAS_REPORT_EVIDENCE_INTEGRITY_PRD.md` as that PRD's W3 and implemented there with a different resolution than this doc had proposed — see Sprint 6's note below.
 **Source PRD:** `docs/atlas-signal-health-report-fixes-prd.md` (uploaded PRD, "Atlas Signal Health Report · Accuracy and Output Fixes")
 **Owner:** Vikram
 **Branch:** `claude/sprint-plan-prd-pu51h6`
@@ -50,11 +50,11 @@ Sprint 2 (Issue 2)             — DONE
 Sprint 3 (shared v2 remediation data model)  — DONE
   → Sprint 4 (Issue 1: wire fix copy)        — DONE (shipped inside Sprint 3)
   → Sprint 5 (Issue 4: narrator fix + placeholder guard) — DONE
-Sprint 6 (Issue 5)             — NOT STARTED, pending product decision (default proposed)
+Sprint 6 (Issue 5)             — DONE (implemented as ATLAS_REPORT_EVIDENCE_INTEGRITY_PRD.md's W3, "suppress" not "label-and-include")
 Sprint 7 (Issue 7, stretch)    — DONE (weights + rollout confirmed in-session)
 ```
 
-Sprints 1-5 and 7 are implemented and merged into `claude/sprint-plan-prd-pu51h6` as of this writing (485 backend tests passing, clean `tsc --noEmit` on both backend and frontend). Sprint 3 shipped without a separate `failure_narrative` field — see that sprint's "what actually shipped" note — which meant Sprint 4 and 5's narrator fix landed in the same pass as Sprint 3, with only the placeholder guard itself picked up as a distinct follow-on (also now done). Sprint 6 remains, gated on a product decision from the PRD's Open Questions (§5) that hasn't been made yet — a recommended default is proposed so engineering isn't blocked once it's picked up, but it should get an explicit go-ahead before starting, the same way Sprint 7's weight table and rollout approach were confirmed before that sprint began.
+Sprints 1-5 and 7 are implemented and merged into `claude/sprint-plan-prd-pu51h6` as of this writing (485 backend tests passing, clean `tsc --noEmit` on both backend and frontend). Sprint 3 shipped without a separate `failure_narrative` field — see that sprint's "what actually shipped" note — which meant Sprint 4 and 5's narrator fix landed in the same pass as Sprint 3, with only the placeholder guard itself picked up as a distinct follow-on (also now done). Sprint 6 is now also done — the product decision this doc left open was made (differently than proposed here) in `ATLAS_REPORT_EVIDENCE_INTEGRITY_PRD.md` §5, and implemented as that PRD's W3.
 
 ---
 
@@ -146,7 +146,20 @@ The `failure_narrative` field turned out to be unnecessary. For nearly every rul
 
 ---
 
-## Sprint 6 — Substituted/fallback route labelling (Issue 5)
+## Sprint 6 — Substituted/fallback route labelling (Issue 5) — DONE, superseded
+
+**Status: implemented, but not as this section originally scoped it.** The
+`docs/ATLAS_REPORT_EVIDENCE_INTEGRITY_PRD.md` PRD ("Signal Health Report:
+Evidence Integrity & Presentation") folded this sprint in as its W3 and made
+the product decision this section had left open: **suppress, do not
+annotate** — the opposite of the "label-and-include" default proposed
+below. A result whose evidence names a step that resolved to
+`fallback_landing` is excluded entirely from issues, scores, and journey/
+platform breakdowns, and listed separately under a new "Could Not Be
+Assessed" section instead of being labelled and kept. See
+`backend/src/services/reporting/coverageSuppression.ts` and
+`ATLAS_REPORT_EVIDENCE_INTEGRITY_PRD.md` §5 for the rationale. The
+"label-and-include" plan below is kept for history; it was not implemented.
 
 **Priority:** P1
 **Depends on:** none (data model already exists — see investigation findings above)
@@ -196,8 +209,8 @@ The regression fixture built in Sprint 2 (full-taxonomy synthetic `AuditData` ru
 
 | # | Question | Default proposed here | Status |
 |---|---|---|---|
-| 1 | Exclude substituted routes from route-level findings, or label and keep them? | **Label and keep** (Sprint 6) | Not yet confirmed — Sprint 6 not started |
+| 1 | Exclude substituted routes from route-level findings, or label and keep them? | **Label and keep** (Sprint 6) | **Decided differently** — `ATLAS_REPORT_EVIDENCE_INTEGRITY_PRD.md` §5 decided **suppress, do not annotate** instead, and that's what shipped (Sprint 6 / that PRD's W3) |
 | 2 | Severity weighting for Issue 7? | critical×4 / high×2 / medium×1 / low×0.5 | **Confirmed in-session** — implemented, replacing the flat score directly (also confirmed, see Sprint 7) |
 | 3 | Should the Issue 4 placeholder guard block delivery, or flag + ship with a warning banner? | **Flag + banner** | Implemented per this default — not separately re-confirmed with product, worth a final check |
 
-Row 2 (Issue 7's weight table, plus the flat-vs-weighted rollout question raised alongside it) is now implemented per explicit confirmation in this session. Row 3 (Issue 4's guard behaviour) was implemented per the recommended default without a separate confirmation round — flag before shipping if product wants block-instead-of-flag reconsidered. Row 1 (Issue 5, Sprint 6) remains genuinely open — confirm before that sprint starts.
+Row 2 (Issue 7's weight table, plus the flat-vs-weighted rollout question raised alongside it) is now implemented per explicit confirmation in this session. Row 3 (Issue 4's guard behaviour) was implemented per the recommended default without a separate confirmation round — flag before shipping if product wants block-instead-of-flag reconsidered. Row 1 (Issue 5, Sprint 6) is done, but landed on the opposite answer this doc had proposed as a default — see `ATLAS_REPORT_EVIDENCE_INTEGRITY_PRD.md` §5 for the rationale (a false finding costs more credibility than an omitted true one).

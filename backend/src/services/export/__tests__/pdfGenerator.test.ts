@@ -4,8 +4,18 @@
  * ReportJSON inputs — from minimal to full 26-rule reports.
  */
 import { describe, it, expect } from 'vitest';
-import { generatePDF, computeRuleOverviewStats, formatWarningsLabel } from '../pdfGenerator';
-import type { ReportJSON, ValidationResult, ReportIssue } from '@/types/audit';
+import {
+  generatePDF,
+  computeRuleOverviewStats,
+  formatWarningsLabel,
+  computeIssueTotals,
+  orderEvidenceByRelevance,
+  selectDisplayedEvidence,
+  smartTruncateEvidence,
+  isPartialCoverage,
+  EVIDENCE_CAP,
+} from '../pdfGenerator';
+import type { ReportJSON, ValidationResult, ReportIssue, UnassessableFinding } from '@/types/audit';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -451,5 +461,198 @@ describe('generatePDF — scan coverage section', () => {
       },
     }));
     expect(withCoverage.byteLength).toBeGreaterThan(withoutCoverage.byteLength);
+  });
+});
+
+// ── Evidence integrity (Signal Health Report: Evidence Integrity & ─────────────
+// Presentation PRD §3.1/W1) — evidence is never silently truncated to 3
+// items, and when evidence must be capped, the item the failure message
+// names by key is never the one left out.
+
+describe('orderEvidenceByRelevance', () => {
+  it('puts the evidence item named in the failure message first, however deep it started', () => {
+    const found = '4 cookie(s) shorter than their attribution window: ttclid (1d, needs 7d)';
+    const evidence = [
+      'gclid: 90d (needs 90d)',
+      'gbraid: 90d (needs 90d)',
+      'wbraid: 90d (needs 90d)',
+      '_gcl_au: 90d (needs 90d)',
+      '_gcl_aw: 90d (needs 90d)',
+      'ttclid: 1d (needs 7d)', // 6th item, and the only violation named in `found`
+    ];
+    const ordered = orderEvidenceByRelevance(found, evidence);
+    expect(ordered[0]).toBe('ttclid: 1d (needs 7d)');
+    // nothing lost — just reordered
+    expect(ordered).toHaveLength(evidence.length);
+    expect(new Set(ordered)).toEqual(new Set(evidence));
+  });
+
+  it('is a no-op (stable original order) when the failure message names no specific evidence key', () => {
+    const found = '0/5 UTM parameters captured';
+    const evidence = [
+      'utm_source: not injected',
+      'utm_medium: not injected',
+      'utm_campaign: not injected',
+      'utm_content: not injected',
+      'utm_term: not injected',
+    ];
+    expect(orderEvidenceByRelevance(found, evidence)).toEqual(evidence);
+  });
+});
+
+describe('selectDisplayedEvidence', () => {
+  it('renders all evidence when the count is at or under the cap', () => {
+    const evidence = Array.from({ length: EVIDENCE_CAP }, (_, i) => `item-${i}: ok`);
+    const { shown, hiddenCount } = selectDisplayedEvidence('', evidence);
+    expect(shown).toHaveLength(EVIDENCE_CAP);
+    expect(hiddenCount).toBe(0);
+  });
+
+  it('never silently drops items past the cap — reports exactly how many were hidden', () => {
+    const evidence = Array.from({ length: 8 }, (_, i) => `item-${i}: ok`);
+    const { shown, hiddenCount } = selectDisplayedEvidence('', evidence);
+    expect(shown).toHaveLength(EVIDENCE_CAP);
+    expect(hiddenCount).toBe(8 - EVIDENCE_CAP);
+    expect(hiddenCount).toBeGreaterThan(0);
+  });
+
+  it('keeps the item the failure message names among the shown set even when evidence exceeds the cap', () => {
+    const found = 'the ttclid cookie is 1d, needs 7d';
+    const evidence = [
+      ...Array.from({ length: EVIDENCE_CAP }, (_, i) => `filler-${i}: 90d (needs 90d)`),
+      'ttclid: 1d (needs 7d)',
+    ];
+    const { shown } = selectDisplayedEvidence(found, evidence);
+    expect(shown).toContain('ttclid: 1d (needs 7d)');
+  });
+});
+
+describe('smartTruncateEvidence', () => {
+  it('leaves short text untouched', () => {
+    expect(smartTruncateEvidence('gclid: captured')).toBe('gclid: captured');
+  });
+
+  it('leaves a long non-URL string untouched (left to wrap, not cut)', () => {
+    const text = 'A'.repeat(400);
+    expect(smartTruncateEvidence(text)).toBe(text);
+  });
+
+  it('truncates a long URL keeping its informative tail (query string), not its first N characters', () => {
+    const url = `https://example.com/${'a'.repeat(150)}?utm_source=test&gclid=abc123&tail=THE_END`;
+    const text = `Requested: ${url}`;
+    const result = smartTruncateEvidence(text, 100);
+    expect(result.length).toBeLessThan(text.length);
+    expect(result).toContain('THE_END'); // the informative end survives
+    expect(result).toContain('…');
+  });
+});
+
+// ── computeIssueTotals (PRD §3.5/W4 — reconcile the counts) ────────────────────
+
+describe('computeIssueTotals', () => {
+  it('counts total issues and the critical subset', () => {
+    const issues = [
+      makeIssue({ severity: 'critical' }),
+      makeIssue({ severity: 'critical' }),
+      makeIssue({ severity: 'high' }),
+    ];
+    expect(computeIssueTotals(issues)).toEqual({ total: 3, critical: 2 });
+  });
+
+  it('handles zero issues', () => {
+    expect(computeIssueTotals([])).toEqual({ total: 0, critical: 0 });
+  });
+});
+
+// ── isPartialCoverage (PRD §3.6/W5 — coverage-aware composite scores) ─────────
+
+describe('isPartialCoverage', () => {
+  it('is false when coverage is absent', () => {
+    expect(isPartialCoverage(undefined)).toBe(false);
+  });
+
+  it('is false when every constituent layer ran', () => {
+    expect(isPartialCoverage({ layers_tested: 2, layers_total: 2 })).toBe(false);
+  });
+
+  it('is true when only some constituent layers ran', () => {
+    expect(isPartialCoverage({ layers_tested: 1, layers_total: 2 })).toBe(true);
+  });
+});
+
+// ── Could Not Be Assessed (PRD §5/W3 — suppress, do not annotate) ─────────────
+
+describe('generatePDF — could not be assessed section', () => {
+  it('renders without the section when nothing was suppressed', async () => {
+    const buf = await generatePDF(makeMinimalReport());
+    expect(isPdfBuffer(buf)).toBe(true);
+  });
+
+  it('renders a larger buffer when could_not_be_assessed is present', async () => {
+    const finding: UnassessableFinding = {
+      rule_id: 'JAVASCRIPT_ERRORS_ON_CONVERSION_SURFACE',
+      step: 'onboarding',
+      reason: 'The scan could not reach "onboarding" and used the landing page instead, so this result isn\'t evidence about that step.',
+    };
+    const without = await generatePDF(makeMinimalReport());
+    const withFinding = await generatePDF(makeMinimalReport({ could_not_be_assessed: [finding] }));
+    expect(isPdfBuffer(withFinding)).toBe(true);
+    expect(withFinding.byteLength).toBeGreaterThan(without.byteLength);
+  });
+});
+
+// ── Coverage-aware score cards (PRD §3.6/W5) ──────────────────────────────────
+
+describe('generatePDF — coverage-aware scores', () => {
+  it('renders without crashing when a score has partial layer coverage', async () => {
+    const report = makeMinimalReport();
+    report.executive_summary.scores.optimization_strength_coverage = { layers_tested: 1, layers_total: 2 };
+    report.executive_summary.scores.attribution_risk_coverage = { layers_tested: 2, layers_total: 2 };
+    report.executive_summary.scores.data_consistency_coverage = { layers_tested: 1, layers_total: 1 };
+    report.executive_summary.scores.conversion_signal_health_coverage = { layers_tested: 7, layers_total: 11 };
+    const buf = await generatePDF(report);
+    expect(isPdfBuffer(buf)).toBe(true);
+  });
+
+  it('renders without crashing when a declared platform is broken alongside a Strong/Low score', async () => {
+    const report = makeMinimalReport();
+    report.executive_summary.scores.optimization_strength = 'Strong';
+    report.executive_summary.scores.attribution_risk_level = 'Low';
+    report.platform_breakdown = [
+      { platform: 'meta_ads', status: 'broken', risk_explanation: 'No pixel found.', failed_rules: ['META_PIXEL_PURCHASE_EVENT_FIRED'], failed_rule_details: [] },
+    ];
+    const buf = await generatePDF(report);
+    expect(isPdfBuffer(buf)).toBe(true);
+  });
+});
+
+// ── Real page numbering (PRD §3.3/W6) ─────────────────────────────────────────
+
+describe('generatePDF — real page numbering', () => {
+  it('renders a long, many-issue report spanning several pages without crashing', async () => {
+    const issues: ReportIssue[] = Array.from({ length: 40 }, (_, i) =>
+      makeIssue({
+        rule_id: `RULE_${i}`,
+        problem: `Problem statement number ${i} describing a specific measurement gap in detail. `.repeat(3),
+        fix_summary: `Detailed remediation step ${i} explaining exactly what to change and why, at real authored length. `.repeat(4),
+        severity: i % 4 === 0 ? 'critical' : i % 4 === 1 ? 'high' : i % 4 === 2 ? 'medium' : 'low',
+      }),
+    );
+    const buf = await generatePDF(makeMinimalReport({ issues }));
+    expect(isPdfBuffer(buf)).toBe(true);
+  });
+});
+
+// ── Remediation copy is never truncated mid-word (PRD §3.2/W2) ────────────────
+
+describe('generatePDF — long remediation copy', () => {
+  it('renders a 400-character fix_summary and problem without crashing', async () => {
+    const longProblem = 'This is a detailed problem statement. '.repeat(12); // > 400 chars
+    const longFix = 'This is a detailed, fully authored remediation instruction with real substance. '.repeat(8); // > 400 chars
+    expect(longProblem.length).toBeGreaterThan(400);
+    expect(longFix.length).toBeGreaterThan(400);
+    const issue = makeIssue({ problem: longProblem, fix_summary: longFix });
+    const buf = await generatePDF(makeMinimalReport({ issues: [issue] }));
+    expect(isPdfBuffer(buf)).toBe(true);
   });
 });

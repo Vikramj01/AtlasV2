@@ -248,6 +248,68 @@ describe('generateBusinessSummary', () => {
     expect(summary).not.toMatch(/\.\./);
     expect(summary).not.toMatch(/\s{2,}/);
   });
+
+  // Regression coverage for PRD "Signal Health Report: Evidence Integrity &
+  // Presentation" §3.8/W10 — technical_details.found strings (used
+  // unconditionally for any v2 rule, per toSummaryInput) are authored as
+  // fragments, not sentences, and were being concatenated raw: "...missing
+  // a base tag Also affecting results: No GA4 collect request detected Fix
+  // this first...". Every sentence boundary needs terminal punctuation.
+  describe('sentence-terminal punctuation (W10)', () => {
+    it('adds a period between an un-punctuated business_impact fragment and the sentence that follows it', () => {
+      const top: ValidationResult = {
+        rule_id: 'DECLARED_PLATFORM_HAS_TAG',
+        validation_layer: 'scope_configuration',
+        status: 'fail',
+        severity: 'critical',
+        technical_details: { found: '1 of 2 declared platforms missing a base tag', expected: '', evidence: [] },
+      };
+      const second: ValidationResult = {
+        rule_id: 'GA4_CONFIG_TAG_PRESENT',
+        validation_layer: 'foundation_tags',
+        status: 'fail',
+        severity: 'critical',
+        technical_details: { found: 'No GA4 collect request detected', expected: '', evidence: [] },
+      };
+      const summary = generateBusinessSummary([top, second]);
+      expect(summary).not.toMatch(/missing a base tag Also/);
+      expect(summary).toContain('missing a base tag. Also affecting results: No GA4 collect request detected. Fix this first');
+    });
+
+    it('does not add a second period to a fragment that already ends with one', () => {
+      // GA4_PURCHASE_EVENT_FIRED's v1 business_impact already ends in '.'
+      const summary = generateBusinessSummary([makeResult('GA4_PURCHASE_EVENT_FIRED')]);
+      expect(summary).not.toMatch(/\.\./);
+    });
+  });
+
+  // Regression coverage for PRD §3.5/W4 — "reconcile the counts": the
+  // narrator's total previously counted only 'fail' results, silently
+  // excluding warnings, while the PDF's Rule Overview counts failed +
+  // warnings together — leaving two different "totals" on the same page
+  // with no stated relationship.
+  describe('warning reconciliation (W4)', () => {
+    it('states the combined failed+warning total when warnings are present alongside failures', () => {
+      const summary = generateBusinessSummary([
+        makeResult('GA4_PURCHASE_EVENT_FIRED', 'fail'),
+        makeResult('CURRENCY_PARAMETER_PRESENT', 'warning', 'high'),
+      ]);
+      expect(summary).toContain('Your tracking has 1 critical issue.');
+      expect(summary).toContain('In total, 2 checks across this audit are failing or flagged as a warning.');
+    });
+
+    it('does not append the reconciliation clause when there are no warnings (every existing report is unaffected)', () => {
+      const summary = generateBusinessSummary([makeResult('GA4_PURCHASE_EVENT_FIRED', 'fail')]);
+      expect(summary).not.toContain('In total,');
+    });
+
+    it('reports a warnings-only result set instead of falsely claiming "operating normally"', () => {
+      const summary = generateBusinessSummary([makeResult('CURRENCY_PARAMETER_PRESENT', 'warning', 'high')]);
+      expect(summary).not.toBe('All conversion signals are operating normally.');
+      expect(summary).toContain('1 check');
+      expect(summary).toContain('warning');
+    });
+  });
 });
 
 // ── getIssueHeadline ───────────────────────────────────────────────────────────

@@ -652,11 +652,33 @@ export interface ValidationResult {
 
 // ─── Scores ───────────────────────────────────────────────────────────────────
 
+/**
+ * How many of a composite score's constituent validation layers actually
+ * produced a non-skipped result this run, out of how many the score is
+ * defined over (Signal Health Report: Evidence Integrity & Presentation
+ * PRD §3.6/W5) — e.g. Optimization Strength is scoped to L6
+ * parameter_completeness + L7 identity_match_quality; when L6 was excluded
+ * from the scan, layers_tested is 1 and layers_total is 2. A consumer uses
+ * this to avoid printing a confident qualitative label ("Strong") computed
+ * from only half of what the label's name promises to cover. Additive and
+ * optional so existing frontend consumers of AuditScores (out of scope for
+ * this PRD) are unaffected — only the PDF generator reads it today.
+ */
+export interface ScoreCoverage {
+  layers_tested: number;
+  layers_total: number;
+}
+
 export interface AuditScores {
   conversion_signal_health: number;
   attribution_risk_level: 'Low' | 'Medium' | 'High' | 'Critical';
   optimization_strength: 'Weak' | 'Moderate' | 'Strong';
   data_consistency_score: 'Low' | 'Medium' | 'High';
+  /** Distinct validation_layer values with any result at all vs. with a non-skipped result — the "N of M layers scanned" figure for the header composite. */
+  conversion_signal_health_coverage?: ScoreCoverage;
+  attribution_risk_coverage?: ScoreCoverage;
+  optimization_strength_coverage?: ScoreCoverage;
+  data_consistency_coverage?: ScoreCoverage;
 }
 
 // ─── Report coverage (Site Evaluation Coverage & Honesty PRD §6.4) ───────────
@@ -727,6 +749,25 @@ export interface PlatformBreakdown {
   failed_rule_details: PlatformFailedRuleDetail[];
 }
 
+/**
+ * A rule result excluded from every client-facing finding, count, and score
+ * because its evidence cites a journey step that resolved to
+ * StepCoverage.source === 'fallback_landing' (Signal Health Report:
+ * Evidence Integrity & Presentation PRD §5/W3) — the scan substituted the
+ * landing page for a step it couldn't reach, so a result naming that step
+ * is evidence about the landing page, mislabeled, not a real finding about
+ * the step. Decided default is "suppress, do not annotate": these never
+ * appear in issues/journey_stages/platform_breakdown/scores, and are listed
+ * here instead so the report stays honest about what it couldn't check
+ * without shipping a false-confidence finding.
+ */
+export interface UnassessableFinding {
+  rule_id: string;
+  /** The step name (StepCoverage.step) this result's evidence cited. */
+  step: string;
+  reason: string;
+}
+
 export interface ReportJSON {
   audit_id: string;
   website_url: string;
@@ -748,6 +789,13 @@ export interface ReportJSON {
     raw_network_requests: NetworkRequest[];
     raw_datalayer_events: DataLayerEvent[];
   };
+  /**
+   * Findings suppressed by the fallback_landing cross-reference — see
+   * UnassessableFinding. Omitted (not an empty array) when nothing was
+   * suppressed, per CLAUDE.md rule 12 (no fabricated UI data): the PDF
+   * section only renders when this is present.
+   */
+  could_not_be_assessed?: UnassessableFinding[];
   /**
    * Set by the pre-render placeholder guard (PRD "Signal Health Report"
    * Issue 4) when a narrative field contains literal placeholder-shaped

@@ -605,38 +605,77 @@ interface SeverityCounts {
 }
 
 /**
+ * Ensures a narrative fragment ends with sentence-terminal punctuation
+ * before it's concatenated with the sentence that follows —
+ * technical_details.found strings (the v2 register's per-rule observed-
+ * state text, used unconditionally as business_impact for any result
+ * without a provably v1-originated interpretation — see toSummaryInput)
+ * are authored as fragments, not sentences, e.g. L0.ts's "1 of 2 declared
+ * platforms missing a base tag" has no trailing period. Concatenating that
+ * raw produced "...missing a base tag Also affecting results: No GA4
+ * collect request detected Fix this first..." with no sentence boundary
+ * at all (PRD "Signal Health Report: Evidence Integrity & Presentation"
+ * §3.8/W10). A no-op for text that already ends with ./!/?, so it never
+ * touches RULE_INTERPRETATIONS' hand-authored, already-punctuated copy.
+ */
+function terminated(text: string): string {
+  const trimmed = text.trim();
+  if (trimmed === '') return trimmed;
+  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+}
+
+/**
  * Renders a coherent narrative from the ranked, highest-priority issues —
  * deliberately template-based rather than an LLM call, so the wording is
  * deterministic and reviewable like the rest of this engine.
+ *
+ * warningCount (PRD §3.5/W4 — "reconcile the counts") is threaded through
+ * only to state, in one added sentence, the same total the PDF's Rule
+ * Overview and Action Items sections show (failed + warning), so a reader
+ * comparing this page's "N critical issues" against those sections' larger
+ * totals sees the relationship instead of three unlinked numbers. It never
+ * changes which issues get ranked/named — those still come from `fail`
+ * results only, preserving every existing call site's behavior when
+ * warningCount is 0 (the case every pre-existing test exercises).
  */
-function renderSummary(rankedRules: SummaryInput[], counts: SeverityCounts): string {
+function renderSummary(rankedRules: SummaryInput[], counts: SeverityCounts, warningCount = 0): string {
   const total = counts.critical + counts.high + counts.medium + counts.low;
-  if (total === 0) return 'All conversion signals are operating normally.';
+  if (total === 0 && warningCount === 0) return 'All conversion signals are operating normally.';
+
+  if (total === 0) {
+    // Only warning-status results — nothing failed outright, but "operating
+    // normally" would contradict the Rule Overview's non-zero warning count.
+    return `Nothing is failing outright, but ${warningCount} check${warningCount === 1 ? '' : 's'} ${warningCount === 1 ? 'is' : 'are'} flagged as a warning and worth a look.`;
+  }
 
   const [top, second] = rankedRules;
+  const grandTotal = total + warningCount;
+  const coverageClause = warningCount > 0
+    ? ` In total, ${grandTotal} check${grandTotal === 1 ? '' : 's'} across this audit ${grandTotal === 1 ? 'is' : 'are'} failing or flagged as a warning.`
+    : '';
 
   if (counts.critical > 0) {
     const criticalPlural = counts.critical > 1 ? 's' : '';
-    let summary = `Your tracking has ${counts.critical} critical issue${criticalPlural}. The most urgent: ${top.business_impact}`;
+    let summary = `Your tracking has ${counts.critical} critical issue${criticalPlural}. The most urgent: ${terminated(top.business_impact)}`;
     if (second && second.severity === 'critical') {
-      summary += ` Also affecting results: ${second.business_impact}`;
+      summary += ` Also affecting results: ${terminated(second.business_impact)}`;
     }
     summary += ' Fix this first — it has the biggest impact on ad spend efficiency and reporting accuracy.';
     if (counts.high > 0) {
       summary += ` ${counts.high} additional high-priority issue${counts.high > 1 ? 's' : ''} should be addressed next.`;
     }
-    return summary;
+    return summary + coverageClause;
   }
 
   if (counts.high > 0) {
     const highPlural = counts.high > 1 ? 's' : '';
     const verb = counts.high > 1 ? 'are' : 'is';
-    return `Your tracking is mostly working, but ${counts.high} high-priority issue${highPlural} ${verb} reducing optimization effectiveness. Most significant: ${top.business_impact}`;
+    return `Your tracking is mostly working, but ${counts.high} high-priority issue${highPlural} ${verb} reducing optimization effectiveness. Most significant: ${terminated(top.business_impact)}` + coverageClause;
   }
 
   // Only medium/low severity issues remain.
   const minorPlural = total > 1 ? 's' : '';
-  return `${total} minor issue${minorPlural} detected: ${top.business_impact} This has limited impact but is worth fixing when convenient.`;
+  return `${total} minor issue${minorPlural} detected: ${terminated(top.business_impact)} This has limited impact but is worth fixing when convenient.` + coverageClause;
 }
 
 /**
@@ -656,7 +695,8 @@ export function generateBusinessSummary(results: ValidationResult[]): string {
     medium: rules.filter((r) => r.severity === 'medium').length,
     low: rules.filter((r) => r.severity === 'low').length,
   };
-  return renderSummary(rankIssuesForSummary(rules), counts);
+  const warningCount = results.filter((r) => r.status === 'warning').length;
+  return renderSummary(rankIssuesForSummary(rules), counts, warningCount);
 }
 
 /**

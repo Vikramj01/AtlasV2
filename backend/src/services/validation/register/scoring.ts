@@ -10,7 +10,7 @@
  * thresholds over each score's associated layer(s) generalize to any
  * layer's rule count instead.
  */
-import type { AuditScores, ValidationResult, ValidationLayerV2, Severity } from '@/types/audit';
+import type { AuditScores, ValidationResult, ValidationLayerV2, Severity, ScoreCoverage } from '@/types/audit';
 import { DEFAULT_SEVERITY_WEIGHTS } from '@/config/scoringWeights';
 
 function layerResults(results: ValidationResult[], layers: ValidationLayerV2[]): ValidationResult[] {
@@ -20,6 +20,22 @@ function layerResults(results: ValidationResult[], layers: ValidationLayerV2[]):
 /** Excludes 'skipped' — a rule with nothing to check for this audit shouldn't count against (or for) any score. */
 function scored(results: ValidationResult[]): ValidationResult[] {
   return results.filter((r) => r.status !== 'skipped');
+}
+
+/**
+ * How many of `layers` actually produced a non-skipped result this run
+ * (Signal Health Report: Evidence Integrity & Presentation PRD §3.6/W5) —
+ * e.g. a scan where L6 (parameter_completeness) was entirely excluded but
+ * L7 (identity_match_quality) ran has layers_tested: 1, layers_total: 2 for
+ * Optimization Strength. A caller uses this to withhold a confident label
+ * computed from only part of what the label's name claims to cover.
+ */
+function layerCoverage(results: ValidationResult[], layers: ValidationLayerV2[]): ScoreCoverage {
+  const tested = new Set(
+    results.filter((r) => layers.includes(r.validation_layer as ValidationLayerV2) && r.status !== 'skipped')
+      .map((r) => r.validation_layer),
+  );
+  return { layers_tested: tested.size, layers_total: layers.length };
 }
 
 function riskLevel(failRate: number, applicableCount: number): AuditScores['attribution_risk_level'] {
@@ -79,6 +95,12 @@ export function calculateV2Scores(
 ): AuditScores {
   const applicable = scored(results);
   const conversionSignalHealth = weightedSignalHealth(applicable, severityWeights);
+  // "How many layers scanned" for the header composite — every distinct
+  // layer that produced ANY result (tested or coverage-skipped) is the
+  // denominator, since that's "how many layers this rule set defines";
+  // the numerator is layers with at least one non-skipped result.
+  const allLayers = [...new Set(results.map((r) => r.validation_layer as ValidationLayerV2))];
+  const conversionSignalHealthCoverage = layerCoverage(results, allLayers);
 
   const attribution = scored(layerResults(results, ATTRIBUTION_LAYERS));
   const attributionFailRate = attribution.length > 0 ? attribution.filter((r) => r.status !== 'pass').length / attribution.length : 0;
@@ -97,5 +119,9 @@ export function calculateV2Scores(
     attribution_risk_level: attributionRiskLevel,
     optimization_strength: optimizationStrength,
     data_consistency_score: dataConsistencyScore,
+    conversion_signal_health_coverage: conversionSignalHealthCoverage,
+    attribution_risk_coverage: layerCoverage(results, ATTRIBUTION_LAYERS),
+    optimization_strength_coverage: layerCoverage(results, OPTIMIZATION_LAYERS),
+    data_consistency_coverage: layerCoverage(results, CONSISTENCY_LAYERS),
   };
 }
