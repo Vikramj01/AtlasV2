@@ -70,6 +70,7 @@ const baseSignalEnrichmentConfig = (): SignalEnrichmentConfig => ({
   content_config: { ids_field: 'ecommerce.purchase.products', ids_path_type: 'array' },
   enabled_for_meta: true,
   enabled_for_google: true,
+  enabled_for_tiktok: false,
   validated_at: null,
   validation_score: null,
   validation_warnings: [],

@@ -129,13 +129,16 @@ function rule_SIG_04(signals: SignalEnrichmentConfig[]): ValidationRuleResult {
   const enabledForGoogle = signals.filter(
     (s) => conversionSignals.includes(s.signal_key) && s.enabled_for_google,
   );
-  const passed = enabledForMeta.length > 0 || enabledForGoogle.length > 0;
+  const enabledForTikTok = signals.filter(
+    (s) => conversionSignals.includes(s.signal_key) && s.enabled_for_tiktok,
+  );
+  const passed = enabledForMeta.length > 0 || enabledForGoogle.length > 0 || enabledForTikTok.length > 0;
   return {
     rule_id: 'SIG_04',
     passed,
     severity: 'warning',
     message: passed
-      ? `${enabledForMeta.length} signal(s) enabled for Meta, ${enabledForGoogle.length} for Google`
+      ? `${enabledForMeta.length} signal(s) enabled for Meta, ${enabledForGoogle.length} for Google, ${enabledForTikTok.length} for TikTok`
       : 'No conversion signals are enabled for any platform CAPI delivery',
   };
 }
@@ -161,7 +164,9 @@ function rule_CROSS_01(
 ): ValidationRuleResult {
   const hasIdentity = !!(identity?.email_field || identity?.phone_field);
   const hasConversionSignal = signals.some(
-    (s) => (s.signal_key === 'purchase' || s.signal_key === 'generate_lead') && (s.enabled_for_meta || s.enabled_for_google),
+    (s) =>
+      (s.signal_key === 'purchase' || s.signal_key === 'generate_lead') &&
+      (s.enabled_for_meta || s.enabled_for_google || s.enabled_for_tiktok),
   );
   // If there are enabled conversion signals, identity must be configured
   const passed = !hasConversionSignal || hasIdentity;
@@ -176,16 +181,18 @@ function rule_CROSS_01(
 }
 
 function rule_CROSS_02(signals: SignalEnrichmentConfig[]): ValidationRuleResult {
-  const metaEnabled = signals.filter((s) => s.enabled_for_meta);
-  const allHaveDedup = metaEnabled.every((s) => !!s.dedup_config?.field);
-  const passed = metaEnabled.length === 0 || allHaveDedup;
+  // Meta and TikTok both dedup on event_id (see tiktokDelivery.ts header comment)
+  // and depend on dedup_config.field being mapped consistently client/server-side.
+  const dedupDependentEnabled = signals.filter((s) => s.enabled_for_meta || s.enabled_for_tiktok);
+  const missingDedup = dedupDependentEnabled.filter((s) => !s.dedup_config?.field);
+  const passed = missingDedup.length === 0;
   return {
     rule_id: 'CROSS_02',
     passed,
     severity: 'warning',
     message: passed
-      ? 'All Meta-enabled signals have dedup IDs configured'
-      : `${metaEnabled.filter((s) => !s.dedup_config?.field).length} Meta-enabled signal(s) lack dedup IDs — duplicate events may inflate conversion counts`,
+      ? 'All Meta/TikTok-enabled signals have dedup IDs configured'
+      : `${missingDedup.length} Meta/TikTok-enabled signal(s) lack dedup IDs — duplicate events may inflate conversion counts`,
   };
 }
 
