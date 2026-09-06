@@ -573,7 +573,7 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
           const bx = LEFT + i * (boxW + ARROW_W) + boxW / 2;
           doc.save();
           doc.fillColor(C.lightText).fontSize(7).font('Helvetica');
-          doc.rotate(-45, { origin: [bx, labelY + 4] });
+          doc.rotate(45, { origin: [bx, labelY + 4] });
           doc.text(s.stage, bx, labelY, { width: 110, lineBreak: false });
           doc.restore();
         });
