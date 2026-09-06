@@ -789,11 +789,26 @@ export interface AuditScores {
   attribution_risk_level: 'Low' | 'Medium' | 'High' | 'Critical';
   optimization_strength: 'Weak' | 'Moderate' | 'Strong';
   data_consistency_score: 'Low' | 'Medium' | 'High';
-  /** Distinct validation_layer values with any result at all vs. with a non-skipped result — the "N of M layers scanned" figure for the header composite. */
+  /** Distinct validation_layer values with any result at all vs. with a non-skipped result — the "N of M layers scanned" figure for the header composite. conversion_signal_health_coverage.layers_total is always 13 (ALL_V2_LAYERS.length, register/layers.ts) — see Report Correctness Programme PRD Part D1. */
   conversion_signal_health_coverage?: ScoreCoverage;
   attribution_risk_coverage?: ScoreCoverage;
   optimization_strength_coverage?: ScoreCoverage;
   data_consistency_coverage?: ScoreCoverage;
+  /**
+   * The raw severity-weighted units behind conversion_signal_health
+   * (Report Correctness Programme PRD Part D3) — numerator is the summed
+   * weight of every passing, non-skipped result; denominator is the summed
+   * weight of every non-skipped (scored) result. Stored on the audit row
+   * (audits.conversion_signal_health_numerator/_denominator) so a later
+   * audit for the same site can compare its own denominator against this
+   * one — a score that moved because the denominator changed (coverage,
+   * declared platforms, a register version bump) is a different fact from
+   * one that moved because the site changed, and the client will ask
+   * which. Undefined for a v1-legacy score (scoring/engine.ts's
+   * calculateScores doesn't compute a weighted denominator).
+   */
+  conversion_signal_health_numerator?: number;
+  conversion_signal_health_denominator?: number;
 }
 
 // ─── Report coverage (Site Evaluation Coverage & Honesty PRD §6.4) ───────────
@@ -802,6 +817,18 @@ export interface CoverageLayerNotTested {
   layer: ValidationLayerV2;
   label: string;
   reason: string;
+  /**
+   * Report Correctness Programme PRD Part D2 — "not applicable" (this
+   * site/scan's own declared configuration means the layer has nothing to
+   * check — an undeclared platform, a site_type L4 doesn't apply to, no
+   * product/checkout domain declared) must be visibly distinct from "not
+   * scanned" (in scope for this site, but this run didn't get there — the
+   * crawl never reached the conversion surface it needed, or the layer
+   * isn't shipped in the register yet). A site with no cross-domain
+   * journey is not deficient for L4 not running; a site whose crawl never
+   * reached checkout genuinely might be.
+   */
+  state: 'not_applicable' | 'not_scanned';
 }
 
 /**
@@ -899,6 +926,16 @@ export interface ReportJSON {
   generated_at: string;
   /** Which rule library produced this report — never compare scores across versions. Absent on reports generated before this field existed; treat as 'v1-legacy'. */
   rule_set_version?: RuleSetVersion;
+  /**
+   * Check Register version that produced this report's results (Report
+   * Correctness Programme PRD Part D4) — register/layers.ts's
+   * REGISTER_VERSION at scan time. Bumped on any rule addition, removal,
+   * or severity change; two reports with different register_version
+   * values are not directly comparable even when both are 'v2'. Undefined
+   * for a v1-legacy report (no Check Register involved) or one generated
+   * before this field existed.
+   */
+  register_version?: string;
   executive_summary: {
     overall_status: 'healthy' | 'partially_broken' | 'critical';
     business_summary: string;
@@ -982,6 +1019,16 @@ export interface AuditRow {
   // reporting/coverage.ts's computeCoverageFingerprint.
   coverage_fingerprint?: string | null;
   pages_distinct?: number | null;
+  // Score comparability columns (20260906002_score_comparability.sql,
+  // Report Correctness Programme PRD Part D3/D4) — null for a v1-legacy
+  // audit, or a v2 audit written before this migration. Durable copies of
+  // ReportJSON.register_version/conversion_signal_health_numerator/
+  // _denominator, so a later audit for the same site can compare its own
+  // denominator/register_version against the prior run without unpacking
+  // audit_reports.report_json.
+  register_version?: string | null;
+  conversion_signal_health_numerator?: number | null;
+  conversion_signal_health_denominator?: number | null;
 }
 
 /** POST /api/audits/start payload for a Check Register v2 scan. */

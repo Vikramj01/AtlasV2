@@ -104,6 +104,20 @@ describe('generateReport — top-level structure', () => {
     expect(new Date(generated_at).toISOString()).toBe(generated_at);
   });
 
+  // Report Correctness Programme PRD Part D4 — every v2 report is stamped
+  // with the Check Register version that produced it; a v1-legacy report
+  // (no rule_set_version, or 'v1-legacy') has no register to stamp.
+  it('stamps register_version on a v2 report', () => {
+    const report = generateReport(makeAuditData({ rule_set_version: 'v2' }), makeScores(), [], [], makeSiteSetup());
+    expect(report.register_version).toBeDefined();
+    expect(typeof report.register_version).toBe('string');
+  });
+
+  it('does not stamp register_version on a v1-legacy report', () => {
+    const report = generateReport(makeAuditData({ rule_set_version: undefined }), makeScores(), [], [], makeSiteSetup());
+    expect(report.register_version).toBeUndefined();
+  });
+
   it('passes issues through unchanged', () => {
     const issues = [makeIssue('GA4_PURCHASE_EVENT_FIRED'), makeIssue('TRANSACTION_ID_PRESENT')];
     const { issues: out } = generateReport(makeAuditData(), makeScores(), issues, [], makeSiteSetup());

@@ -12,6 +12,7 @@
  */
 import type { AuditScores, ValidationResult, ValidationLayerV2, Severity, ScoreCoverage } from '@/types/audit';
 import { DEFAULT_SEVERITY_WEIGHTS } from '@/config/scoringWeights';
+import { ALL_V2_LAYERS } from './layers';
 
 function layerResults(results: ValidationResult[], layers: ValidationLayerV2[]): ValidationResult[] {
   return results.filter((r) => layers.includes(r.validation_layer as ValidationLayerV2));
@@ -78,7 +79,15 @@ const CONSISTENCY_LAYERS: ValidationLayerV2[] = ['hygiene_integrity'];
  * acceptance test proving this is a strict generalisation, not a
  * behaviour change, for anyone who wants all severities weighted equally.
  */
-function weightedSignalHealth(applicable: ValidationResult[], weights: Record<Severity, number>): number {
+interface WeightedSignalHealth {
+  score: number;
+  /** Sum of severity weights for every non-skipped result that passed — stored on the audit (Report Correctness Programme PRD Part D3) so a later run's denominator/numerator can be compared against this one. */
+  numerator: number;
+  /** Sum of severity weights for every non-skipped result — moves only when the set of applicable/scored rules changes (coverage, declared platforms, register version), never when the site itself changes. */
+  denominator: number;
+}
+
+function weightedSignalHealth(applicable: ValidationResult[], weights: Record<Severity, number>): WeightedSignalHealth {
   let totalWeight = 0;
   let passingWeight = 0;
   for (const r of applicable) {
@@ -86,7 +95,11 @@ function weightedSignalHealth(applicable: ValidationResult[], weights: Record<Se
     totalWeight += weight;
     if (r.status === 'pass') passingWeight += weight;
   }
-  return totalWeight > 0 ? Math.round((passingWeight / totalWeight) * 100) : 0;
+  return {
+    score: totalWeight > 0 ? Math.round((passingWeight / totalWeight) * 100) : 0,
+    numerator: passingWeight,
+    denominator: totalWeight,
+  };
 }
 
 export function calculateV2Scores(
@@ -94,13 +107,15 @@ export function calculateV2Scores(
   severityWeights: Record<Severity, number> = DEFAULT_SEVERITY_WEIGHTS,
 ): AuditScores {
   const applicable = scored(results);
-  const conversionSignalHealth = weightedSignalHealth(applicable, severityWeights);
-  // "How many layers scanned" for the header composite — every distinct
-  // layer that produced ANY result (tested or coverage-skipped) is the
-  // denominator, since that's "how many layers this rule set defines";
-  // the numerator is layers with at least one non-skipped result.
-  const allLayers = [...new Set(results.map((r) => r.validation_layer as ValidationLayerV2))];
-  const conversionSignalHealthCoverage = layerCoverage(results, allLayers);
+  const signalHealth = weightedSignalHealth(applicable, severityWeights);
+  // Fixed denominator (Report Correctness Programme PRD Part D1) — every
+  // report's header composite is "N of 13 layers scanned," 13 being the
+  // ValidationLayerV2 enum's own length, never however many layers
+  // happened to produce a result this run. A layer this run never touched
+  // at all (e.g. cross_domain_continuity for a site_type where L4's rules
+  // are all applies_to-excluded) previously vanished from the denominator
+  // entirely — the exact "7 of 11 vs. 7 of 12 for the same rule set" defect.
+  const conversionSignalHealthCoverage = layerCoverage(results, ALL_V2_LAYERS);
 
   const attribution = scored(layerResults(results, ATTRIBUTION_LAYERS));
   const attributionFailRate = attribution.length > 0 ? attribution.filter((r) => r.status !== 'pass').length / attribution.length : 0;
@@ -115,7 +130,7 @@ export function calculateV2Scores(
   const dataConsistencyScore = consistencyLevel(consistencyPassRate, consistency.length);
 
   return {
-    conversion_signal_health: conversionSignalHealth,
+    conversion_signal_health: signalHealth.score,
     attribution_risk_level: attributionRiskLevel,
     optimization_strength: optimizationStrength,
     data_consistency_score: dataConsistencyScore,
@@ -123,5 +138,7 @@ export function calculateV2Scores(
     attribution_risk_coverage: layerCoverage(results, ATTRIBUTION_LAYERS),
     optimization_strength_coverage: layerCoverage(results, OPTIMIZATION_LAYERS),
     data_consistency_coverage: layerCoverage(results, CONSISTENCY_LAYERS),
+    conversion_signal_health_numerator: signalHealth.numerator,
+    conversion_signal_health_denominator: signalHealth.denominator,
   };
 }

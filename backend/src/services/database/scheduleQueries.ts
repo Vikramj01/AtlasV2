@@ -209,10 +209,12 @@ export async function updateScheduleScore(
   score: number,
   ruleSetVersion?: RuleSetVersion,
   coverageFingerprint?: string,
+  registerVersion?: string,
 ): Promise<void> {
   const updates: Record<string, unknown> = { last_audit_score: score, updated_at: new Date().toISOString() };
   if (ruleSetVersion) updates.last_audit_rule_set_version = ruleSetVersion;
   if (coverageFingerprint) updates.last_audit_coverage_fingerprint = coverageFingerprint;
+  if (registerVersion) updates.last_audit_register_version = registerVersion;
 
   const { error } = await supabaseAdmin
     .from('scheduled_audits')

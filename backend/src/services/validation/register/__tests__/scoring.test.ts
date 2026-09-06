@@ -175,14 +175,52 @@ describe('calculateV2Scores — per-score layer coverage', () => {
     expect(calculateV2Scores(results).data_consistency_coverage).toEqual({ layers_tested: 1, layers_total: 1 });
   });
 
-  it('reports the header composite coverage as distinct layers tested vs. distinct layers present at all', () => {
+  // Report Correctness Programme PRD Part D1 — the header composite's
+  // denominator is always the full 13-layer register (ALL_V2_LAYERS),
+  // never however many distinct layers happened to appear in `results`
+  // this run. Before this fix, a layer entirely excluded by applies_to/
+  // platform_scope (so it contributes zero results, not even 'skipped')
+  // silently shrank the denominator — the exact defect that showed "7 of
+  // 11" for one audit and "7 of 12" for another of the same fixed rule set.
+  it('reports the header composite denominator as the fixed 13-layer register, not however many layers appeared in results', () => {
     const results = [
       makeResult({ rule_id: 'A', validation_layer: 'click_id_capture', status: 'pass' }),
       makeResult({ rule_id: 'B', validation_layer: 'click_id_capture', status: 'skipped' }),
       makeResult({ rule_id: 'C', validation_layer: 'foundation_tags', status: 'skipped' }),
+      // Every other layer (cross_domain_continuity, event_firing, ...)
+      // contributes ZERO results here — e.g. entirely applies_to-excluded
+      // for this site_type — yet still counts toward the denominator.
     ];
     const coverage = calculateV2Scores(results).conversion_signal_health_coverage;
-    // click_id_capture has a non-skipped result (tested); foundation_tags is all-skipped (present but not tested)
-    expect(coverage).toEqual({ layers_tested: 1, layers_total: 2 });
+    // click_id_capture has a non-skipped result (tested); every other
+    // layer, including foundation_tags (all-skipped) and the 11 layers
+    // with zero results at all, is untested — but the denominator is 13.
+    expect(coverage).toEqual({ layers_tested: 1, layers_total: 13 });
+  });
+
+  it('the header composite denominator is 13 even for a completely empty result set', () => {
+    expect(calculateV2Scores([]).conversion_signal_health_coverage).toEqual({ layers_tested: 0, layers_total: 13 });
+  });
+});
+
+// ── Numerator/denominator (Report Correctness Programme PRD Part D3) ─────────
+
+describe('calculateV2Scores — conversion_signal_health numerator/denominator', () => {
+  it('exposes the raw severity-weighted units behind the composite score', () => {
+    const results = [
+      makeResult({ rule_id: 'A', severity: 'medium', status: 'pass' }), // weight contributes to both
+      makeResult({ rule_id: 'B', severity: 'medium', status: 'fail' }), // weight contributes to denominator only
+      makeResult({ rule_id: 'C', severity: 'medium', status: 'skipped' }), // excluded entirely
+    ];
+    const scores = calculateV2Scores(results, { critical: 1, high: 1, medium: 1, low: 1 });
+    expect(scores.conversion_signal_health_denominator).toBe(2); // 2 scored (non-skipped) results
+    expect(scores.conversion_signal_health_numerator).toBe(1); // 1 of them passed
+    expect(scores.conversion_signal_health).toBe(50);
+  });
+
+  it('is 0/0 for a completely empty result set', () => {
+    const scores = calculateV2Scores([]);
+    expect(scores.conversion_signal_health_numerator).toBe(0);
+    expect(scores.conversion_signal_health_denominator).toBe(0);
   });
 });

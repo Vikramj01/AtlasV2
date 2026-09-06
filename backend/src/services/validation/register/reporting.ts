@@ -16,28 +16,7 @@
 import type { DeclaredPlatform, JourneyStage, PlatformBreakdown, RuleStatus, ValidationLayerV2, ValidationResult, ValidationRule } from '@/types/audit';
 import { REGISTER } from './engine';
 import { PLATFORM_LABELS } from './platformDetection';
-
-const LAYER_LABELS: Record<ValidationLayerV2, string> = {
-  scope_configuration: 'L0 · Scope & Configuration',
-  foundation_tags: 'L1 · Foundation & Tags',
-  click_id_capture: 'L2 · Click ID Capture',
-  storage_durability: 'L3 · Storage Durability',
-  cross_domain_continuity: 'L4 · Cross-Domain Continuity',
-  event_firing: 'L5 · Event Firing',
-  parameter_completeness: 'L6 · Parameter Completeness',
-  identity_match_quality: 'L7 · Identity & Match Quality',
-  consent: 'L8 · Consent',
-  server_side_delivery: 'L9 · Server-Side Delivery',
-  deduplication: 'L10 · Deduplication',
-  reconciliation: 'L11 · Reconciliation',
-  hygiene_integrity: 'L12 · Hygiene & Integrity',
-};
-
-const LAYER_ORDER: ValidationLayerV2[] = [
-  'scope_configuration', 'foundation_tags', 'click_id_capture', 'storage_durability',
-  'cross_domain_continuity', 'event_firing', 'parameter_completeness', 'identity_match_quality',
-  'consent', 'server_side_delivery', 'deduplication', 'reconciliation', 'hygiene_integrity',
-];
+import { ALL_V2_LAYERS as LAYER_ORDER, LAYER_LABELS } from './layers';
 
 function worstStatus(statuses: RuleStatus[]): RuleStatus {
   if (statuses.includes('fail')) return 'fail';

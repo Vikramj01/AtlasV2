@@ -403,6 +403,85 @@ describe('GET /api/audits/:audit_id/report', () => {
     expect(res.body.comparison.previous_score).toBe(72);
   });
 
+  // Report Correctness Programme PRD Part D3 — a score that moved because
+  // the denominator or register version changed is a different fact from
+  // one that moved because the site changed.
+  it('flags denominator_changed when the previous and current audits scored a different number of units', async () => {
+    vi.mocked(dbQueries.getAudit).mockResolvedValue(MOCK_AUDIT as any);
+    vi.mocked(dbQueries.getReport).mockResolvedValue({
+      ...MOCK_REPORT,
+      register_version: '1.0.0',
+      executive_summary: { ...MOCK_REPORT.executive_summary, scores: { ...MOCK_REPORT.executive_summary.scores, conversion_signal_health_denominator: 40 } },
+    } as any);
+    vi.mocked(dbQueries.getPreviousAuditScore).mockResolvedValue({
+      audit_id: 'audit-000', score: 72, created_at: '2026-03-01T00:00:00Z', denominator: 32, register_version: '1.0.0',
+    } as any);
+
+    const res = await buildApp().get('/api/audits/audit-001/report');
+
+    expect(res.status).toBe(200);
+    expect(res.body.comparison.denominator_changed).toEqual({
+      previous_denominator: 32,
+      current_denominator: 40,
+      note: expect.any(String),
+    });
+    expect(res.body.comparison.register_version_changed).toBeUndefined();
+  });
+
+  it('flags register_version_changed when the Check Register version differs between the two audits', async () => {
+    vi.mocked(dbQueries.getAudit).mockResolvedValue(MOCK_AUDIT as any);
+    vi.mocked(dbQueries.getReport).mockResolvedValue({
+      ...MOCK_REPORT,
+      register_version: '1.1.0',
+      executive_summary: { ...MOCK_REPORT.executive_summary, scores: { ...MOCK_REPORT.executive_summary.scores, conversion_signal_health_denominator: 40 } },
+    } as any);
+    vi.mocked(dbQueries.getPreviousAuditScore).mockResolvedValue({
+      audit_id: 'audit-000', score: 72, created_at: '2026-03-01T00:00:00Z', denominator: 40, register_version: '1.0.0',
+    } as any);
+
+    const res = await buildApp().get('/api/audits/audit-001/report');
+
+    expect(res.status).toBe(200);
+    expect(res.body.comparison.register_version_changed).toEqual({
+      previous_register_version: '1.0.0',
+      current_register_version: '1.1.0',
+      note: expect.any(String),
+    });
+    expect(res.body.comparison.denominator_changed).toBeUndefined();
+  });
+
+  it('flags neither when the denominator and register version are unchanged since the previous audit', async () => {
+    vi.mocked(dbQueries.getAudit).mockResolvedValue(MOCK_AUDIT as any);
+    vi.mocked(dbQueries.getReport).mockResolvedValue({
+      ...MOCK_REPORT,
+      register_version: '1.0.0',
+      executive_summary: { ...MOCK_REPORT.executive_summary, scores: { ...MOCK_REPORT.executive_summary.scores, conversion_signal_health_denominator: 40 } },
+    } as any);
+    vi.mocked(dbQueries.getPreviousAuditScore).mockResolvedValue({
+      audit_id: 'audit-000', score: 72, created_at: '2026-03-01T00:00:00Z', denominator: 40, register_version: '1.0.0',
+    } as any);
+
+    const res = await buildApp().get('/api/audits/audit-001/report');
+
+    expect(res.status).toBe(200);
+    expect(res.body.comparison.denominator_changed).toBeUndefined();
+    expect(res.body.comparison.register_version_changed).toBeUndefined();
+  });
+
+  it('flags neither when either audit predates these columns (denominator/register_version null)', async () => {
+    vi.mocked(dbQueries.getAudit).mockResolvedValue(MOCK_AUDIT as any);
+    vi.mocked(dbQueries.getReport).mockResolvedValue(MOCK_REPORT as any); // no register_version, no denominator
+    vi.mocked(dbQueries.getPreviousAuditScore).mockResolvedValue({
+      audit_id: 'audit-000', score: 72, created_at: '2026-03-01T00:00:00Z', denominator: null, register_version: null,
+    } as any);
+
+    const res = await buildApp().get('/api/audits/audit-001/report');
+
+    expect(res.status).toBe(200);
+    expect(res.body.comparison.denominator_changed).toBeUndefined();
+    expect(res.body.comparison.register_version_changed).toBeUndefined();
+  });
+
   it('returns 409 when audit is still running', async () => {
     vi.mocked(dbQueries.getAudit).mockResolvedValue({ ...MOCK_AUDIT, status: 'running', progress: 45 } as any);
 

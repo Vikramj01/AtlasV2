@@ -10,6 +10,8 @@
 import crypto from 'crypto';
 import type { AuditData, ValidationResult, ValidationLayerV2, StepCoverage, ReportCoverage, CoverageLayerNotTested } from '@/types/audit';
 import { normalizeUrlForCoverage } from '@/services/audit/journeySimulator';
+import { REGISTER, isRuleApplicable } from '@/services/validation/register/engine';
+import { ALL_V2_LAYERS } from '@/services/validation/register/layers';
 
 /**
  * The exact evidence prefix engine.ts's skippedForPrecondition() writes for
@@ -74,8 +76,35 @@ export function computeCoverageFingerprint(auditData: AuditData): string | undef
   return crypto.createHash('sha256').update(sorted.join('|')).digest('hex');
 }
 
-/** A layer counts as not-tested only when EVERY result in it was a coverage-driven skip — a layer with a mix of tested and skipped rules was still meaningfully exercised. */
-function computeLayersNotTested(results: ValidationResult[]): CoverageLayerNotTested[] {
+/**
+ * How many of the register's rules in `layer` are applicable to this
+ * AuditData (Report Correctness Programme PRD Part D2) — zero means the
+ * layer has nothing to check under this site/scan's own declared
+ * configuration (an undeclared platform, a site_type L4's applies_to
+ * excludes, ...) or hasn't shipped any rules yet (L11 Reconciliation),
+ * independent of whether the crawl itself reached anything.
+ */
+function applicableRuleCountByLayer(auditData: AuditData): Map<ValidationLayerV2, number> {
+  const counts = new Map<ValidationLayerV2, number>(ALL_V2_LAYERS.map((layer) => [layer, 0]));
+  for (const rule of REGISTER) {
+    if (isRuleApplicable(rule, auditData)) {
+      counts.set(rule.layer, (counts.get(rule.layer) ?? 0) + 1);
+    }
+  }
+  return counts;
+}
+
+/**
+ * Classifies every one of the register's 13 layers (Report Correctness
+ * Programme PRD Part D1/D2) — not just the ones that happen to appear in
+ * `results` — into 'not_applicable' (this site/scan's own declared
+ * configuration means the layer has nothing to check, or it isn't built
+ * yet) or 'not_scanned' (the layer IS relevant here, but this run's crawl
+ * never reached what it needed). A layer with at least one non-skipped
+ * result is fully exercised and excluded from this list entirely — a
+ * mix of tested and skipped rules in one layer was still meaningfully run.
+ */
+function classifyUntestedLayers(auditData: AuditData, results: ValidationResult[]): CoverageLayerNotTested[] {
   const byLayer = new Map<ValidationLayerV2, ValidationResult[]>();
   for (const r of results) {
     const layer = r.validation_layer as ValidationLayerV2;
@@ -83,16 +112,34 @@ function computeLayersNotTested(results: ValidationResult[]): CoverageLayerNotTe
     list.push(r);
     byLayer.set(layer, list);
   }
+  const applicableCounts = applicableRuleCountByLayer(auditData);
 
   const notTested: CoverageLayerNotTested[] = [];
-  for (const [layer, layerResults] of byLayer) {
-    if (layerResults.length > 0 && layerResults.every(isCoverageSkip)) {
+  for (const layer of ALL_V2_LAYERS) {
+    const layerResults = byLayer.get(layer) ?? [];
+    if (layerResults.some((r) => r.status !== 'skipped')) continue; // scanned — excluded from this list
+
+    if ((applicableCounts.get(layer) ?? 0) === 0) {
       notTested.push({
         layer,
         label: LAYER_LABELS[layer] ?? layer,
-        reason: 'The crawl never reached a page distinct from the landing page',
+        reason: REGISTER.some((r) => r.layer === layer)
+          ? "Not applicable — nothing in this layer applies to this site's declared configuration"
+          : 'Not yet built into the Check Register',
+        state: 'not_applicable',
       });
+      continue;
     }
+
+    const anyCoverageSkip = layerResults.some(isCoverageSkip);
+    notTested.push({
+      layer,
+      label: LAYER_LABELS[layer] ?? layer,
+      reason: anyCoverageSkip
+        ? 'The crawl never reached a page distinct from the landing page'
+        : "Not applicable — nothing to check under this scan's current configuration (e.g. no domain declared, or nothing connected for this layer)",
+      state: anyCoverageSkip ? 'not_scanned' : 'not_applicable',
+    });
   }
   return notTested;
 }
@@ -113,7 +160,7 @@ export function buildCoverageSummary(auditData: AuditData, results: ValidationRe
     pages_requested: steps.length,
     pages_distinct: computePagesDistinct(steps),
     steps,
-    layers_not_tested: computeLayersNotTested(results),
+    layers_not_tested: classifyUntestedLayers(auditData, results),
     rules_tested: results.length - rulesNotTested,
     rules_not_tested: rulesNotTested,
     partial: degradedSteps.length > 0,
