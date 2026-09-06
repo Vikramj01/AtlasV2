@@ -135,8 +135,11 @@ describe('buildCoverageSummary', () => {
     expect(coverage?.rules_tested).toBe(3); // PASSES, FAILS, SKIPPED_UNRELATED all count as "tested" in this sense
   });
 
-  it('a layer is not_tested only when every one of its results is a coverage-driven skip', () => {
-    const auditData = makeAuditData({ step_coverage: [makeStep()] });
+  it('a layer is excluded from layers_not_tested once it has at least one real (non-skipped) result', () => {
+    const auditData = makeAuditData({
+      rule_set_version: 'v2', site_type: 'ecommerce', declared_platforms: ['google_ads', 'meta', 'tiktok', 'linkedin', 'microsoft'],
+      step_coverage: [makeStep()],
+    });
     const results: ValidationResult[] = [
       COVERAGE_SKIPPED('L5_RULE_A', 'event_firing'),
       COVERAGE_SKIPPED('L5_RULE_B', 'event_firing'),
@@ -145,14 +148,56 @@ describe('buildCoverageSummary', () => {
       makeResult({ rule_id: 'L1_RULE', validation_layer: 'foundation_tags', status: 'pass' }),
     ];
     const layersNotTested = buildCoverageSummary(auditData, results)?.layers_not_tested ?? [];
-    expect(layersNotTested.map((l) => l.layer)).toEqual(['event_firing']);
-    expect(layersNotTested[0].label).toBe('Event Firing');
+    // foundation_tags and parameter_completeness both have a real result — excluded, even though parameter_completeness also had a coverage-skip.
+    expect(layersNotTested.map((l) => l.layer)).not.toContain('foundation_tags');
+    expect(layersNotTested.map((l) => l.layer)).not.toContain('parameter_completeness');
+    const eventFiring = layersNotTested.find((l) => l.layer === 'event_firing');
+    expect(eventFiring?.label).toBe('Event Firing');
+    expect(eventFiring?.state).toBe('not_scanned'); // coverage-driven skip — this site IS in scope for L5, this run just didn't reach it
   });
 
-  it('returns empty layers_not_tested when nothing was skipped for coverage', () => {
-    const auditData = makeAuditData({ step_coverage: [makeStep(), makeStep({ step: 'product', distinct_from_landing: true, requested_url: 'https://example.com/product', final_url: 'https://example.com/product' })] });
-    const results: ValidationResult[] = [makeResult({ rule_id: 'A', status: 'pass' }), makeResult({ rule_id: 'B', status: 'fail' })];
-    expect(buildCoverageSummary(auditData, results)?.layers_not_tested).toEqual([]);
+  // Report Correctness Programme PRD Part D2 — "not applicable" (this
+  // site's own declared configuration means the layer has nothing to
+  // check) must be visibly distinct from "not scanned" (in scope, but this
+  // run's crawl didn't get there), and BOTH must be visible even for a
+  // layer that produced literally zero results (previously invisible —
+  // only layers appearing in `results` at all were considered).
+  describe('not_applicable vs. not_scanned (D2)', () => {
+    it('marks cross_domain_continuity (L4) not_applicable for a site_type L4 does not apply to', () => {
+      const auditData = makeAuditData({
+        rule_set_version: 'v2', site_type: 'lead_gen_b2b', declared_platforms: ['google_ads'],
+        step_coverage: [makeStep()],
+      });
+      const layersNotTested = buildCoverageSummary(auditData, [])?.layers_not_tested ?? [];
+      const l4 = layersNotTested.find((l) => l.layer === 'cross_domain_continuity');
+      expect(l4?.state).toBe('not_applicable');
+      expect(l4?.reason).not.toContain('crawl');
+    });
+
+    it('marks reconciliation (L11) not_applicable — the register has no shipped rules for it yet', () => {
+      const auditData = makeAuditData({
+        rule_set_version: 'v2', site_type: 'ecommerce', declared_platforms: ['google_ads'],
+        step_coverage: [makeStep()],
+      });
+      const layersNotTested = buildCoverageSummary(auditData, [])?.layers_not_tested ?? [];
+      const l11 = layersNotTested.find((l) => l.layer === 'reconciliation');
+      expect(l11?.state).toBe('not_applicable');
+      expect(l11?.reason.toLowerCase()).toContain('not yet built');
+    });
+
+    it('marks event_firing (L5) not_scanned, distinct from an inapplicable layer, when its rules were coverage-skipped', () => {
+      const auditData = makeAuditData({
+        rule_set_version: 'v2', site_type: 'lead_gen_b2b', declared_platforms: ['google_ads'],
+        step_coverage: [makeStep()],
+      });
+      const results: ValidationResult[] = [COVERAGE_SKIPPED('L5_RULE', 'event_firing')];
+      const layersNotTested = buildCoverageSummary(auditData, results)?.layers_not_tested ?? [];
+      const l5 = layersNotTested.find((l) => l.layer === 'event_firing');
+      const l4 = layersNotTested.find((l) => l.layer === 'cross_domain_continuity');
+      expect(l5?.state).toBe('not_scanned');
+      expect(l4?.state).toBe('not_applicable');
+      expect(l5?.state).not.toBe(l4?.state);
+    });
   });
 
   // ── partial / degraded_steps (Platform Attribution & Determinism PRD B-W3) ──

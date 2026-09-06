@@ -265,6 +265,8 @@ router.get('/:audit_id/report', async (req: Request, res: Response) => {
   // Attach before/after comparison if a previous audit exists for this site
   const previous = await getPreviousAuditScore(audit_id, audit.website_url, user.id).catch(() => null);
   const currentScore = report.executive_summary.scores.conversion_signal_health;
+  const currentDenominator = report.executive_summary.scores.conversion_signal_health_denominator ?? null;
+  const currentRegisterVersion = report.register_version ?? null;
   const comparison = previous
     ? {
         previous_audit_id: previous.audit_id,
@@ -272,6 +274,26 @@ router.get('/:audit_id/report', async (req: Request, res: Response) => {
         current_score: currentScore,
         delta: currentScore - previous.score,
         previous_audit_date: previous.created_at,
+        // Report Correctness Programme PRD Part D3 — a score that moved
+        // because the denominator changed (coverage, declared platforms, a
+        // register bump) is a different fact from one that moved because
+        // the site changed, and the client will ask which. Omitted (not a
+        // false "unchanged") whenever either run's denominator/register
+        // version wasn't captured (a run predating these columns).
+        ...(previous.denominator != null && currentDenominator != null && previous.denominator !== currentDenominator && {
+          denominator_changed: {
+            previous_denominator: previous.denominator,
+            current_denominator: currentDenominator,
+            note: 'The denominator behind this score changed since the last scan for this site — some of the movement above may reflect what was measured, not just what changed on the site.',
+          },
+        }),
+        ...(previous.register_version && currentRegisterVersion && previous.register_version !== currentRegisterVersion && {
+          register_version_changed: {
+            previous_register_version: previous.register_version,
+            current_register_version: currentRegisterVersion,
+            note: 'The Check Register changed since the last scan (rules added, removed, or re-weighted) — these two scores are not directly comparable.',
+          },
+        }),
       }
     : null;
 

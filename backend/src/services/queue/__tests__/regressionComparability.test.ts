@@ -45,3 +45,31 @@ describe('isRegressionComparable', () => {
     )).toBe(false);
   });
 });
+
+// Report Correctness Programme PRD Part D4 — register_version comparability
+// is deliberately more lenient than rule_set_version/coverage_fingerprint:
+// it's a newer field, so the entire audit estate's pre-existing history has
+// it unset, and that must not retroactively block every schedule's
+// regression detection the day this field starts being recorded.
+describe('isRegressionComparable — register_version', () => {
+  it('is comparable when both runs recorded the same register_version', () => {
+    expect(isRegressionComparable({ ...V2_FP1, register_version: '1.0.0' }, { ...V2_FP1_AGAIN, register_version: '1.0.0' })).toBe(true);
+  });
+
+  it('is NOT comparable when both runs recorded a register_version and they differ', () => {
+    expect(isRegressionComparable({ ...V2_FP1, register_version: '1.0.0' }, { ...V2_FP1_AGAIN, register_version: '1.1.0' })).toBe(false);
+  });
+
+  it('is comparable when neither run recorded a register_version (the pre-D4 baseline) — unlike rule_set_version/coverage_fingerprint, absence here is not blocking', () => {
+    expect(isRegressionComparable(V2_FP1, V2_FP1_AGAIN)).toBe(true);
+  });
+
+  it('is comparable when only one run recorded a register_version — no signal to block on', () => {
+    expect(isRegressionComparable({ ...V2_FP1, register_version: '1.0.0' }, V2_FP1_AGAIN)).toBe(true);
+    expect(isRegressionComparable(V2_FP1, { ...V2_FP1_AGAIN, register_version: '1.0.0' })).toBe(true);
+  });
+
+  it('still requires rule_set_version and coverage_fingerprint to match even when register_version matches', () => {
+    expect(isRegressionComparable({ ...V2_FP1, register_version: '1.0.0' }, { ...V2_FP2, register_version: '1.0.0' })).toBe(false);
+  });
+});

@@ -317,16 +317,24 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
         const report = generateReport(auditData, scores, issues, assessable, siteSetup, customJourneyStages, customPlatformBreakdown, unassessable);
         await saveReport(audit_id, report);
 
-        // coverage_fingerprint/pages_distinct (§9) — persisted for every
-        // audit, not just v2: step_coverage itself is captured
-        // unconditionally by simulateJourney, so there's no reason to
-        // special-case this write. Undefined for an AuditData with no
-        // step_coverage (Journey-Builder mode never reaches this branch
-        // anyway) simply persists as null.
+        // coverage_fingerprint/pages_distinct (§9), plus — for a v2 audit —
+        // register_version and the conversion_signal_health numerator/
+        // denominator (Report Correctness Programme PRD Part D3/D4), so a
+        // later audit for the same site can compare its own denominator/
+        // register version against this run without unpacking
+        // audit_reports.report_json. Persisted for every audit, not just
+        // v2: step_coverage itself is captured unconditionally by
+        // simulateJourney, so there's no reason to special-case that half
+        // of this write. Undefined fields simply persist as null.
         try {
           await updateAuditCoverage(audit_id, {
             coverage_fingerprint: computeCoverageFingerprint(auditData),
             pages_distinct: report.executive_summary.coverage?.pages_distinct,
+            ...(isV2 && {
+              register_version: report.register_version,
+              conversion_signal_health_numerator: scores.conversion_signal_health_numerator,
+              conversion_signal_health_denominator: scores.conversion_signal_health_denominator,
+            }),
           });
         } catch (err) {
           logger.warn({ audit_id, err: err instanceof Error ? err.message : String(err) }, 'Failed to persist audit coverage fingerprint');

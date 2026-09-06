@@ -65,22 +65,33 @@ export async function updateAuditStatus(
 
 /**
  * Persists coverage_fingerprint/pages_distinct (Site Evaluation Coverage &
- * Honesty PRD §9) onto the audits row — see
- * 20260903002_audit_coverage_fingerprint.sql. Both undefined for an
- * AuditData with no step_coverage (Journey-Builder mode, a run predating
- * this field); called unconditionally by the orchestrator regardless, so
- * the columns are simply left null rather than needing a separate
- * skip-if-absent branch at every call site.
+ * Honesty PRD §9) and register_version/conversion_signal_health_numerator/
+ * _denominator (Report Correctness Programme PRD Part D3/D4) onto the
+ * audits row — see 20260903002_audit_coverage_fingerprint.sql and
+ * 20260906002_score_comparability.sql. All fields undefined for an
+ * AuditData/score shape that never computed them (Journey-Builder mode, a
+ * v1-legacy audit, a run predating these fields); called unconditionally
+ * by the orchestrator regardless, so the columns are simply left null
+ * rather than needing a separate skip-if-absent branch at every call site.
  */
 export async function updateAuditCoverage(
   audit_id: string,
-  coverage: { coverage_fingerprint?: string; pages_distinct?: number },
+  fields: {
+    coverage_fingerprint?: string;
+    pages_distinct?: number;
+    register_version?: string;
+    conversion_signal_health_numerator?: number;
+    conversion_signal_health_denominator?: number;
+  },
 ): Promise<void> {
   const { error } = await supabaseAdmin
     .from('audits')
     .update({
-      coverage_fingerprint: coverage.coverage_fingerprint ?? null,
-      pages_distinct: coverage.pages_distinct ?? null,
+      coverage_fingerprint: fields.coverage_fingerprint ?? null,
+      pages_distinct: fields.pages_distinct ?? null,
+      register_version: fields.register_version ?? null,
+      conversion_signal_health_numerator: fields.conversion_signal_health_numerator ?? null,
+      conversion_signal_health_denominator: fields.conversion_signal_health_denominator ?? null,
     })
     .eq('id', audit_id);
 
@@ -220,10 +231,17 @@ export async function getPreviousAuditScore(
   currentAuditId: string,
   websiteUrl: string,
   userId: string,
-): Promise<{ audit_id: string; score: number; created_at: string } | null> {
+): Promise<{
+  audit_id: string;
+  score: number;
+  created_at: string;
+  /** Report Correctness Programme PRD Part D3 — null for a run predating these columns, or a v1-legacy audit. */
+  denominator: number | null;
+  register_version: string | null;
+} | null> {
   const { data, error } = await supabaseAdmin
     .from('audits')
-    .select('id, created_at, audit_reports(report_json)')
+    .select('id, created_at, conversion_signal_health_denominator, register_version, audit_reports(report_json)')
     .eq('user_id', userId)
     .eq('website_url', websiteUrl)
     .eq('status', 'completed')
@@ -243,5 +261,7 @@ export async function getPreviousAuditScore(
     audit_id: row['id'] as string,
     score,
     created_at: row['created_at'] as string,
+    denominator: (row['conversion_signal_health_denominator'] as number | null) ?? null,
+    register_version: (row['register_version'] as string | null) ?? null,
   };
 }

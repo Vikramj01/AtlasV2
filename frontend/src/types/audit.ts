@@ -97,6 +97,8 @@ export interface CoverageLayerNotTested {
   layer: ValidationLayerFilter;
   label: string;
   reason: string;
+  /** 'not_applicable' (this site's own declared configuration means the layer has nothing to check) vs. 'not_scanned' (in scope, but this run's crawl didn't reach it) — see backend types/audit.ts's CoverageLayerNotTested. */
+  state: 'not_applicable' | 'not_scanned';
 }
 
 export interface ReportCoverage {
@@ -266,6 +268,8 @@ export interface ReportJSON {
   generated_at: string;
   /** Which rule library produced this report — never compare scores across versions. Absent on reports generated before this field existed; treat as 'v1-legacy'. */
   rule_set_version?: RuleSetVersion;
+  /** Check Register version that produced this report (v2 only) — two reports with different values are not directly comparable even when both are 'v2'. See backend register/layers.ts's REGISTER_VERSION. */
+  register_version?: string;
   executive_summary: {
     overall_status: 'healthy' | 'partially_broken' | 'critical';
     business_summary: string;

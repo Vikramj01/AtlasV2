@@ -57,19 +57,24 @@ auditQueue.on('completed', async (job) => {
     // not every audit.
     const auditRow = await getAudit(audit_id);
     const currentCoverageFingerprint = auditRow?.coverage_fingerprint ?? undefined;
+    // Report Correctness Programme PRD Part D4 — undefined for a v1-legacy
+    // audit or one that predates register_version; regressionComparability.ts
+    // treats that absence as compatible, not blocking.
+    const currentRegisterVersion = report.register_version;
 
-    // Update the stored score (+ which rule library produced it and which
-    // pages it examined, so next time's comparison can tell a v1-scored
-    // run apart from a v2-scored one, and a discovery-driven coverage
-    // change from a real regression)
-    await updateScheduleScore(scheduled_audit_id, currentScore, currentRuleSetVersion, currentCoverageFingerprint);
+    // Update the stored score (+ which rule library produced it, which
+    // pages it examined, and which register version it ran against, so
+    // next time's comparison can tell a v1-scored run apart from a
+    // v2-scored one, a discovery-driven coverage change from a real
+    // regression, and a register release from a real regression)
+    await updateScheduleScore(scheduled_audit_id, currentScore, currentRuleSetVersion, currentCoverageFingerprint, currentRegisterVersion);
 
     // Fire regression alert if score dropped ≥5 points, and the two runs are
     // actually comparable (see isRegressionComparable's docstring)
     if (
       isRegressionComparable(
-        { rule_set_version: schedule.last_audit_rule_set_version, coverage_fingerprint: schedule.last_audit_coverage_fingerprint },
-        { rule_set_version: currentRuleSetVersion, coverage_fingerprint: currentCoverageFingerprint },
+        { rule_set_version: schedule.last_audit_rule_set_version, coverage_fingerprint: schedule.last_audit_coverage_fingerprint, register_version: schedule.last_audit_register_version },
+        { rule_set_version: currentRuleSetVersion, coverage_fingerprint: currentCoverageFingerprint, register_version: currentRegisterVersion },
       ) &&
       previousScore !== null &&
       currentScore < previousScore - 5

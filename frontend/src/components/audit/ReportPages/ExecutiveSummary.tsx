@@ -27,6 +27,15 @@ export function ExecutiveSummary({ report }: Props) {
   // when limitedCoverage is false.
   const partialSettle = coverage?.partial ?? false;
 
+  // Report Correctness Programme PRD Part D2 — "not applicable" (this
+  // site's own declared configuration means the layer has nothing to
+  // check) must be visibly distinct from "not scanned" (in scope, but this
+  // run's crawl didn't get there). Only not_scanned layers belong in the
+  // "Limited scan coverage" warning — a site with no cross-domain journey
+  // isn't a limited scan for L4 not running.
+  const notScannedLayers = coverage?.layers_not_tested.filter((l) => l.state === 'not_scanned') ?? [];
+  const notApplicableLayers = coverage?.layers_not_tested.filter((l) => l.state === 'not_applicable') ?? [];
+
   return (
     <div className="space-y-6">
       <p className="text-sm font-medium text-muted-foreground">{report.website_url}</p>
@@ -36,10 +45,10 @@ export function ExecutiveSummary({ report }: Props) {
           <p className="text-sm font-semibold text-amber-900">Limited scan coverage</p>
           <p className="mt-1 text-sm leading-relaxed text-amber-800">
             This scan examined {coverage.pages_distinct} of {coverage.pages_requested} requested page{coverage.pages_requested !== 1 ? 's' : ''}.
-            {coverage.layers_not_tested.length > 0 && (
+            {notScannedLayers.length > 0 && (
               <>
                 {' '}
-                {coverage.layers_not_tested.map((l) => l.label).join(', ')} could not be tested because no conversion surface was reached — {coverage.rules_not_tested} check{coverage.rules_not_tested !== 1 ? 's' : ''} {coverage.rules_not_tested !== 1 ? 'were' : 'was'} skipped rather than scored as failing.
+                {notScannedLayers.map((l) => l.label).join(', ')} could not be tested because no conversion surface was reached — {coverage.rules_not_tested} check{coverage.rules_not_tested !== 1 ? 's' : ''} {coverage.rules_not_tested !== 1 ? 'were' : 'was'} skipped rather than scored as failing.
               </>
             )}
             {partialSettle && (
@@ -50,6 +59,12 @@ export function ExecutiveSummary({ report }: Props) {
             )}
           </p>
         </div>
+      )}
+
+      {notApplicableLayers.length > 0 && (
+        <p className="text-sm text-muted-foreground">
+          Not applicable to this site: {notApplicableLayers.map((l) => l.label).join(', ')}.
+        </p>
       )}
 
       <StatusBanner

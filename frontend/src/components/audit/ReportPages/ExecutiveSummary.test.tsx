@@ -65,8 +65,8 @@ describe('ExecutiveSummary — coverage banner', () => {
       pages_distinct: 1,
       steps: [],
       layers_not_tested: [
-        { layer: 'event_firing', label: 'Event Firing', reason: 'x' },
-        { layer: 'parameter_completeness', label: 'Parameter Completeness', reason: 'x' },
+        { layer: 'event_firing', label: 'Event Firing', reason: 'x', state: 'not_scanned' },
+        { layer: 'parameter_completeness', label: 'Parameter Completeness', reason: 'x', state: 'not_scanned' },
       ],
       rules_tested: 41,
       rules_not_tested: 42,
@@ -79,6 +79,49 @@ describe('ExecutiveSummary — coverage banner', () => {
     expect(banner.textContent).toContain('1 of 4 requested pages');
     expect(banner.textContent).toContain('Event Firing, Parameter Completeness');
     expect(banner.textContent).toContain('42 checks were skipped');
+  });
+
+  // Report Correctness Programme PRD Part D2 — "not applicable" must be
+  // visibly distinct from "not scanned": a not_applicable layer must never
+  // appear inside the alarming "Limited scan coverage" warning, and must
+  // never trigger that warning on its own.
+  it('renders a separate, non-alarming disclosure for not_applicable layers, never inside the Limited scan coverage warning', () => {
+    const coverage: ReportCoverage = {
+      pages_requested: 4,
+      pages_distinct: 4, // full page coverage — nothing "limited" here
+      steps: [],
+      layers_not_tested: [
+        { layer: 'cross_domain_continuity', label: 'Cross-Domain Continuity', reason: 'x', state: 'not_applicable' },
+      ],
+      rules_tested: 83,
+      rules_not_tested: 0,
+      partial: false,
+      degraded_steps: [],
+    };
+    render(<ExecutiveSummary report={makeReport(coverage)} />);
+    expect(screen.queryByText('Limited scan coverage')).toBeNull(); // not_applicable alone never triggers the warning
+    expect(screen.getByText(/Not applicable to this site/).textContent).toContain('Cross-Domain Continuity');
+  });
+
+  it('separates not_scanned (inside the warning) from not_applicable (outside it) when both are present', () => {
+    const coverage: ReportCoverage = {
+      pages_requested: 4,
+      pages_distinct: 1,
+      steps: [],
+      layers_not_tested: [
+        { layer: 'event_firing', label: 'Event Firing', reason: 'x', state: 'not_scanned' },
+        { layer: 'cross_domain_continuity', label: 'Cross-Domain Continuity', reason: 'x', state: 'not_applicable' },
+      ],
+      rules_tested: 41,
+      rules_not_tested: 42,
+      partial: false,
+      degraded_steps: [],
+    };
+    render(<ExecutiveSummary report={makeReport(coverage)} />);
+    const banner = screen.getByText(/This scan examined/);
+    expect(banner.textContent).toContain('Event Firing');
+    expect(banner.textContent).not.toContain('Cross-Domain Continuity');
+    expect(screen.getByText(/Not applicable to this site/).textContent).toContain('Cross-Domain Continuity');
   });
 
   it('renders no fabricated layer/rule copy when coverage is partial but every layer was still exercised', () => {

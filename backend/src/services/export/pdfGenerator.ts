@@ -448,11 +448,29 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
           LEFT, doc.y, { width: CONTENT_W },
         );
 
-      if (coverage.layers_not_tested.length > 0) {
+      // Report Correctness Programme PRD Part D2 — "not applicable" (this
+      // site's own declared configuration means the layer has nothing to
+      // check) rendered visibly distinct from "not scanned" (in scope, but
+      // this run's crawl didn't get there) — a site with no cross-domain
+      // journey isn't deficient for L4 not running, and must not read like
+      // the layers this run genuinely failed to cover.
+      const notScannedLayers = coverage.layers_not_tested.filter((l) => l.state === 'not_scanned');
+      const notApplicableLayers = coverage.layers_not_tested.filter((l) => l.state === 'not_applicable');
+
+      if (notScannedLayers.length > 0) {
         doc.moveDown(0.3);
         doc.fillColor(C.atRisk).fontSize(9).font('Helvetica-Bold')
           .text(
-            `${coverage.layers_not_tested.map((l) => l.label).join(', ')} could not be tested — ${coverage.rules_not_tested} check${coverage.rules_not_tested !== 1 ? 's' : ''} skipped rather than scored as failing.`,
+            `${notScannedLayers.map((l) => l.label).join(', ')} could not be scanned this run — ${coverage.rules_not_tested} check${coverage.rules_not_tested !== 1 ? 's' : ''} skipped rather than scored as failing.`,
+            LEFT, doc.y, { width: CONTENT_W },
+          );
+      }
+
+      if (notApplicableLayers.length > 0) {
+        doc.moveDown(0.3);
+        doc.fillColor(C.lightText).fontSize(9).font('Helvetica')
+          .text(
+            `Not applicable to this site: ${notApplicableLayers.map((l) => l.label).join(', ')}.`,
             LEFT, doc.y, { width: CONTENT_W },
           );
       }

@@ -18,6 +18,7 @@ import { generateBusinessSummary, determineOverallStatus, getIssueHeadline, getI
 import { buildCoverageSummary } from './coverage';
 import { buildOpenQuestions } from './openQuestions';
 import { scanReportForPlaceholders } from './placeholderGuard';
+import { REGISTER_VERSION } from '@/services/validation/register/layers';
 
 // ─── Journey stage mapping ─────────────────────────────────────────────────────
 
@@ -151,6 +152,10 @@ export function generateReport(
     website_url: auditData.website_url,
     generated_at: new Date().toISOString(),
     rule_set_version: auditData.rule_set_version,
+    // Report Correctness Programme PRD Part D4 — only a v2 report actually
+    // ran against the Check Register; a v1-legacy report has no register
+    // version to stamp.
+    ...(auditData.rule_set_version === 'v2' ? { register_version: REGISTER_VERSION } : {}),
     executive_summary: {
       overall_status: overallStatus,
       business_summary: businessSummary,
