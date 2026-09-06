@@ -43,6 +43,39 @@ function v2Remediation(result: ValidationResult): string {
   return typeof rule.remediation === 'function' ? rule.remediation(result) : rule.remediation;
 }
 
+function capitalizeFirst(text: string): string {
+  return text.length === 0 ? text : text[0].toUpperCase() + text.slice(1);
+}
+
+/**
+ * The action-item heading for a v2-originated result (Report Correctness
+ * Programme PRD Part B2) — always the rule's own `check` label, never a
+ * same-named v1 RULE_INTERPRETATIONS entry's headline (present for some
+ * rule_ids, absent for others) and never a raw "Validation failed: RULE_ID"
+ * fallback. Every register rule has a `check` label (register.integrity.
+ * test.ts enforces it), so this never falls through to a rule_id — the
+ * exact "some siblings get a headline, some get RULE_ID" defect (PRD's
+ * Birkenstock/OpenArt Items #5-#9) this replaces.
+ */
+function v2Heading(result: ValidationResult): string {
+  const rule = REGISTER_RULE_BY_RULE_ID.get(result.rule_id);
+  return capitalizeFirst(rule?.check ?? result.rule_id.replace(/_/g, ' '));
+}
+
+/**
+ * effort for a v2-originated result (Report Correctness Programme PRD Part
+ * B3) — reads the rule's own `estimated_effort` when authored, rather than
+ * a same-named v1 RULE_INTERPRETATIONS entry (present for some sibling
+ * rule_ids in a family, absent for others, which is exactly how GCLID/
+ * FBCLID_CAPTURED_AT_LANDING ended up "low" while GBRAID/WBRAID/TTCLID_
+ * CAPTURED_AT_LANDING — identical remediation, same factory — ended up on
+ * the 'medium' fallback). Falls back to 'medium' only when the rule itself
+ * doesn't declare one, same default as before this field existed.
+ */
+function v2EstimatedEffort(result: ValidationResult): 'low' | 'medium' | 'high' {
+  return REGISTER_RULE_BY_RULE_ID.get(result.rule_id)?.estimated_effort ?? 'medium';
+}
+
 /**
  * Every rule-authored client_question for this run's fail/warning results
  * (Report Honesty PRD Part B) — collected into the report's Open Questions
@@ -544,11 +577,15 @@ export function interpretResults(results: ValidationResult[]): ReportIssue[] {
           rule_id: r.rule_id,
           validation_layer: r.validation_layer,
           severity: r.severity,
-          problem: interp?.headline ?? `Validation failed: ${r.rule_id}`,
+          // v2's own heading (never a same-named v1 dict entry's headline,
+          // never a raw rule_id fallback — see v2Heading's docstring, PRD
+          // Part B2) whenever this is a provably v2-originated result; a
+          // non-v2 result with no dict entry at all keeps the old fallback.
+          problem: v2 ? v2Heading(r) : `Validation failed: ${r.rule_id}`,
           why_it_matters: r.technical_details.found,
           recommended_owner: interp?.recommended_owner ?? 'Frontend Developer',
           fix_summary: v2 ? v2Remediation(r) : (interp?.fix_summary ?? 'Contact support for details on this rule.'),
-          estimated_effort: interp?.estimated_effort ?? ('medium' as const),
+          estimated_effort: v2 ? v2EstimatedEffort(r) : (interp?.estimated_effort ?? ('medium' as const)),
         };
       }
       return {

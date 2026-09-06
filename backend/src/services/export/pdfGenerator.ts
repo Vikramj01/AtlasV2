@@ -8,7 +8,6 @@
  */
 import PDFDocument from 'pdfkit';
 import type { ReportJSON, ValidationResult, ReportIssue, StepCoverage, StepUrlSource, ScoreCoverage } from '@/types/audit';
-import { getIssueHeadline } from '@/services/interpretation/engine';
 
 /** Per-step provenance label for the Scan Coverage section — see StepUrlSource's docstring in types/audit.ts. */
 const STEP_SOURCE_LABELS: Record<StepUrlSource, string> = {
@@ -485,9 +484,15 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
     // than silently dropping it with no trace.
     if (report.could_not_be_assessed && report.could_not_be_assessed.length > 0) {
       sectionHeading('Could Not Be Assessed');
+      // Report Correctness Programme PRD Part B4 — generic preamble, since
+      // this section now has two distinct exclusion causes (a page the
+      // scan couldn't reach and substituted the landing page for, or a step
+      // whose navigation didn't fully settle before the check ran); each
+      // item below already states its own specific reason. Also fixes the
+      // "used the landing page for instead" typo.
       doc.fillColor(C.midText).fontSize(9).font('Helvetica')
         .text(
-          'These checks named a page the scan couldn\'t reach and used the landing page for instead — the result would be evidence about the wrong page, so they\'re excluded from every count and score above rather than reported as findings.',
+          'These checks are excluded from every count and score above — each one names its own reason below, rather than being reported as a finding.',
           LEFT, doc.y, { width: CONTENT_W },
         );
       doc.moveDown(0.3);
@@ -627,8 +632,15 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
         .text(platform.risk_explanation, LEFT + 14, platY + 32, { width: CONTENT_W - 110 });
 
       if (hasFailedRules) {
+        // Report Correctness Programme PRD Part B1 — always the rule name,
+        // never getIssueHeadline()'s v1-dict lookup (a same-named entry
+        // gives one rule a full prose sentence here while its siblings with
+        // no entry get their raw rule_id, producing a mixed "Failed: X ·
+        // <sentence> · Y" line). Same rule_id → readable-label formatting
+        // the Technical Appendix table already uses, so a reader can find
+        // the full impact sentence for any of these in Issues & Fixes.
         const ruleList = platform.failed_rules.slice(0, 4)
-          .map((r) => getIssueHeadline(r)).join('  ·  ');
+          .map((r) => r.replace(/_/g, ' ')).join('  ·  ');
         const overflow = platform.failed_rules.length > 4
           ? ` +${platform.failed_rules.length - 4} more` : '';
         doc.fillColor(C.broken).fontSize(8).font('Helvetica')
@@ -658,6 +670,24 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
       doc.font('Helvetica').fontSize(9);
       const fixH = doc.heightOfString(`Fix: ${fix}`, { width });
       return { problemH, fixH };
+    }
+
+    // Report Correctness Programme PRD Part B2 — the unconditional
+    // structure every action item now follows: rule name as heading
+    // (issue.problem — see v2Heading() in interpretation/engine.ts),
+    // impact sentence beneath (issue.why_it_matters), then "Fix: ...".
+    // Omitted only when why_it_matters is empty or identical to problem
+    // (nothing distinct left to add on its own line).
+    function measureWhyItMattersHeight(problem: string, whyItMatters: string, width: number): number {
+      if (!whyItMatters || whyItMatters === problem) return 0;
+      doc.font('Helvetica-Oblique').fontSize(8.5);
+      return doc.heightOfString(whyItMatters, { width });
+    }
+
+    function drawWhyItMatters(problem: string, whyItMatters: string, x: number, y: number, width: number): void {
+      if (!whyItMatters || whyItMatters === problem) return;
+      doc.fillColor(C.lightText).fontSize(8.5).font('Helvetica-Oblique')
+        .text(whyItMatters, x, y, { width });
     }
 
     if (configIssues.length > 0) {
@@ -696,7 +726,8 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
           const sevColor = SEVERITY_COLORS[issue.severity] ?? C.lightText;
           const TEXT_W = CONTENT_W - 28;
           const { problemH, fixH } = measureProblemFixHeight(issue.problem, issue.fix_summary, TEXT_W);
-          const CARD_H = 28 + problemH + 6 + fixH + 14;
+          const whyH = measureWhyItMattersHeight(issue.problem, issue.why_it_matters, TEXT_W);
+          const CARD_H = 28 + problemH + (whyH > 0 ? 4 + whyH : 0) + 6 + fixH + 14;
           if (needsNewPage(CARD_H + 14)) {
             doc.addPage();
             pageHeader('Configuration Health', 'IHC');
@@ -716,8 +747,10 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
           pill(`Effort: ${issue.estimated_effort}`, effortColor, pillX, pillY);
           doc.fillColor(C.darkText).fontSize(9.5).font('Helvetica-Bold')
             .text(issue.problem, LEFT + 14, issY + 28, { width: TEXT_W });
+          drawWhyItMatters(issue.problem, issue.why_it_matters, LEFT + 14, issY + 28 + problemH + 4, TEXT_W);
+          const fixY = issY + 28 + problemH + (whyH > 0 ? 4 + whyH : 0) + 6;
           doc.fillColor(C.midText).fontSize(9).font('Helvetica')
-            .text(`Fix: ${issue.fix_summary}`, LEFT + 14, issY + 28 + problemH + 6, { width: TEXT_W });
+            .text(`Fix: ${issue.fix_summary}`, LEFT + 14, fixY, { width: TEXT_W });
           doc.y = issY + CARD_H + 10;
         });
       };
@@ -756,6 +789,7 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
 
       const TEXT_W = CONTENT_W - 28;
       const { problemH, fixH } = measureProblemFixHeight(issue.problem, issue.fix_summary, TEXT_W);
+      const whyH = measureWhyItMattersHeight(issue.problem, issue.why_it_matters, TEXT_W);
 
       // Evidence — ordered so items the failure message names by key come
       // first, capped with an explicit overflow line rather than a silent
@@ -779,7 +813,7 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
       }
 
       const HEADER_H = 44; // "#N" badge + pills row
-      const CARD_H = HEADER_H + problemH + 6 + fixH + (evidenceH > 0 ? 10 + evidenceH : 4) + 12;
+      const CARD_H = HEADER_H + problemH + (whyH > 0 ? 4 + whyH : 0) + 6 + fixH + (evidenceH > 0 ? 10 + evidenceH : 4) + 12;
 
       if (needsNewPage(CARD_H + 14)) {
         doc.addPage();
@@ -816,8 +850,13 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
       doc.fillColor(C.darkText).fontSize(9.5).font('Helvetica-Bold')
         .text(issue.problem, LEFT + 14, issY + 44, { width: TEXT_W });
 
+      // Impact sentence beneath the heading (Report Correctness Programme
+      // PRD Part B2 — "unconditional structure: rule name as heading,
+      // impact sentence beneath"), omitted when identical to the heading.
+      drawWhyItMatters(issue.problem, issue.why_it_matters, LEFT + 14, issY + 44 + problemH + 4, TEXT_W);
+
       // Fix summary — full text, wrapped, never truncated
-      const fixY = issY + 44 + problemH + 6;
+      const fixY = issY + 44 + problemH + (whyH > 0 ? 4 + whyH : 0) + 6;
       doc.fillColor(C.midText).fontSize(9).font('Helvetica')
         .text(`Fix: ${issue.fix_summary}`, LEFT + 14, fixY, { width: TEXT_W });
 

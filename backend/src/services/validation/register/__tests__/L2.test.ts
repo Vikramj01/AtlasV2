@@ -296,3 +296,22 @@ describe('L2_RULES', () => {
     expect(L2_RULES.some((r) => r.id === 'L2.12')).toBe(false);
   });
 });
+
+// Report Correctness Programme PRD Part B3 — every rule L2.1-2.7 produces
+// via makeClickIdCaptureRule() shares identical remediation shape ("read
+// this one URL param and persist it"), so they must share identical
+// estimated_effort. Guards against the effort field drifting per-rule the
+// way an interpretation-layer lookup table previously did.
+describe('L2.1-2.7 factory-produced rules share the same estimated_effort', () => {
+  const clickIdCaptureRules = [
+    GCLID_CAPTURED_AT_LANDING, GBRAID_CAPTURED_AT_LANDING, WBRAID_CAPTURED_AT_LANDING,
+    FBCLID_CAPTURED_AT_LANDING, TTCLID_CAPTURED_AT_LANDING, LI_FAT_ID_CAPTURED_AT_LANDING,
+    MSCLKID_CAPTURED_AT_LANDING,
+  ];
+
+  it('every one is defined and identical', () => {
+    const efforts = new Set(clickIdCaptureRules.map((r) => r.estimated_effort));
+    expect(efforts.size).toBe(1);
+    expect(clickIdCaptureRules.every((r) => r.estimated_effort !== undefined)).toBe(true);
+  });
+});

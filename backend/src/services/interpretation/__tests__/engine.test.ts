@@ -117,6 +117,34 @@ describe('interpretResults', () => {
       const [issue] = interpretResults([v1Result]);
       expect(issue.why_it_matters).toBe('Google Ads cannot attribute conversions to ad clicks. Attribution is completely broken.');
     });
+
+    // Report Correctness Programme PRD Part B2/B3 — GCLID/FBCLID_CAPTURED_
+    // AT_LANDING happen to collide with a v1 RULE_INTERPRETATIONS entry;
+    // GBRAID/WBRAID/TTCLID_CAPTURED_AT_LANDING (same L2 factory, same
+    // remediation shape) don't. Before the fix, that accident of naming
+    // gave the colliding pair a full prose headline + 'low' effort while
+    // the rest of the family got "Validation failed: RULE_ID" + a 'medium'
+    // fallback — five members of one rule family, two renderings/efforts
+    // (PRD's Birkenstock/OpenArt Items #5-#9).
+    it('gives every L2 click-ID capture rule the same heading shape and the same effort, regardless of a v1 dict collision', () => {
+      const colliding = makeResult('GCLID_CAPTURED_AT_LANDING', 'fail');
+      colliding.validation_layer = 'click_id_capture';
+      const nonColliding = makeResult('GBRAID_CAPTURED_AT_LANDING', 'fail');
+      nonColliding.validation_layer = 'click_id_capture';
+
+      const [collidingIssue, nonCollidingIssue] = interpretResults([colliding, nonColliding]);
+
+      // Neither ever falls back to the raw "Validation failed: RULE_ID" shape.
+      expect(collidingIssue.problem).not.toMatch(/^Validation failed:/);
+      expect(nonCollidingIssue.problem).not.toMatch(/^Validation failed:/);
+      // Both headings come from the rule's own `check` label (capitalized),
+      // not a v1-dict prose sentence — same shape for both.
+      expect(collidingIssue.problem).toBe('Gclid captured at landing');
+      expect(nonCollidingIssue.problem).toBe('Gbraid captured at landing');
+      // Same factory, same remediation shape → same effort, not 'low' vs 'medium'.
+      expect(collidingIssue.estimated_effort).toBe(nonCollidingIssue.estimated_effort);
+      expect(collidingIssue.estimated_effort).toBe('low');
+    });
   });
 });
 
