@@ -41,34 +41,75 @@ interface CaptureCheck {
   tier: CaptureTier;
   storageHit: boolean;
   cookieHit: boolean;
+  sessionStorageHit: boolean;
   dataLayerHit: boolean;
-  /** The actual key name the value was found under — only set for tier 'value_match', where it differs from paramName. */
+  /** The actual key name (or dotted path, for a nested match) the value was found under — only set for tier 'value_match', where it differs from paramName. */
   matchedKey?: string;
+}
+
+const NESTED_SEARCH_DEPTH_LIMIT = 5;
+
+/** decodeURIComponent, tolerant of malformed sequences (throws on e.g. a bare '%') and of values that were never encoded in the first place (decodes to themselves). */
+function tryDecode(value: string): string | undefined {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Recursively walks a parsed JSON value (objects and arrays) looking for a
+ * leaf whose string form equals target, to a bounded depth — so a site that
+ * wraps a captured identifier in `{value, timestamp}`, or nests it inside an
+ * array, is still found. `seen` guards against a cyclic structure (JSON
+ * itself can't cycle, but defensive nonetheless since this may in future
+ * walk parsed objects reached other ways).
+ */
+function findLeafPath(node: unknown, target: string, depth: number, seen: Set<unknown>): string | undefined {
+  if (depth > NESTED_SEARCH_DEPTH_LIMIT) return undefined;
+  if (node !== null && typeof node === 'object') {
+    if (seen.has(node)) return undefined;
+    seen.add(node);
+    const entries = Array.isArray(node) ? node.entries() : Object.entries(node as Record<string, unknown>);
+    for (const [key, value] of entries) {
+      const path = findLeafPath(value, target, depth + 1, seen);
+      if (path !== undefined) return `${key}.${path}`;
+    }
+    return undefined;
+  }
+  return String(node) === target ? '' : undefined;
 }
 
 /**
  * Scans a flat key→value record for a key (other than the expected one)
- * whose value equals target, including one level of JSON-parsing a string
- * value (e.g. a site storing `{"gclid":"...","fbclid":"..."}` as a single
- * localStorage entry). Matching on the *value* — unique per run
+ * whose value equals target — either directly, URI-decoded, or nested (to a
+ * bounded depth, at any level of arrays/objects) inside a JSON-parsed string
+ * value (e.g. a site storing `{"gclid":"...","fbclid":"..."}`, or
+ * `{"ttclid":{"v":"...","ts":...}}`, as a single localStorage entry, or the
+ * same URI-encoded as a cookie). Matching on the *value* — unique per run
  * (test_gclid_${ts}, never shared across different synthetic params even
  * within the same run) — is what keeps this safe from a false positive:
- * two different params can never coincidentally share a value to cross-match.
+ * two different params can never coincidentally share a value to cross-match,
+ * regardless of search depth.
  */
 function findValueUnderDifferentKey(record: Record<string, string> | undefined, expectedKey: string, target: string): string | undefined {
   if (!record) return undefined;
-  for (const [key, value] of Object.entries(record)) {
+  for (const [key, rawValue] of Object.entries(record)) {
     if (key === expectedKey) continue; // that's tier 1's job, not this
-    if (value === target) return key;
-    try {
-      const parsed: unknown = JSON.parse(value);
-      if (parsed && typeof parsed === 'object') {
-        for (const [nestedKey, nestedValue] of Object.entries(parsed as Record<string, unknown>)) {
-          if (String(nestedValue) === target) return `${key}.${nestedKey}`;
-        }
+    if (rawValue === target) return key;
+
+    const decodedValue = tryDecode(rawValue);
+    if (decodedValue !== undefined && decodedValue === target) return key;
+
+    for (const candidate of decodedValue !== undefined && decodedValue !== rawValue ? [rawValue, decodedValue] : [rawValue]) {
+      try {
+        const parsed: unknown = JSON.parse(candidate);
+        const path = findLeafPath(parsed, target, 1, new Set());
+        if (path !== undefined) return `${key}.${path}`;
+      } catch {
+        // Not JSON — nothing more to check for this candidate
       }
-    } catch {
-      // Not JSON — nothing more to check for this key
     }
   }
   return undefined;
@@ -112,53 +153,124 @@ function findValueInDataLayerUnderDifferentKey(events: DataLayerEvent[], expecte
  * bug in either rule — a report-copy improvement (stating what each rule
  * actually observed and when) is a presentation follow-up, not a fix here.
  */
+const NOT_FOUND: Omit<CaptureCheck, 'inUrl'> = {
+  captured: false,
+  tier: 'not_found',
+  storageHit: false,
+  cookieHit: false,
+  sessionStorageHit: false,
+  dataLayerHit: false,
+};
+
+/** Exact-key comparison against both the raw value and its URI-decoded form — the decoded form is *added*, never replacing the raw comparison, so an unencoded value still matches. */
+function exactMatch(record: Record<string, string> | undefined, key: string, target: string): boolean {
+  const raw = record?.[key];
+  if (raw === undefined) return false;
+  if (raw === target) return true;
+  const decoded = tryDecode(raw);
+  return decoded !== undefined && decoded === target;
+}
+
+/**
+ * Whether a synthetic param Atlas injected at landing was actually read and
+ * stored somewhere by the site — localStorage/sessionStorage/cookies/
+ * dataLayer, under the expected key (tier 'exact') or a differently-named
+ * one (tier 'value_match') — rather than just sitting unread in the URL.
+ * Shared by every per-identifier rule in this layer (L2.1-2.8) and by the
+ * redirect-timing check (L2.10).
+ *
+ * Diagnostic note (Signal Health Report: Evidence Integrity & Presentation
+ * PRD W9 — investigation only, no rule-semantics change): this checks
+ * VALUE equality against the synthetic value Atlas injected in the landing
+ * URL (`auditData.urlParams`), read against `auditData.cookies` — merged
+ * across every step, last-write-wins per name (see AuditData.cookies'
+ * docstring). A real tracking pixel (e.g. TikTok's) that sets its OWN
+ * same-NAMED cookie with a DIFFERENT value later in the journey (after
+ * landing) overwrites the synthetic value in that merged map, so this rule
+ * correctly reports "not captured" for the synthetic value even though a
+ * genuinely-named cookie exists — which is exactly what
+ * STORAGE_LIFETIME_MEETS_ATTRIBUTION_WINDOW (L3.2, name+lifetime only, no
+ * value check) goes on to find and report a real lifetime for. Confirmed
+ * against the openart.ai reference audit's ttclid disagreement: both
+ * results are correct, they're answering different questions ("did we
+ * capture the click ID we sent" vs. "does a click-ID-shaped cookie meet
+ * its window") about what can be the same cookie at different times. Not a
+ * bug in either rule — a report-copy improvement (stating what each rule
+ * actually observed and when) is a presentation follow-up, not a fix here.
+ */
 function checkParamCapture(auditData: AuditData, paramName: string): CaptureCheck {
   const sentValue = auditData.urlParams?.[paramName];
   if (!sentValue) {
-    return { inUrl: false, captured: false, tier: 'not_found', storageHit: false, cookieHit: false, dataLayerHit: false };
+    return { inUrl: false, ...NOT_FOUND };
   }
 
-  // Tier 1 — exact key, exact value
-  const storageExact = auditData.storage?.[paramName] === sentValue;
-  const cookieExact = auditData.cookies?.[paramName] === sentValue;
+  // Tier 1 — exact key, exact value (raw or URI-decoded)
+  const storageExact = exactMatch(auditData.storage, paramName, sentValue);
+  const cookieExact = exactMatch(auditData.cookies, paramName, sentValue);
+  const sessionStorageExact = exactMatch(auditData.sessionStorage, paramName, sentValue);
   const dataLayerExact = auditData.dataLayer.some(
     (e) => Object.entries(e).some(([k, v]) => k === paramName && String(v) === sentValue),
   );
-  if (storageExact || cookieExact || dataLayerExact) {
-    return { inUrl: true, captured: true, tier: 'exact', storageHit: storageExact, cookieHit: cookieExact, dataLayerHit: dataLayerExact };
+  if (storageExact || cookieExact || sessionStorageExact || dataLayerExact) {
+    return {
+      inUrl: true,
+      captured: true,
+      tier: 'exact',
+      storageHit: storageExact,
+      cookieHit: cookieExact,
+      sessionStorageHit: sessionStorageExact,
+      dataLayerHit: dataLayerExact,
+    };
   }
 
-  // Tier 2 — same value, different key (or one level of JSON nesting)
+  // Tier 2 — same value, different key, at any depth of JSON nesting, and/or URI-decoded
   const storageKey = findValueUnderDifferentKey(auditData.storage, paramName, sentValue);
   const cookieKey = findValueUnderDifferentKey(auditData.cookies, paramName, sentValue);
+  const sessionStorageKey = findValueUnderDifferentKey(auditData.sessionStorage, paramName, sentValue);
   const dataLayerKey = findValueInDataLayerUnderDifferentKey(auditData.dataLayer, paramName, sentValue);
-  if (storageKey || cookieKey || dataLayerKey) {
+  if (storageKey || cookieKey || sessionStorageKey || dataLayerKey) {
     return {
       inUrl: true,
       captured: true,
       tier: 'value_match',
       storageHit: !!storageKey,
       cookieHit: !!cookieKey,
+      sessionStorageHit: !!sessionStorageKey,
       dataLayerHit: !!dataLayerKey,
-      matchedKey: storageKey ?? cookieKey ?? dataLayerKey,
+      matchedKey: storageKey ?? cookieKey ?? sessionStorageKey ?? dataLayerKey,
     };
   }
 
   // Tier 3 — not found anywhere
-  return { inUrl: true, captured: false, tier: 'not_found', storageHit: false, cookieHit: false, dataLayerHit: false };
+  return { inUrl: true, ...NOT_FOUND };
 }
 
 function captureEvidence(paramName: string, check: CaptureCheck): string[] {
+  if (!check.captured) {
+    return [
+      `In landing URL: ${check.inUrl}`,
+      `Not found in localStorage, sessionStorage, cookies or dataLayer (searched by value, including nested and URI-encoded structures).`,
+    ];
+  }
+
+  const hitStores = [
+    check.storageHit && 'localStorage',
+    check.sessionStorageHit && 'sessionStorage',
+    check.cookieHit && 'a cookie',
+    check.dataLayerHit && 'a dataLayer event',
+  ].filter(Boolean) as string[];
+
   const lines = [
     `In landing URL: ${check.inUrl}`,
-    `Stored in localStorage["${paramName}"]: ${check.tier === 'exact' && check.storageHit}`,
-    `Stored in a cookie["${paramName}"]: ${check.tier === 'exact' && check.cookieHit}`,
-    `Echoed into a dataLayer event: ${check.tier === 'exact' && check.dataLayerHit}`,
+    check.tier === 'exact'
+      ? `Stored under the expected key ("${paramName}") in ${hitStores.join(', ')}`
+      : `Value found under a different key ("${check.matchedKey}") in ${hitStores.join(', ')} — captured, just not under the expected name`,
   ];
-  if (check.tier === 'value_match' && check.matchedKey) {
-    const mechanism = check.storageHit ? 'localStorage' : check.cookieHit ? 'a cookie' : 'a dataLayer event';
-    lines.push(`Value found under a different key ("${check.matchedKey}") in ${mechanism} — captured, just not under the expected name`);
+
+  if (check.sessionStorageHit && !check.storageHit && !check.cookieHit) {
+    lines.push('Warning: the only capture found is in sessionStorage, which is cleared on tab close — this identifier will not survive the gap between an ad click and a later-session conversion.');
   }
+
   return lines;
 }
 
@@ -199,9 +311,9 @@ function makeClickIdCaptureRule(opts: {
             ? `${opts.paramName} was never injected into the landing URL for this run`
             : result.captured
               ? result.tier === 'exact'
-                ? `${opts.paramName} captured (${[result.storageHit && 'localStorage', result.cookieHit && 'cookie', result.dataLayerHit && 'dataLayer'].filter(Boolean).join(', ')})`
+                ? `${opts.paramName} captured (${[result.storageHit && 'localStorage', result.sessionStorageHit && 'sessionStorage', result.cookieHit && 'cookie', result.dataLayerHit && 'dataLayer'].filter(Boolean).join(', ')})`
                 : `${opts.paramName} captured under a different key ("${result.matchedKey}") — the value matches exactly`
-              : `${opts.paramName} present in the landing URL but never read into storage, a cookie, or dataLayer`,
+              : `${opts.paramName} present in the landing URL but not found in localStorage, sessionStorage, cookies or dataLayer`,
           expected: opts.why,
           evidence: captureEvidence(opts.paramName, result),
         },

@@ -137,6 +137,90 @@ describe('checkParamCapture — three-tier matching (via GCLID_CAPTURED_AT_LANDI
   });
 });
 
+// ── L2 Capture Detection: False-Negative Fix (openart.ai reproduction) ───────
+// Three independent defects, each sufficient alone to false-negative a
+// site that captures the identifier: (1) JSON traversal one level too
+// shallow, (2) cookie/storage values not URI-decoded before comparison,
+// (3) sessionStorage never searched. See PRD §3.
+
+describe('checkParamCapture — reference-case reproduction (openart.ai, TTCLID_CAPTURED_AT_LANDING)', () => {
+  it('1. captures a value wrapped one level deeper than a flat nested object ({"ttclid":{"v":"<synthetic>","ts":...}})', () => {
+    const auditData = makeAuditData({
+      urlParams: { ttclid: 'test123' },
+      storage: { _oa_attr: JSON.stringify({ ttclid: { v: 'test123', ts: 1788670848553 } }) },
+    });
+    const result = TTCLID_CAPTURED_AT_LANDING.test(auditData);
+    expect(result.status).toBe('pass');
+    expect(result.technical_details.found).toContain('_oa_attr.ttclid.v');
+  });
+
+  it('2. captures the same structure when it arrives as a URI-encoded cookie value', () => {
+    const raw = JSON.stringify({ ttclid: { v: 'test123', ts: 1788670848553 } });
+    const auditData = makeAuditData({
+      urlParams: { ttclid: 'test123' },
+      cookies: { _oa_attr: encodeURIComponent(raw) },
+    });
+    const result = TTCLID_CAPTURED_AT_LANDING.test(auditData);
+    expect(result.status).toBe('pass');
+  });
+
+  it('3. captures a value found only in sessionStorage, passing with a durability warning in the evidence', () => {
+    const auditData = makeAuditData({
+      urlParams: { ttclid: 'test123' },
+      sessionStorage: { ttclid: 'test123' },
+    });
+    const result = TTCLID_CAPTURED_AT_LANDING.test(auditData);
+    expect(result.status).toBe('pass');
+    expect(result.technical_details.evidence.some((e) => e.toLowerCase().includes('sessionstorage') && e.toLowerCase().includes('tab close'))).toBe(true);
+  });
+
+  it('4. captures a value nested three levels deep', () => {
+    const auditData = makeAuditData({
+      urlParams: { ttclid: 'test123' },
+      storage: { _oa_attr: JSON.stringify({ a: { b: { ttclid: 'test123' } } }) },
+    });
+    const result = TTCLID_CAPTURED_AT_LANDING.test(auditData);
+    expect(result.status).toBe('pass');
+    expect(result.technical_details.found).toContain('_oa_attr.a.b.ttclid');
+  });
+
+  it('5. reports genuinely absent when nothing matches, and the evidence names every store searched', () => {
+    const auditData = makeAuditData({
+      urlParams: { ttclid: 'test123' },
+      storage: { unrelated: 'nope' },
+      sessionStorage: { unrelated: 'nope' },
+      cookies: { unrelated: 'nope' },
+    });
+    const result = TTCLID_CAPTURED_AT_LANDING.test(auditData);
+    expect(result.status).toBe('fail');
+    const evidence = result.technical_details.evidence.join(' ').toLowerCase();
+    expect(evidence).toContain('localstorage');
+    expect(evidence).toContain('sessionstorage');
+    expect(evidence).toContain('cookies');
+    expect(evidence).toContain('datalayer');
+  });
+
+  it('6. does not cross-match two nested params sharing a wrapper key when only one was stored', () => {
+    const auditData = makeAuditData({
+      urlParams: { ttclid: 'test_ttclid_AAA', gclid: 'test_gclid_BBB' },
+      storage: { _oa_attr: JSON.stringify({ gclid: { v: 'test_gclid_BBB', ts: 1 } }) },
+    });
+    expect(TTCLID_CAPTURED_AT_LANDING.test(auditData).status).toBe('fail');
+    expect(GCLID_CAPTURED_AT_LANDING.test(auditData).status).toBe('pass');
+  });
+});
+
+describe('UTM_PARAMETERS_CAPTURED (L2.8) — shares the same value-search helper', () => {
+  it('captures a UTM param wrapped one level deeper than a flat nested object', () => {
+    const params = { utm_source: 's', utm_medium: 'm', utm_campaign: 'c', utm_content: 'ct', utm_term: 'tm' };
+    const auditData = makeAuditData({
+      urlParams: params,
+      storage: { _oa_attr: JSON.stringify({ utm_source: { v: 's', ts: 1 }, utm_medium: 'm', utm_campaign: 'c', utm_content: 'ct', utm_term: 'tm' }) },
+    });
+    expect(UTM_PARAMETERS_CAPTURED.test(auditData).status).toBe('pass');
+  });
+});
+
 describe('GBRAID_CAPTURED_AT_LANDING (L2.2)', () => {
   it('fails when gbraid is present but not captured', () => {
     expect(GBRAID_CAPTURED_AT_LANDING.test(makeAuditData({ urlParams: { gbraid: 'g1' } })).status).toBe('fail');
