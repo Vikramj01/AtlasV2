@@ -1,6 +1,7 @@
 /**
  * Degradation suppression (Platform Attribution & Determinism PRD Part B,
- * B-W4 — "separate absence from failure").
+ * B-W4 — "separate absence from failure"; widened by the Report Correctness
+ * Programme PRD Part C3 — "unsettled steps are all-or-nothing").
  *
  * Three scans of the same unchanged site produced correlated failures
  * traced to one upstream cause: the TikTok pixel script failed to load, so
@@ -13,27 +14,45 @@
  * produce.
  *
  * The fix mirrors coverageSuppression.ts's existing "suppress, do not
- * annotate" pattern: for a fixed set of rules whose verdict is really an
- * assertion about whether a request/cookie was observed at all, a run
- * where any step degraded (StepCoverage.degraded — settle hit its cap,
- * navigation failed outright, or a declared waitFor timed out) has its
- * result pulled into could_not_be_assessed rather than left standing as a
- * confident pass or fail. Adding a genuine 'inconclusive' RuleStatus would
- * touch scoring.ts's scored()/layerCoverage(), reporting.ts's worstStatus,
- * and the frontend's separate RuleStatus mirror — exactly the "disturbing
- * scoring" the PRD says to avoid; routing through the existing
- * could_not_be_assessed section (already has the right semantics) does not.
+ * annotate" pattern: a run where any step degraded (StepCoverage.degraded
+ * — settle hit its cap, navigation failed outright, or a declared waitFor
+ * timed out) has affected results pulled into could_not_be_assessed rather
+ * than left standing as a confident pass or fail. Adding a genuine
+ * 'inconclusive' RuleStatus would touch scoring.ts's scored()/
+ * layerCoverage(), reporting.ts's worstStatus, and the frontend's separate
+ * RuleStatus mirror — exactly the "disturbing scoring" the PRD says to
+ * avoid; routing through the existing could_not_be_assessed section
+ * (already has the right semantics) does not.
+ *
+ * Two independent ways a result is judged "affected" by a degraded step,
+ * per PRD C3's "a step that did not settle contributes no findings — route
+ * every rule depending on it":
+ *  1. It cites a degraded step by name, using the same double-quoted
+ *     convention coverageSuppression.ts already matches on
+ *     (`("${completion}")`) — this is what generalizes the fix to any rule
+ *     naming a specific step, present or future, rather than requiring
+ *     each one added to a hand-maintained list (the exact "deciding
+ *     rule-by-rule... will be wrong repeatedly" failure mode C3 rejects —
+ *     this is how CONVERSION_SURFACE_REACHABLE_WITHOUT_JS_ERRORS (L12.8)
+ *     gets caught here without ever being named below).
+ *  2. Its rule_id is in ABSENCE_SENSITIVE_RULE_IDS — a small, still-explicit
+ *     set kept for rules whose absence-sensitivity is run-wide rather than
+ *     tied to one named step (e.g. "was this cookie ever set, anywhere in
+ *     the run" — nothing in their evidence names a step to match on).
  */
 import type { AuditData, StepCoverage, UnassessableFinding, ValidationResult } from '@/types/audit';
 import { degradedStepNames } from './coverage';
+import { quotedTokens } from './coverageSuppression';
 
 /**
  * Rules whose pass verdict is really "we observed nothing happen" and
  * whose fail verdict is really "we can't be sure it didn't fire" — i.e.
  * rules that assert a network request or cookie was or wasn't observed,
- * rather than reading declarative config off the page. Named explicitly in
- * Platform Attribution & Determinism PRD B-W4, plus GA4_CONFIG_TAG_PRESENT
- * (same "was this script tag ever seen loading" shape as the others).
+ * rather than reading declarative config off the page, and whose evidence
+ * doesn't name a specific step for the quoted-token check above to catch.
+ * Named explicitly in Platform Attribution & Determinism PRD B-W4, plus
+ * GA4_CONFIG_TAG_PRESENT (same "was this script tag ever seen loading"
+ * shape as the others).
  */
 const ABSENCE_SENSITIVE_RULE_IDS = new Set([
   'GOOGLE_ADS_CONVERSION_EVENT_FIRES',
@@ -71,11 +90,27 @@ export function partitionDegradedRuns(
 
   const assessable: ValidationResult[] = [];
   const unassessable: UnassessableFinding[] = [];
+  const degradedStepSet = new Set(degradedSteps);
   const stepList = degradedSteps.join(', ');
   const stepNoun = degradedSteps.length === 1 ? 'step' : 'steps';
 
   for (const r of results) {
-    if (r.status !== 'skipped' && ABSENCE_SENSITIVE_RULE_IDS.has(r.rule_id)) {
+    if (r.status === 'skipped') {
+      // Already opted out of scoring/counts through the normal 'skipped'
+      // path — re-flagging one here would double-label it.
+      assessable.push(r);
+      continue;
+    }
+
+    const citedDegradedStep = quotedTokens(r).find((t) => degradedStepSet.has(t));
+
+    if (citedDegradedStep) {
+      unassessable.push({
+        rule_id: r.rule_id,
+        step: citedDegradedStep,
+        reason: `This scan's navigation didn't fully settle on "${citedDegradedStep}", so this result — which is evidence about that specific step — isn't reliable; its ${r.status} verdict may reflect the scan not waiting long enough, not the site's real behavior.`,
+      });
+    } else if (ABSENCE_SENSITIVE_RULE_IDS.has(r.rule_id)) {
       unassessable.push({
         rule_id: r.rule_id,
         step: stepList,

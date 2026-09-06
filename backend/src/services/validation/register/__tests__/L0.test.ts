@@ -9,6 +9,8 @@ import {
   UNDECLARED_PLATFORM_TAG_DETECTED,
   CONVERSION_SURFACE_IDENTIFIED,
   PRODUCT_DOMAIN_REACHABLE,
+  conversionSurfaceReached,
+  isVerifiedStep,
   L0_RULES,
 } from '../L0';
 import type { AuditData, NetworkRequest, StepCoverage } from '@/types/audit';
@@ -236,6 +238,137 @@ describe('CONVERSION_SURFACE_IDENTIFIED (L0.3)', () => {
     });
     const result = CONVERSION_SURFACE_IDENTIFIED.test(auditData);
     expect(result.status).toBe('pass');
+  });
+
+  // ── Verify guessed steps (Report Correctness Programme PRD Part C2) ────────
+  // A step_coverage entry with source: 'heuristic' (stepUrlResolver.ts's
+  // path-guess strategy) must be verified — HTTP 2xx, plus its declared
+  // confirmation signal if one exists — before it counts as the conversion
+  // surface; an unverified guess must not make this rule pass.
+
+  describe('unverified heuristic (guessed) steps', () => {
+    it('fails when the only distinct step is an unverified heuristic guess (no http_status captured)', () => {
+      const auditData = makeAuditData({
+        step_coverage: [
+          makeStep({ step: 'landing', distinct_from_landing: false, source: 'user_supplied' }),
+          makeStep({ step: 'checkout', distinct_from_landing: true, navigation_success: true, source: 'heuristic' }),
+        ],
+      });
+      const result = CONVERSION_SURFACE_IDENTIFIED.test(auditData);
+      expect(result.status).toBe('fail');
+      expect(result.technical_details.evidence.join(' ')).toContain('unverified guess');
+    });
+
+    it('fails when a heuristic guess returned a non-2xx status', () => {
+      const auditData = makeAuditData({
+        step_coverage: [
+          makeStep({ step: 'landing', distinct_from_landing: false, source: 'user_supplied' }),
+          makeStep({ step: 'checkout', distinct_from_landing: true, navigation_success: true, source: 'heuristic', http_status: 404 }),
+        ],
+      });
+      expect(CONVERSION_SURFACE_IDENTIFIED.test(auditData).status).toBe('fail');
+    });
+
+    it('fails when a heuristic guess 200s but its declared confirmation signal never matched', () => {
+      const auditData = makeAuditData({
+        step_coverage: [
+          makeStep({ step: 'landing', distinct_from_landing: false, source: 'user_supplied' }),
+          makeStep({
+            step: 'checkout', distinct_from_landing: true, navigation_success: true,
+            source: 'heuristic', http_status: 200, wait_for_outcome: 'timed_out',
+          }),
+        ],
+      });
+      expect(CONVERSION_SURFACE_IDENTIFIED.test(auditData).status).toBe('fail');
+    });
+
+    it('passes when a heuristic guess 200s and has no declared confirmation signal to check', () => {
+      const auditData = makeAuditData({
+        step_coverage: [
+          makeStep({ step: 'landing', distinct_from_landing: false, source: 'user_supplied' }),
+          makeStep({
+            step: 'checkout', distinct_from_landing: true, navigation_success: true,
+            source: 'heuristic', http_status: 200, wait_for_outcome: 'not_declared',
+          }),
+        ],
+      });
+      expect(CONVERSION_SURFACE_IDENTIFIED.test(auditData).status).toBe('pass');
+    });
+
+    it('passes when a heuristic guess 200s and its declared confirmation signal matched', () => {
+      const auditData = makeAuditData({
+        step_coverage: [
+          makeStep({ step: 'landing', distinct_from_landing: false, source: 'user_supplied' }),
+          makeStep({
+            step: 'checkout', distinct_from_landing: true, navigation_success: true,
+            source: 'heuristic', http_status: 200, wait_for_outcome: 'matched',
+          }),
+        ],
+      });
+      expect(CONVERSION_SURFACE_IDENTIFIED.test(auditData).status).toBe('pass');
+    });
+
+    it('never requires verification for a non-heuristic source (sitemap/nav_link/user_supplied/fallback_landing)', () => {
+      const auditData = makeAuditData({
+        step_coverage: [
+          makeStep({ step: 'landing', distinct_from_landing: false, source: 'user_supplied' }),
+          makeStep({ step: 'checkout', distinct_from_landing: true, navigation_success: true, source: 'sitemap' }),
+        ],
+      });
+      expect(CONVERSION_SURFACE_IDENTIFIED.test(auditData).status).toBe('pass');
+    });
+  });
+});
+
+describe('conversionSurfaceReached (engine.ts\'s conversion_surface precondition)', () => {
+  // Report Correctness Programme PRD Part C4 — "accept now": when the
+  // conversion step is only an unverified heuristic guess, this returns
+  // false, so engine.ts's precondition gate routes every L5/L7/L4.3/L4.4
+  // rule requiring conversion_surface to 'skipped' (inconclusive) rather
+  // than letting them run against a page that might not be the real
+  // conversion surface at all.
+  it('is false when the only distinct step is an unverified heuristic guess', () => {
+    const auditData = makeAuditData({
+      step_coverage: [
+        makeStep({ step: 'landing', distinct_from_landing: false, source: 'user_supplied' }),
+        makeStep({ step: 'checkout', distinct_from_landing: true, navigation_success: true, source: 'heuristic' }),
+      ],
+    });
+    expect(conversionSurfaceReached(auditData)).toBe(false);
+  });
+
+  it('is true when the heuristic guess is verified', () => {
+    const auditData = makeAuditData({
+      step_coverage: [
+        makeStep({ step: 'landing', distinct_from_landing: false, source: 'user_supplied' }),
+        makeStep({ step: 'checkout', distinct_from_landing: true, navigation_success: true, source: 'heuristic', http_status: 200, wait_for_outcome: 'matched' }),
+      ],
+    });
+    expect(conversionSurfaceReached(auditData)).toBe(true);
+  });
+});
+
+describe('isVerifiedStep', () => {
+  it('trusts any non-heuristic source unconditionally', () => {
+    expect(isVerifiedStep({ source: 'user_supplied' })).toBe(true);
+    expect(isVerifiedStep({ source: 'sitemap' })).toBe(true);
+    expect(isVerifiedStep({ source: 'nav_link' })).toBe(true);
+    expect(isVerifiedStep({ source: 'fallback_landing' })).toBe(true);
+  });
+
+  it('requires a 2xx http_status for a heuristic step', () => {
+    expect(isVerifiedStep({ source: 'heuristic', http_status: 200 })).toBe(true);
+    expect(isVerifiedStep({ source: 'heuristic', http_status: 299 })).toBe(true);
+    expect(isVerifiedStep({ source: 'heuristic', http_status: 404 })).toBe(false);
+    expect(isVerifiedStep({ source: 'heuristic', http_status: 500 })).toBe(false);
+    expect(isVerifiedStep({ source: 'heuristic' })).toBe(false); // no http_status captured at all
+  });
+
+  it('additionally requires a declared confirmation signal to have matched', () => {
+    expect(isVerifiedStep({ source: 'heuristic', http_status: 200, wait_for_outcome: 'matched' })).toBe(true);
+    expect(isVerifiedStep({ source: 'heuristic', http_status: 200, wait_for_outcome: 'not_declared' })).toBe(true);
+    expect(isVerifiedStep({ source: 'heuristic', http_status: 200, wait_for_outcome: 'timed_out' })).toBe(false);
+    expect(isVerifiedStep({ source: 'heuristic', http_status: 200 })).toBe(true); // wait_for_outcome absent — nothing declared to confirm
   });
 });
 

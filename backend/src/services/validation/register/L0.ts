@@ -151,6 +151,31 @@ export const UNDECLARED_PLATFORM_TAG_DETECTED: ValidationRule = {
 // so those callers keep working exactly as before.
 
 /**
+ * Whether a step is trustworthy enough to count toward the conversion
+ * surface (Report Correctness Programme PRD Part C2 — "verify guessed
+ * steps"). Every step whose URL came from somewhere other than a guess
+ * (user_supplied, sitemap, nav_link, fallback_landing) is trusted as-is —
+ * only 'heuristic' (stepUrlResolver.ts's path-guess strategy) needs
+ * verifying before it can become the conversion surface, because a guessed
+ * path can 200 on a page that isn't actually the checkout/thank-you/signup
+ * step it was guessed to be. Verification requires the response to have
+ * been a real page (HTTP 2xx — http_status may be absent for a StepCoverage
+ * captured before this field existed, which fails open toward *not*
+ * verified, per "an unverified guess does not become the conversion
+ * surface"), plus — where the step declared a `waitFor` confirmation
+ * selector — that it actually matched (wait_for_outcome === 'matched');
+ * a step with no declared waitFor has nothing further to confirm.
+ */
+export function isVerifiedStep(step: { source: string; http_status?: number; wait_for_outcome?: string }): boolean {
+  if (step.source !== 'heuristic') return true;
+  const httpOk = step.http_status !== undefined && step.http_status >= 200 && step.http_status < 300;
+  const confirmationOk = step.wait_for_outcome === undefined
+    || step.wait_for_outcome === 'not_declared'
+    || step.wait_for_outcome === 'matched';
+  return httpOk && confirmationOk;
+}
+
+/**
  * The boolean this rule reduces to — factored out so engine.ts's
  * 'conversion_surface' precondition (§6.3) evaluates the *exact* same
  * condition L0.3 itself reports pass/fail on, rather than a second,
@@ -161,7 +186,7 @@ export function conversionSurfaceReached(auditData: AuditData): boolean {
   const stepCoverage = auditData.step_coverage;
 
   if (stepCoverage && stepCoverage.length > 0) {
-    return stepCoverage.some((s) => s.distinct_from_landing && s.navigation_success);
+    return stepCoverage.some((s) => s.distinct_from_landing && s.navigation_success && isVerifiedStep(s));
   }
 
   const nonLandingSteps = new Set(
@@ -188,10 +213,17 @@ export const CONVERSION_SURFACE_IDENTIFIED: ValidationRule = {
     const stepCoverage = auditData.step_coverage;
 
     if (stepCoverage && stepCoverage.length > 0) {
-      const qualifying = stepCoverage.filter((s) => s.distinct_from_landing && s.navigation_success);
+      const qualifying = stepCoverage.filter((s) => s.distinct_from_landing && s.navigation_success && isVerifiedStep(s));
       const found = qualifying.length > 0; // === conversionSurfaceReached(auditData) for this branch
       const nonLanding = stepCoverage.filter((s) => s.step !== 'landing');
       const fellBack = nonLanding.filter((s) => !(s.distinct_from_landing && s.navigation_success));
+      // Reached a distinct page, but as an unverified guess (Report
+      // Correctness Programme PRD Part C2) — named separately from
+      // fellBack so the evidence doesn't conflate "never left landing"
+      // with "reached somewhere, but we can't confirm it's the right page".
+      const unverifiedGuesses = nonLanding.filter(
+        (s) => s.distinct_from_landing && s.navigation_success && !isVerifiedStep(s),
+      );
 
       return {
         rule_id: this.rule_id,
@@ -210,6 +242,9 @@ export const CONVERSION_SURFACE_IDENTIFIED: ValidationRule = {
                 fellBack.length > 0
                   ? `Steps that fell back to the landing URL: ${fellBack.map((s) => s.step).join(', ')}`
                   : 'No non-landing steps were attempted',
+                ...(unverifiedGuesses.length > 0
+                  ? [`Steps reached only via an unverified guess: ${unverifiedGuesses.map((s) => s.step).join(', ')} — a path guess needs a 2xx response (and its declared confirmation signal, if any) before it counts`]
+                  : []),
               ],
         },
       };

@@ -320,8 +320,16 @@ describe('deriveConfidence', () => {
   });
 
   it('runRegister attaches confidence to a real (non-skipped) result but never to a skipped one', () => {
+    // A *verified* heuristic step (Report Correctness Programme PRD Part
+    // C2 — http_status 2xx, no declared confirmation signal to fail) does
+    // qualify as the conversion surface, so the gated rule runs — just
+    // with 'confirm' confidence, since a path guess is still less certain
+    // than a user-supplied URL even once verified.
     const auditData = makeAuditData({
-      step_coverage: [makeStep({ step: 'landing', distinct_from_landing: false }), makeStep({ source: 'heuristic' })],
+      step_coverage: [
+        makeStep({ step: 'landing', distinct_from_landing: false }),
+        makeStep({ source: 'heuristic', http_status: 200, wait_for_outcome: 'not_declared' }),
+      ],
     });
     const [gatedResult, ungatedResult] = runRegister(auditData, [gatedRule, ungatedRule]);
     expect(gatedResult.confidence).toBe('confirm');
@@ -330,6 +338,21 @@ describe('deriveConfidence', () => {
     const skippedResult = runRegister(makeAuditData({ step_coverage: [makeStep({ step: 'landing', distinct_from_landing: false })] }), [gatedRule])[0];
     expect(skippedResult.status).toBe('skipped');
     expect(skippedResult.confidence).toBeUndefined();
+  });
+
+  // Report Correctness Programme PRD Part C2 — "verify guessed steps": an
+  // *unverified* heuristic step (no http_status captured) no longer
+  // qualifies as the conversion surface at all, so the gated rule is
+  // skipped rather than run with a mere 'confirm' disclosure — the
+  // Birkenstock-shape defect this closes is a rule running (and reporting
+  // pass/fail) against a guessed page nothing confirmed was the right one.
+  it('an unverified heuristic step no longer satisfies the conversion_surface precondition — the gated rule is skipped, not run with confirm confidence', () => {
+    const auditData = makeAuditData({
+      step_coverage: [makeStep({ step: 'landing', distinct_from_landing: false }), makeStep({ source: 'heuristic' })],
+    });
+    const [gatedResult] = runRegister(auditData, [gatedRule]);
+    expect(gatedResult.status).toBe('skipped');
+    expect(gatedResult.confidence).toBeUndefined();
   });
 
   it('confidence never changes scoring — byte-identical scores with and without it populated', () => {

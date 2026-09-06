@@ -285,6 +285,8 @@ export interface GotoAndSettleResult {
   navigationSuccess: boolean;
   settleOutcome: SettleOutcome;
   settleMs: number;
+  /** Playwright Response.status() for the goto's navigation response — undefined when navigation failed outright (no response to read). See StepCoverage.http_status (Report Correctness Programme PRD Part C1/C2). */
+  httpStatus?: number;
 }
 
 /**
@@ -297,15 +299,16 @@ export interface GotoAndSettleResult {
  * this the same as any other step failure.
  */
 export async function gotoAndSettle(
-  page: { goto: (url: string, opts?: object) => Promise<unknown> },
+  page: { goto: (url: string, opts?: object) => Promise<{ status?: () => number } | null> },
   url: string,
   getInFlight: () => number,
   opts: { referer?: string } = {},
   config: SettleConfig = DEFAULT_SETTLE_CONFIG,
 ): Promise<GotoAndSettleResult> {
   const start = Date.now();
+  let response: { status?: () => number } | null;
   try {
-    await page.goto(url, {
+    response = await page.goto(url, {
       waitUntil: 'domcontentloaded',
       timeout: config.navigationTimeoutMs,
       ...(opts.referer ? { referer: opts.referer } : {}),
@@ -314,9 +317,10 @@ export async function gotoAndSettle(
     return { navigationSuccess: false, settleOutcome: 'navigation_failed', settleMs: Date.now() - start };
   }
 
+  const httpStatus = typeof response?.status === 'function' ? response.status() : undefined;
   const remainingBudget = config.maxSettleMs - (Date.now() - start);
   const settleOutcome = await waitForNetworkQuiet(getInFlight, remainingBudget, config);
-  return { navigationSuccess: true, settleOutcome, settleMs: Date.now() - start };
+  return { navigationSuccess: true, settleOutcome, settleMs: Date.now() - start, ...(httpStatus !== undefined ? { httpStatus } : {}) };
 }
 
 /**
@@ -337,9 +341,15 @@ export function interceptConsoleErrors(
     typeof stepNameOrRef === 'string' ? stepNameOrRef : stepNameOrRef.current;
 
   page.on('console', (rawMsg: unknown) => {
-    const msg = rawMsg as { type?: () => string; text?: () => string };
+    const msg = rawMsg as { type?: () => string; text?: () => string; location?: () => { url?: string } };
     if (msg.type?.() !== 'error') return;
-    sink.push({ message: msg.text?.() ?? '', step: getStep() });
+    // location().url is the originating script's URL — the best signal
+    // Playwright's console API exposes for "which frame/origin logged
+    // this" (Report Correctness Programme PRD Part C1). Left undefined
+    // when unavailable so the ambient-noise filter treats it as
+    // top-document rather than silently excluding it.
+    const frameUrl = msg.location?.()?.url || undefined;
+    sink.push({ message: msg.text?.() ?? '', step: getStep(), ...(frameUrl ? { frame_url: frameUrl } : {}) });
   });
 
   page.on('pageerror', (rawErr: unknown) => {
