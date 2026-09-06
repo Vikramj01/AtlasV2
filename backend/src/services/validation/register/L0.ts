@@ -7,7 +7,7 @@
  * matters — is the product domain even reachable. See platformDetection.ts
  * for the shared per-platform tag-presence check L0.1/L0.2 both use.
  */
-import type { AuditData, ValidationRule, ValidationResult, RuleStatus } from '@/types/audit';
+import type { AuditData, ValidationRule, ValidationResult, RuleStatus, DeclaredPlatform } from '@/types/audit';
 import { ALL_DECLARED_PLATFORMS, PLATFORM_LABELS, platformTagDetected } from './platformDetection';
 
 // ── L0.1 — Declared platform has a tag present ───────────────────────────────
@@ -39,6 +39,17 @@ export const DECLARED_PLATFORM_HAS_TAG: ValidationRule = {
     const missing = declared.filter((p) => !platformTagDetected(p, auditData));
     const status: RuleStatus = declared.length === 0 ? 'skipped' : missing.length > 0 ? 'fail' : 'pass';
 
+    // Per-platform disaggregation (Platform Attribution & Determinism PRD
+    // Part A) — this rule's own evidence already computes pass/fail per
+    // platform internally; platform_outcomes emits that as data too, so
+    // buildV2PlatformBreakdown() can credit Google Ads and TikTok for
+    // passing even when the same rule's overall status is 'fail' because
+    // Meta is missing its tag.
+    const platform_outcomes: Partial<Record<DeclaredPlatform, RuleStatus>> = {};
+    for (const p of declared) {
+      platform_outcomes[p] = platformTagDetected(p, auditData) ? 'pass' : 'fail';
+    }
+
     return {
       rule_id: this.rule_id,
       validation_layer: this.layer,
@@ -59,6 +70,7 @@ export const DECLARED_PLATFORM_HAS_TAG: ValidationRule = {
                 (p) => `${PLATFORM_LABELS[p]}: ${platformTagDetected(p, auditData) ? 'tag present' : 'NO TAG DETECTED — zero measurement on this platform\'s spend'}`,
               ),
       },
+      ...(declared.length > 0 ? { platform_outcomes } : {}),
     };
   },
 };

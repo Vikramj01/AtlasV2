@@ -6,7 +6,7 @@
 import type {
   AuditData, FunnelType, Region, DataLayerEvent, NetworkRequest, CookieSnapshot, LocalStorageSnapshot, ConsoleError,
   RuleSetVersion, SiteType, SecondaryMotion, DeclaredPlatform, TrafficRegion, CMP, DeclaredConversion,
-  StepCoverage, StepUrlSource, ConsentCapture,
+  StepCoverage, StepUrlSource, ConsentCapture, SettleOutcome, WaitForOutcome,
 } from '@/types/audit';
 import type { NamingConvention } from '@/types/taxonomy';
 import { JOURNEY_CONFIGS } from '@/services/browserbase/journeyConfigs';
@@ -23,8 +23,11 @@ import {
   mergeDetailedCookies,
   collectDeep,
   evaluateAcrossFrames,
+  gotoAndSettle,
+  DEFAULT_SETTLE_CONFIG,
   type StepRef,
   type DeepQueryArgs,
+  type SettleConfig,
 } from './dataCapture';
 import { extractGa4ClientId, ga4SessionStartDetected } from '@/services/detection/trackingSignals';
 import { detectConsentBanner, dismissConsentBanner, type EvaluatePage } from '@/services/detection/consentBanner';
@@ -203,6 +206,13 @@ export interface SimulatorOptions {
    * that url_map entry, if any, came from the caller/user directly.
    */
   resolved_sources?: Record<string, StepUrlSource>;
+  /**
+   * Overrides the production settle-wait timings (dataCapture.ts's
+   * gotoAndSettle/DEFAULT_SETTLE_CONFIG) — exists so tests can shrink the
+   * quiet-period wait to a few milliseconds instead of waiting out the real
+   * production budget. Defaults to DEFAULT_SETTLE_CONFIG when omitted.
+   */
+  settleConfig?: SettleConfig;
 }
 
 /**
@@ -264,8 +274,9 @@ export async function simulateJourney(
 
   // Single listener for all steps — uses a mutable ref so step name stays current
   const stepRef: StepRef = { current: 'init' };
-  interceptNetworkRequests(page, networkRequests, stepRef);
+  const inFlightTracker = interceptNetworkRequests(page, networkRequests, stepRef);
   interceptConsoleErrors(page, consoleErrors, stepRef);
+  const settleConfig = opts.settleConfig ?? DEFAULT_SETTLE_CONFIG;
 
   let landingFinalUrl: string | undefined;
   let landingReferrerCaptured: string | undefined;
@@ -314,6 +325,9 @@ export async function simulateJourney(
       let finalUrl: string | undefined;
       let navigationSuccess = false;
       let stepError: string | undefined;
+      let settleOutcome: SettleOutcome | undefined;
+      let settleMs: number | undefined;
+      let waitForOutcome: WaitForOutcome | undefined;
 
       // Per-step isolation (defect #1): a bad URL — or any failure partway
       // through a step's actions/capture — must degrade only that step, not
@@ -323,14 +337,24 @@ export async function simulateJourney(
       try {
         logger.debug({ step: step.name, url }, 'Navigating to step');
 
-        const gotoOpts = step.name === 'landing'
-          ? { waitUntil: 'networkidle', referer: LANDING_REFERRER, timeout: 20000 }
-          : { waitUntil: 'networkidle', timeout: 20000 };
+        // Deterministic settle sequence (Platform Attribution & Determinism
+        // PRD B-W2) — replaces the old "networkidle, or silently fall back
+        // to domcontentloaded" binary, which made a fast degraded run and a
+        // fully-settled run indistinguishable in the output. settleOutcome/
+        // settleMs are recorded on stepCoverage below either way.
+        const settleResult = await gotoAndSettle(
+          page as Parameters<typeof gotoAndSettle>[0],
+          url,
+          inFlightTracker.getInFlightCount,
+          step.name === 'landing' ? { referer: LANDING_REFERRER } : {},
+          settleConfig,
+        );
+        settleOutcome = settleResult.settleOutcome;
+        settleMs = settleResult.settleMs;
 
-        await page.goto(url, gotoOpts).catch(() => {
-          // Fallback: wait for domcontentloaded, with a shorter bound
-          return page.goto(url, { waitUntil: 'domcontentloaded', timeout: 10000 });
-        });
+        if (!settleResult.navigationSuccess) {
+          throw new Error('Navigation failed to reach domcontentloaded within the settle budget');
+        }
 
         navigationSuccess = true;
         finalUrl = page.url ? page.url() : url;
@@ -340,7 +364,12 @@ export async function simulateJourney(
         }
 
         if (step.waitFor) {
-          await page.waitForSelector(step.waitFor, { timeout: 5000 }).catch(() => {});
+          waitForOutcome = await page
+            .waitForSelector(step.waitFor, { timeout: 5000 })
+            .then(() => 'matched' as const)
+            .catch(() => 'timed_out' as const);
+        } else {
+          waitForOutcome = 'not_declared';
         }
 
         // Consent banner handling (landing step only) — every tag gated
@@ -467,6 +496,13 @@ export async function simulateJourney(
         && !!landingNormalizedUrl
         && normalizedStepUrl !== landingNormalizedUrl;
 
+      // A step is 'degraded' — its observations can't be trusted as complete
+      // — when its settle sequence never reached quiet, navigation failed
+      // outright, or a declared waitFor timed out (Platform Attribution &
+      // Determinism PRD B-W1/B-W3). Drives the partial-run flag (coverage.ts)
+      // and the absence-vs-failure fix (degradationSuppression.ts, B-W4).
+      const degraded = (settleOutcome !== undefined && settleOutcome !== 'settled') || waitForOutcome === 'timed_out';
+
       stepCoverage.push({
         step: step.name,
         requested_url: requestedUrl,
@@ -475,6 +511,11 @@ export async function simulateJourney(
         distinct_from_landing: distinctFromLanding,
         navigation_success: navigationSuccess,
         ...(stepError ? { error: stepError } : {}),
+        ...(settleOutcome ? { settle_outcome: settleOutcome } : {}),
+        ...(settleMs !== undefined ? { settle_ms: settleMs } : {}),
+        ...(waitForOutcome ? { wait_for_outcome: waitForOutcome } : {}),
+        requests_in_flight_at_snapshot: inFlightTracker.getInFlightCount(),
+        degraded,
       });
     }
 

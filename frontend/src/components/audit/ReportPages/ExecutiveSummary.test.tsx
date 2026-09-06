@@ -52,6 +52,8 @@ describe('ExecutiveSummary — coverage banner', () => {
       layers_not_tested: [],
       rules_tested: 83,
       rules_not_tested: 0,
+      partial: false,
+      degraded_steps: [],
     };
     render(<ExecutiveSummary report={makeReport(coverage)} />);
     expect(screen.queryByText('Limited scan coverage')).toBeNull();
@@ -68,6 +70,8 @@ describe('ExecutiveSummary — coverage banner', () => {
       ],
       rules_tested: 41,
       rules_not_tested: 42,
+      partial: false,
+      degraded_steps: [],
     };
     render(<ExecutiveSummary report={makeReport(coverage)} />);
     expect(screen.queryByText('Limited scan coverage')).not.toBeNull();
@@ -85,9 +89,30 @@ describe('ExecutiveSummary — coverage banner', () => {
       layers_not_tested: [],
       rules_tested: 83,
       rules_not_tested: 0,
+      partial: false,
+      degraded_steps: [],
     };
     render(<ExecutiveSummary report={makeReport(coverage)} />);
     const banner = screen.getByText(/This scan examined/);
     expect(banner.textContent).toBe('This scan examined 1 of 2 requested pages.');
+  });
+
+  // Platform Attribution & Determinism PRD B-W3 — a scan that reached every
+  // page can still not have fully settled on one of them.
+  it('renders the banner for a settle-partial run even when every page was reached', () => {
+    const coverage: ReportCoverage = {
+      pages_requested: 4,
+      pages_distinct: 4,
+      steps: [],
+      layers_not_tested: [],
+      rules_tested: 83,
+      rules_not_tested: 0,
+      partial: true,
+      degraded_steps: ['confirmation'],
+    };
+    render(<ExecutiveSummary report={makeReport(coverage)} />);
+    expect(screen.queryByText('Limited scan coverage')).not.toBeNull();
+    const banner = screen.getByText(/This scan examined/);
+    expect(banner.textContent).toContain("didn't fully settle on 1 step (confirmation)");
   });
 });

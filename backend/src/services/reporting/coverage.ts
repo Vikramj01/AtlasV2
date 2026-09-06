@@ -97,11 +97,17 @@ function computeLayersNotTested(results: ValidationResult[]): CoverageLayerNotTe
   return notTested;
 }
 
+/** Step names whose navigation degraded (StepCoverage.degraded) — Platform Attribution & Determinism PRD B-W3. */
+export function degradedStepNames(steps: StepCoverage[]): string[] {
+  return steps.filter((s) => s.degraded === true).map((s) => s.step);
+}
+
 export function buildCoverageSummary(auditData: AuditData, results: ValidationResult[]): ReportCoverage | undefined {
   const steps = auditData.step_coverage;
   if (!steps || steps.length === 0) return undefined;
 
   const rulesNotTested = results.filter(isCoverageSkip).length;
+  const degradedSteps = degradedStepNames(steps);
 
   return {
     pages_requested: steps.length,
@@ -110,5 +116,7 @@ export function buildCoverageSummary(auditData: AuditData, results: ValidationRe
     layers_not_tested: computeLayersNotTested(results),
     rules_tested: results.length - rulesNotTested,
     rules_not_tested: rulesNotTested,
+    partial: degradedSteps.length > 0,
+    degraded_steps: degradedSteps,
   };
 }

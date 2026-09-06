@@ -21,12 +21,17 @@ export function ExecutiveSummary({ report }: Props) {
   // renders nothing here — per CLAUDE.md rule 12, never fabricate a coverage
   // claim for an AuditData that never captured it.
   const limitedCoverage = coverage && coverage.pages_distinct < coverage.pages_requested;
+  // Platform Attribution & Determinism PRD B-W3 — a scan can reach every
+  // requested page yet still not have fully settled on one of them; that's
+  // a distinct kind of limitation from missing pages, so it's shown even
+  // when limitedCoverage is false.
+  const partialSettle = coverage?.partial ?? false;
 
   return (
     <div className="space-y-6">
       <p className="text-sm font-medium text-muted-foreground">{report.website_url}</p>
 
-      {limitedCoverage && coverage && (
+      {(limitedCoverage || partialSettle) && coverage && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4">
           <p className="text-sm font-semibold text-amber-900">Limited scan coverage</p>
           <p className="mt-1 text-sm leading-relaxed text-amber-800">
@@ -35,6 +40,12 @@ export function ExecutiveSummary({ report }: Props) {
               <>
                 {' '}
                 {coverage.layers_not_tested.map((l) => l.label).join(', ')} could not be tested because no conversion surface was reached — {coverage.rules_not_tested} check{coverage.rules_not_tested !== 1 ? 's' : ''} {coverage.rules_not_tested !== 1 ? 'were' : 'was'} skipped rather than scored as failing.
+              </>
+            )}
+            {partialSettle && (
+              <>
+                {' '}
+                This scan didn&apos;t fully settle on {coverage.degraded_steps.length} step{coverage.degraded_steps.length !== 1 ? 's' : ''} ({coverage.degraded_steps.join(', ')}) — treat any &quot;not observed&quot; result tied to those steps as inconclusive rather than a confirmed pass or fail.
               </>
             )}
           </p>

@@ -418,6 +418,8 @@ describe('generatePDF — scan coverage section', () => {
       ],
       rules_tested: 41,
       rules_not_tested: 42,
+      partial: false,
+      degraded_steps: [],
     };
     const buf = await generatePDF(report);
     expect(isPdfBuffer(buf)).toBe(true);
@@ -437,6 +439,8 @@ describe('generatePDF — scan coverage section', () => {
       layers_not_tested: [],
       rules_tested: 83,
       rules_not_tested: 0,
+      partial: false,
+      degraded_steps: [],
     };
     const buf = await generatePDF(report);
     expect(isPdfBuffer(buf)).toBe(true);
@@ -457,10 +461,58 @@ describe('generatePDF — scan coverage section', () => {
           layers_not_tested: [{ layer: 'event_firing', label: 'Event Firing', reason: 'x' }],
           rules_tested: 41,
           rules_not_tested: 42,
+          partial: false,
+          degraded_steps: [],
         },
       },
     }));
     expect(withCoverage.byteLength).toBeGreaterThan(withoutCoverage.byteLength);
+  });
+
+  // Platform Attribution & Determinism PRD B-W3 — surfaced the same way
+  // layers_not_tested already is. PDFKit compresses content streams by
+  // default, so this asserts via buffer size (same technique the "produces
+  // a larger buffer" test above uses) rather than searching for literal
+  // text in the raw bytes.
+  it('renders a partial-run caveat when a step degraded, producing a larger buffer than an otherwise-identical settled run', async () => {
+    const baseCoverage = {
+      pages_requested: 2,
+      pages_distinct: 2,
+      steps: [
+        { step: 'landing', requested_url: 'https://example.com', source: 'user_supplied' as const, distinct_from_landing: false, navigation_success: true, settle_outcome: 'settled' as const, degraded: false },
+        {
+          step: 'confirmation', requested_url: 'https://example.com/order-confirmed', source: 'user_supplied' as const,
+          distinct_from_landing: true, navigation_success: true,
+        },
+      ],
+      layers_not_tested: [],
+      rules_tested: 83,
+      rules_not_tested: 0,
+    };
+
+    const settled = await generatePDF({
+      ...makeMinimalReport(),
+      executive_summary: {
+        ...makeMinimalReport().executive_summary,
+        coverage: { ...baseCoverage, partial: false, degraded_steps: [] },
+      },
+    });
+    const partial = await generatePDF({
+      ...makeMinimalReport(),
+      executive_summary: {
+        ...makeMinimalReport().executive_summary,
+        coverage: {
+          ...baseCoverage,
+          steps: [baseCoverage.steps[0], { ...baseCoverage.steps[1], settle_outcome: 'quiet_period_cap_reached' as const, degraded: true }],
+          partial: true,
+          degraded_steps: ['confirmation'],
+        },
+      },
+    });
+
+    expect(isPdfBuffer(settled)).toBe(true);
+    expect(isPdfBuffer(partial)).toBe(true);
+    expect(partial.byteLength).toBeGreaterThan(settled.byteLength);
   });
 });
 

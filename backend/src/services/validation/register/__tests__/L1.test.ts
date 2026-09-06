@@ -331,18 +331,41 @@ describe('NO_TAG_LOAD_ERRORS (L1.16)', () => {
     expect(NO_TAG_LOAD_ERRORS.test(auditData).status).toBe('pass');
   });
 
-  it('fails when a tracked request failed at the network level', () => {
+  // Platform Attribution & Determinism PRD B-W5 — a bare network-level
+  // failure (no HTTP status: DNS error, connection refused, blocked by an
+  // ad blocker/CSP) is plausibly caused by the scan environment itself, not
+  // a broken endpoint, so it no longer counts as a violation on its own —
+  // the same site returned 13/39/10 such failures across three unchanged-
+  // site scans, which a HIGH-severity client-facing check can't carry.
+  it('does not fail on a bare network-level failure alone, but surfaces it as a caveat', () => {
     const auditData = makeAuditData({
       networkRequests: [makeRequest({ url: 'https://www.facebook.com/tr', failed: true })],
     });
-    expect(NO_TAG_LOAD_ERRORS.test(auditData).status).toBe('fail');
+    const result = NO_TAG_LOAD_ERRORS.test(auditData);
+    expect(result.status).toBe('pass');
+    expect(result.technical_details.evidence.some((e) => e.startsWith('Caveat:') && e.includes('facebook.com/tr'))).toBe(true);
   });
 
   it('fails when a tracked request returned a 4xx/5xx status', () => {
     const auditData = makeAuditData({
       networkRequests: [makeRequest({ url: 'https://bat.bing.com/action/0', statusCode: 503 })],
     });
-    expect(NO_TAG_LOAD_ERRORS.test(auditData).status).toBe('fail');
+    const result = NO_TAG_LOAD_ERRORS.test(auditData);
+    expect(result.status).toBe('fail');
+    expect(result.technical_details.evidence).toEqual(['https://bat.bing.com/action/0 (step: landing, status 503)']);
+  });
+
+  it('fails on the confirmed 4xx/5xx while still surfacing an unrelated network failure as a non-counted caveat', () => {
+    const auditData = makeAuditData({
+      networkRequests: [
+        makeRequest({ url: 'https://bat.bing.com/action/0', statusCode: 503 }),
+        makeRequest({ url: 'https://www.facebook.com/tr', failed: true }),
+      ],
+    });
+    const result = NO_TAG_LOAD_ERRORS.test(auditData);
+    expect(result.status).toBe('fail');
+    expect(result.technical_details.found).toBe('1 tag request(s) returned an HTTP 4xx/5xx response');
+    expect(result.technical_details.evidence.some((e) => e.startsWith('Caveat:'))).toBe(true);
   });
 });
 

@@ -154,6 +154,37 @@ describe('buildCoverageSummary', () => {
     const results: ValidationResult[] = [makeResult({ rule_id: 'A', status: 'pass' }), makeResult({ rule_id: 'B', status: 'fail' })];
     expect(buildCoverageSummary(auditData, results)?.layers_not_tested).toEqual([]);
   });
+
+  // ── partial / degraded_steps (Platform Attribution & Determinism PRD B-W3) ──
+
+  it('reports partial: false and no degraded_steps when every step settled', () => {
+    const auditData = makeAuditData({
+      step_coverage: [makeStep({ degraded: false, settle_outcome: 'settled' }), makeStep({ step: 'product', degraded: false, settle_outcome: 'settled' })],
+    });
+    const coverage = buildCoverageSummary(auditData, []);
+    expect(coverage?.partial).toBe(false);
+    expect(coverage?.degraded_steps).toEqual([]);
+  });
+
+  it('reports partial: true and names every degraded step when at least one step degraded', () => {
+    const auditData = makeAuditData({
+      step_coverage: [
+        makeStep({ step: 'landing', degraded: false, settle_outcome: 'settled' }),
+        makeStep({ step: 'product', degraded: true, settle_outcome: 'quiet_period_cap_reached' }),
+        makeStep({ step: 'checkout', degraded: true, settle_outcome: 'navigation_failed', navigation_success: false }),
+      ],
+    });
+    const coverage = buildCoverageSummary(auditData, []);
+    expect(coverage?.partial).toBe(true);
+    expect(coverage?.degraded_steps).toEqual(['product', 'checkout']);
+  });
+
+  it('treats a StepCoverage with no degraded field (captured before this field existed) as not degraded', () => {
+    const auditData = makeAuditData({ step_coverage: [makeStep()] }); // no degraded/settle_outcome at all
+    const coverage = buildCoverageSummary(auditData, []);
+    expect(coverage?.partial).toBe(false);
+    expect(coverage?.degraded_steps).toEqual([]);
+  });
 });
 
 // ── computeCoverageFingerprint (§9) ─────────────────────────────────────────
