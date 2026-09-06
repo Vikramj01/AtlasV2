@@ -25,15 +25,27 @@ const SYNTHETIC_PARAMS = [
 ] as const;
 
 /**
- * 'exact'       — found under the expected key name, exact value match.
- * 'value_match' — found under a *different* key name (or one level inside
- *                 a JSON-encoded string value), but the value itself
- *                 matches exactly. Still counts as captured (§8.4) — a
- *                 site storing gclid as `_atlas_gclid`, or bundling several
- *                 IDs into one JSON blob, has still captured it.
- * 'not_found'   — the synthetic value never showed up anywhere.
+ * 'exact'           — found under the expected key name, exact value match.
+ * 'value_match'     — found under a *different* key name (or one level
+ *                     inside a JSON-encoded string value), but the value
+ *                     itself matches exactly. Still counts as captured
+ *                     (§8.4) — a site storing gclid as `_atlas_gclid`, or
+ *                     bundling several IDs into one JSON blob, has still
+ *                     captured it.
+ * 'delimited_match' — the target value appears as one delimited segment
+ *                     inside a larger stored string, rather than as the
+ *                     whole value — the shape Google's and Meta's own
+ *                     conversion-linker cookies use (`_gcl_aw` stores
+ *                     `GCL.<timestamp>.<gclid>`, `_fbc` stores
+ *                     `fb.1.<timestamp>.<fbclid>`). See
+ *                     findDelimitedSubstringMatch() below (Report
+ *                     Correctness Programme PRD Part A).
+ * 'not_found'       — the synthetic value never showed up anywhere.
  */
-export type CaptureTier = 'exact' | 'value_match' | 'not_found';
+export type CaptureTier = 'exact' | 'value_match' | 'delimited_match' | 'not_found';
+
+/** Human-readable name for a store searched by findDelimitedSubstringMatch(), used in evidence lines. */
+type StoreLabel = 'localStorage' | 'sessionStorage' | 'a cookie' | 'a dataLayer event';
 
 interface CaptureCheck {
   inUrl: boolean;
@@ -42,8 +54,13 @@ interface CaptureCheck {
   storageHit: boolean;
   cookieHit: boolean;
   dataLayerHit: boolean;
-  /** The actual key name the value was found under — only set for tier 'value_match', where it differs from paramName. */
+  /** Tier 'delimited_match' only — whether the match came from sessionStorage specifically (storageHit/cookieHit/dataLayerHit above don't cover it). */
+  sessionStorageHit?: boolean;
+  /** The actual key name the value was found under — set for tier 'value_match' (differs from paramName) and tier 'delimited_match'. */
   matchedKey?: string;
+  /** Tier 'delimited_match' only — which store the match came from, and the full raw value the target was found inside (e.g. "GCL.1788674025.<value>"). */
+  matchedContainer?: StoreLabel;
+  matchedRawValue?: string;
 }
 
 /**
@@ -82,6 +99,63 @@ function findValueInDataLayerUnderDifferentKey(events: DataLayerEvent[], expecte
       if (String(value) === target) return key;
     }
   }
+  return undefined;
+}
+
+/**
+ * A target value is "comfortably" long enough that a delimited-substring
+ * match can't be a coincidence (Report Correctness Programme PRD Part A) —
+ * makeSyntheticIds() (journeySimulator.ts) generates values like
+ * `test_gclid_<13-digit-timestamp>`, always well past this. Guards the
+ * degenerate case of a short injected value (e.g. a hand-built test
+ * fixture's "g1") matching as a substring of some unrelated stored string.
+ */
+const MIN_DELIMITED_MATCH_TARGET_LENGTH = 10;
+
+/** Scans a flat key→value record for a value that *contains* target as a substring — the shape a conversion-linker cookie stores a click ID in (e.g. `_gcl_aw` = "GCL.<timestamp>.<gclid>"). */
+function findValueAsSubstring(record: Record<string, string> | undefined, target: string): { key: string; rawValue: string } | undefined {
+  if (!record) return undefined;
+  for (const [key, value] of Object.entries(record)) {
+    if (value.includes(target)) return { key, rawValue: value };
+  }
+  return undefined;
+}
+
+/** Same idea as findValueAsSubstring, but over dataLayer's array-of-event shape. */
+function findValueAsSubstringInDataLayer(events: DataLayerEvent[], target: string): { key: string; rawValue: string } | undefined {
+  for (const event of events) {
+    for (const [key, value] of Object.entries(event)) {
+      const str = String(value);
+      if (str.includes(target)) return { key, rawValue: str };
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Tier 3 (Report Correctness Programme PRD Part A) — searches every stored
+ * value in localStorage, sessionStorage, cookies and the dataLayer for the
+ * synthetic target as a delimited substring, in that order. Only called
+ * once tiers 1 and 2 (exact key, exact value under a different key) have
+ * both already missed, and only for a target past
+ * MIN_DELIMITED_MATCH_TARGET_LENGTH.
+ */
+function findDelimitedSubstringMatch(
+  auditData: AuditData,
+  target: string,
+): { container: StoreLabel; key: string; rawValue: string } | undefined {
+  const storageHit = findValueAsSubstring(auditData.storage, target);
+  if (storageHit) return { container: 'localStorage', ...storageHit };
+
+  const sessionHit = findValueAsSubstring(auditData.sessionStorage, target);
+  if (sessionHit) return { container: 'sessionStorage', ...sessionHit };
+
+  const cookieHit = findValueAsSubstring(auditData.cookies, target);
+  if (cookieHit) return { container: 'a cookie', ...cookieHit };
+
+  const dataLayerHit = findValueAsSubstringInDataLayer(auditData.dataLayer, target);
+  if (dataLayerHit) return { container: 'a dataLayer event', ...dataLayerHit };
+
   return undefined;
 }
 
@@ -144,7 +218,29 @@ function checkParamCapture(auditData: AuditData, paramName: string): CaptureChec
     };
   }
 
-  // Tier 3 — not found anywhere
+  // Tier 3 — value appears as a delimited segment inside a larger stored
+  // string (e.g. Google's _gcl_aw="GCL.<ts>.<gclid>", Meta's
+  // _fbc="fb.1.<ts>.<fbclid>") — guarded by a minimum target length so this
+  // can't degenerate into a coincidental substring match on a short value.
+  if (sentValue.length >= MIN_DELIMITED_MATCH_TARGET_LENGTH) {
+    const delimited = findDelimitedSubstringMatch(auditData, sentValue);
+    if (delimited) {
+      return {
+        inUrl: true,
+        captured: true,
+        tier: 'delimited_match',
+        storageHit: delimited.container === 'localStorage',
+        cookieHit: delimited.container === 'a cookie',
+        dataLayerHit: delimited.container === 'a dataLayer event',
+        sessionStorageHit: delimited.container === 'sessionStorage',
+        matchedKey: delimited.key,
+        matchedContainer: delimited.container,
+        matchedRawValue: delimited.rawValue,
+      };
+    }
+  }
+
+  // Tier 4 — not found anywhere
   return { inUrl: true, captured: false, tier: 'not_found', storageHit: false, cookieHit: false, dataLayerHit: false };
 }
 
@@ -158,6 +254,12 @@ function captureEvidence(paramName: string, check: CaptureCheck): string[] {
   if (check.tier === 'value_match' && check.matchedKey) {
     const mechanism = check.storageHit ? 'localStorage' : check.cookieHit ? 'a cookie' : 'a dataLayer event';
     lines.push(`Value found under a different key ("${check.matchedKey}") in ${mechanism} — captured, just not under the expected name`);
+  }
+  if (check.tier === 'delimited_match' && check.matchedKey && check.matchedContainer && check.matchedRawValue) {
+    lines.push(`Found in ${check.matchedContainer} \`${check.matchedKey}\` as \`${check.matchedRawValue}\` — value embedded as a delimited segment inside a larger stored string (the shape Google's/Meta's own conversion-linker cookies use)`);
+  }
+  if (check.tier === 'not_found' && check.inUrl) {
+    lines.push('Searched localStorage, sessionStorage, cookies, and the dataLayer (exact key, value under a different key, and as a delimited substring) — not found in any of them');
   }
   return lines;
 }
@@ -200,7 +302,9 @@ function makeClickIdCaptureRule(opts: {
             : result.captured
               ? result.tier === 'exact'
                 ? `${opts.paramName} captured (${[result.storageHit && 'localStorage', result.cookieHit && 'cookie', result.dataLayerHit && 'dataLayer'].filter(Boolean).join(', ')})`
-                : `${opts.paramName} captured under a different key ("${result.matchedKey}") — the value matches exactly`
+                : result.tier === 'value_match'
+                  ? `${opts.paramName} captured under a different key ("${result.matchedKey}") — the value matches exactly`
+                  : `${opts.paramName} captured inside ${result.matchedContainer} "${result.matchedKey}" as "${result.matchedRawValue}" — found as a delimited segment inside a larger stored value`
               : `${opts.paramName} present in the landing URL but never read into storage, a cookie, or dataLayer`,
           expected: opts.why,
           evidence: captureEvidence(opts.paramName, result),
