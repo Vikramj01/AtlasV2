@@ -156,6 +156,19 @@ export interface ValidationRule {
    * (that's the rule's ideal-state text, not evidence).
    */
   remediation: string | ((result: ValidationResult) => string);
+  /**
+   * Report Honesty PRD Part B — a question for the client, emitted
+   * alongside a `fail`/`warning` result and collected into the report's
+   * Open Questions section, for a finding that isn't really a defect: a
+   * configuration whose intent only the client can know (a second GTM
+   * container mid-migration, an undeclared tag from a channel ViMi wasn't
+   * told about). Interpolates observed evidence the same way `remediation`
+   * does — a plain string when the question doesn't vary by evidence, a
+   * function of the result when it names something specific (a container
+   * ID, a platform). Optional: most rules describe a real defect and have
+   * nothing to ask.
+   */
+  client_question?: string | ((result: ValidationResult) => string);
   test(auditData: AuditData): ValidationResult;
 }
 
@@ -700,6 +713,19 @@ export interface ValidationResult {
    * disaggregate) — consumers fall back to `status` in that case.
    */
   platform_outcomes?: Partial<Record<DeclaredPlatform, RuleStatus>>;
+  /**
+   * Report Honesty PRD Part A — disclosure, not de-rating: never read by
+   * scoring.ts, never changes severity or counts. 'confirm' means this
+   * result depends (via the rule's `requires`) on a step whose provenance
+   * wasn't verified — StepUrlSource 'heuristic' ("path guess"), or the step
+   * itself degraded (StepCoverage.degraded — settle capped, navigation
+   * failed, or a waitFor timed out). 'high' otherwise, including for any
+   * rule with no step-level `requires` at all — there's no depended-on step
+   * to distrust, so this is never silently absent (§A2/W1). Set by
+   * engine.ts's runRegister() only on a result that actually ran (not on a
+   * 'skipped' result, which the technical appendix excludes anyway).
+   */
+  confidence?: 'high' | 'confirm';
 }
 
 // ─── Scores ───────────────────────────────────────────────────────────────────
@@ -858,6 +884,18 @@ export interface ReportJSON {
    * section only renders when this is present.
    */
   could_not_be_assessed?: UnassessableFinding[];
+  /**
+   * Report Honesty PRD Part B — configurations whose intent only the client
+   * can answer, printed as questions rather than caveated as findings (a
+   * second GTM container could be a live migration; an undeclared tag could
+   * be a channel ViMi wasn't told about). Built from every fail/warning
+   * result whose rule carries `client_question`, plus the bespoke
+   * unverified-conversion-surface question (emitted whenever that step's
+   * StepCoverage.source is 'heuristic'). Omitted (not an empty array) when
+   * there's nothing to ask — the section is dropped entirely rather than
+   * rendering an empty heading, per PRD §B3.
+   */
+  open_questions?: string[];
   /**
    * Set by the pre-render placeholder guard (PRD "Signal Health Report"
    * Issue 4) when a narrative field contains literal placeholder-shaped

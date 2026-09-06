@@ -43,6 +43,27 @@ function v2Remediation(result: ValidationResult): string {
   return typeof rule.remediation === 'function' ? rule.remediation(result) : rule.remediation;
 }
 
+/**
+ * Every rule-authored client_question for this run's fail/warning results
+ * (Report Honesty PRD Part B) — collected into the report's Open Questions
+ * section. Only a v2-originated result can carry one (client_question lives
+ * on the ValidationRule, same isV2Result disambiguation v2Remediation()
+ * uses); a rule without client_question contributes nothing, which is the
+ * common case — most rules describe a real defect, not an open question.
+ * Order follows `results`, so questions read in the same order their
+ * findings appear in the technical appendix.
+ */
+export function collectClientQuestions(results: ValidationResult[]): string[] {
+  return results
+    .filter((r) => (r.status === 'fail' || r.status === 'warning') && isV2Result(r))
+    .map((r) => {
+      const rule = REGISTER_RULE_BY_RULE_ID.get(r.rule_id);
+      if (!rule?.client_question) return undefined;
+      return typeof rule.client_question === 'function' ? rule.client_question(r) : rule.client_question;
+    })
+    .filter((q): q is string => !!q);
+}
+
 interface RuleInterpretation {
   rule_id: string;
   /** Purpose-written, one-sentence hook for the marketer-facing issue card — picks the most business-relevant clause from business_impact rather than mechanically using its first sentence. */

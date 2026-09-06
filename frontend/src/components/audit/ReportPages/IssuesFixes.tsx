@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { SeverityBadge } from '@/components/common/SeverityBadge';
+import { ConfidenceBadge } from '@/components/common/ConfidenceBadge';
 import { InfoTooltip } from '@/components/common/InfoTooltip';
 import { TOOLTIPS } from '@/lib/ui-copy';
 import type { ReportJSON, ReportIssue, Severity, ValidationLayerFilter } from '@/types/audit';
@@ -81,7 +82,7 @@ const LAYER_BADGE: Partial<Record<ValidationLayerFilter, { label: string; classN
   implementation_drift: { label: 'Drift',      className: 'bg-amber-100 text-amber-700' },
 };
 
-function IssueCard({ issue }: { issue: ReportIssue }) {
+function IssueCard({ issue, confidence }: { issue: ReportIssue; confidence?: 'high' | 'confirm' }) {
   const [open, setOpen] = useState(issue.severity === 'critical' || issue.severity === 'high');
   const layerBadge = issue.validation_layer ? LAYER_BADGE[issue.validation_layer] : undefined;
 
@@ -95,6 +96,7 @@ function IssueCard({ issue }: { issue: ReportIssue }) {
           <p className="text-sm font-semibold leading-snug">{issue.problem}</p>
           <div className="flex flex-wrap items-center gap-2">
             <SeverityBadge severity={issue.severity} size="sm" />
+            <ConfidenceBadge confidence={confidence} />
             {layerBadge && (
               <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-semibold', layerBadge.className)}>
                 {layerBadge.label}
@@ -150,6 +152,12 @@ interface Props {
 export function IssuesFixes({ report }: Props) {
   const all = [...report.issues].sort(
     (a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity),
+  );
+
+  // Confidence lives on ValidationResult, not ReportIssue — look it up by
+  // rule_id the same way TechnicalAppendix reads it directly off each row.
+  const confidenceByRuleId = new Map(
+    report.technical_appendix.validation_results.map((r) => [r.rule_id, r.confidence]),
   );
 
   const availableLayers = new Set(
@@ -214,7 +222,7 @@ export function IssuesFixes({ report }: Props) {
           <p className="text-xs font-bold uppercase tracking-widest text-red-600">
             ⚠ Critical — Fix immediately
           </p>
-          {critical.map((issue) => <IssueCard key={issue.rule_id} issue={issue} />)}
+          {critical.map((issue) => <IssueCard key={issue.rule_id} issue={issue} confidence={confidenceByRuleId.get(issue.rule_id)} />)}
         </div>
       )}
 
@@ -225,7 +233,7 @@ export function IssuesFixes({ report }: Props) {
               Other issues
             </p>
           )}
-          {rest.map((issue) => <IssueCard key={issue.rule_id} issue={issue} />)}
+          {rest.map((issue) => <IssueCard key={issue.rule_id} issue={issue} confidence={confidenceByRuleId.get(issue.rule_id)} />)}
         </div>
       )}
     </div>

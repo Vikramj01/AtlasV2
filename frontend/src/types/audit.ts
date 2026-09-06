@@ -190,6 +190,14 @@ export interface ValidationResult {
   };
   /** Per-platform disaggregation for a rule scoped to more than one platform — see backend ValidationResult.platform_outcomes. */
   platform_outcomes?: Partial<Record<DeclaredPlatform, RuleStatus>>;
+  /**
+   * Report Honesty PRD Part A — disclosure, not de-rating: never affects
+   * scoring, severity or counts. 'confirm' means this result rests on a
+   * step whose provenance wasn't verified (a "path guess") or that didn't
+   * fully settle; 'high' otherwise, including every rule with nothing to
+   * distrust — see backend ValidationResult.confidence.
+   */
+  confidence?: 'high' | 'confirm';
 }
 
 export interface AuditComparison {
@@ -278,6 +286,13 @@ export interface ReportJSON {
     flagged_fields: string[];
   };
   comparison?: AuditComparison | null;
+  /**
+   * Report Honesty PRD Part B — configurations whose intent only the client
+   * can answer, printed as questions rather than caveated as findings.
+   * Omitted (not an empty array) when there's nothing to ask — see backend
+   * ReportJSON.open_questions.
+   */
+  open_questions?: string[];
 }
 
 // API response shapes

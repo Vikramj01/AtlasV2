@@ -4,11 +4,13 @@ import { SECTION_LABELS } from '@/lib/ui-copy';
 import { useReport } from '@/hooks/useReport';
 import { ReportNav } from '@/components/audit/ReportNav';
 import { ExecutiveSummary } from '@/components/audit/ReportPages/ExecutiveSummary';
+import { OpenQuestions } from '@/components/audit/ReportPages/OpenQuestions';
 import { JourneyBreakdown } from '@/components/audit/ReportPages/JourneyBreakdown';
 import { PlatformImpact } from '@/components/audit/ReportPages/PlatformImpact';
 import { IssuesFixes } from '@/components/audit/ReportPages/IssuesFixes';
 import { ContentQualityWarningBanner } from '@/components/audit/ContentQualityWarningBanner';
 import { SiteSetup } from '@/components/audit/ReportPages/SiteSetup';
+import { HowToReadThisReport } from '@/components/audit/ReportPages/HowToReadThisReport';
 import { TechnicalAppendix } from '@/components/audit/ReportPages/TechnicalAppendix';
 import { auditApi } from '@/lib/api/auditApi';
 import { slackApi } from '@/lib/api/slackApi';
@@ -21,6 +23,25 @@ export function ReportPage() {
   const { report, loading, error } = useReport(auditId);
   const [currentPage, setCurrentPage] = useState(1);
   const [exporting, setExporting] = useState(false);
+
+  // Open Questions (Report Honesty PRD §B3) only gets a tab when this run
+  // actually raised one — an empty tab whose page just says "nothing to
+  // ask" is worse than not showing the tab at all. Ids are assigned by
+  // position after filtering, not hardcoded, so this conditional section
+  // never has to be kept in sync with a second numbering elsewhere.
+  const sections = report
+    ? [
+        { label: 'Executive Summary', show: true, render: () => <ExecutiveSummary report={report} /> },
+        { label: 'Open Questions', show: (report.open_questions?.length ?? 0) > 0, render: () => <OpenQuestions report={report} /> },
+        { label: 'Journey Breakdown', show: true, render: () => <JourneyBreakdown report={report} /> },
+        { label: 'Platform Impact', show: true, render: () => <PlatformImpact report={report} /> },
+        { label: 'Issues & Fixes', show: true, render: () => <IssuesFixes report={report} /> },
+        { label: 'Site Setup', show: true, render: () => <SiteSetup report={report} /> },
+        { label: 'How to Read This Report', show: true, render: () => <HowToReadThisReport /> },
+        { label: 'Technical Appendix', show: true, render: () => <TechnicalAppendix report={report} /> },
+      ]
+    : [];
+  const pages = sections.filter((s) => s.show).map((s, i) => ({ id: i + 1, label: s.label, render: s.render }));
 
   const handleExport = async (format: 'pdf' | 'json' | 'both', label: string) => {
     if (!auditId) return;
@@ -106,7 +127,7 @@ export function ReportPage() {
         </div>
 
         {/* Page navigation */}
-        <ReportNav currentPage={currentPage} onPageChange={setCurrentPage} />
+        <ReportNav pages={pages} currentPage={currentPage} onPageChange={setCurrentPage} />
       </div>
 
       {/* Page content */}
@@ -116,12 +137,7 @@ export function ReportPage() {
             <ContentQualityWarningBanner warning={report.content_quality_warning} />
           </div>
         )}
-        {currentPage === 1 && <ExecutiveSummary report={report} />}
-        {currentPage === 2 && <JourneyBreakdown report={report} />}
-        {currentPage === 3 && <PlatformImpact report={report} />}
-        {currentPage === 4 && <IssuesFixes report={report} />}
-        {currentPage === 5 && <SiteSetup report={report} />}
-        {currentPage === 6 && <TechnicalAppendix report={report} />}
+        {pages.find((p) => p.id === currentPage)?.render()}
       </div>
     </div>
   );

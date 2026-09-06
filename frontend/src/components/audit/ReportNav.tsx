@@ -1,28 +1,20 @@
 import { cn } from '@/lib/utils';
 
-interface Page {
+export interface ReportNavPage {
   id: number;
   label: string;
 }
 
-const PAGES: Page[] = [
-  { id: 1, label: 'Executive Summary' },
-  { id: 2, label: 'Journey Breakdown' },
-  { id: 3, label: 'Platform Impact' },
-  { id: 4, label: 'Issues & Fixes' },
-  { id: 5, label: 'Site Setup' },
-  { id: 6, label: 'Technical Appendix' },
-];
-
 interface Props {
+  pages: ReportNavPage[];
   currentPage: number;
   onPageChange: (page: number) => void;
 }
 
-export function ReportNav({ currentPage, onPageChange }: Props) {
+export function ReportNav({ pages, currentPage, onPageChange }: Props) {
   return (
     <nav className="flex flex-wrap gap-1 border-b bg-background px-6 pt-4">
-      {PAGES.map((p) => (
+      {pages.map((p) => (
         <button
           key={p.id}
           onClick={() => onPageChange(p.id)}

@@ -708,3 +708,75 @@ describe('generatePDF — long remediation copy', () => {
     expect(isPdfBuffer(buf)).toBe(true);
   });
 });
+
+// ── Report Honesty PRD — Open Questions, confidence, How to Read ─────────────
+
+describe('generatePDF — Open Questions section', () => {
+  it('renders with no open_questions (section omitted)', async () => {
+    const buf = await generatePDF(makeMinimalReport());
+    expect(isPdfBuffer(buf)).toBe(true);
+  });
+
+  it('renders a larger buffer when open_questions are present', async () => {
+    const without = await generatePDF(makeMinimalReport());
+    const withQuestions = await generatePDF(makeMinimalReport({
+      open_questions: [
+        'Two GTM containers are loading (GTM-AAA111, GTM-BBB222). Is one a migration in progress, or does a second team own it?',
+      ],
+    }));
+    expect(isPdfBuffer(withQuestions)).toBe(true);
+    expect(withQuestions.byteLength).toBeGreaterThan(without.byteLength);
+  });
+
+  it('renders with several open_questions without crashing', async () => {
+    const buf = await generatePDF(makeMinimalReport({
+      open_questions: [
+        'Two GTM containers are loading (GTM-AAA111, GTM-BBB222). Is one a migration in progress, or does a second team own it?',
+        'We found no Google Ads (AW-) loader on the site. Does Google Ads run through a different property, a server-side container we could not see from a client-side crawl, or is it not yet implemented?',
+        'We could not confirm your order confirmation page, so checks that depend on it are inconclusive. Can you supply its URL, or a test-order route we can use?',
+      ],
+    }));
+    expect(isPdfBuffer(buf)).toBe(true);
+  });
+});
+
+describe('generatePDF — How to Read This Report section', () => {
+  it('always renders the static section, regardless of report content', async () => {
+    const buf = await generatePDF(makeMinimalReport());
+    expect(isPdfBuffer(buf)).toBe(true);
+  });
+});
+
+describe('generatePDF — confidence chip and appendix column', () => {
+  it("renders a larger buffer for an action item whose result carries confidence: 'confirm'", async () => {
+    const issue = makeIssue({ rule_id: 'CONFIRM_RULE' });
+    const highConfidenceResult: ValidationResult = { ...makeValidationResult('CONFIRM_RULE', 'fail'), confidence: 'high' };
+    const confirmResult: ValidationResult = { ...makeValidationResult('CONFIRM_RULE', 'fail'), confidence: 'confirm' };
+
+    const highBuf = await generatePDF(makeMinimalReport({
+      issues: [issue],
+      technical_appendix: { validation_results: [highConfidenceResult], raw_network_requests: [], raw_datalayer_events: [] },
+    }));
+    const confirmBuf = await generatePDF(makeMinimalReport({
+      issues: [issue],
+      technical_appendix: { validation_results: [confirmResult], raw_network_requests: [], raw_datalayer_events: [] },
+    }));
+
+    expect(isPdfBuffer(highBuf)).toBe(true);
+    expect(isPdfBuffer(confirmBuf)).toBe(true);
+    expect(confirmBuf.byteLength).toBeGreaterThan(highBuf.byteLength);
+  });
+
+  it('renders the technical appendix table for a mix of confidence values without crashing', async () => {
+    const results: ValidationResult[] = [
+      makeValidationResult('A', 'pass'),
+      { ...makeValidationResult('B', 'fail'), confidence: 'high' },
+      { ...makeValidationResult('C', 'fail'), confidence: 'confirm' },
+      { ...makeValidationResult('D', 'warning') }, // no confidence set (v1-originated) — must not throw
+    ];
+    const buf = await generatePDF(makeMinimalReport({
+      technical_appendix: { validation_results: results, raw_network_requests: [], raw_datalayer_events: [] },
+    }));
+    expect(isPdfBuffer(buf)).toBe(true);
+  });
+});

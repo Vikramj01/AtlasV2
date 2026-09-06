@@ -503,6 +503,26 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
     doc.fillColor(C.midText).fontSize(10).font('Helvetica')
       .text(business_summary, LEFT, doc.y, { width: CONTENT_W });
 
+    // Open Questions (Report Honesty PRD §B3) — immediately after Business
+    // Summary, before Journey Breakdown, so a reader who never reaches the
+    // appendix still sees Atlas asking rather than pronouncing. Omitted
+    // entirely (not an empty heading) when this run raised nothing to ask.
+    if (report.open_questions && report.open_questions.length > 0) {
+      doc.moveDown(0.8);
+      sectionHeading('Open Questions');
+      doc.fillColor(C.midText).fontSize(9).font('Helvetica')
+        .text(
+          'These are configurations whose intent only you can confirm — not defects, but worth a quick answer before anyone acts on the findings below.',
+          LEFT, doc.y, { width: CONTENT_W },
+        );
+      doc.moveDown(0.3);
+      for (const question of report.open_questions) {
+        doc.fillColor(C.darkText).fontSize(9.5).font('Helvetica')
+          .text(`•  ${question}`, LEFT + 4, doc.y, { width: CONTENT_W - 8 });
+        doc.moveDown(0.2);
+      }
+    }
+
     // Quick rule stats
     doc.moveDown(0.8);
     sectionHeading('Rule Overview');
@@ -535,78 +555,6 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
 
     doc.addPage();
     pageHeader('Journey Breakdown');
-
-    // ── Funnel pipeline diagram (PRD §3.4/W7) ────────────────────────────
-    // A v2 report repurposes journey_stages to mean "layers" (up to 13 —
-    // see register/reporting.ts), where the original fixed-width truncated
-    // label collapsed every stage to an ellipsis. Past a threshold, labels
-    // rotate below their box instead of trying to fit horizontally — more
-    // legible than an ellipsis, and simpler than a separate legend to keep
-    // in sync with box colors.
-    const stages = report.journey_stages;
-    if (stages.length > 0) {
-      const PIPE_H = 32;
-      const ARROW_W = 14;
-      const stageCount = stages.length;
-      const ROTATE_THRESHOLD = 6;
-      const useRotatedLabels = stageCount > ROTATE_THRESHOLD;
-      const totalArrows = (stageCount - 1) * ARROW_W;
-      const boxW = Math.floor((CONTENT_W - totalArrows) / stageCount);
-      const pipeY = doc.y + 4;
-
-      stages.forEach((s, i) => {
-        const bx = LEFT + i * (boxW + ARROW_W);
-        const sc = statusColor(s.status);
-
-        // Stage box
-        doc.fillColor(sc).roundedRect(bx, pipeY, boxW, PIPE_H, 4).fill();
-
-        // Status icon
-        const icon = s.status === 'pass' ? '✓' : s.status === 'warning' ? '!' : '✗';
-        doc.fillColor(C.white).fontSize(9).font('Helvetica-Bold')
-          .text(icon, bx + 6, pipeY + 5, { width: 14 });
-
-        // Inline box label only when there's room to show it meaningfully —
-        // past the rotation threshold, the rotated label below carries the
-        // name instead and the box just needs to read via color + icon.
-        if (!useRotatedLabels) {
-          const maxChars = Math.floor((boxW - 22) / 5.2);
-          const label = s.stage.length > maxChars ? s.stage.slice(0, maxChars - 1) + '…' : s.stage;
-          doc.fillColor(C.white).fontSize(8.5).font('Helvetica-Bold')
-            .text(label, bx + 22, pipeY + 9, { width: boxW - 28, lineBreak: false });
-        }
-
-        // Arrow connector
-        if (i < stageCount - 1) {
-          const ax = bx + boxW + 2;
-          const ay = pipeY + PIPE_H / 2;
-          doc.fillColor(C.mutedText).fontSize(9).font('Helvetica')
-            .text('›', ax, ay - 6, { width: ARROW_W - 2, align: 'center', lineBreak: false });
-        }
-      });
-
-      const labelY = pipeY + PIPE_H + 5;
-      if (useRotatedLabels) {
-        stages.forEach((s, i) => {
-          const bx = LEFT + i * (boxW + ARROW_W) + boxW / 2;
-          doc.save();
-          doc.fillColor(C.lightText).fontSize(7).font('Helvetica');
-          doc.rotate(45, { origin: [bx, labelY + 4] });
-          doc.text(s.stage, bx, labelY, { width: 110, lineBreak: false });
-          doc.restore();
-        });
-        doc.y = labelY + 48;
-      } else {
-        stages.forEach((s, i) => {
-          const bx = LEFT + i * (boxW + ARROW_W);
-          const maxChars = Math.floor(boxW / 5);
-          const label = s.stage.length > maxChars ? s.stage.slice(0, maxChars - 1) + '…' : s.stage;
-          doc.fillColor(C.lightText).fontSize(7.5).font('Helvetica')
-            .text(label, bx, labelY, { width: boxW, align: 'center', lineBreak: false });
-        });
-        doc.y = labelY + 16;
-      }
-    }
 
     sectionHeading('Funnel Stage Analysis');
 
@@ -856,7 +804,13 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
       pillX += pill(issue.recommended_owner, C.lightText, pillX, pillY);
       const effortColor = issue.estimated_effort === 'low' ? C.healthy
         : issue.estimated_effort === 'medium' ? C.atRisk : C.broken;
-      pill(`Effort: ${issue.estimated_effort}`, effortColor, pillX, pillY);
+      pillX += pill(`Effort: ${issue.estimated_effort}`, effortColor, pillX, pillY);
+      // Report Honesty PRD Part A — disclosure only, never a severity/score
+      // change. Absence of this pill (vr.confidence undefined or 'high') is
+      // itself the signal; a high-confidence item carries nothing extra.
+      if (vr?.confidence === 'confirm') {
+        pill('Needs confirmation', C.partial, pillX, pillY);
+      }
 
       // Problem — full text, wrapped, never truncated (PRD §3.2/W2)
       doc.fillColor(C.darkText).fontSize(9.5).font('Helvetica-Bold')
@@ -896,6 +850,28 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
     }
 
     // ══════════════════════════════════════════════════════════════════════
+    // PAGE — How to read this report (Report Honesty PRD Part C) — final
+    // section, before the appendix. Static copy: never templated per-audit.
+    // ══════════════════════════════════════════════════════════════════════
+
+    doc.addPage();
+    pageHeader('How to Read This Report');
+    sectionHeading('How to read this report');
+
+    const HOW_TO_READ_PARAGRAPHS = [
+      'This is a first-pass technical scan. It was run from outside your systems, without access to your ad accounts, and without a conversation with whoever built your measurement setup. Three things follow from that.',
+      'We observed one crawl, from one location, at one moment. A tag that fires conditionally, or a page that behaves differently for signed-in users or in another region, may not appear here as it does for your customers.',
+      "We can see what your site does, not what it reports. Match rates, conversion values, attribution windows and platform-side configuration all sit inside your ad accounts, which we have not seen.",
+      'We cannot tell deliberate from accidental. A second container may be a migration in progress. An undeclared tag may be a channel we were not told about. A missing tag may mean that platform runs through a different property entirely. Where that distinction matters, we have raised it as a question rather than a finding.',
+      'Findings without a confirmation marker were observed consistently and are unlikely to be artefacts of the scan. Findings marked Needs confirmation rest on a single observation or a page we could not fully verify, and should be checked before anyone acts on them.',
+    ];
+    for (const paragraph of HOW_TO_READ_PARAGRAPHS) {
+      doc.fillColor(C.midText).fontSize(10).font('Helvetica')
+        .text(paragraph, LEFT, doc.y, { width: CONTENT_W });
+      doc.moveDown(0.6);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
     // PAGE 5 — Technical Appendix
     // ══════════════════════════════════════════════════════════════════════
 
@@ -903,10 +879,11 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
     pageHeader('Technical Appendix');
     sectionHeading('All Validation Results');
 
-    const COL_RULE_X     = LEFT;
-    const COL_LAYER_X    = LEFT + 185;
-    const COL_STATUS_X   = LEFT + 310;
-    const COL_SEVERITY_X = LEFT + 367;
+    const COL_RULE_X       = LEFT;
+    const COL_LAYER_X      = LEFT + 175;
+    const COL_STATUS_X     = LEFT + 295;
+    const COL_SEVERITY_X   = LEFT + 348;
+    const COL_CONFIDENCE_X = LEFT + 403;
     const ROW_H = 18;
 
     function drawTableHeader() {
@@ -916,7 +893,8 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
         .text('Rule', COL_RULE_X + 4, hY + 5)
         .text('Layer', COL_LAYER_X + 4, hY + 5)
         .text('Status', COL_STATUS_X + 4, hY + 5)
-        .text('Severity', COL_SEVERITY_X + 4, hY + 5);
+        .text('Severity', COL_SEVERITY_X + 4, hY + 5)
+        .text('Confidence', COL_CONFIDENCE_X + 4, hY + 5);
       doc.y = hY + ROW_H;
     }
 
@@ -942,14 +920,22 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
       const isFailing = result.status === 'fail' || result.status === 'warning';
 
       doc.fillColor(C.midText).fontSize(7.5).font('Helvetica')
-        .text(result.rule_id.replace(/_/g, ' '), COL_RULE_X + 4, rowY + 5, { width: 176 });
+        .text(result.rule_id.replace(/_/g, ' '), COL_RULE_X + 4, rowY + 5, { width: 166 });
       doc.fillColor(C.lightText)
-        .text(result.validation_layer.replace(/_/g, ' '), COL_LAYER_X + 4, rowY + 5, { width: 118 });
+        .text(result.validation_layer.replace(/_/g, ' '), COL_LAYER_X + 4, rowY + 5, { width: 108 });
       doc.fillColor(sc).font('Helvetica-Bold')
-        .text(result.status.toUpperCase(), COL_STATUS_X + 4, rowY + 5, { width: 54 });
+        .text(result.status.toUpperCase(), COL_STATUS_X + 4, rowY + 5, { width: 50 });
       if (isFailing) {
         doc.fillColor(SEVERITY_COLORS[result.severity] ?? C.lightText).font('Helvetica-Bold')
-          .text(result.severity.toUpperCase(), COL_SEVERITY_X + 4, rowY + 5, { width: 70 });
+          .text(result.severity.toUpperCase(), COL_SEVERITY_X + 4, rowY + 5, { width: 52 });
+      }
+      // Confidence column (Report Honesty PRD Part A) — populated only for
+      // 'confirm' rows; a 'high'-confidence (or unset, e.g. a v1-originated)
+      // result leaves this blank, same "absence is the signal" rule the
+      // Action Items chip follows.
+      if (result.confidence === 'confirm') {
+        doc.fillColor(C.partial).font('Helvetica-Bold')
+          .text('CONFIRM', COL_CONFIDENCE_X + 4, rowY + 5, { width: 88 });
       }
 
       doc.y = rowY + ROW_H;

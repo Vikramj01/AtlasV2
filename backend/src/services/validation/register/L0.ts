@@ -97,6 +97,13 @@ export const UNDECLARED_PLATFORM_TAG_DETECTED: ValidationRule = {
     if (names.length === 0) return 'Confirm this rogue/legacy tag is intentional, or remove it if not.';
     return `Confirm whether ${names.join(', ')} should be a declared, actively-managed channel. If not, remove the tag — a rogue pixel still sends the site's traffic data to that platform. If so, add it to Scan Inputs' declared platforms so future audits check it properly.`;
   },
+  client_question: (result) => {
+    const names = result.technical_details.evidence
+      .filter((e) => e.includes('tag detected but not declared'))
+      .map((e) => e.split(':')[0]);
+    const namesText = names.length > 0 ? names.join(', ') : 'An undeclared platform tag';
+    return `${namesText} is firing but wasn't declared for this audit. Is this a channel we weren't told about, or a legacy tag that should be removed?`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const declared = new Set(auditData.declared_platforms ?? []);
@@ -175,6 +182,7 @@ export const CONVERSION_SURFACE_IDENTIFIED: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
   remediation: 'Supply a direct URL for the conversion step in Scan Inputs\' url_map (the real checkout/thank-you/signup page — not the homepage), or fix the site\'s own navigation so that page is actually reachable by clicking through from landing. Every rule below this one depends on a real conversion surface being reached, so this is worth fixing before trusting anything else in this report.',
+  client_question: 'We could not confirm your conversion page (checkout/thank-you/signup), so every check that depends on it is inconclusive. Can you supply its URL, or a test route we can use?',
 
   test(auditData: AuditData): ValidationResult {
     const stepCoverage = auditData.step_coverage;

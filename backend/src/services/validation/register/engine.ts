@@ -143,6 +143,32 @@ function skippedForPrecondition(
 }
 
 /**
+ * Confidence label for a result that actually ran (Report Honesty PRD Part
+ * A) — 'high' unless the rule's own precondition names a step-level
+ * dependency ('conversion_surface') that resolved against a step whose
+ * provenance isn't verified: StepUrlSource 'heuristic' ("path guess" — see
+ * pdfGenerator.ts's STEP_SOURCE_LABELS), or the step degraded
+ * (StepCoverage.degraded — settle capped, navigation failed, or a waitFor
+ * timed out; same flag degradationSuppression.ts reads for its own,
+ * separate "move to could_not_be_assessed" decision). Defaults to 'high'
+ * when the rule declares no step-level `requires`, or when step_coverage
+ * itself is absent — there's no depended-on step to distrust, so the field
+ * is never silently absent (§A2/W1). The candidate steps considered are the
+ * exact same set L0.3/conversionSurfaceReached() uses, so this can never
+ * disagree with what CONVERSION_SURFACE_IDENTIFIED itself reports reaching.
+ */
+export function deriveConfidence(rule: ValidationRule, auditData: AuditData): 'high' | 'confirm' {
+  if (!rule.requires?.includes('conversion_surface')) return 'high';
+
+  const stepCoverage = auditData.step_coverage;
+  if (!stepCoverage || stepCoverage.length === 0) return 'high';
+
+  const qualifying = stepCoverage.filter((s) => s.distinct_from_landing && s.navigation_success);
+  const unverified = qualifying.some((s) => s.source === 'heuristic' || s.degraded === true);
+  return unverified ? 'confirm' : 'high';
+}
+
+/**
  * Run every applicable rule in the Check Register v2 library against the
  * given AuditData. Applicability filtering (site_type/platform_scope) runs
  * first, exactly as before; a rule that passes that but has an unmet
@@ -152,6 +178,11 @@ function skippedForPrecondition(
  * scan from failing checks it never had the data to answer. A rule that
  * throws is caught and returned as 'warning' with the error in evidence —
  * same failure contract as the v1 engine (../engine.ts's runAllRules).
+ *
+ * A result that actually ran (pass/fail/warning) gets `confidence` attached
+ * — see deriveConfidence() above. A 'skipped' result doesn't: the technical
+ * appendix excludes 'skipped' rows entirely (computeRuleOverviewStats), so
+ * there's nothing for the field to disclose anything about.
  */
 export function runRegister(auditData: AuditData, rules: ValidationRule[] = REGISTER): ValidationResult[] {
   const applicable = rules.filter((rule) => isRuleApplicable(rule, auditData));
@@ -161,7 +192,7 @@ export function runRegister(auditData: AuditData, rules: ValidationRule[] = REGI
     if (unmet.length > 0) return skippedForPrecondition(rule, unmet, auditData);
 
     try {
-      return rule.test(auditData);
+      return { ...rule.test(auditData), confidence: deriveConfidence(rule, auditData) };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       logger.warn({ rule_id: rule.rule_id, register_id: rule.id, err: message }, 'Check Register rule threw — returning warning');
@@ -175,6 +206,7 @@ export function runRegister(auditData: AuditData, rules: ValidationRule[] = REGI
           expected: 'Rule should run without errors',
           evidence: [`Error: ${message}`],
         },
+        confidence: 'high' as const,
       };
     }
   });

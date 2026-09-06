@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { SeverityBadge } from '@/components/common/SeverityBadge';
+import { ConfidenceBadge } from '@/components/common/ConfidenceBadge';
 import type { ReportJSON } from '@/types/audit';
 
 interface Props {
@@ -60,6 +61,7 @@ export function TechnicalAppendix({ report }: Props) {
                       </div>
                       <div className="flex items-center gap-2">
                         <SeverityBadge severity={r.severity} size="sm" />
+                        <ConfidenceBadge confidence={r.confidence} />
                         <Badge
                           className={cn(
                             r.status === 'pass' ? 'bg-green-100 text-green-700 hover:bg-green-100'
