@@ -23,12 +23,45 @@
  * All deferred like every other non-crawl (or structurally untestable)
  * method so far. Not included in L12_RULES.
  */
-import type { AuditData, ValidationResult, ValidationRule } from '@/types/audit';
+import type { AuditData, ConsoleError, ValidationResult, ValidationRule } from '@/types/audit';
 
 /** The last non-init step the crawl visited — the presumed conversion surface. */
 function completionStep(auditData: AuditData): string | undefined {
   const steps = (auditData.steps_visited ?? []).filter((s) => s !== 'init');
   return steps[steps.length - 1];
+}
+
+/**
+ * Whether a console error is attributable to the top document, rather than
+ * a cross-origin or sandboxed iframe (Report Correctness Programme PRD
+ * Part C5) — Birkenstock audit 13795830's 15 "JavaScript errors on the
+ * conversion surface" were sandboxed `about:blank` ad/consent iframes and a
+ * Permissions-Policy parse warning, not site defects; NO_CONSOLE_ERRORS_
+ * FROM_MEASUREMENT_CODE (L12.4) happened to pass on the same page because
+ * its keyword filter incidentally excluded them, while L12.8 had no filter
+ * at all. Filters by ConsoleError.frame_url's origin — never by matching
+ * against the error's message text, which requires perpetual maintenance
+ * and fails silently on every new browser warning shape (the PRD's own
+ * stated reason for rejecting a text denylist).
+ *
+ * An error with no frame_url (location unavailable, or captured before
+ * this field existed) is kept, not excluded — the absence of an
+ * attributable origin is never proof the error came from a cross-origin
+ * iframe, so this stays a strict narrowing of what already reported, never
+ * a new way to hide a real top-document error.
+ */
+export function isTopDocumentError(error: ConsoleError, websiteUrl: string): boolean {
+  if (!error.frame_url) return true;
+  try {
+    return new URL(error.frame_url).origin === new URL(websiteUrl).origin;
+  } catch {
+    return true; // unparseable frame_url — can't prove it's cross-origin, so don't exclude it
+  }
+}
+
+/** auditData.consoleErrors, narrowed to the top document (see isTopDocumentError) — the shared starting point for every L12 rule reading console errors. */
+function topDocumentConsoleErrors(auditData: AuditData): ConsoleError[] {
+  return (auditData.consoleErrors ?? []).filter((e) => isTopDocumentError(e, auditData.website_url));
 }
 
 // ── L12.3 — No staging or test container in production ───────────────────────
@@ -122,7 +155,7 @@ export const NO_CONSOLE_ERRORS_FROM_MEASUREMENT_CODE: ValidationRule = {
       };
     }
 
-    const trackingErrors = auditData.consoleErrors.filter((e) =>
+    const trackingErrors = topDocumentConsoleErrors(auditData).filter((e) =>
       TRACKING_ERROR_KEYWORDS.some((k) => e.message.toLowerCase().includes(k)),
     );
 
@@ -233,7 +266,7 @@ export const CONVERSION_SURFACE_REACHABLE_WITHOUT_JS_ERRORS: ValidationRule = {
       };
     }
 
-    const errorsAtCompletion = auditData.consoleErrors.filter((e) => e.step === completion);
+    const errorsAtCompletion = topDocumentConsoleErrors(auditData).filter((e) => e.step === completion);
 
     return {
       rule_id: this.rule_id,

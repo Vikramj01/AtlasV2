@@ -328,6 +328,7 @@ export async function simulateJourney(
       let settleOutcome: SettleOutcome | undefined;
       let settleMs: number | undefined;
       let waitForOutcome: WaitForOutcome | undefined;
+      let httpStatus: number | undefined;
 
       // Per-step isolation (defect #1): a bad URL — or any failure partway
       // through a step's actions/capture — must degrade only that step, not
@@ -351,6 +352,7 @@ export async function simulateJourney(
         );
         settleOutcome = settleResult.settleOutcome;
         settleMs = settleResult.settleMs;
+        httpStatus = settleResult.httpStatus;
 
         if (!settleResult.navigationSuccess) {
           throw new Error('Navigation failed to reach domcontentloaded within the settle budget');
@@ -514,6 +516,7 @@ export async function simulateJourney(
         ...(settleOutcome ? { settle_outcome: settleOutcome } : {}),
         ...(settleMs !== undefined ? { settle_ms: settleMs } : {}),
         ...(waitForOutcome ? { wait_for_outcome: waitForOutcome } : {}),
+        ...(httpStatus !== undefined ? { http_status: httpStatus } : {}),
         requests_in_flight_at_snapshot: inFlightTracker.getInFlightCount(),
         degraded,
       });

@@ -253,10 +253,25 @@ export interface LocalStorageSnapshot {
   entries: Record<string, string>;
 }
 
-/** A browser console error or uncaught exception observed during a step — see dataCapture.ts's interceptConsoleErrors. */
+/**
+ * A browser console error or uncaught exception observed during a step —
+ * see dataCapture.ts's interceptConsoleErrors.
+ *
+ * frame_url (Report Correctness Programme PRD Part C1/C5) — the URL of the
+ * script that produced the message (Playwright ConsoleMessage.location().url),
+ * used as a best-effort proxy for which frame/origin it came from: a
+ * cross-origin or sandboxed ad/consent iframe's own script reports a
+ * different-origin (or blank/empty) location, distinguishing it from a
+ * genuine top-document error. Undefined for a `pageerror` (uncaught
+ * exception) — Playwright doesn't expose a script location for those — and
+ * for a ConsoleError captured before this field existed; both are treated
+ * as top-document (unknown origin is never proof of a cross-origin iframe,
+ * so it's never excluded on that basis alone — see ambientErrorFilter.ts).
+ */
 export interface ConsoleError {
   message: string;
   step: string;
+  frame_url?: string;
 }
 
 // ─── GTM container snapshot (for tag_configuration layer) ────────────────────
@@ -442,6 +457,17 @@ export interface StepCoverage {
   settle_ms?: number;
   /** Whether this step's declared `waitFor` (if any) matched before its own 5s timeout. */
   wait_for_outcome?: WaitForOutcome;
+  /**
+   * The HTTP status code of the navigation response (Report Correctness
+   * Programme PRD Part C1/C2) — Playwright's Response.status() for this
+   * step's page.goto(), captured by gotoAndSettle() (dataCapture.ts).
+   * Absent when navigation failed outright (no response to read a status
+   * from — see navigation_success/settle_outcome) or for a StepCoverage
+   * built before this field existed. Used by L0.ts's isVerifiedStep() to
+   * confirm a 'heuristic' (guessed) step actually resolved to a real page
+   * (2xx) before it can count as the conversion surface.
+   */
+  http_status?: number;
   /** Count of tracked (dataCapture.ts's shouldCaptureUrl) requests with neither a response nor a failure recorded yet, at the moment this step's cookie/storage snapshot was taken. */
   requests_in_flight_at_snapshot?: number;
   /**

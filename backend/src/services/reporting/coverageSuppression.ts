@@ -26,8 +26,14 @@ function fallbackStepNames(stepCoverage: StepCoverage[] | undefined): Set<string
   return new Set((stepCoverage ?? []).filter((s) => s.source === 'fallback_landing').map((s) => s.step));
 }
 
-/** Every double-quoted substring in a result's narrative text. */
-function quotedTokens(result: ValidationResult): string[] {
+/**
+ * Every double-quoted substring in a result's narrative text — exported so
+ * degradationSuppression.ts's all-or-nothing degraded-step suppression
+ * (Report Correctness Programme PRD Part C3) can reuse the exact same
+ * step-citation convention rather than a second, potentially-drifting
+ * regex.
+ */
+export function quotedTokens(result: ValidationResult): string[] {
   const text = [result.technical_details.found, ...result.technical_details.evidence].join('\n');
   return [...text.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
 }

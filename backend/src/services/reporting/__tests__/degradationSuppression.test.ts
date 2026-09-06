@@ -110,4 +110,48 @@ describe('partitionDegradedRuns', () => {
     expect(assessable).toEqual([result]);
     expect(unassessable).toEqual([]);
   });
+
+  // Report Correctness Programme PRD Part C3 — "unsettled steps are
+  // all-or-nothing." Birkenstock's 15-error finding on
+  // CONVERSION_SURFACE_REACHABLE_WITHOUT_JS_ERRORS (L12.8) survived the
+  // old fixed ABSENCE_SENSITIVE_RULE_IDS allowlist because that rule was
+  // never added to it — the exact "deciding rule-by-rule... will be wrong
+  // repeatedly" failure mode the PRD calls out. This is not in the
+  // allowlist, and is still caught here via the quoted step name its own
+  // evidence already cites, same convention coverageSuppression.ts uses.
+  it('suppresses a rule outside ABSENCE_SENSITIVE_RULE_IDS when its own evidence names a degraded step by quoted name', () => {
+    const result = makeResult({
+      rule_id: 'CONVERSION_SURFACE_REACHABLE_WITHOUT_JS_ERRORS',
+      validation_layer: 'hygiene_integrity',
+      status: 'fail',
+      technical_details: {
+        found: '15 JavaScript error(s) on the conversion surface ("confirmation")',
+        expected: 'The confirmation state renders reliably',
+        evidence: ['some ambient error'],
+      },
+    });
+    const steps = [
+      makeStep({ step: 'landing' }),
+      makeStep({ step: 'confirmation', degraded: true, settle_outcome: 'quiet_period_cap_reached' }),
+    ];
+    const { assessable, unassessable } = partitionDegradedRuns([result], steps);
+    expect(assessable).toEqual([]);
+    expect(unassessable).toHaveLength(1);
+    expect(unassessable[0].step).toBe('confirmation');
+    expect(unassessable[0].reason).toContain('"confirmation"');
+  });
+
+  it('a rule citing a step that is NOT degraded stays assessable even when some other step degraded', () => {
+    const result = makeResult({
+      rule_id: 'CONVERSION_SURFACE_REACHABLE_WITHOUT_JS_ERRORS',
+      technical_details: { found: 'No JavaScript errors on the conversion surface ("product")', expected: '', evidence: [] },
+    });
+    const steps = [
+      makeStep({ step: 'landing', degraded: true }),
+      makeStep({ step: 'product', degraded: false }),
+    ];
+    const { assessable, unassessable } = partitionDegradedRuns([result], steps);
+    expect(assessable).toEqual([result]);
+    expect(unassessable).toEqual([]);
+  });
 });

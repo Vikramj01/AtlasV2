@@ -90,6 +90,26 @@ describe('NO_CONSOLE_ERRORS_FROM_MEASUREMENT_CODE (L12.4)', () => {
     const auditData = makeAuditData({ consoleErrors: errors });
     expect(NO_CONSOLE_ERRORS_FROM_MEASUREMENT_CODE.test(auditData).status).toBe('fail');
   });
+
+  // Report Correctness Programme PRD Part C5 — a tracking-keyword match
+  // from inside a cross-origin ad/consent iframe's own script (e.g. an ad
+  // network's own script mentioning "google-analytics.com") is ambient
+  // noise, not evidence the SITE's measurement code errored.
+  it('passes when a tracking-keyword-matching error originates in a cross-origin iframe', () => {
+    const auditData = makeAuditData({
+      website_url: 'https://example.com',
+      consoleErrors: [{ message: 'gtag config failed inside ad frame', step: 'landing', frame_url: 'https://ads.example-network.com/tag.js' }],
+    });
+    expect(NO_CONSOLE_ERRORS_FROM_MEASUREMENT_CODE.test(auditData).status).toBe('pass');
+  });
+
+  it('still fails when the same-origin script throws a tracking-keyword-matching error', () => {
+    const auditData = makeAuditData({
+      website_url: 'https://example.com',
+      consoleErrors: [{ message: 'Uncaught TypeError: gtag is not a function', step: 'landing', frame_url: 'https://example.com/site.js' }],
+    });
+    expect(NO_CONSOLE_ERRORS_FROM_MEASUREMENT_CODE.test(auditData).status).toBe('fail');
+  });
 });
 
 // ── L12.7 — Tag load does not materially delay the page ──────────────────────
@@ -124,6 +144,41 @@ describe('CONVERSION_SURFACE_REACHABLE_WITHOUT_JS_ERRORS (L12.8)', () => {
 
   it('fails when there is an error on the completion step', () => {
     const auditData = makeAuditData({ consoleErrors: [{ message: 'ReferenceError: foo is not defined', step: 'confirmation' }] });
+    expect(CONVERSION_SURFACE_REACHABLE_WITHOUT_JS_ERRORS.test(auditData).status).toBe('fail');
+  });
+
+  // Report Correctness Programme PRD Part C5 — Birkenstock audit 13795830's
+  // 15 "JavaScript errors on the conversion surface" were sandboxed
+  // `about:blank` ad/consent iframes, not site defects; filtered by frame
+  // origin, not by error text (a text denylist requires perpetual
+  // maintenance and fails silently on every new browser warning shape).
+  it('passes when every completion-step error originates in a sandboxed/cross-origin iframe', () => {
+    const auditData = makeAuditData({
+      website_url: 'https://birkenstock.com',
+      consoleErrors: [
+        { message: 'Permissions-Policy header contains errors', step: 'confirmation', frame_url: 'about:blank' },
+        { message: 'Uncaught SyntaxError in ad script', step: 'confirmation', frame_url: 'https://consent-vendor.example/widget.js' },
+      ],
+    });
+    expect(CONVERSION_SURFACE_REACHABLE_WITHOUT_JS_ERRORS.test(auditData).status).toBe('pass');
+  });
+
+  it('still fails when a same-origin (top-document) error occurs alongside ambient iframe noise', () => {
+    const auditData = makeAuditData({
+      website_url: 'https://birkenstock.com',
+      consoleErrors: [
+        { message: 'Permissions-Policy header contains errors', step: 'confirmation', frame_url: 'about:blank' },
+        { message: 'Uncaught TypeError: dataLayer.push is not a function', step: 'confirmation', frame_url: 'https://birkenstock.com/main.js' },
+      ],
+    });
+    const result = CONVERSION_SURFACE_REACHABLE_WITHOUT_JS_ERRORS.test(auditData);
+    expect(result.status).toBe('fail');
+    expect(result.technical_details.evidence).toHaveLength(1);
+    expect(result.technical_details.evidence[0]).toContain('dataLayer.push');
+  });
+
+  it('keeps an error with no frame_url — unknown origin is never proof of a cross-origin iframe', () => {
+    const auditData = makeAuditData({ consoleErrors: [{ message: 'unattributed error', step: 'confirmation' }] });
     expect(CONVERSION_SURFACE_REACHABLE_WITHOUT_JS_ERRORS.test(auditData).status).toBe('fail');
   });
 });

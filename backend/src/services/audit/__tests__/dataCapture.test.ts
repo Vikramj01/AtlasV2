@@ -16,6 +16,7 @@ import {
   shouldCaptureUrl,
   collectDeep,
   evaluateAcrossFrames,
+  gotoAndSettle,
   type StepRef,
 } from '../dataCapture';
 import { ALL_DECLARED_PLATFORMS, PLATFORM_MATCHER_HOSTS, PLATFORM_LABELS } from '@/services/validation/register/platformDetection';
@@ -289,6 +290,80 @@ describe('interceptConsoleErrors', () => {
 
     expect(sink[0].step).toBe('landing');
     expect(sink[1].step).toBe('confirmation');
+  });
+
+  // Report Correctness Programme PRD Part C1 — the originating script's
+  // location, captured as frame_url for the ambient-noise filter (L12.ts's
+  // isTopDocumentError) to use.
+  it('captures the console message\'s location().url as frame_url', () => {
+    const { page, emit } = makeEventEmitterPage();
+    const sink: ConsoleError[] = [];
+    interceptConsoleErrors(page, sink, 'confirmation');
+
+    emit('console', {
+      type: () => 'error',
+      text: () => 'Uncaught SyntaxError',
+      location: () => ({ url: 'https://ads.example-network.com/tag.js' }),
+    });
+
+    expect(sink[0].frame_url).toBe('https://ads.example-network.com/tag.js');
+  });
+
+  it('leaves frame_url unset when location() is unavailable or empty', () => {
+    const { page, emit } = makeEventEmitterPage();
+    const sink: ConsoleError[] = [];
+    interceptConsoleErrors(page, sink, 'confirmation');
+
+    emit('console', { type: () => 'error', text: () => 'no location at all' });
+    emit('console', { type: () => 'error', text: () => 'empty location', location: () => ({ url: '' }) });
+
+    expect(sink[0].frame_url).toBeUndefined();
+    expect(sink[1].frame_url).toBeUndefined();
+  });
+
+  it('leaves frame_url unset for a pageerror (no script location available)', () => {
+    const { page, emit } = makeEventEmitterPage();
+    const sink: ConsoleError[] = [];
+    interceptConsoleErrors(page, sink, 'checkout');
+
+    emit('pageerror', new Error('dataLayer is not defined'));
+
+    expect(sink[0].frame_url).toBeUndefined();
+  });
+});
+
+// ─── gotoAndSettle ──────────────────────────────────────────────────────────
+
+describe('gotoAndSettle', () => {
+  const fastConfig = { navigationTimeoutMs: 1000, quietPeriodMs: 1, maxSettleMs: 10, pollIntervalMs: 1 };
+
+  // Report Correctness Programme PRD Part C1/C2 — the navigation response's
+  // HTTP status, captured for L0.ts's isVerifiedStep() to require a 2xx
+  // before a 'heuristic' (guessed) step counts as the conversion surface.
+  it('captures the navigation response\'s httpStatus', async () => {
+    const page = { goto: vi.fn().mockResolvedValue({ status: () => 200 }) };
+    const result = await gotoAndSettle(page, 'https://example.com', () => 0, {}, fastConfig);
+    expect(result.navigationSuccess).toBe(true);
+    expect(result.httpStatus).toBe(200);
+  });
+
+  it('captures a non-2xx httpStatus (e.g. a heuristic guess landing on a 404)', async () => {
+    const page = { goto: vi.fn().mockResolvedValue({ status: () => 404 }) };
+    const result = await gotoAndSettle(page, 'https://example.com/guessed', () => 0, {}, fastConfig);
+    expect(result.httpStatus).toBe(404);
+  });
+
+  it('leaves httpStatus undefined when the response has no status() (e.g. a mocked/legacy caller)', async () => {
+    const page = { goto: vi.fn().mockResolvedValue(null) };
+    const result = await gotoAndSettle(page, 'https://example.com', () => 0, {}, fastConfig);
+    expect(result.httpStatus).toBeUndefined();
+  });
+
+  it('leaves httpStatus undefined when navigation fails outright', async () => {
+    const page = { goto: vi.fn().mockRejectedValue(new Error('net::ERR_NAME_NOT_RESOLVED')) };
+    const result = await gotoAndSettle(page, 'https://bad.example', () => 0, {}, fastConfig);
+    expect(result.navigationSuccess).toBe(false);
+    expect(result.httpStatus).toBeUndefined();
   });
 });
 
