@@ -63,6 +63,11 @@ export interface ScanInputs {
 
 export type StepUrlSource = 'user_supplied' | 'sitemap' | 'nav_link' | 'heuristic' | 'fallback_landing';
 
+/** How a step's navigation actually settled — see StepCoverage.settle_outcome. */
+export type SettleOutcome = 'settled' | 'quiet_period_cap_reached' | 'navigation_failed';
+
+export type WaitForOutcome = 'matched' | 'timed_out' | 'not_declared';
+
 export interface StepCoverage {
   step: string;
   requested_url: string;
@@ -71,6 +76,12 @@ export interface StepCoverage {
   distinct_from_landing: boolean;
   navigation_success: boolean;
   error?: string;
+  settle_outcome?: SettleOutcome;
+  settle_ms?: number;
+  wait_for_outcome?: WaitForOutcome;
+  requests_in_flight_at_snapshot?: number;
+  /** True when this step's own observation can't be trusted as complete — see backend StepCoverage.degraded. */
+  degraded?: boolean;
 }
 
 export interface ConsentCapture {
@@ -95,6 +106,10 @@ export interface ReportCoverage {
   layers_not_tested: CoverageLayerNotTested[];
   rules_tested: number;
   rules_not_tested: number;
+  /** True when any step degraded (StepCoverage.degraded) — this run's absence-implying verdicts may be incomplete observations rather than real findings. */
+  partial: boolean;
+  /** Step names that degraded — empty when `partial` is false. */
+  degraded_steps: string[];
 }
 
 export interface AuditScores {
@@ -173,6 +188,8 @@ export interface ValidationResult {
     expected: string;
     evidence: string[];
   };
+  /** Per-platform disaggregation for a rule scoped to more than one platform — see backend ValidationResult.platform_outcomes. */
+  platform_outcomes?: Partial<Record<DeclaredPlatform, RuleStatus>>;
 }
 
 export interface AuditComparison {

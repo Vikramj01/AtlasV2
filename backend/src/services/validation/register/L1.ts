@@ -668,23 +668,40 @@ export const NO_TAG_LOAD_ERRORS: ValidationRule = {
   },
 
   test(auditData: AuditData): ValidationResult {
-    const violations = auditData.networkRequests.filter(
-      (r) => r.failed || (r.statusCode !== undefined && r.statusCode >= 400),
+    // Only a confirmed HTTP 4xx/5xx counts as a violation — Platform
+    // Attribution & Determinism PRD B-W5. A network-level failure with no
+    // HTTP status (DNS error, connection refused, blocked by an ad
+    // blocker/CSP) is plausibly caused by the scan environment itself, not
+    // a broken endpoint: the same site scanned three times in two days
+    // returned 13, then 39, then 10 such failures with no code change, which
+    // a HIGH-severity client-facing check can't responsibly carry. Still
+    // surfaced below as a caveat — never silently dropped — just excluded
+    // from the counted violation set.
+    const httpErrors = auditData.networkRequests.filter(
+      (r) => r.statusCode !== undefined && r.statusCode >= 400,
+    );
+    const networkFailuresOnly = auditData.networkRequests.filter(
+      (r) => r.failed && r.statusCode === undefined,
     );
 
     return {
       rule_id: this.rule_id,
       validation_layer: this.layer,
-      status: violations.length > 0 ? 'fail' : 'pass',
+      status: httpErrors.length > 0 ? 'fail' : 'pass',
       severity: this.severity,
       technical_details: {
-        found: violations.length > 0
-          ? `${violations.length} tag request(s) failed or errored`
-          : 'No blocked or failed tag requests observed',
-        expected: 'Every tracking request completes without a network failure or 4xx/5xx response',
-        evidence: violations.length > 0
-          ? violations.map((r) => `${r.url} (step: ${r.step}${r.failed ? ', network failure' : ''}${r.statusCode ? `, status ${r.statusCode}` : ''})`)
-          : ['No tag load errors detected'],
+        found: httpErrors.length > 0
+          ? `${httpErrors.length} tag request(s) returned an HTTP 4xx/5xx response`
+          : 'No tag requests returned an HTTP 4xx/5xx response',
+        expected: 'Every tracking request completes with an HTTP 2xx/3xx response',
+        evidence: [
+          ...(httpErrors.length > 0
+            ? httpErrors.map((r) => `${r.url} (step: ${r.step}, status ${r.statusCode})`)
+            : ['No 4xx/5xx tag responses detected']),
+          ...(networkFailuresOnly.length > 0
+            ? [`Caveat: ${networkFailuresOnly.length} additional request(s) failed at the network level with no HTTP status (DNS/connection error, or blocked by an ad blocker/CSP) — plausibly caused by the scan environment rather than the site itself, and not counted toward this check: ${networkFailuresOnly.map((r) => `${r.url} (step: ${r.step})`).join('; ')}`]
+            : []),
+        ],
       },
     };
   },

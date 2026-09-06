@@ -100,11 +100,20 @@ function makeMockBrowser(opts: {
 
 // ─── Test fixtures ────────────────────────────────────────────────────────────
 
+// Shrinks gotoAndSettle's quiet-period wait to a few milliseconds so these
+// tests don't pay the real production settle budget (DEFAULT_SETTLE_CONFIG)
+// on every one of the dozens of simulateJourney() calls below — the mock
+// browser's goto() resolves its fake request/response pairs synchronously,
+// so the in-flight counter is already back at 0 well before this budget
+// would matter; only its duration is being sped up, not its logic.
+const FAST_SETTLE_CONFIG = { navigationTimeoutMs: 2_000, quietPeriodMs: 1, maxSettleMs: 20, pollIntervalMs: 1 };
+
 const BASE_OPTS: SimulatorOptions = {
   audit_id: 'test-audit-001',
   website_url: 'https://shop.example.com',
   funnel_type: 'ecommerce',
   region: 'us',
+  settleConfig: FAST_SETTLE_CONFIG,
   url_map: {
     landing: 'https://shop.example.com',
     product: 'https://shop.example.com/product/widget',
@@ -240,9 +249,11 @@ describe('simulateJourney — AuditData assembly', () => {
 
   it('closes the browser context even when goto throws', async () => {
     const { mockBrowser, mockContext, mockPage } = makeMockBrowser();
+    // Landing's single goto attempt fails outright (gotoAndSettle makes no
+    // second attempt); subsequent steps still navigate normally. Should not
+    // throw — a step-level navigation failure degrades only that step.
     mockPage.goto.mockRejectedValueOnce(new Error('Navigation timeout'));
-    // Should not throw — goto failure falls back to domcontentloaded
-    mockPage.goto.mockResolvedValue(null); // second call succeeds
+    mockPage.goto.mockResolvedValue(null);
     await simulateJourney(mockBrowser as never, BASE_OPTS);
     expect(mockContext.close).toHaveBeenCalledOnce();
   });
@@ -276,9 +287,23 @@ describe('simulateJourney — AuditData assembly', () => {
   });
 });
 
-// ─── step_coverage (Site Evaluation Coverage & Honesty PRD, Phase 1) ─────────
+// ─── step_coverage (Site Evaluation Coverage & Honesty PRD, Phase 1;
+// settle instrumentation — Platform Attribution & Determinism PRD B-W1) ────
 
 describe('simulateJourney — step_coverage', () => {
+  it('records a settled, non-degraded outcome for every step on a clean run', async () => {
+    const { mockBrowser } = makeMockBrowser();
+    const auditData = await simulateJourney(mockBrowser as never, BASE_OPTS);
+
+    for (const step of auditData.step_coverage!) {
+      expect(step.settle_outcome).toBe('settled');
+      expect(step.wait_for_outcome).toBe('matched'); // every ecommerce journey step declares waitFor: 'body', and the mock resolves it
+      expect(step.requests_in_flight_at_snapshot).toBe(0);
+      expect(step.degraded).toBe(false);
+      expect(typeof step.settle_ms).toBe('number');
+    }
+  });
+
   it('marks every step user_supplied and distinct from landing when url_map gives each a real, different URL', async () => {
     const { mockBrowser } = makeMockBrowser();
     const auditData = await simulateJourney(mockBrowser as never, BASE_OPTS);
@@ -344,9 +369,9 @@ describe('simulateJourney — step_coverage', () => {
 
     const auditData = await simulateJourney(mockBrowser as never, BASE_OPTS);
 
-    // landing, product, checkout each navigate once; confirmation is tried
-    // twice (primary + domcontentloaded fallback), both of which fail.
-    expect(mockPage.goto).toHaveBeenCalledTimes(5);
+    // Each step navigates exactly once — gotoAndSettle makes a single
+    // domcontentloaded attempt per step, no retry within a step.
+    expect(mockPage.goto).toHaveBeenCalledTimes(4);
 
     const coverage = auditData.step_coverage!;
     expect(coverage).toHaveLength(4);
@@ -354,9 +379,12 @@ describe('simulateJourney — step_coverage', () => {
     const confirmation = coverage.find((s) => s.step === 'confirmation')!;
     expect(confirmation.navigation_success).toBe(false);
     expect(confirmation.error).toBeTruthy();
+    expect(confirmation.settle_outcome).toBe('navigation_failed');
+    expect(confirmation.degraded).toBe(true);
 
     const otherSteps = coverage.filter((s) => s.step !== 'confirmation');
     expect(otherSteps.every((s) => s.navigation_success)).toBe(true);
+    expect(otherSteps.every((s) => s.degraded === false)).toBe(true);
   });
 
   // ── resolved_sources (Phase 2, §7/§8) ─────────────────────────────────────

@@ -136,7 +136,15 @@ export function buildV2PlatformBreakdown(
       };
     }
 
-    const failedRules = platformResults.filter((r) => r.status === 'fail').map((r) => r.rule_id);
+    // Per-platform outcome (Platform Attribution & Determinism PRD Part A) —
+    // a multi-platform rule's own platform_outcomes takes precedence over
+    // its scalar `status` here, so a rule that failed for Meta but passed
+    // for TikTok correctly counts against Meta only. Falls back to the
+    // scalar for a rule not yet migrated (or one with a single-platform
+    // scope, which has nothing to disaggregate) — unchanged behaviour.
+    const outcomeFor = (r: ValidationResult): RuleStatus => r.platform_outcomes?.[platform] ?? r.status;
+
+    const failedRules = platformResults.filter((r) => outcomeFor(r) === 'fail').map((r) => r.rule_id);
     const failCount = failedRules.length;
     const platformStatus = failCount === 0 ? 'healthy' : failCount <= totalCount / 2 ? 'at_risk' : 'broken';
     const riskExplanation = failCount === 0

@@ -14,9 +14,24 @@
  * in a real login flow — Credentials-detectable, deferred like every
  * other non-crawl method so far. Not included in L7_RULES.
  */
-import type { AuditData, ValidationResult, ValidationRule, DataLayerEvent, NetworkRequest } from '@/types/audit';
+import type { AuditData, ValidationResult, ValidationRule, DataLayerEvent, NetworkRequest, DeclaredPlatform, RuleStatus } from '@/types/audit';
 
 const FALLBACK_CONVERSION_EVENT_NAMES = ['purchase', 'generate_lead', 'sign_up', 'conversion', 'submit_lead_form', 'begin_checkout', 'add_payment_info'];
+
+/**
+ * Broadcasts one shared status to every platform in a multi-platform
+ * platform_scope (Platform Attribution & Determinism PRD Part A) — for a
+ * rule like PHONE_CAPTURED_WHERE_COLLECTED/NAME_AND_ADDRESS_CAPTURED_WHERE_
+ * COLLECTED, the underlying check (is this field present on the shared
+ * conversion event's user_data?) genuinely doesn't vary by platform, so
+ * every scoped platform legitimately gets the same outcome — unlike L0.1,
+ * where each platform's tag presence is independently observed. Still
+ * populated (not omitted) so the register integrity guard sees every
+ * multi-platform rule accounted for.
+ */
+function broadcastPlatformOutcome(scope: DeclaredPlatform[], status: RuleStatus): Partial<Record<DeclaredPlatform, RuleStatus>> {
+  return Object.fromEntries(scope.map((p) => [p, status])) as Partial<Record<DeclaredPlatform, RuleStatus>>;
+}
 
 function primaryConversionName(auditData: AuditData): string | undefined {
   return auditData.declared_conversions?.find((c) => c.kind === 'primary')?.name;
@@ -90,17 +105,25 @@ function makeEmailCapturedRule(id: string, ruleId: string, check: string, platfo
 
       const email = events.map((e) => userDataField(e, 'email')).find((v) => v !== undefined);
       const present = !!email && (email.includes('@') || looksHashed(email));
+      const status: RuleStatus = present ? 'pass' : 'fail';
 
       return {
         rule_id: this.rule_id,
         validation_layer: this.layer,
-        status: present ? 'pass' : 'fail',
+        status,
         severity: this.severity,
         technical_details: {
           found: present ? 'Email present on the conversion event' : 'No email in user_data on the conversion event',
           expected: why,
           evidence: [`user_data.email present: ${present}`],
         },
+        // Multi-platform scopes (EMAIL_CAPTURED_FOR_CAPI's ['meta', 'tiktok'])
+        // need disaggregation (Platform Attribution & Determinism PRD Part
+        // A); a single-platform scope (EMAIL_CAPTURED_FOR_ENHANCED_
+        // CONVERSIONS' ['google_ads']) has nothing to disaggregate.
+        ...(Array.isArray(platformScope) && platformScope.length > 1
+          ? { platform_outcomes: broadcastPlatformOutcome(platformScope, status) }
+          : {}),
       };
     },
   };
@@ -148,17 +171,19 @@ export const PHONE_CAPTURED_WHERE_COLLECTED: ValidationRule = {
     }
 
     const atConversion = conversionHasUserDataField(auditData, ['phone']);
+    const status: RuleStatus = atConversion ? 'pass' : 'fail';
 
     return {
       rule_id: this.rule_id,
       validation_layer: this.layer,
-      status: atConversion ? 'pass' : 'fail',
+      status,
       severity: this.severity,
       technical_details: {
         found: atConversion ? 'Phone present on the conversion event' : 'Phone was collected but is missing from the conversion event',
         expected: 'Phone is the second strongest match key — dropping it between collection and conversion wastes the signal',
         evidence: [`Collected somewhere in the journey: ${collectedAnywhere}`, `Present at conversion: ${atConversion}`],
       },
+      platform_outcomes: broadcastPlatformOutcome(this.platform_scope as DeclaredPlatform[], status),
     };
   },
 };
@@ -197,17 +222,19 @@ export const NAME_AND_ADDRESS_CAPTURED_WHERE_COLLECTED: ValidationRule = {
     }
 
     const atConversion = conversionHasUserDataField(auditData, NAME_ADDRESS_KEYS);
+    const status: RuleStatus = atConversion ? 'pass' : 'fail';
 
     return {
       rule_id: this.rule_id,
       validation_layer: this.layer,
-      status: atConversion ? 'pass' : 'fail',
+      status,
       severity: this.severity,
       technical_details: {
         found: atConversion ? 'A name/address field is present on the conversion event' : 'Name/address was collected but is missing from the conversion event',
         expected: 'Name and address give an incremental match rate improvement when the business already has them',
         evidence: [`Collected somewhere in the journey: ${collectedAnywhere}`, `Present at conversion: ${atConversion}`],
       },
+      platform_outcomes: broadcastPlatformOutcome(this.platform_scope as DeclaredPlatform[], status),
     };
   },
 };

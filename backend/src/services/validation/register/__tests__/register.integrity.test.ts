@@ -89,6 +89,63 @@ describe('REGISTER — structural integrity', () => {
   // interpolate a specific value) never throws or returns empty, even
   // against the minimal, mostly-'skipped' result set above where those
   // fields are terse.
+  // Platform Attribution & Determinism PRD Part A (A-W3) — the register
+  // integrity guard against the exact defect that shipped in audit
+  // 14ab28ae: a rule scoped to more than one platform ('declared', or an
+  // array of 2+ platforms) must disaggregate its verdict per platform, or
+  // buildV2PlatformBreakdown() has nothing but one scalar `status` to blame
+  // every scoped platform with — including ones whose own evidence says
+  // they passed. Evaluated against a fixture where every such rule
+  // produces a real (non-skipped) result, so "the rule happened to skip in
+  // this fixture" can't masquerade as "the rule populates platform_outcomes".
+  const multiPlatformFixture: AuditData = {
+    audit_id: 'audit-multi-platform',
+    website_url: 'https://shop.example.com',
+    funnel_type: 'ecommerce',
+    region: 'us',
+    rule_set_version: 'v2',
+    site_type: 'ecommerce',
+    declared_platforms: ['google_ads', 'meta', 'tiktok'],
+    primary_channel: 'google_ads',
+    traffic_regions: ['us'],
+    declared_conversions: [{ name: 'purchase', kind: 'primary' }],
+    steps_visited: ['init', 'landing', 'product', 'checkout', 'confirmation'],
+    dataLayer: [
+      makeEvent({ event: 'page_view', step: 'landing' }),
+      makeEvent({
+        event: 'purchase',
+        step: 'confirmation',
+        transaction_id: 'ORDER-1',
+        value: 50,
+        currency: 'USD',
+        user_data: { email: 'a'.repeat(64), phone: 'b'.repeat(64), first_name: 'c'.repeat(64) },
+      }),
+    ],
+    networkRequests: [
+      makeRequest({ url: 'https://www.googletagmanager.com/gtm.js?id=GTM-ABC123', step: 'landing' }),
+      makeRequest({ url: 'https://www.facebook.com/tr?id=1&ev=PageView', step: 'landing' }),
+      makeRequest({ url: 'https://analytics.tiktok.com/i18n/pixel/events.js?sdkid=1', step: 'landing' }),
+      makeRequest({ url: 'https://www.googleadservices.com/pagead/conversion/123', step: 'confirmation' }),
+    ],
+    cookieSnapshots: [],
+    localStorageSnapshots: [],
+    injected: { gclid: 'g1', fbclid: 'f1' },
+  };
+
+  it('every rule scoped to more than one platform (\'declared\' or a multi-element array) populates platform_outcomes for a non-skipped result', () => {
+    const multiPlatformRules = REGISTER.filter(
+      (rule) => rule.platform_scope === 'declared' || (Array.isArray(rule.platform_scope) && rule.platform_scope.length > 1),
+    );
+    expect(multiPlatformRules.length).toBeGreaterThan(0);
+
+    for (const rule of multiPlatformRules) {
+      const result = rule.test(multiPlatformFixture);
+      if (result.status === 'skipped') continue; // nothing to disaggregate — same as a single-platform skip
+      expect(result.platform_outcomes, `${rule.id} (${rule.rule_id}) has a multi-platform scope but no platform_outcomes`).toBeDefined();
+      expect(Object.keys(result.platform_outcomes ?? {}).length, `${rule.id} (${rule.rule_id})'s platform_outcomes is empty`).toBeGreaterThan(0);
+    }
+  });
+
   it('every rule has non-empty remediation, and it never throws or returns empty when evaluated', () => {
     for (const rule of REGISTER) {
       expect(rule.remediation, `${rule.id} (${rule.rule_id}) has no remediation`).toBeTruthy();

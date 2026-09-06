@@ -119,6 +119,11 @@ export interface StepRef {
   current: string;
 }
 
+/** Returned by interceptNetworkRequests — lets a caller ask "how many tracked requests are still outstanding right now" (Platform Attribution & Determinism PRD B-W1/B-W2's settle-wait logic). */
+export interface InFlightTracker {
+  getInFlightCount: () => number;
+}
+
 /**
  * Set up network request interception on a Playwright page.
  * Accepts either a plain string (stageSimulator — one listener per stage) or
@@ -133,9 +138,16 @@ export function interceptNetworkRequests(
   },
   sink: NetworkRequest[],
   stepNameOrRef: string | StepRef,
-): void {
+): InFlightTracker {
   const getStep = (): string =>
     typeof stepNameOrRef === 'string' ? stepNameOrRef : stepNameOrRef.current;
+
+  // Count of tracked (shouldCaptureUrl) requests seen without a matching
+  // response or failure yet — the deterministic settle-wait (gotoAndSettle/
+  // waitForNetworkQuiet below) polls this instead of relying on Playwright's
+  // own 'networkidle', which a heavy SPA with continuous background traffic
+  // may never reach.
+  let inFlight = 0;
 
   page.on('request', (rawReq: unknown) => {
     const req = rawReq as {
@@ -146,6 +158,7 @@ export function interceptNetworkRequests(
     };
     const url = req.url();
     if (!shouldCaptureUrl(url)) return;
+    inFlight += 1;
     const request: NetworkRequest = {
       url,
       method: req.method(),
@@ -165,6 +178,7 @@ export function interceptNetworkRequests(
     };
     const url = res.url();
     if (!shouldCaptureUrl(url)) return;
+    inFlight = Math.max(0, inFlight - 1);
     const step = getStep();
     const existing = sink.find((r) => r.url === url && r.step === step);
     if (existing) {
@@ -192,10 +206,117 @@ export function interceptNetworkRequests(
     const req = rawReq as { url(): string };
     const url = req.url();
     if (!shouldCaptureUrl(url)) return;
+    inFlight = Math.max(0, inFlight - 1);
     const step = getStep();
     const existing = sink.find((r) => r.url === url && r.step === step);
     if (existing) existing.failed = true;
   });
+
+  return { getInFlightCount: () => inFlight };
+}
+
+// ── Deterministic settle sequence (Platform Attribution & Determinism PRD
+// Part B) ───────────────────────────────────────────────────────────────
+//
+// Three consecutive scans of the same unchanged site (openart.ai) produced
+// materially different reports — 13/39/10 failed tag requests, four rules
+// flipping verdict — traced to journeySimulator.ts's binary navigation
+// strategy: try `networkidle` for 20s, and on failure/timeout silently
+// retry with `domcontentloaded` (10s). A heavy SPA with continuous
+// background traffic (analytics beacons, Cloudflare) may never reach
+// `networkidle`, so a fast degraded run and a fully-settled run were
+// indistinguishable in the output — nothing in the audit record said which
+// path was taken. gotoAndSettle replaces that with a bounded, explicit,
+// always-applied sequence: wait for `domcontentloaded`, then wait for a
+// fixed quiet period (no tracked request in flight) capped at a total
+// budget — reproducible by construction, and its outcome is recorded on
+// every step (StepCoverage.settle_outcome) rather than silently discarded.
+
+export type SettleOutcome = 'settled' | 'quiet_period_cap_reached' | 'navigation_failed';
+
+export interface SettleConfig {
+  /** How long page.goto is allowed, waiting only for 'domcontentloaded'. */
+  navigationTimeoutMs: number;
+  /** getInFlight() must read 0 for this long, continuously, to count as quiet. */
+  quietPeriodMs: number;
+  /** Hard cap on total time spent waiting for quiet, measured from the start of goto. */
+  maxSettleMs: number;
+  /** How often to poll getInFlight() while waiting for quiet. */
+  pollIntervalMs: number;
+}
+
+/** Production defaults — deliberately conservative (a real page can have long-lived background beacon traffic) but always bounded, unlike the networkidle it replaces. */
+export const DEFAULT_SETTLE_CONFIG: SettleConfig = {
+  navigationTimeoutMs: 15_000,
+  quietPeriodMs: 1_000,
+  maxSettleMs: 8_000,
+  pollIntervalMs: 200,
+};
+
+/**
+ * Waits for getInFlight() to read 0 continuously for config.quietPeriodMs,
+ * bounded by budgetMs total. Returns 'settled' as soon as the quiet period
+ * is satisfied; returns 'quiet_period_cap_reached' if the budget runs out
+ * first — the caller (gotoAndSettle) still proceeds to snapshot in that
+ * case, it just now knows (and records) that the snapshot may be
+ * incomplete, rather than treating it as indistinguishable from a clean run.
+ */
+export async function waitForNetworkQuiet(
+  getInFlight: () => number,
+  budgetMs: number,
+  config: Pick<SettleConfig, 'quietPeriodMs' | 'pollIntervalMs'> = DEFAULT_SETTLE_CONFIG,
+): Promise<'settled' | 'quiet_period_cap_reached'> {
+  const deadline = Date.now() + Math.max(0, budgetMs);
+  let quietSince: number | null = null;
+
+  for (;;) {
+    if (getInFlight() === 0) {
+      quietSince ??= Date.now();
+      if (Date.now() - quietSince >= config.quietPeriodMs) return 'settled';
+    } else {
+      quietSince = null;
+    }
+    if (Date.now() >= deadline) return 'quiet_period_cap_reached';
+    await new Promise((r) => setTimeout(r, config.pollIntervalMs));
+  }
+}
+
+export interface GotoAndSettleResult {
+  navigationSuccess: boolean;
+  settleOutcome: SettleOutcome;
+  settleMs: number;
+}
+
+/**
+ * Navigate to `url` and wait for it to settle — the single, deterministic
+ * replacement for the old "networkidle, or silently fall back to
+ * domcontentloaded" pattern. Always does exactly one `page.goto()` call
+ * (waiting only for 'domcontentloaded', which every real page reaches);
+ * `navigationSuccess: false` (settleOutcome 'navigation_failed') means even
+ * that failed, e.g. DNS error or the navigation timeout — the caller treats
+ * this the same as any other step failure.
+ */
+export async function gotoAndSettle(
+  page: { goto: (url: string, opts?: object) => Promise<unknown> },
+  url: string,
+  getInFlight: () => number,
+  opts: { referer?: string } = {},
+  config: SettleConfig = DEFAULT_SETTLE_CONFIG,
+): Promise<GotoAndSettleResult> {
+  const start = Date.now();
+  try {
+    await page.goto(url, {
+      waitUntil: 'domcontentloaded',
+      timeout: config.navigationTimeoutMs,
+      ...(opts.referer ? { referer: opts.referer } : {}),
+    });
+  } catch {
+    return { navigationSuccess: false, settleOutcome: 'navigation_failed', settleMs: Date.now() - start };
+  }
+
+  const remainingBudget = config.maxSettleMs - (Date.now() - start);
+  const settleOutcome = await waitForNetworkQuiet(getInFlight, remainingBudget, config);
+  return { navigationSuccess: true, settleOutcome, settleMs: Date.now() - start };
 }
 
 /**

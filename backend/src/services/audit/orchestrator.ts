@@ -22,6 +22,7 @@ import { interpretResults } from '@/services/interpretation/engine';
 import { generateReport } from '@/services/reporting/generator';
 import { computeCoverageFingerprint } from '@/services/reporting/coverage';
 import { partitionCoverageAffected } from '@/services/reporting/coverageSuppression';
+import { partitionDegradedRuns } from '@/services/reporting/degradationSuppression';
 import { getConnectedGtmContainerId } from '@/services/database/gtmConnectionQueries';
 import { getNamingConvention } from '@/services/database/namingConventionQueries';
 import { buildSiteSetupSummary } from './siteSetupDetector';
@@ -293,9 +294,21 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
         // that resolved to fallback_landing is excluded from scores, issue
         // counts, and journey/platform breakdowns; v1 has no step_coverage
         // concept, so its results pass through unfiltered.
-        const { assessable, unassessable } = isV2
+        const { assessable: coverageAssessable, unassessable: coverageUnassessable } = isV2
           ? partitionCoverageAffected(validationResults, auditData.step_coverage)
           : { assessable: validationResults, unassessable: [] };
+
+        // Degradation suppression (Platform Attribution & Determinism PRD
+        // Part B, B-W4) — a run where any step's navigation didn't fully
+        // settle can't tell "genuinely absent" apart from "the scan didn't
+        // wait long enough to see it" for a fixed set of absence-sensitive
+        // rules; those results move to could_not_be_assessed alongside the
+        // coverage-suppressed ones rather than standing as a confident
+        // pass/fail. v1 has no step_coverage/degraded concept, same as above.
+        const { assessable, unassessable: degradationUnassessable } = isV2
+          ? partitionDegradedRuns(coverageAssessable, auditData.step_coverage)
+          : { assessable: coverageAssessable, unassessable: [] };
+        const unassessable = [...coverageUnassessable, ...degradationUnassessable];
 
         const scores = isV2 ? calculateV2Scores(assessable) : calculateScores(assessable);
         const issues = interpretResults(assessable);

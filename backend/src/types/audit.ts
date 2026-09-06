@@ -380,6 +380,23 @@ export interface SiteSetupSummary {
 export type StepUrlSource = 'user_supplied' | 'sitemap' | 'nav_link' | 'heuristic' | 'fallback_landing';
 
 /**
+ * How a step's navigation actually settled (Platform Attribution &
+ * Determinism PRD Part B) — the replacement for the old binary "networkidle,
+ * or whatever domcontentloaded gives you in 10s" fallback, which made a fast
+ * degraded run and a fully-settled run indistinguishable in the output.
+ * 'settled': domcontentloaded succeeded and no tracked request was in
+ * flight for the full quiet period, within budget. 'quiet_period_cap_reached':
+ * domcontentloaded succeeded but the quiet period was never reached before
+ * the settle budget ran out — a heavy SPA with continuous background traffic
+ * (Amplitude, Cloudflare beacons, ...) is the typical case this exists for.
+ * 'navigation_failed': domcontentloaded itself never completed.
+ */
+export type SettleOutcome = 'settled' | 'quiet_period_cap_reached' | 'navigation_failed';
+
+/** Whether a step's declared `waitFor` selector matched before its own timeout, or wasn't declared for this step at all. */
+export type WaitForOutcome = 'matched' | 'timed_out' | 'not_declared';
+
+/**
  * Per-step provenance for one journey step — did the crawl actually reach a
  * page distinct from the landing page, or silently fall back to it? This is
  * the data L0.3 (CONVERSION_SURFACE_IDENTIFIED) is rewritten against: without
@@ -402,6 +419,27 @@ export interface StepCoverage {
   distinct_from_landing: boolean;
   navigation_success: boolean;
   error?: string;
+  /**
+   * How this step's navigation settled (Platform Attribution & Determinism
+   * PRD B-W1/B-W2). Absent for a StepCoverage captured before this field
+   * existed, or built outside journeySimulator.ts (hand-built fixtures).
+   */
+  settle_outcome?: SettleOutcome;
+  /** Milliseconds spent from the start of goto to the settle decision. */
+  settle_ms?: number;
+  /** Whether this step's declared `waitFor` (if any) matched before its own 5s timeout. */
+  wait_for_outcome?: WaitForOutcome;
+  /** Count of tracked (dataCapture.ts's shouldCaptureUrl) requests with neither a response nor a failure recorded yet, at the moment this step's cookie/storage snapshot was taken. */
+  requests_in_flight_at_snapshot?: number;
+  /**
+   * True when this step's own observation can't be trusted as complete —
+   * settle hit its cap, navigation failed outright, or a declared waitFor
+   * timed out. A rule that asserts a request/cookie was or wasn't observed
+   * can't tell "genuinely absent" apart from "the scan didn't wait long
+   * enough" when this is true — see B-W3 (partial run)/B-W4 (absence vs.
+   * failure) and services/reporting/degradationSuppression.ts.
+   */
+  degraded?: boolean;
 }
 
 /**
@@ -648,6 +686,20 @@ export interface ValidationResult {
     expected: string;
     evidence: string[];
   };
+  /**
+   * Per-platform disaggregation of this result — populated by a rule whose
+   * platform_scope is 'declared' (L0.1's per-platform fan-out) or an array
+   * of more than one platform (Platform Attribution & Determinism PRD Part
+   * A). `status` above stays the rule's overall verdict ('fail' if it
+   * failed for ANY platform in scope) so nothing that reads `status` needs
+   * to change; this is additional data for a consumer — today only
+   * buildV2PlatformBreakdown() — that needs to know it failed for Meta but
+   * passed for TikTok, rather than crediting/blaming every scoped platform
+   * identically for one shared scalar. Absent for a rule not yet migrated,
+   * or one whose platform_scope is a single platform (nothing to
+   * disaggregate) — consumers fall back to `status` in that case.
+   */
+  platform_outcomes?: Partial<Record<DeclaredPlatform, RuleStatus>>;
 }
 
 // ─── Scores ───────────────────────────────────────────────────────────────────
@@ -708,6 +760,16 @@ export interface ReportCoverage {
   rules_tested: number;
   /** Rules skipped specifically because a `requires` precondition (engine.ts) went unmet — the coverage-driven subset of all skips. */
   rules_not_tested: number;
+  /**
+   * True when any step's navigation degraded (StepCoverage.degraded) —
+   * Platform Attribution & Determinism PRD B-W3. Surfaced the same way
+   * fallback_landing coverage already is: a run that didn't fully settle
+   * shouldn't silently emit confident pass/fail verdicts for
+   * observation-dependent rules (see degradationSuppression.ts, B-W4).
+   */
+  partial: boolean;
+  /** Step names that degraded — empty when `partial` is false. */
+  degraded_steps: string[];
 }
 
 // ─── Report ───────────────────────────────────────────────────────────────────

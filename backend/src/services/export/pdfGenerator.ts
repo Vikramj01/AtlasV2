@@ -22,7 +22,11 @@ const STEP_SOURCE_LABELS: Record<StepUrlSource, string> = {
 function stepCoverageLine(step: StepCoverage): string {
   const sourceLabel = STEP_SOURCE_LABELS[step.source] ?? step.source;
   const navSuffix = step.navigation_success ? '' : ' — navigation failed';
-  return `${step.step.replace(/_/g, ' ')} — ${sourceLabel}${navSuffix}`;
+  // Platform Attribution & Determinism PRD B-W3 — a step that navigated
+  // "successfully" but never settled (or whose waitFor timed out) still
+  // needs to say so; navigation_success alone can't distinguish it.
+  const degradedSuffix = step.navigation_success && step.degraded ? ' — did not fully settle' : '';
+  return `${step.step.replace(/_/g, ' ')} — ${sourceLabel}${navSuffix}${degradedSuffix}`;
 }
 
 /**
@@ -449,6 +453,20 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
         doc.fillColor(C.atRisk).fontSize(9).font('Helvetica-Bold')
           .text(
             `${coverage.layers_not_tested.map((l) => l.label).join(', ')} could not be tested — ${coverage.rules_not_tested} check${coverage.rules_not_tested !== 1 ? 's' : ''} skipped rather than scored as failing.`,
+            LEFT, doc.y, { width: CONTENT_W },
+          );
+      }
+
+      // Partial run (Platform Attribution & Determinism PRD B-W3) — surfaced
+      // the same way layers_not_tested already is: a scan whose navigation
+      // didn't fully settle on one or more steps shouldn't have its
+      // absence-implying verdicts read as confidently as a clean run's (see
+      // "Could Not Be Assessed" below for the results this actually moved).
+      if (coverage.partial) {
+        doc.moveDown(0.3);
+        doc.fillColor(C.atRisk).fontSize(9).font('Helvetica-Bold')
+          .text(
+            `This scan didn't fully settle on ${coverage.degraded_steps.length} step${coverage.degraded_steps.length !== 1 ? 's' : ''} (${coverage.degraded_steps.join(', ')}) — treat any "not observed" result tied to those steps as inconclusive, not a confirmed pass or fail.`,
             LEFT, doc.y, { width: CONTENT_W },
           );
       }
