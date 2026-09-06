@@ -10,6 +10,7 @@
  * DELETE /api/connections/:id                          — full remove (manager cascades)
  * POST   /api/connections/:id/test                     — live platform test
  * POST   /api/connections/:id/sync                     — Phase 2 placeholder
+ * POST   /api/connections/klaviyo                       — connect via private API key (no OAuth)
  *
  * All routes (except the OAuth callback redirect) require authMiddleware + planGuard('pro').
  */
@@ -30,12 +31,14 @@ import {
   removeConnection,
 } from '@/services/connections/connectionLifecycle';
 import { testConnection } from '@/services/connections/connectionTester';
+import { encryptTokens } from '@/services/connections/tokenManager';
 import { listConnectionsForOrg } from '@/services/database/connectionQueries';
 import type {
   Platform,
   ConnectionsResponse,
   PlatformConnectionPublic,
   ConnectionGroup,
+  OAuthTokens,
 } from '@/types/connections';
 
 export const connectionsRouter = Router();
@@ -352,6 +355,88 @@ connectionsRouter.post(
       res.json({ message: 'Sync job enqueued' });
     } catch (err) {
       sendInternalError(res, err, 'POST /api/connections/:id/sync');
+    }
+  },
+);
+
+// ── POST /api/connections/klaviyo ─────────────────────────────────────────────
+// Klaviyo (AIR's first email source — Ecommerce Signal Completeness PRD,
+// Feature 2) authenticates with a private API key, not OAuth, so it can't
+// go through the /oauth/:platform/start-callback flow above. Disconnecting
+// reuses the existing generic DELETE /:id — removeConnection() isn't
+// platform-specific.
+
+const KlaviyoConnectBody = z.object({
+  apiKey: z.string().min(10, 'apiKey does not look like a valid Klaviyo private API key'),
+  clientId: z.string().uuid().optional(),
+});
+
+const KLAVIYO_REVISION = '2025-04-15'; // keep in sync with klaviyoConnector.ts's KLAVIYO_REVISION
+
+connectionsRouter.post(
+  '/klaviyo',
+  planGuard('pro'),
+  async (req: Request, res: Response): Promise<void> => {
+    const parsed = KlaviyoConnectBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0].message });
+      return;
+    }
+
+    const { apiKey, clientId } = parsed.data;
+
+    try {
+      // Validate the key actually works before storing it — cheapest read-only
+      // call available, same spirit as testConnection() for OAuth platforms.
+      const testRes = await fetch('https://a.klaviyo.com/api/accounts/', {
+        headers: {
+          Authorization: `Klaviyo-API-Key ${apiKey}`,
+          revision: KLAVIYO_REVISION,
+          Accept: 'application/json',
+        },
+      });
+
+      if (!testRes.ok) {
+        res.status(400).json({ error: 'Klaviyo rejected this API key. Confirm it has read access to Accounts, Metrics, and Metric Aggregates.' });
+        return;
+      }
+
+      const accountJson = await testRes.json() as {
+        data?: { id: string; attributes?: { contact_information?: { organization_name?: string } } }[];
+      };
+      const account = accountJson.data?.[0];
+
+      const orgId = await resolveOrgId(req.user.id);
+      const tokens: OAuthTokens = {
+        access_token: apiKey,
+        expires_at: 0, // private API keys don't expire on a schedule; no refresh flow to model
+        token_type: 'private_api_key',
+      };
+
+      const { error } = await supabaseAdmin
+        .from('platform_connections')
+        .upsert(
+          {
+            organization_id: orgId,
+            client_id: clientId ?? null,
+            platform: 'klaviyo',
+            connection_type: 'standalone',
+            account_id: account?.id ?? 'default',
+            account_label: account?.attributes?.contact_information?.organization_name ?? null,
+            oauth_tokens: encryptTokens(tokens),
+            status: 'active',
+            last_error: null,
+            metadata: {},
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'organization_id,platform,account_id' },
+        );
+
+      if (error) throw new Error(error.message);
+
+      res.json({ message: 'Klaviyo connected' });
+    } catch (err) {
+      sendInternalError(res, err, 'POST /api/connections/klaviyo');
     }
   },
 );

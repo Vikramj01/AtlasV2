@@ -20,10 +20,20 @@ vi.mock('@/services/air/ingestion/ga4Connector', () => ({
   ingestGA4: vi.fn(),
 }));
 
+vi.mock('@/services/air/ingestion/linkedInAdsConnector', () => ({
+  ingestLinkedInAds: vi.fn(),
+}));
+
+vi.mock('@/services/air/ingestion/klaviyoConnector', () => ({
+  ingestKlaviyo: vi.fn(),
+}));
+
 import { supabaseAdmin } from '@/services/database/supabase';
 import { ingestGoogleAds } from '@/services/air/ingestion/googleAdsConnector';
 import { ingestMetaAds } from '@/services/air/ingestion/metaAdsConnector';
 import { ingestGA4 } from '@/services/air/ingestion/ga4Connector';
+import { ingestLinkedInAds } from '@/services/air/ingestion/linkedInAdsConnector';
+import { ingestKlaviyo } from '@/services/air/ingestion/klaviyoConnector';
 import { getAirEligibleOrgIds, runIngestionForOrg, runIngestionForAllActiveOrgs } from '../ingestionOrchestrator';
 
 function makeChain(data: unknown = null, error: unknown = null) {
@@ -86,20 +96,26 @@ describe('getAirEligibleOrgIds', () => {
 describe('runIngestionForOrg', () => {
   beforeEach(() => vi.resetAllMocks());
 
-  it('calls all three connectors with orgId and date', async () => {
+  it('calls all five connectors with orgId and date', async () => {
     vi.mocked(ingestGoogleAds).mockResolvedValue(undefined);
     vi.mocked(ingestMetaAds).mockResolvedValue(undefined);
     vi.mocked(ingestGA4).mockResolvedValue(undefined);
+    vi.mocked(ingestLinkedInAds).mockResolvedValue(undefined);
+    vi.mocked(ingestKlaviyo).mockResolvedValue(undefined);
     await runIngestionForOrg('org-1', '2026-07-10');
     expect(ingestGoogleAds).toHaveBeenCalledWith('org-1', '2026-07-10');
     expect(ingestMetaAds).toHaveBeenCalledWith('org-1', '2026-07-10');
     expect(ingestGA4).toHaveBeenCalledWith('org-1', '2026-07-10');
+    expect(ingestLinkedInAds).toHaveBeenCalledWith('org-1', '2026-07-10');
+    expect(ingestKlaviyo).toHaveBeenCalledWith('org-1', '2026-07-10');
   });
 
   it('does not throw when any connector rejects', async () => {
     vi.mocked(ingestGoogleAds).mockRejectedValue(new Error('gads down'));
     vi.mocked(ingestMetaAds).mockRejectedValue(new Error('meta down'));
     vi.mocked(ingestGA4).mockResolvedValue(undefined);
+    vi.mocked(ingestLinkedInAds).mockResolvedValue(undefined);
+    vi.mocked(ingestKlaviyo).mockRejectedValue(new Error('klaviyo down'));
     await expect(runIngestionForOrg('org-1', '2026-07-10')).resolves.toBeUndefined();
   });
 });
@@ -113,6 +129,8 @@ describe('runIngestionForAllActiveOrgs', () => {
     vi.mocked(ingestGoogleAds).mockResolvedValue(undefined);
     vi.mocked(ingestMetaAds).mockResolvedValue(undefined);
     vi.mocked(ingestGA4).mockResolvedValue(undefined);
+    vi.mocked(ingestLinkedInAds).mockResolvedValue(undefined);
+    vi.mocked(ingestKlaviyo).mockResolvedValue(undefined);
     vi.mocked(supabaseAdmin.from)
       .mockReturnValueOnce(makeChain([{ organization_id: 'org-a' }, { organization_id: 'org-b' }], null))
       .mockReturnValueOnce(makeChain([{ organization_id: 'org-a' }, { organization_id: 'org-b' }], null));
@@ -129,6 +147,8 @@ describe('runIngestionForAllActiveOrgs', () => {
       .mockResolvedValueOnce(undefined);
     vi.mocked(ingestMetaAds).mockResolvedValue(undefined);
     vi.mocked(ingestGA4).mockResolvedValue(undefined);
+    vi.mocked(ingestLinkedInAds).mockResolvedValue(undefined);
+    vi.mocked(ingestKlaviyo).mockResolvedValue(undefined);
     vi.mocked(supabaseAdmin.from)
       .mockReturnValueOnce(makeChain([{ organization_id: 'org-bad' }, { organization_id: 'org-good' }], null))
       .mockReturnValueOnce(makeChain([{ organization_id: 'org-bad' }, { organization_id: 'org-good' }], null));

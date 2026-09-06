@@ -60,7 +60,21 @@ Rules:
 - If correlated signals are provided, weave in the most relevant one.
 - Do not use jargon (no "deviation", "baseline", "anomaly"). Use plain English.
 - Do not speculate beyond the data. Do not suggest specific actions unless obvious from context.
+- Revenue/conversion figures are each channel's own attribution, never deduplicated
+  against other channels. Never phrase one channel's figure as additive on top of
+  another's (e.g. never say a channel "added" revenue "on top of" another channel).
 - Tone: concise, factual, useful to a marketing manager.`;
+}
+
+// Klaviyo's revenue/conversion figures are its own attribution (own attribution
+// window), not deduplicated against Meta/Google/GA4/LinkedIn — the same sale can
+// be independently claimed by more than one channel. This flags that context to
+// the model rather than letting it imply a false, additive precision. See the
+// Ecommerce Signal Completeness PRD's attribution/double-counting policy.
+function attributionCaveat(anomaly: AnomalyInput): string {
+  const isRevenueMetric = anomaly.metric_name === 'revenue' || anomaly.metric_name === 'conversions';
+  if (anomaly.source !== 'klaviyo' || !isRevenueMetric) return '';
+  return `\nNote: this is Klaviyo's own attributed ${anomaly.metric_name} (its own attribution window) — it may overlap with figures other channels independently claim credit for. Do not describe it as incremental or additive on top of another channel.`;
 }
 
 export function buildUserMessage(anomaly: AnomalyInput, factors: CorrelationInput[]): string {
@@ -86,6 +100,7 @@ Severity: ${anomaly.severity}`;
     message += `\nTop correlated signal: ${label} on ${topFactor.factor_date} (${topFactor.proximity_days} day(s) away, confidence ${topFactor.confidence_score})`;
   }
 
+  message += attributionCaveat(anomaly);
   message += '\n\nWrite the insight narrative now:';
   return message;
 }
