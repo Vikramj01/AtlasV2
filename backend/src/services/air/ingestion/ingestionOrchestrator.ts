@@ -3,19 +3,21 @@
 // runIngestionForAllActiveOrgs() discovers eligible orgs and fans out.
 //
 // Active org definition for AIR: orgs on pro or agency plan with at least
-// one active platform_connection (google_ads, meta, ga4, or linkedin).
+// one active platform_connection (google_ads, meta, ga4, linkedin, or klaviyo).
 //
 // LinkedIn (B13) is registered here structurally, but no platform_connections
 // row with platform='linkedin' can exist yet — no OAuth connect flow has
 // been built for it (see 20260828005_air_linkedin_connector.sql). It runs
 // as a no-op until that flow exists, same as any connector for an org with
-// no matching connection.
+// no matching connection. Klaviyo (Ecommerce Signal Completeness PRD,
+// Feature 2) does have a real connect flow (POST /api/connections/klaviyo).
 
 import { supabaseAdmin } from '@/services/database/supabase';
 import { ingestGoogleAds } from '@/services/air/ingestion/googleAdsConnector';
 import { ingestMetaAds } from '@/services/air/ingestion/metaAdsConnector';
 import { ingestGA4 } from '@/services/air/ingestion/ga4Connector';
 import { ingestLinkedInAds } from '@/services/air/ingestion/linkedInAdsConnector';
+import { ingestKlaviyo } from '@/services/air/ingestion/klaviyoConnector';
 import logger from '@/utils/logger';
 
 // Returns org_ids eligible for AIR ingestion: pro/agency plan + active connections.
@@ -39,7 +41,7 @@ export async function getAirEligibleOrgIds(): Promise<string[]> {
   const { data: conns } = await supabaseAdmin
     .from('platform_connections')
     .select('organization_id')
-    .in('platform', ['google_ads', 'meta', 'ga4', 'linkedin'])
+    .in('platform', ['google_ads', 'meta', 'ga4', 'linkedin', 'klaviyo'])
     .in('status', ['active', 'connected']);
 
   const connOrgs = new Set(
@@ -69,6 +71,9 @@ export async function runIngestionForOrg(
     ),
     ingestLinkedInAds(orgId, date).catch((err) =>
       logger.error({ err: err instanceof Error ? err.message : String(err), orgId }, 'AIR/linkedin_ads: ingestion failed'),
+    ),
+    ingestKlaviyo(orgId, date).catch((err) =>
+      logger.error({ err: err instanceof Error ? err.message : String(err), orgId }, 'AIR/klaviyo: ingestion failed'),
     ),
   ]);
 

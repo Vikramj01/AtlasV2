@@ -23,6 +23,7 @@ const SOURCE_LABEL: Record<AirSource, string> = {
   meta_ads:     'Meta Ads',
   ga4:          'GA4',
   linkedin_ads: 'LinkedIn Ads',
+  klaviyo:      'Klaviyo',
 };
 
 const METRIC_LABEL: Record<string, string> = {
@@ -37,6 +38,9 @@ const METRIC_LABEL: Record<string, string> = {
   engaged_sessions:'Engaged Sessions',
   bounce_rate:     'Bounce Rate',
   engagement_rate: 'Engagement Rate',
+  sends:           'Sends',
+  opens:           'Opens',
+  revenue:         'Revenue',
 };
 
 function fmtMetric(key: string): string {
