@@ -190,6 +190,7 @@ export const GA4_CONFIG_TAG_PRESENT: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
   remediation: 'Add a GA4 Configuration tag in GTM (or the gtag(\'config\', \'G-XXXXXXX\') snippet directly) firing on All Pages, and confirm in the Network tab that requests reach google-analytics.com/g/collect with a resolved measurement ID.',
+  client_question: 'We did not see a GA4 configuration tag firing during the crawl. Is GA4 handled through a different property, delivered server-side, or genuinely not implemented yet?',
 
   test(auditData: AuditData): ValidationResult {
     const match = trackingSignals.detectGa4(auditData.networkRequests);
@@ -224,6 +225,7 @@ export const GOOGLE_GLOBAL_SITE_TAG_PRESENT: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
   remediation: 'Add the Google Ads gtag.js loader (googletagmanager.com/gtag/js?id=AW-XXXXXXXXX) via GTM\'s Google Tag or a direct gtag.js snippet, firing on every page — without it, no Google Ads conversion or remarketing tag downstream of this one can work.',
+  client_question: 'We found no Google Ads (AW-) loader on the site. Does Google Ads run through a different property, a server-side container we could not see from a client-side crawl, or is it not yet implemented?',
 
   test(auditData: AuditData): ValidationResult {
     const hits = auditData.networkRequests.filter(
@@ -390,6 +392,11 @@ export const NO_DUPLICATE_CONTAINER: ValidationRule = {
     const ids = idsLine ? idsLine.replace('Container IDs observed: ', '') : 'the extra container';
     return `Remove the extra GTM container(s) (${ids}) — likely a leftover from a migration, a duplicate install by two teams, or a CMS/theme default. Keep only the one intended for production; a second container doubles every tag that fires from it.`;
   },
+  client_question: (result) => {
+    const idsLine = result.technical_details.evidence.find((e) => e.startsWith('Container IDs observed:'));
+    const ids = idsLine ? idsLine.replace('Container IDs observed: ', '') : 'more than one container';
+    return `${ids.includes(',') ? 'Two GTM containers are' : 'More than one GTM container is'} loading (${ids}). Is one a migration in progress, or does a second team own it?`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const ids = trackingSignals.extractGtmContainerIdsFromScriptSrcs(gtmScriptSrcs(auditData));
@@ -453,6 +460,11 @@ export const NO_DUPLICATE_BASE_TAG: ValidationRule = {
     const dupes = result.technical_details.evidence.filter((e) => e.includes('distinct IDs firing'));
     if (dupes.length === 0) return 'Remove the duplicate base tag installation for the affected platform(s) — check for both a GTM-managed tag and a hardcoded script tag on the page, which is the most common cause.';
     return `Remove the duplicate base tag installation: ${dupes.join('; ')}. Check for both a GTM-managed tag and a hardcoded script tag on the page — that combination is the most common cause of two IDs firing for the same platform.`;
+  },
+  client_question: (result) => {
+    const dupes = result.technical_details.evidence.filter((e) => e.includes('distinct IDs firing'));
+    if (dupes.length === 0) return 'More than one ID is firing for the same platform\'s base tag. Is this deliberate (a phased migration, two business units sharing a site), or an unintended duplicate install?';
+    return `${dupes.join('; ')}. Is this deliberate (a phased migration, two business units sharing a site), or an unintended duplicate install?`;
   },
 
   test(auditData: AuditData): ValidationResult {
@@ -564,6 +576,7 @@ export const SERVER_CONTAINER_ENDPOINT_CONFIGURED: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Backend',
   remediation: 'Stand up a server-side GTM (sGTM) container and route client-side events to it via a first-party endpoint — this enables server-side deduplication and gives Meta/TikTok CAPI and Google Ads Enhanced Conversions a durable, cookie-independent delivery path. If sGTM is deliberately out of scope for this site, this can be deprioritized relative to the client-side rules above it.',
+  client_question: 'We did not find a first-party server-side container endpoint referenced from the pages we crawled. Is server-side tagging deliberately out of scope for now, or does one exist on an endpoint our heuristics would not recognize?',
 
   test(auditData: AuditData): ValidationResult {
     const hostname = safeHostname(auditData.website_url);

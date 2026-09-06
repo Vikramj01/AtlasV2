@@ -547,6 +547,11 @@ export const EVENT_NAMES_MATCH_DECLARED_TAXONOMY: ValidationRule = {
     if (violations.length === 0) return 'Rename the observed event(s) to match the org\'s naming convention (see Naming Conventions settings) — inconsistent naming makes cross-property and cross-client comparison impossible.';
     return `Rename these events to match the org's naming convention: ${violations.join('; ')}. Check Naming Conventions settings for the exact pattern expected.`;
   },
+  client_question: (result) => {
+    const violations = result.technical_details.evidence.filter((e) => e.startsWith('"'));
+    const namesText = violations.length > 0 ? violations.join('; ') : 'Some observed event names';
+    return `${namesText} don't match the naming convention on file. Is this an older taxonomy being phased out, or a different naming scheme for this journey?`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const convention = auditData.namingConvention ?? DEFAULT_CONVENTION;

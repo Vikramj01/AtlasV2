@@ -10,6 +10,7 @@ import {
   generateBusinessSummary,
   determineOverallStatus,
   getIssueHeadline,
+  collectClientQuestions,
 } from '../engine';
 import type { ValidationResult } from '@/types/audit';
 
@@ -350,5 +351,63 @@ describe('determineOverallStatus', () => {
         makeResult('GA4_PURCHASE_EVENT_FIRED'),
       ]),
     ).toBe('critical');
+  });
+});
+
+// ── collectClientQuestions (Report Honesty PRD Part B) ──────────────────────
+
+describe('collectClientQuestions', () => {
+  it('interpolates real observed evidence for a v2 rule whose client_question is a function', () => {
+    // NO_DUPLICATE_CONTAINER is L1.11 (layer 'foundation_tags') — matching
+    // rule_id + layer is what isV2Result() uses to recognise this as a real
+    // register result, not a same-named v1 one.
+    const result: ValidationResult = {
+      rule_id: 'NO_DUPLICATE_CONTAINER',
+      validation_layer: 'foundation_tags',
+      status: 'fail',
+      severity: 'high',
+      technical_details: {
+        found: '2 distinct GTM containers loading: GTM-KVJPJ9LF, GTM-KNXTBPDD',
+        expected: 'Exactly one GTM container loads across the sampled pages',
+        evidence: ['Container IDs observed: GTM-KVJPJ9LF, GTM-KNXTBPDD'],
+      },
+    };
+    const questions = collectClientQuestions([result]);
+    expect(questions).toHaveLength(1);
+    expect(questions[0]).toContain('GTM-KVJPJ9LF');
+    expect(questions[0]).toContain('GTM-KNXTBPDD');
+  });
+
+  it('returns nothing for a v2 rule with no authored client_question', () => {
+    const result: ValidationResult = {
+      rule_id: 'GA4_PURCHASE_EVENT_FIRED', // v1-shaped rule_id, no v2 register entry at all
+      validation_layer: 'parameter_completeness',
+      status: 'fail',
+      severity: 'critical',
+      technical_details: { found: '', expected: '', evidence: [] },
+    };
+    expect(collectClientQuestions([result])).toEqual([]);
+  });
+
+  it('excludes passing and skipped results even when their rule carries client_question', () => {
+    const base = {
+      rule_id: 'NO_DUPLICATE_CONTAINER',
+      validation_layer: 'foundation_tags' as const,
+      severity: 'high' as const,
+      technical_details: { found: '', expected: '', evidence: [] },
+    };
+    expect(collectClientQuestions([{ ...base, status: 'pass' }])).toEqual([]);
+    expect(collectClientQuestions([{ ...base, status: 'skipped' }])).toEqual([]);
+  });
+
+  it("doesn't mistake a v1 result for v2 just because it reuses a rule_id — layer must match too", () => {
+    const v1ShapedResult: ValidationResult = {
+      rule_id: 'NO_DUPLICATE_CONTAINER',
+      validation_layer: 'signal_initiation', // not L1.11's real layer ('foundation_tags')
+      status: 'fail',
+      severity: 'high',
+      technical_details: { found: '', expected: '', evidence: [] },
+    };
+    expect(collectClientQuestions([v1ShapedResult])).toEqual([]);
   });
 });

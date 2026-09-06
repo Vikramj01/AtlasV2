@@ -16,6 +16,7 @@ import type {
 } from '@/types/audit';
 import { generateBusinessSummary, determineOverallStatus, getIssueHeadline, getIssueImpact } from '@/services/interpretation/engine';
 import { buildCoverageSummary } from './coverage';
+import { buildOpenQuestions } from './openQuestions';
 import { scanReportForPlaceholders } from './placeholderGuard';
 
 // ─── Journey stage mapping ─────────────────────────────────────────────────────
@@ -169,6 +170,11 @@ export function generateReport(
 
   if (unassessable && unassessable.length > 0) {
     report.could_not_be_assessed = unassessable;
+  }
+
+  const openQuestions = buildOpenQuestions(auditData, results);
+  if (openQuestions) {
+    report.open_questions = openQuestions;
   }
 
   // Pre-render placeholder guard (PRD "Signal Health Report" Issue 4) —

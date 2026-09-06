@@ -8,7 +8,7 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import {
-  isApplicableToSiteType, isApplicableToDeclaredPlatforms, isRuleApplicable, runRegister,
+  isApplicableToSiteType, isApplicableToDeclaredPlatforms, isRuleApplicable, runRegister, deriveConfidence,
 } from '../engine';
 import { calculateV2Scores } from '../scoring';
 import type { AuditData, ValidationRule, DeclaredPlatform, StepCoverage } from '@/types/audit';
@@ -280,5 +280,69 @@ describe('runRegister — requires (precondition gating)', () => {
     const resultsReached = runRegister(reachedConversionSurface, [gatedRule, passingRule]);
     expect(resultsReached.map((r) => r.status)).toEqual(['fail', 'pass']);
     expect(calculateV2Scores(resultsReached).conversion_signal_health).toBe(50);
+  });
+});
+
+// ── confidence (Report Honesty PRD Part A) ──────────────────────────────────
+
+describe('deriveConfidence', () => {
+  const gatedRule = makeRule({ rule_id: 'GATED', requires: ['conversion_surface'] });
+  const ungatedRule = makeRule({ rule_id: 'UNGATED' });
+
+  it("defaults to 'high' for a rule with no step-level requires, regardless of step_coverage", () => {
+    const auditData = makeAuditData({ step_coverage: [makeStep({ source: 'heuristic' })] });
+    expect(deriveConfidence(ungatedRule, auditData)).toBe('high');
+  });
+
+  it("defaults to 'high' when step_coverage is absent — nothing to distrust", () => {
+    expect(deriveConfidence(gatedRule, makeAuditData({ step_coverage: undefined }))).toBe('high');
+  });
+
+  it("is 'high' when the qualifying step has verified provenance and didn't degrade", () => {
+    const auditData = makeAuditData({
+      step_coverage: [makeStep({ step: 'landing', distinct_from_landing: false }), makeStep({ source: 'user_supplied' })],
+    });
+    expect(deriveConfidence(gatedRule, auditData)).toBe('high');
+  });
+
+  it("is 'confirm' when the qualifying step was only found via a path guess ('heuristic')", () => {
+    const auditData = makeAuditData({
+      step_coverage: [makeStep({ step: 'landing', distinct_from_landing: false }), makeStep({ source: 'heuristic' })],
+    });
+    expect(deriveConfidence(gatedRule, auditData)).toBe('confirm');
+  });
+
+  it("is 'confirm' when the qualifying step degraded, even with verified provenance", () => {
+    const auditData = makeAuditData({
+      step_coverage: [makeStep({ step: 'landing', distinct_from_landing: false }), makeStep({ source: 'user_supplied', degraded: true })],
+    });
+    expect(deriveConfidence(gatedRule, auditData)).toBe('confirm');
+  });
+
+  it('runRegister attaches confidence to a real (non-skipped) result but never to a skipped one', () => {
+    const auditData = makeAuditData({
+      step_coverage: [makeStep({ step: 'landing', distinct_from_landing: false }), makeStep({ source: 'heuristic' })],
+    });
+    const [gatedResult, ungatedResult] = runRegister(auditData, [gatedRule, ungatedRule]);
+    expect(gatedResult.confidence).toBe('confirm');
+    expect(ungatedResult.confidence).toBe('high');
+
+    const skippedResult = runRegister(makeAuditData({ step_coverage: [makeStep({ step: 'landing', distinct_from_landing: false })] }), [gatedRule])[0];
+    expect(skippedResult.status).toBe('skipped');
+    expect(skippedResult.confidence).toBeUndefined();
+  });
+
+  it('confidence never changes scoring — byte-identical scores with and without it populated', () => {
+    const auditData = makeAuditData({
+      step_coverage: [makeStep({ step: 'landing', distinct_from_landing: false }), makeStep({ source: 'heuristic' })],
+    });
+    const failingGatedRule = makeRule({
+      rule_id: 'GATED_FAIL',
+      requires: ['conversion_surface'],
+      test: () => ({ rule_id: 'GATED_FAIL', validation_layer: 'foundation_tags', status: 'fail', severity: 'high', technical_details: { found: '', expected: '', evidence: [] } }),
+    });
+    const results = runRegister(auditData, [failingGatedRule, ungatedRule]);
+    const withoutConfidence = results.map(({ confidence: _confidence, ...rest }) => rest);
+    expect(calculateV2Scores(results)).toEqual(calculateV2Scores(withoutConfidence));
   });
 });
