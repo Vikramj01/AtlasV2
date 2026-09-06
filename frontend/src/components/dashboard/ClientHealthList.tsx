@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { CheckCircle2, AlertTriangle, AlertCircle, HelpCircle, ChevronRight, Plug } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, AlertCircle, HelpCircle, ChevronRight, Plug, Radio, Percent } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { DashboardClientSummaryItem } from '@/types/dashboard';
@@ -15,12 +15,20 @@ const HEALTH_CONFIG: Record<
   unknown:  { Icon: HelpCircle,    color: 'text-console-fg-disabled',  label: 'Not set up' },
 };
 
-type SortBy = 'issues' | 'name';
+const HEALTH_SORT_RANK: Record<DashboardClientSummaryItem['health_level'], number> = {
+  critical: 3, warning: 2, unknown: 1, healthy: 0,
+};
+
+type SortBy = 'severity' | 'name';
 
 function sortClients(clients: DashboardClientSummaryItem[], sortBy: SortBy): DashboardClientSummaryItem[] {
   return [...clients].sort((a, b) => {
     if (sortBy === 'name') return a.name.localeCompare(b.name);
-    return b.open_findings_count - a.open_findings_count || a.name.localeCompare(b.name);
+    // health_level already folds in DQM/CAPI signals (not just findings) —
+    // it's the single source of truth for "which client needs attention".
+    return HEALTH_SORT_RANK[b.health_level] - HEALTH_SORT_RANK[a.health_level]
+      || b.open_findings_count - a.open_findings_count
+      || a.name.localeCompare(b.name);
   });
 }
 
@@ -30,7 +38,7 @@ interface ClientHealthListProps {
 }
 
 export function ClientHealthList({ clients, orgId }: ClientHealthListProps) {
-  const [sortBy, setSortBy] = useState<SortBy>('issues');
+  const [sortBy, setSortBy] = useState<SortBy>('severity');
 
   if (clients.length === 0) {
     return (
@@ -59,7 +67,7 @@ export function ClientHealthList({ clients, orgId }: ClientHealthListProps) {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="issues">Most issues first</SelectItem>
+            <SelectItem value="severity">Most severe first</SelectItem>
             <SelectItem value="name">A–Z</SelectItem>
           </SelectContent>
         </Select>
@@ -83,6 +91,16 @@ export function ClientHealthList({ clients, orgId }: ClientHealthListProps) {
                     {client.open_findings_count} issue{client.open_findings_count !== 1 ? 's' : ''}
                   </span>
                 )}
+                {client.dqm_alert_count > 0 && (
+                  <span
+                    className={cn(
+                      'shrink-0 text-[10px] font-semibold rounded-full px-1.5 py-0.5',
+                      client.dqm_worst_severity === 'critical' ? 'bg-console-red/10 text-console-red' : 'bg-console-amber/10 text-console-amber',
+                    )}
+                  >
+                    {client.dqm_alert_count} DQM alert{client.dqm_alert_count !== 1 ? 's' : ''}
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-3 mt-0.5">
                 <span className="text-xs text-console-fg-subtle">{label}</span>
@@ -95,6 +113,18 @@ export function ClientHealthList({ clients, orgId }: ClientHealthListProps) {
                 {client.signals_count > 0 && (
                   <span className="text-xs text-console-fg-subtle">
                     {client.signals_count} signal pack{client.signals_count !== 1 ? 's' : ''}
+                  </span>
+                )}
+                {client.capi_match_quality_7d !== null && (
+                  <span className="flex items-center gap-1 text-xs text-console-fg-subtle">
+                    <Radio className="h-3 w-3" />
+                    EMQ {client.capi_match_quality_7d.toFixed(1)}
+                  </span>
+                )}
+                {client.capi_dedup_rate_7d !== null && (
+                  <span className="flex items-center gap-1 text-xs text-console-fg-subtle">
+                    <Percent className="h-3 w-3" />
+                    {client.capi_dedup_rate_7d.toFixed(0)}% dedup
                   </span>
                 )}
               </div>

@@ -100,6 +100,10 @@ export interface DashboardClientSummaryItem {
   platforms_connected: string[];
   last_verified_at: string | null;
   open_findings_count: number;
+  dqm_alert_count: number;
+  dqm_worst_severity: 'critical' | 'high' | 'medium' | null;
+  capi_match_quality_7d: number | null;
+  capi_dedup_rate_7d: number | null;
 }
 
 export interface OrgMetrics {
