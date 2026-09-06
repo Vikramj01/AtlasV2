@@ -150,9 +150,19 @@ export function buildV2PlatformBreakdown(
     const riskExplanation = failCount === 0
       ? `All ${totalCount} checks passed.`
       : `${failCount} of ${totalCount} checks failed. ${PLATFORM_RISK_MESSAGES[platform]}`;
+    // Report Correctness Programme PRD Part B1 — .found (the actual
+    // observed defect), never .expected (the rule's ideal/passing-state
+    // description). .expected is written throughout the register as prose
+    // like "gclid present in the URL is read and stored by the page — the
+    // entry point for all Google click attribution" (see L2.ts), which read
+    // as a display label produced the exact "Failed: GOOGLE GLOBAL SITE TAG
+    // PRESENT · Google Ads can't attribute conversions... · GBRAID CAPTURED
+    // AT LANDING" mixed rendering the PRD reports. The frontend's
+    // PlatformImpact.tsx already treats `impact` as tooltip prose, not a
+    // label, so this only changes which text fills that role.
     const failedRuleDetails = failedRules.map((ruleId) => ({
       rule_id: ruleId,
-      impact: resultMap.get(ruleId)?.technical_details.expected ?? ruleId,
+      impact: resultMap.get(ruleId)?.technical_details.found ?? ruleId,
     }));
 
     return {

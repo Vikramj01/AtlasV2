@@ -286,6 +286,12 @@ function makeClickIdCaptureRule(opts: {
     detectable_by: 'crawl',
     owner: 'Frontend',
     remediation: `Read the injected ${opts.paramName} URL parameter on page load and persist it — a first-party cookie or localStorage, before the user can navigate away. A value sitting only in the URL is lost the moment they click through to another page.`,
+    // Report Correctness Programme PRD Part B3 — hardcoded here rather than
+    // per-opts, so every rule this factory produces (L2.1-2.7) shares the
+    // same effort by construction: reading one URL param and persisting it
+    // is identically low-effort for every one of them, and there's no
+    // per-rule field for a future edit to accidentally diverge.
+    estimated_effort: 'low',
 
     test(auditData: AuditData): ValidationResult {
       const result = checkParamCapture(auditData, opts.paramName);
