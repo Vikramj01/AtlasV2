@@ -137,6 +137,69 @@ describe('checkParamCapture — three-tier matching (via GCLID_CAPTURED_AT_LANDI
   });
 });
 
+// ── Tier 3: delimited-substring matching (Report Correctness Programme PRD
+// Part A) — the target value appears as one delimited segment inside a
+// larger stored string, the shape Google's/Meta's own conversion-linker
+// cookies use. Exercised via gclid/fbclid, the two rules the PRD's
+// Birkenstock reference audit (13795830) reproduces the defect on. ──────────
+
+describe('checkParamCapture — tier 3 delimited-substring matching (Report Correctness Programme PRD Part A)', () => {
+  it('tier 3: gclid captured when found inside _gcl_aw\'s "GCL.<timestamp>.<gclid>" shape', () => {
+    const synthetic = 'test_gclid_1788674025123';
+    const auditData = makeAuditData({
+      urlParams: { gclid: synthetic },
+      cookies: { _gcl_aw: `GCL.1788674025.${synthetic}` },
+    });
+    const result = GCLID_CAPTURED_AT_LANDING.test(auditData);
+    expect(result.status).toBe('pass');
+    expect(result.technical_details.found).toContain('_gcl_aw');
+    expect(result.technical_details.found).toContain(`GCL.1788674025.${synthetic}`);
+    expect(result.technical_details.evidence.some((e) => e.includes('_gcl_aw') && e.includes('delimited segment'))).toBe(true);
+  });
+
+  it('tier 3: fbclid captured when found inside _fbc\'s "fb.1.<timestamp>.<fbclid>" shape', () => {
+    const synthetic = 'test_fbclid_1788674025456';
+    const auditData = makeAuditData({
+      urlParams: { fbclid: synthetic },
+      cookies: { _fbc: `fb.1.1788674025.${synthetic}` },
+    });
+    const result = FBCLID_CAPTURED_AT_LANDING.test(auditData);
+    expect(result.status).toBe('pass');
+    expect(result.technical_details.found).toContain('_fbc');
+  });
+
+  it('tier 3: still fails when the target is genuinely absent from every store, and evidence names every store searched', () => {
+    const auditData = makeAuditData({
+      urlParams: { gclid: 'test_gclid_1788674025999' },
+      cookies: { _gcl_aw: 'GCL.1788674025.some_unrelated_other_value' },
+      storage: { some_key: 'unrelated' },
+      sessionStorage: { another_key: 'also_unrelated' },
+    });
+    const result = GCLID_CAPTURED_AT_LANDING.test(auditData);
+    expect(result.status).toBe('fail');
+    expect(result.technical_details.evidence.some((e) => /localStorage.*sessionStorage.*cookies.*dataLayer/.test(e))).toBe(true);
+  });
+
+  it('tier 3: two synthetic values, only one delimited-stored — the other still reports not captured', () => {
+    const gclidSynthetic = 'test_gclid_1788674025111';
+    const fbclidSynthetic = 'test_fbclid_1788674025222';
+    const auditData = makeAuditData({
+      urlParams: { gclid: gclidSynthetic, fbclid: fbclidSynthetic },
+      cookies: { _gcl_aw: `GCL.1788674025.${gclidSynthetic}` }, // only gclid captured
+    });
+    expect(GCLID_CAPTURED_AT_LANDING.test(auditData).status).toBe('pass');
+    expect(FBCLID_CAPTURED_AT_LANDING.test(auditData).status).toBe('fail');
+  });
+
+  it('does not delimited-match a short target — guards the degenerate case', () => {
+    const auditData = makeAuditData({
+      urlParams: { gclid: 'g1' }, // below MIN_DELIMITED_MATCH_TARGET_LENGTH
+      cookies: { _gcl_aw: 'GCL.1788674025.g123456789' }, // coincidentally contains "g1"
+    });
+    expect(GCLID_CAPTURED_AT_LANDING.test(auditData).status).toBe('fail');
+  });
+});
+
 describe('GBRAID_CAPTURED_AT_LANDING (L2.2)', () => {
   it('fails when gbraid is present but not captured', () => {
     expect(GBRAID_CAPTURED_AT_LANDING.test(makeAuditData({ urlParams: { gbraid: 'g1' } })).status).toBe('fail');
