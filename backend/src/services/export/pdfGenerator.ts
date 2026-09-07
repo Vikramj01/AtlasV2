@@ -167,6 +167,15 @@ const PLATFORM_LABELS: Record<string, string> = {
   sgtm:       'Server-side GTM',
 };
 
+const TAG_PLATFORM_LABELS: Record<string, string> = {
+  ga4:              'Google Analytics 4',
+  meta_pixel:       'Meta Pixel',
+  google_ads:       'Google Ads',
+  linkedin_insight: 'LinkedIn Insight Tag',
+  tiktok_pixel:     'TikTok Pixel',
+  microsoft_uet:    'Microsoft UET',
+};
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 function statusColor(status: string): string {
@@ -304,6 +313,35 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
       .text(`${genDate}  ·  Audit ID: ${report.audit_id}`, LEFT);
 
     doc.moveDown(0.8);
+
+    // ══════════════════════════════════════════════════════════════════════
+    // PAGE 1 (cont.) — How to read this report (Report Honesty PRD Part C) —
+    // moved to the front of the report so a reader sees Atlas's own caveats
+    // about scan methodology before any score or finding, not after. Static
+    // copy: never templated per-audit.
+    // ══════════════════════════════════════════════════════════════════════
+
+    sectionHeading('How to read this report');
+
+    const HOW_TO_READ_PARAGRAPHS = [
+      'This is a first-pass technical scan. It was run from outside your systems, without access to your ad accounts, and without a conversation with whoever built your measurement setup. Three things follow from that.',
+      'We observed one crawl, from one location, at one moment. A tag that fires conditionally, or a page that behaves differently for signed-in users or in another region, may not appear here as it does for your customers.',
+      "We can see what your site does, not what it reports. Match rates, conversion values, attribution windows and platform-side configuration all sit inside your ad accounts, which we have not seen.",
+      'We cannot tell deliberate from accidental. A second container may be a migration in progress. An undeclared tag may be a channel we were not told about. A missing tag may mean that platform runs through a different property entirely. Where that distinction matters, we have raised it as a question rather than a finding.',
+      'Findings without a confirmation marker were observed consistently and are unlikely to be artefacts of the scan. Findings marked Needs confirmation rest on a single observation or a page we could not fully verify, and should be checked before anyone acts on them.',
+    ];
+    for (const paragraph of HOW_TO_READ_PARAGRAPHS) {
+      doc.fillColor(C.midText).fontSize(10).font('Helvetica')
+        .text(paragraph, LEFT, doc.y, { width: CONTENT_W });
+      doc.moveDown(0.6);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // PAGE 2 — Executive Summary
+    // ══════════════════════════════════════════════════════════════════════
+
+    doc.addPage();
+    pageHeader('Executive Summary');
 
     // Overall status banner — height is measured, not fixed, so a longer
     // (but still capped) sub-text never gets clipped by a too-short box.
@@ -526,26 +564,6 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
     doc.fillColor(C.midText).fontSize(10).font('Helvetica')
       .text(business_summary, LEFT, doc.y, { width: CONTENT_W });
 
-    // Open Questions (Report Honesty PRD §B3) — immediately after Business
-    // Summary, before Journey Breakdown, so a reader who never reaches the
-    // appendix still sees Atlas asking rather than pronouncing. Omitted
-    // entirely (not an empty heading) when this run raised nothing to ask.
-    if (report.open_questions && report.open_questions.length > 0) {
-      doc.moveDown(0.8);
-      sectionHeading('Open Questions');
-      doc.fillColor(C.midText).fontSize(9).font('Helvetica')
-        .text(
-          'These are configurations whose intent only you can confirm — not defects, but worth a quick answer before anyone acts on the findings below.',
-          LEFT, doc.y, { width: CONTENT_W },
-        );
-      doc.moveDown(0.3);
-      for (const question of report.open_questions) {
-        doc.fillColor(C.darkText).fontSize(9.5).font('Helvetica')
-          .text(`•  ${question}`, LEFT + 4, doc.y, { width: CONTENT_W - 8 });
-        doc.moveDown(0.2);
-      }
-    }
-
     // Quick rule stats
     doc.moveDown(0.8);
     sectionHeading('Rule Overview');
@@ -573,53 +591,31 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
     }
 
     // ══════════════════════════════════════════════════════════════════════
-    // PAGE 2 — Journey Breakdown
+    // PAGE — Open Questions (Report Honesty PRD §B3) — its own page right
+    // after Executive Summary, so a reader who never reaches the appendix
+    // still sees Atlas asking rather than pronouncing. Omitted entirely (no
+    // page added) when this run raised nothing to ask.
     // ══════════════════════════════════════════════════════════════════════
 
-    doc.addPage();
-    pageHeader('Journey Breakdown');
-
-    sectionHeading('Funnel Stage Analysis');
-
-    for (const stage of report.journey_stages) {
-      const estH = 34 + Math.max(stage.issues.length, 1) * 15 + 10;
-      if (needsNewPage(estH)) {
-        doc.addPage();
-        pageHeader('Journey Breakdown');
-        sectionHeading('Funnel Stage Analysis (continued)');
+    if (report.open_questions && report.open_questions.length > 0) {
+      doc.addPage();
+      pageHeader('Open Questions');
+      sectionHeading('Open Questions');
+      doc.fillColor(C.midText).fontSize(9).font('Helvetica')
+        .text(
+          'These are configurations whose intent only you can confirm — not defects, but worth a quick answer before anyone acts on the findings below.',
+          LEFT, doc.y, { width: CONTENT_W },
+        );
+      doc.moveDown(0.3);
+      for (const question of report.open_questions) {
+        doc.fillColor(C.darkText).fontSize(9.5).font('Helvetica')
+          .text(`•  ${question}`, LEFT + 4, doc.y, { width: CONTENT_W - 8 });
+        doc.moveDown(0.2);
       }
-
-      const stageY = doc.y;
-      const sc = statusColor(stage.status);
-
-      doc.fillColor(C.bgLight).rect(LEFT, stageY, CONTENT_W, 26).fill();
-      doc.fillColor(sc).circle(LEFT + 14, stageY + 13, 4).fill();
-      doc.fillColor(C.darkText).fontSize(11).font('Helvetica-Bold')
-        .text(stage.stage, LEFT + 26, stageY + 7);
-
-      const savedY = doc.y;
-      doc.fillColor(sc).fontSize(9).font('Helvetica')
-        .text(formatLabel(stage.status), LEFT, stageY + 9, { align: 'right', width: CONTENT_W });
-      doc.y = Math.max(savedY, stageY + 32);
-
-      if (stage.status === 'not_run') {
-        doc.fillColor('#9CA3AF').fontSize(9).font('Helvetica')
-          .text('Not included in this scan — this stage was excluded from the audit.', LEFT + 26, doc.y);
-      } else if (stage.issues.length === 0) {
-        doc.fillColor(C.healthy).fontSize(9).font('Helvetica')
-          .text('All checks passed for this stage.', LEFT + 26, doc.y);
-      } else {
-        stage.issues.forEach((issue) => {
-          doc.fillColor(C.broken).fontSize(9).font('Helvetica')
-            .text(`•  ${issue.label}`, LEFT + 26, doc.y, { width: CONTENT_W - 32 });
-          doc.moveDown(0.2);
-        });
-      }
-      doc.moveDown(0.6);
     }
 
     // ══════════════════════════════════════════════════════════════════════
-    // PAGE 3 — Platform Impact
+    // PAGE — Platform Impact
     // ══════════════════════════════════════════════════════════════════════
 
     doc.addPage();
@@ -907,29 +903,152 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
     }
 
     // ══════════════════════════════════════════════════════════════════════
-    // PAGE — How to read this report (Report Honesty PRD Part C) — final
-    // section, before the appendix. Static copy: never templated per-audit.
+    // PAGE — Site Setup — what tracking infrastructure was detected on the
+    // site during this scan (mirrors the web report's Site Setup tab).
+    // Informational, non-scored; omitted entirely (no page added) when this
+    // audit predates site_setup rather than rendering a fabricated "no data"
+    // state, per CLAUDE.md rule 12.
     // ══════════════════════════════════════════════════════════════════════
 
-    doc.addPage();
-    pageHeader('How to Read This Report');
-    sectionHeading('How to read this report');
+    if (report.site_setup) {
+      doc.addPage();
+      pageHeader('Site Setup');
+      sectionHeading('Site Setup');
+      doc.fillColor(C.midText).fontSize(9).font('Helvetica')
+        .text(
+          'What tracking infrastructure we detected on your site during this scan.',
+          LEFT, doc.y, { width: CONTENT_W },
+        );
+      doc.moveDown(0.5);
 
-    const HOW_TO_READ_PARAGRAPHS = [
-      'This is a first-pass technical scan. It was run from outside your systems, without access to your ad accounts, and without a conversation with whoever built your measurement setup. Three things follow from that.',
-      'We observed one crawl, from one location, at one moment. A tag that fires conditionally, or a page that behaves differently for signed-in users or in another region, may not appear here as it does for your customers.',
-      "We can see what your site does, not what it reports. Match rates, conversion values, attribution windows and platform-side configuration all sit inside your ad accounts, which we have not seen.",
-      'We cannot tell deliberate from accidental. A second container may be a migration in progress. An undeclared tag may be a channel we were not told about. A missing tag may mean that platform runs through a different property entirely. Where that distinction matters, we have raised it as a question rather than a finding.',
-      'Findings without a confirmation marker were observed consistently and are unlikely to be artefacts of the scan. Findings marked Needs confirmation rest on a single observation or a page we could not fully verify, and should be checked before anyone acts on them.',
-    ];
-    for (const paragraph of HOW_TO_READ_PARAGRAPHS) {
-      doc.fillColor(C.midText).fontSize(10).font('Helvetica')
-        .text(paragraph, LEFT, doc.y, { width: CONTENT_W });
+      const { gtm_container, tags, possible_server_side_gtm, datalayer_inventory } = report.site_setup;
+
+      // GTM Container
+      sectionHeading('Google Tag Manager Container');
+      const gtmBadgeY = doc.y;
+      pill(gtm_container.detected ? 'Detected' : 'Not Detected', gtm_container.detected ? C.healthy : C.mutedText, LEFT, gtmBadgeY);
+      doc.y = gtmBadgeY + 22;
+      if (gtm_container.detected) {
+        doc.fillColor(C.darkText).font('Helvetica').fontSize(9)
+          .text(gtm_container.container_ids.join(', '), LEFT, doc.y, { width: CONTENT_W });
+      } else {
+        doc.fillColor(C.lightText).fontSize(9).font('Helvetica')
+          .text('No GTM container script was observed loading on the scanned pages.', LEFT, doc.y, { width: CONTENT_W });
+      }
+      if (gtm_container.connected_container_id) {
+        doc.moveDown(0.3);
+        const matchLabel = gtm_container.ids_match === false
+          ? 'Mismatch — live site loads a different container'
+          : gtm_container.ids_match === true
+          ? 'Matches connected container' : null;
+        doc.fillColor(C.lightText).fontSize(8.5).font('Helvetica')
+          .text(`Connected container: ${gtm_container.connected_container_id}${matchLabel ? `  ·  ${matchLabel}` : ''}`, LEFT, doc.y, { width: CONTENT_W });
+      }
+      doc.moveDown(0.8);
+
+      // Tags & Pixels Detected
+      if (needsNewPage(60)) {
+        doc.addPage();
+        pageHeader('Site Setup');
+      }
+      sectionHeading('Tags & Pixels Detected');
+      doc.fillColor(C.mutedText).fontSize(8).font('Helvetica')
+        .text('General presence, independent of whether a conversion event fired.', LEFT, doc.y, { width: CONTENT_W });
+      doc.moveDown(0.35);
+      for (const tag of tags) {
+        if (needsNewPage(26)) {
+          doc.addPage();
+          pageHeader('Site Setup');
+          sectionHeading('Tags & Pixels Detected (continued)');
+        }
+        const rowY = doc.y;
+        doc.fillColor(C.bgLight).rect(LEFT, rowY, CONTENT_W, 22).fill();
+        doc.fillColor(C.darkText).fontSize(9).font('Helvetica-Bold')
+          .text(TAG_PLATFORM_LABELS[tag.platform] ?? formatLabel(tag.platform), LEFT + 10, rowY + 6);
+        pill(tag.detected ? 'Detected' : 'Not Detected', tag.detected ? C.healthy : C.mutedText, LEFT + CONTENT_W - 90, rowY + 4);
+        if (tag.detected) {
+          const detail = `${tag.ids.length > 0 ? `ID${tag.ids.length > 1 ? 's' : ''}: ${tag.ids.join(', ')}  ·  ` : ''}${tag.hit_count} request${tag.hit_count === 1 ? '' : 's'} observed`;
+          doc.fillColor(C.lightText).fontSize(7.5).font('Helvetica')
+            .text(detail, LEFT + 10, rowY + 6, { align: 'right', width: CONTENT_W - 110 });
+        }
+        doc.y = rowY + 26;
+      }
+      doc.moveDown(0.4);
+
+      // Possible Server-Side GTM
+      if (needsNewPage(60)) {
+        doc.addPage();
+        pageHeader('Site Setup');
+      }
+      sectionHeading('Possible Server-Side GTM');
+      const sgtmBadgeY = doc.y;
+      pill(
+        possible_server_side_gtm.detected ? 'Possible Signal Found' : 'No Signal Found',
+        possible_server_side_gtm.detected ? C.atRisk : C.mutedText,
+        LEFT, sgtmBadgeY,
+      );
+      doc.y = sgtmBadgeY + 22;
+      if (possible_server_side_gtm.detected && possible_server_side_gtm.candidate_hosts.length > 0) {
+        doc.fillColor(C.darkText).fontSize(8.5).font('Helvetica')
+          .text(
+            `Candidate host${possible_server_side_gtm.candidate_hosts.length > 1 ? 's' : ''}: ${possible_server_side_gtm.candidate_hosts.join(', ')}`,
+            LEFT, doc.y, { width: CONTENT_W },
+          );
+        doc.moveDown(0.25);
+        doc.fillColor(C.lightText).fontSize(8)
+          .text(`Confidence: ${possible_server_side_gtm.confidence}`, LEFT, doc.y);
+        doc.moveDown(0.25);
+      }
+      doc.fillColor(C.mutedText).fontSize(7.5).font('Helvetica-Oblique')
+        .text(
+          possible_server_side_gtm.caveat || 'This is a best-effort heuristic based on request path/hostname shape, not a confirmed server-side GTM installation.',
+          LEFT, doc.y, { width: CONTENT_W },
+        );
       doc.moveDown(0.6);
+
+      // DataLayer Inventory
+      if (needsNewPage(60)) {
+        doc.addPage();
+        pageHeader('Site Setup');
+      }
+      sectionHeading('Data Layer Inventory');
+      doc.fillColor(C.mutedText).fontSize(8).font('Helvetica')
+        .text('Events observed in window.dataLayer during this scan and the parameters each one carries.', LEFT, doc.y, { width: CONTENT_W });
+      doc.moveDown(0.35);
+      if (datalayer_inventory.length === 0) {
+        doc.fillColor(C.lightText).fontSize(9).font('Helvetica')
+          .text('No dataLayer events were observed.', LEFT, doc.y);
+      }
+      for (const entry of datalayer_inventory) {
+        const paramLine = entry.parameter_keys.join(', ');
+        const paramH = entry.parameter_keys.length > 0
+          ? doc.font('Helvetica').fontSize(7.5).heightOfString(paramLine, { width: CONTENT_W - 20 }) + 4
+          : 0;
+        const entryH = 20 + paramH + 8;
+        if (needsNewPage(entryH)) {
+          doc.addPage();
+          pageHeader('Site Setup');
+          sectionHeading('Data Layer Inventory (continued)');
+        }
+        const entryY = doc.y;
+        doc.strokeColor(C.bgLight).lineWidth(1).rect(LEFT, entryY, CONTENT_W, entryH).stroke();
+        doc.fillColor(C.darkText).fontSize(9).font('Helvetica-Bold')
+          .text(entry.event_name, LEFT + 10, entryY + 6);
+        doc.fillColor(C.mutedText).fontSize(7.5).font('Helvetica')
+          .text(
+            `${entry.occurrence_count} occurrence${entry.occurrence_count === 1 ? '' : 's'}  ·  ${entry.steps_seen.join(', ')}`,
+            LEFT + 10, entryY + 6, { align: 'right', width: CONTENT_W - 20 },
+          );
+        if (entry.parameter_keys.length > 0) {
+          doc.fillColor(C.lightText).fontSize(7.5).font('Helvetica')
+            .text(paramLine, LEFT + 10, entryY + 20, { width: CONTENT_W - 20 });
+        }
+        doc.y = entryY + entryH + 8;
+      }
     }
 
     // ══════════════════════════════════════════════════════════════════════
-    // PAGE 5 — Technical Appendix
+    // PAGE — Technical Appendix
     // ══════════════════════════════════════════════════════════════════════
 
     doc.addPage();
