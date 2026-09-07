@@ -23,6 +23,8 @@ import { generateReport } from '@/services/reporting/generator';
 import { computeCoverageFingerprint } from '@/services/reporting/coverage';
 import { partitionCoverageAffected } from '@/services/reporting/coverageSuppression';
 import { partitionDegradedRuns } from '@/services/reporting/degradationSuppression';
+import { partitionClickIdContention } from '@/services/validation/register/clickIdContention';
+import { partitionContradictions } from '@/services/validation/register/contradictionGuard';
 import { getConnectedGtmContainerId } from '@/services/database/gtmConnectionQueries';
 import { getNamingConvention } from '@/services/database/namingConventionQueries';
 import { buildSiteSetupSummary } from './siteSetupDetector';
@@ -289,26 +291,55 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
 
         const siteSetup = buildSiteSetupSummary(auditData, (auditData.pageMetadata?.gtm_script_srcs as string[]) ?? [], connectedGtmContainerId);
 
+        // Click-ID contention (Click-ID Contention, Contradiction Guard &
+        // Settle Enforcement PRD W1 — minimum option) — journeySimulator
+        // injects every click ID in one pass, so a platform family with
+        // more than one member (Google: gclid/gbraid/wbraid) never
+        // reflects a realistic single-click visit. When one family member
+        // captures and a sibling doesn't, the site's own linker resolved
+        // the conflict correctly; the losing sibling(s) move to
+        // could_not_be_assessed rather than standing as a CRITICAL fail.
+        // Runs first — before the contradiction guard — so a
+        // contention-explained fail is never also flagged as a logical
+        // contradiction against the same underlying evidence.
+        const { assessable: contentionAssessable, unassessable: contentionUnassessable } = isV2
+          ? partitionClickIdContention(validationResults, auditData)
+          : { assessable: validationResults, unassessable: [] };
+
+        // Contradiction guard (W2) — a FAIL a passing sibling rule
+        // logically rules out (e.g. GCLID_CAPTURED_AT_LANDING failing
+        // while GCL_AW_COOKIE_PRESENT passes) is suppressed to
+        // could_not_be_assessed rather than shipped as a self-contradicting
+        // finding (see contradictionGuard.ts for why this replaced the
+        // old in-place annotation).
+        const { assessable: contradictionAssessable, unassessable: contradictionUnassessable } = isV2
+          ? partitionContradictions(contentionAssessable)
+          : { assessable: contentionAssessable, unassessable: [] };
+
         // Coverage suppression (Signal Health Report: Evidence Integrity &
         // Presentation PRD §5/W3) — a result whose evidence names a step
         // that resolved to fallback_landing is excluded from scores, issue
         // counts, and journey/platform breakdowns; v1 has no step_coverage
         // concept, so its results pass through unfiltered.
         const { assessable: coverageAssessable, unassessable: coverageUnassessable } = isV2
-          ? partitionCoverageAffected(validationResults, auditData.step_coverage)
-          : { assessable: validationResults, unassessable: [] };
+          ? partitionCoverageAffected(contradictionAssessable, auditData.step_coverage)
+          : { assessable: contradictionAssessable, unassessable: [] };
 
         // Degradation suppression (Platform Attribution & Determinism PRD
-        // Part B, B-W4) — a run where any step's navigation didn't fully
-        // settle can't tell "genuinely absent" apart from "the scan didn't
-        // wait long enough to see it" for a fixed set of absence-sensitive
-        // rules; those results move to could_not_be_assessed alongside the
-        // coverage-suppressed ones rather than standing as a confident
+        // Part B, B-W4; widened by W3 above) — a run where any step's
+        // navigation didn't fully settle can't tell "genuinely absent"
+        // apart from "the scan didn't wait long enough to see it", for
+        // every rule whose evidence derives from reaching the conversion
+        // surface plus a fixed set of run-wide absence-sensitive rules;
+        // those results move to could_not_be_assessed alongside the
+        // already-suppressed ones rather than standing as a confident
         // pass/fail. v1 has no step_coverage/degraded concept, same as above.
         const { assessable, unassessable: degradationUnassessable } = isV2
           ? partitionDegradedRuns(coverageAssessable, auditData.step_coverage)
           : { assessable: coverageAssessable, unassessable: [] };
-        const unassessable = [...coverageUnassessable, ...degradationUnassessable];
+        const unassessable = [
+          ...contentionUnassessable, ...contradictionUnassessable, ...coverageUnassessable, ...degradationUnassessable,
+        ];
 
         const scores = isV2 ? calculateV2Scores(assessable) : calculateScores(assessable);
         const issues = interpretResults(assessable);

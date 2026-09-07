@@ -133,6 +133,26 @@ function buildPlatformBreakdown(resultMap: Map<string, ValidationResult>): Platf
 
 // ─── Main generator ───────────────────────────────────────────────────────────
 
+/**
+ * Audit-time assertion (Click-ID Contention, Contradiction Guard & Settle
+ * Enforcement PRD W2.2) — a fired contradiction guard must suppress the
+ * finding, never render inside it as evidence against itself. Now that
+ * contradictionGuard.ts routes a fired result to could_not_be_assessed
+ * instead of annotating it in place, this string should never appear in
+ * any result reaching the renderer again; this throws rather than
+ * silently shipping a self-contradicting finding if that guarantee is
+ * ever broken by a future change.
+ */
+function assertNoUnsuppressedContradictions(results: ValidationResult[]): void {
+  const leaked = results.find((r) => r.technical_details.evidence.some((e) => e.includes('CONTRADICTION')));
+  if (leaked) {
+    throw new Error(
+      `Contradiction guard leak: ${leaked.rule_id}'s evidence reached the report renderer un-suppressed. `
+      + 'A fired contradiction must be routed to could_not_be_assessed, never left standing as a finding.',
+    );
+  }
+}
+
 export function generateReport(
   auditData: AuditData,
   scores: AuditScores,
@@ -143,6 +163,7 @@ export function generateReport(
   customPlatformBreakdown?: PlatformBreakdown[],
   unassessable?: UnassessableFinding[],
 ): ReportJSON {
+  assertNoUnsuppressedContradictions(results);
   const resultMap = new Map(results.map((r) => [r.rule_id, r]));
   const overallStatus = determineOverallStatus(results);
   const businessSummary = generateBusinessSummary(results);

@@ -211,10 +211,18 @@ export const FBP_AND_FBC_COOKIES_PRESENT: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Frontend',
   remediation: (result) => {
-    const missing = result.technical_details.found.startsWith('Missing:') ? result.technical_details.found.replace('Missing: ', '') : '_fbp and _fbc';
-    return `Ensure the Meta Pixel base code is installed and firing on every page — ${missing} ${missing.includes(' and ') ? 'are' : 'is'} set automatically by the Pixel itself, so a missing cookie almost always means the Pixel isn't loading on this page at all, not a separate cookie bug.`;
+    const missing = result.technical_details.found.startsWith('Missing:') ? result.technical_details.found.replace('Missing: ', '') : '_fbp';
+    return `Ensure the Meta Pixel base code is installed and firing on every page — ${missing} is set automatically by the Pixel itself, so a missing cookie almost always means the Pixel isn't loading on this page at all, not a separate cookie bug.`;
   },
 
+  // W4.1 (Click-ID Contention, Contradiction Guard & Settle Enforcement
+  // PRD) — _fbc is written by the Meta Pixel only from a genuine fbclid
+  // arriving with a real Meta-click referrer; a crawler-injected fbclid
+  // frequently won't produce it, which is a property of synthetic
+  // injection, not a site defect. _fbp has no such caveat — the Pixel
+  // sets it unconditionally on load. The fail condition is scoped to
+  // _fbp alone; a missing _fbc is reported as an inconclusive evidence
+  // line, never a CRITICAL fail on its own.
   test(auditData: AuditData): ValidationResult {
     const hasFbp = !!auditData.cookies?.['_fbp'];
     const hasFbc = !!auditData.cookies?.['_fbc'];
@@ -222,12 +230,18 @@ export const FBP_AND_FBC_COOKIES_PRESENT: ValidationRule = {
     return {
       rule_id: this.rule_id,
       validation_layer: this.layer,
-      status: hasFbp && hasFbc ? 'pass' : 'fail',
+      status: hasFbp ? 'pass' : 'fail',
       severity: this.severity,
       technical_details: {
-        found: hasFbp && hasFbc ? 'Both _fbp and _fbc are present' : `Missing: ${[!hasFbp && '_fbp', !hasFbc && '_fbc'].filter(Boolean).join(', ')}`,
-        expected: 'Both Meta browser (_fbp) and click (_fbc) cookies are set — match rate collapses without them',
-        evidence: [`_fbp present: ${hasFbp}`, `_fbc present: ${hasFbc}`],
+        found: hasFbp ? '_fbp is present' : 'Missing: _fbp',
+        expected: "The Meta browser cookie (_fbp) is set — the Pixel's own base signal that it's loading and writing cookies at all",
+        evidence: [
+          `_fbp present: ${hasFbp}`,
+          `_fbc present: ${hasFbc}`,
+          ...(hasFbc
+            ? []
+            : ['_fbc inconclusive under synthetic injection — it is only ever populated by the Pixel from a real fbclid arriving with a genuine Meta-click referrer, which a crawler-injected fbclid cannot reproduce; not counted toward this result']),
+        ],
       },
     };
   },

@@ -585,7 +585,7 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
       doc.moveDown(0.15);
       doc.fillColor(C.mutedText).fontSize(8.5).font('Helvetica')
         .text(
-          `→ ${issueTotals.total} of these are listed as action items on the pages that follow (${issueTotals.critical} critical).`,
+          `— ${issueTotals.total} of these are listed as action items on the pages that follow (${issueTotals.critical} critical).`,
           LEFT, doc.y, { width: CONTENT_W },
         );
     }

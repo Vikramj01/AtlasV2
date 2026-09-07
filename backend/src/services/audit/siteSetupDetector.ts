@@ -22,12 +22,37 @@ import type { TagMatch } from '@/services/detection/trackingSignals';
 const MAX_EVIDENCE_URLS = 5;
 const DATALAYER_META_KEYS = new Set(['event', 'timestamp', 'step', '__step', '__timestamp']);
 
+/**
+ * Best-effort display name for a dataLayer push with no `event` key (W5.3,
+ * Click-ID Contention, Contradiction Guard & Settle Enforcement PRD) —
+ * gtag.js pushes `arguments` itself onto dataLayer (`dataLayer.push(
+ * arguments)`), so instrumentDataLayer's `Object.assign({}, ev, ...)`
+ * captures it as index keys '0'/'1'/'2' (e.g. 0='event', 1='purchase',
+ * 2={...}) rather than a named `event` field — and GA4's own enhanced-
+ * ecommerce pushes carry an `ecommerce` key even when unnamed. Printing
+ * blank for these throws away the most commercially interesting entries
+ * in this section (purchase/add_to_cart-shaped pushes); this resolves
+ * whatever the payload shape actually tells us instead.
+ */
+function displayNameForUnnamedEvent(ev: DataLayerEvent): string {
+  const record = ev as unknown as Record<string, unknown>;
+  const arg0 = record['0'];
+  const arg1 = record['1'];
+  if (typeof arg0 === 'string' && typeof arg1 === 'string') {
+    return `${arg0}(${arg1}) [gtag]`;
+  }
+  if ('ecommerce' in record) {
+    return '(unnamed — ecommerce push)';
+  }
+  return '(unnamed)';
+}
+
 /** Group captured dataLayer events by name, summarizing what params each one carries. */
 export function buildDataLayerInventory(events: DataLayerEvent[]): DataLayerEventInventoryEntry[] {
   const byName = new Map<string, { count: number; keys: Set<string>; steps: Set<string> }>();
 
   for (const ev of events) {
-    const name = ev.event || '(unnamed)';
+    const name = ev.event || displayNameForUnnamedEvent(ev);
     let entry = byName.get(name);
     if (!entry) {
       entry = { count: 0, keys: new Set(), steps: new Set() };
