@@ -391,3 +391,27 @@ describe('generateReport — could_not_be_assessed', () => {
     expect(report.technical_appendix.validation_results).toEqual(allResults);
   });
 });
+
+// W2.2 (Click-ID Contention, Contradiction Guard & Settle Enforcement PRD)
+// — an audit-time assertion so a fired contradiction guard can never reach
+// the report renderer: contradictionGuard.ts now suppresses a fired result
+// to could_not_be_assessed instead of annotating it in place, so no
+// assessable result should ever carry a "CONTRADICTION" evidence line
+// again. This is the safety net if that guarantee is ever broken.
+describe('generateReport — contradiction guard leak assertion (W2.2)', () => {
+  it('throws if a result reaching the renderer still carries a CONTRADICTION evidence line', () => {
+    const leaked: ValidationResult = {
+      rule_id: 'GBRAID_CAPTURED_AT_LANDING',
+      validation_layer: 'click_id_capture',
+      status: 'fail',
+      severity: 'critical',
+      technical_details: { found: '', expected: '', evidence: ['⚠ CONTRADICTION: should have been suppressed'] },
+    };
+    expect(() => generateReport(makeAuditData(), makeScores(), [], [leaked], makeSiteSetup())).toThrow(/Contradiction guard leak/);
+  });
+
+  it('does not throw on a normal result set with no contradiction markers', () => {
+    const results = [makeResult('A', 'pass'), makeResult('B', 'fail')];
+    expect(() => generateReport(makeAuditData(), makeScores(), [], results, makeSiteSetup())).not.toThrow();
+  });
+});

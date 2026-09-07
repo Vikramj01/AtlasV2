@@ -153,9 +153,17 @@ describe('FBP_AND_FBC_COOKIES_PRESENT (L3.4)', () => {
     expect(FBP_AND_FBC_COOKIES_PRESENT.test(auditData).status).toBe('pass');
   });
 
-  it('fails when only _fbp is present', () => {
+  // W4.1 (Click-ID Contention, Contradiction Guard & Settle Enforcement
+  // PRD) — _fbc is only ever populated by the Pixel from a real fbclid
+  // arriving with a genuine Meta-click referrer, which a crawler-injected
+  // fbclid frequently won't reproduce. _fbp alone (the Pixel's own
+  // unconditional base signal) is enough to pass; a missing _fbc is
+  // reported as inconclusive evidence, never a CRITICAL fail on its own.
+  it('passes on _fbp alone, with _fbc reported as inconclusive rather than failing the rule', () => {
     const auditData = makeAuditData({ cookies: { _fbp: 'fb.1.1.1' } });
-    expect(FBP_AND_FBC_COOKIES_PRESENT.test(auditData).status).toBe('fail');
+    const result = FBP_AND_FBC_COOKIES_PRESENT.test(auditData);
+    expect(result.status).toBe('pass');
+    expect(result.technical_details.evidence.some((e) => e.includes('_fbc inconclusive under synthetic injection'))).toBe(true);
   });
 
   it('fails when neither is present', () => {

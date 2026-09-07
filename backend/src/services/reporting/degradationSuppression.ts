@@ -24,9 +24,10 @@
  * avoid; routing through the existing could_not_be_assessed section
  * (already has the right semantics) does not.
  *
- * Two independent ways a result is judged "affected" by a degraded step,
+ * Three independent ways a result is judged "affected" by a degraded step,
  * per PRD C3's "a step that did not settle contributes no findings — route
- * every rule depending on it":
+ * every rule depending on it" (widened by the Click-ID Contention,
+ * Contradiction Guard & Settle Enforcement PRD W3 — see point 2 below):
  *  1. It cites a degraded step by name, using the same double-quoted
  *     convention coverageSuppression.ts already matches on
  *     (`("${completion}")`) — this is what generalizes the fix to any rule
@@ -35,14 +36,33 @@
  *     rule-by-rule... will be wrong repeatedly" failure mode C3 rejects —
  *     this is how CONVERSION_SURFACE_REACHABLE_WITHOUT_JS_ERRORS (L12.8)
  *     gets caught here without ever being named below).
- *  2. Its rule_id is in ABSENCE_SENSITIVE_RULE_IDS — a small, still-explicit
+ *  2. Its own ValidationRule declares `requires: ['conversion_surface']`
+ *     (engine.ts's precondition tag — L4-L7's ~30 rules whose evidence is
+ *     read off network requests/dataLayer/cookies gathered while reaching
+ *     the conversion surface). W3 investigated the reference audit
+ *     (7d64f5e9, birkenstock.com/sg, all four steps degraded) and found
+ *     this was the actual gap: these rules were never in
+ *     ABSENCE_SENSITIVE_RULE_IDS and mostly don't quote a step name
+ *     verbatim in evidence, so they ran through unaffected while a
+ *     hand-picked set of seven absence-sensitive rules got excluded —
+ *     "the symptom suggests [exclusion is keyed to] a per-rule dependency
+ *     list that most rules are not registered against." Deriving this
+ *     from the rule's own `requires` tag — the same precondition metadata
+ *     engine.ts already reads to decide 'skipped' vs. ran — means a rule
+ *     added later with `requires: ['conversion_surface']` is covered
+ *     automatically, with nothing here to drift.
+ *  3. Its rule_id is in ABSENCE_SENSITIVE_RULE_IDS — a small, still-explicit
  *     set kept for rules whose absence-sensitivity is run-wide rather than
- *     tied to one named step (e.g. "was this cookie ever set, anywhere in
- *     the run" — nothing in their evidence names a step to match on).
+ *     tied to a step-level precondition or a named step (e.g. "was this
+ *     cookie ever set, anywhere in the run" — nothing in their evidence
+ *     names a step, and they don't declare `requires`).
  */
 import type { AuditData, StepCoverage, UnassessableFinding, ValidationResult } from '@/types/audit';
 import { degradedStepNames } from './coverage';
 import { quotedTokens } from './coverageSuppression';
+import { REGISTER } from '@/services/validation/register/engine';
+
+const RULE_BY_ID = new Map(REGISTER.map((r) => [r.rule_id, r]));
 
 /**
  * Rules whose pass verdict is really "we observed nothing happen" and
@@ -103,12 +123,19 @@ export function partitionDegradedRuns(
     }
 
     const citedDegradedStep = quotedTokens(r).find((t) => degradedStepSet.has(t));
+    const requiresConversionSurface = RULE_BY_ID.get(r.rule_id)?.requires?.includes('conversion_surface') === true;
 
     if (citedDegradedStep) {
       unassessable.push({
         rule_id: r.rule_id,
         step: citedDegradedStep,
         reason: `This scan's navigation didn't fully settle on "${citedDegradedStep}", so this result — which is evidence about that specific step — isn't reliable; its ${r.status} verdict may reflect the scan not waiting long enough, not the site's real behavior.`,
+      });
+    } else if (requiresConversionSurface) {
+      unassessable.push({
+        rule_id: r.rule_id,
+        step: stepList,
+        reason: `This scan's navigation didn't fully settle on ${stepNoun} ${stepList}, so the conversion-surface evidence this check depends on (network requests, dataLayer events, or cookies gathered while reaching it) may not have had time to appear — its ${r.status} verdict isn't reliable.`,
       });
     } else if (ABSENCE_SENSITIVE_RULE_IDS.has(r.rule_id)) {
       unassessable.push({

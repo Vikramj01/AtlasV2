@@ -43,7 +43,6 @@ import { L8_RULES } from './L8';
 import { L9_RULES } from './L9';
 import { L10_RULES } from './L10';
 import { L12_RULES } from './L12';
-import { detectCaptureContradictions, flagCaptureContradictions } from './contradictionGuard';
 
 /** The full Check Register v2 rule library. Populated as each layer (L0-L12) ships. */
 export const REGISTER: ValidationRule[] = [
@@ -212,18 +211,12 @@ export function runRegister(auditData: AuditData, rules: ValidationRule[] = REGI
     }
   });
 
-  // Contradiction guard (Report Correctness Programme PRD Part A3) — a FAIL
-  // that a passing sibling rule logically rules out (e.g.
-  // GCLID_CAPTURED_AT_LANDING failing while GCL_AW_COOKIE_PRESENT passes)
-  // gets flagged in its own evidence, and logged for operator visibility,
-  // rather than shipping to a client report unremarked. Non-fatal — same
-  // "flag, don't block" posture as placeholderGuard.ts.
-  const contradictions = detectCaptureContradictions(results);
-  if (contradictions.length > 0) {
-    logger.warn(
-      { audit_id: auditData.audit_id, contradictions },
-      'Check Register contradiction guard fired — a FAIL result is logically ruled out by a passing sibling rule',
-    );
-  }
-  return flagCaptureContradictions(results);
+  // Click-ID contention and the contradiction guard (Click-ID Contention,
+  // Contradiction Guard & Settle Enforcement PRD W1/W2) both run as
+  // post-register partitions in the audit pipeline (orchestrator.ts),
+  // alongside coverage/degradation suppression — not here. runRegister()
+  // stays pure rule execution; a guard that suppresses findings belongs at
+  // the same layer as the other suppression partitions, not mutating
+  // results in place inside the engine.
+  return results;
 }

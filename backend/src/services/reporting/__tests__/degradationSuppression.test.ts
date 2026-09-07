@@ -141,6 +141,38 @@ describe('partitionDegradedRuns', () => {
     expect(unassessable[0].reason).toContain('"confirmation"');
   });
 
+  // W3 (Click-ID Contention, Contradiction Guard & Settle Enforcement PRD)
+  // — the reference audit (7d64f5e9, birkenstock.com/sg) had all four
+  // steps degraded (quiet_period_cap_reached), yet ~30 rules tagged
+  // `requires: ['conversion_surface']` (L4-L7) ran through as confident
+  // pass/fail because they were neither in the fixed
+  // ABSENCE_SENSITIVE_RULE_IDS list nor quoting a degraded step name
+  // verbatim in evidence — PAGE_VIEW_FIRES_ON_EVERY_ROUTE was one of the
+  // five HIGH-severity fails that survived un-suppressed in that report.
+  // This is now derived from the rule's own `requires` tag instead.
+  it('suppresses a rule tagged requires:[\'conversion_surface\'] on a degraded run, even with no allowlist entry or quoted step name (7d64f5e9 regression)', () => {
+    const result = makeResult({
+      rule_id: 'PAGE_VIEW_FIRES_ON_EVERY_ROUTE',
+      severity: 'high',
+      technical_details: {
+        found: '3 of 4 route(s) had no page_view: product, checkout, confirmation',
+        expected: 'Funnel and path analysis are meaningless without a page_view per route change',
+        evidence: ['Sampled routes: landing, product, checkout, confirmation', 'Missing page_view: product, checkout, confirmation'],
+      },
+    });
+    const steps = [
+      makeStep({ step: 'landing', degraded: true, settle_outcome: 'quiet_period_cap_reached' }),
+      makeStep({ step: 'product', degraded: true, settle_outcome: 'quiet_period_cap_reached' }),
+      makeStep({ step: 'checkout', degraded: true, settle_outcome: 'quiet_period_cap_reached' }),
+      makeStep({ step: 'confirmation', degraded: true, settle_outcome: 'quiet_period_cap_reached', source: 'heuristic' }),
+    ];
+    const { assessable, unassessable } = partitionDegradedRuns([result], steps);
+    expect(assessable).toEqual([]);
+    expect(unassessable).toHaveLength(1);
+    expect(unassessable[0].rule_id).toBe('PAGE_VIEW_FIRES_ON_EVERY_ROUTE');
+    expect(unassessable[0].reason).toContain('conversion-surface evidence');
+  });
+
   it('a rule citing a step that is NOT degraded stays assessable even when some other step degraded', () => {
     const result = makeResult({
       rule_id: 'CONVERSION_SURFACE_REACHABLE_WITHOUT_JS_ERRORS',

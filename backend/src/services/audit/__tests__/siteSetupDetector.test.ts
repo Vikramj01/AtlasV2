@@ -170,6 +170,36 @@ describe('buildDataLayerInventory', () => {
   it('returns an empty array for no events', () => {
     expect(buildDataLayerInventory([])).toEqual([]);
   });
+
+  // W5.3 (Click-ID Contention, Contradiction Guard & Settle Enforcement
+  // PRD) — gtag.js pushes `arguments` itself onto dataLayer, captured by
+  // instrumentDataLayer's Object.assign as index keys '0'/'1'/'2' rather
+  // than a named `event` field. Printing '(unnamed)' for these throws away
+  // the most commercially interesting entries (purchase/add_to_cart-shaped
+  // gtag ecommerce pushes) — this resolves a real name from the shape.
+  it('derives a gtag-shaped display name from an unnamed arguments-style push', () => {
+    const events = [
+      { '0': 'event', '1': 'purchase', '2': { value: 99.99, ecommerce: { transaction_id: 'ORDER-1' } }, timestamp: 1, step: 'confirmation' } as unknown as DataLayerEvent,
+    ];
+    const inventory = buildDataLayerInventory(events);
+    expect(inventory).toHaveLength(1);
+    expect(inventory[0].event_name).toBe('event(purchase) [gtag]');
+  });
+
+  it('derives an ecommerce-push display name when no gtag-arguments shape is present', () => {
+    const events = [
+      { ecommerce: { transaction_id: 'ORDER-1' }, value: 99.99, timestamp: 1, step: 'confirmation' } as unknown as DataLayerEvent,
+    ];
+    const inventory = buildDataLayerInventory(events);
+    expect(inventory).toHaveLength(1);
+    expect(inventory[0].event_name).toBe('(unnamed — ecommerce push)');
+  });
+
+  it('falls back to plain (unnamed) when the payload shape gives no better name', () => {
+    const events = [{ foo: 'bar', timestamp: 1, step: 'landing' } as unknown as DataLayerEvent];
+    const inventory = buildDataLayerInventory(events);
+    expect(inventory[0].event_name).toBe('(unnamed)');
+  });
 });
 
 describe('buildSiteSetupSummary', () => {

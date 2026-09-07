@@ -287,6 +287,50 @@ describe('EVENT_NAMES_MATCH_DECLARED_TAXONOMY (L5.13)', () => {
     const auditData = makeAuditData({ dataLayer: [makeEvent({ event: 'AddToCart' })] });
     expect(EVENT_NAMES_MATCH_DECLARED_TAXONOMY.test(auditData).status).toBe('fail');
   });
+
+  // W4.2 (Click-ID Contention, Contradiction Guard & Settle Enforcement
+  // PRD) — gtm.js/gtm.dom/gtm.load, web-vitals, and OneTrust/Optanon's own
+  // consent-state events are emitted by GTM/the web-vitals library/the
+  // CMP; the site did not name them and cannot rename them, so they must
+  // never surface as a taxonomy violation (7d64f5e9 flagged exactly these
+  // seven as both an action item and an unactionable Open Question).
+  it('is skipped, not failed, when every observed event is vendor-emitted', () => {
+    const auditData = makeAuditData({
+      dataLayer: [
+        makeEvent({ event: 'gtm.js' }),
+        makeEvent({ event: 'gtm.dom' }),
+        makeEvent({ event: 'gtm.load' }),
+        makeEvent({ event: 'web-vitals' }),
+        makeEvent({ event: 'OneTrustLoaded' }),
+        makeEvent({ event: 'OptanonLoaded' }),
+        makeEvent({ event: 'OneTrustGroupsUpdated' }),
+      ],
+    });
+    const result = EVENT_NAMES_MATCH_DECLARED_TAXONOMY.test(auditData);
+    expect(result.status).toBe('skipped');
+  });
+
+  it('evaluates only the site-authored events when vendor-emitted events are mixed in', () => {
+    const auditData = makeAuditData({
+      dataLayer: [
+        makeEvent({ event: 'gtm.js' }),
+        makeEvent({ event: 'OneTrustLoaded' }),
+        makeEvent({ event: 'add_to_cart' }), // site-authored, convention-compliant
+      ],
+    });
+    const result = EVENT_NAMES_MATCH_DECLARED_TAXONOMY.test(auditData);
+    expect(result.status).toBe('pass');
+    expect(result.technical_details.found).toContain('All 1 observed event name(s) match');
+  });
+
+  it('still fails on a site-authored violation even when vendor events are present alongside it', () => {
+    const auditData = makeAuditData({
+      dataLayer: [makeEvent({ event: 'gtm.js' }), makeEvent({ event: 'AddToCart' })],
+    });
+    const result = EVENT_NAMES_MATCH_DECLARED_TAXONOMY.test(auditData);
+    expect(result.status).toBe('fail');
+    expect(result.technical_details.evidence.some((e) => e.includes('gtm.js'))).toBe(false);
+  });
 });
 
 // ── L5.14 — Event ordering is correct ─────────────────────────────────────────

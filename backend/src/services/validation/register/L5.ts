@@ -530,6 +530,27 @@ export const MICRO_CONVERSIONS_FIRE: ValidationRule = {
 };
 
 // ── L5.13 — Event names match the declared taxonomy ──────────────────────────
+//
+// W4.2 (Click-ID Contention, Contradiction Guard & Settle Enforcement PRD)
+// — gtm.js/gtm.dom/gtm.load, web-vitals, and OneTrust/Optanon's own
+// consent-state events are emitted by GTM, the web-vitals library, and
+// the CMP respectively; the site did not name them and cannot rename
+// them, so flagging them as a taxonomy violation produces an action item
+// (and an Open Question) with no possible action. Filtered out by known
+// vendor prefix/exact name before evaluating — anything left is an event
+// the site itself authored.
+
+const VENDOR_EVENT_DENYLIST: RegExp[] = [
+  /^gtm\./,
+  /^gtag\./,
+  /^web-vitals$/,
+  /^OneTrust/,
+  /^Optanon/,
+];
+
+function isVendorEmittedEvent(name: string): boolean {
+  return VENDOR_EVENT_DENYLIST.some((pattern) => pattern.test(name));
+}
 
 export const EVENT_NAMES_MATCH_DECLARED_TAXONOMY: ValidationRule = {
   id: 'L5.13',
@@ -555,7 +576,8 @@ export const EVENT_NAMES_MATCH_DECLARED_TAXONOMY: ValidationRule = {
 
   test(auditData: AuditData): ValidationResult {
     const convention = auditData.namingConvention ?? DEFAULT_CONVENTION;
-    const eventNames = [...new Set(auditData.dataLayer.map((e) => e.event).filter(Boolean))];
+    const eventNames = [...new Set(auditData.dataLayer.map((e) => e.event).filter(Boolean))]
+      .filter((name) => !isVendorEmittedEvent(name));
 
     if (eventNames.length === 0) {
       return {
@@ -564,7 +586,7 @@ export const EVENT_NAMES_MATCH_DECLARED_TAXONOMY: ValidationRule = {
         status: 'skipped',
         severity: this.severity,
         technical_details: {
-          found: 'No dataLayer events observed',
+          found: 'No site-authored dataLayer events observed (vendor-emitted events like gtm.*/web-vitals/OneTrust*/Optanon* are excluded — the site can\'t rename those)',
           expected: 'Observed event names match the naming convention on file',
           evidence: ['Rule skipped — nothing to check'],
         },

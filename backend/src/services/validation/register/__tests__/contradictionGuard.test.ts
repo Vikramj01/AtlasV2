@@ -1,21 +1,21 @@
 /**
- * Contradiction guard tests (Report Correctness Programme PRD Part A3/A4.5)
- * — each of the three minimum contradiction pairs the PRD names, reproduced
- * directly against synthetic ValidationResult objects rather than through
- * runRegister(), since the point is to test the guard's own logic in
- * isolation from any one rule's implementation.
+ * Contradiction guard tests (Click-ID Contention, Contradiction Guard &
+ * Settle Enforcement PRD W2) — reproduced directly against synthetic
+ * ValidationResult objects rather than through runRegister(), since the
+ * point is to test the guard's own logic in isolation from any one rule's
+ * implementation.
  */
 import { describe, it, expect } from 'vitest';
-import { detectCaptureContradictions, flagCaptureContradictions } from '../contradictionGuard';
+import { detectCaptureContradictions, partitionContradictions } from '../contradictionGuard';
 import type { ValidationResult, RuleStatus } from '@/types/audit';
 
-function makeResult(rule_id: string, status: RuleStatus): ValidationResult {
+function makeResult(rule_id: string, status: RuleStatus, evidence: string[] = []): ValidationResult {
   return {
     rule_id,
     validation_layer: 'click_id_capture',
     status,
     severity: 'critical',
-    technical_details: { found: 'irrelevant for this test', expected: 'irrelevant for this test', evidence: [] },
+    technical_details: { found: 'irrelevant for this test', expected: 'irrelevant for this test', evidence },
   };
 }
 
@@ -28,41 +28,67 @@ describe('detectCaptureContradictions', () => {
     expect(contradictions[0].contradicted_by_rule_id).toBe('GCL_AW_COOKIE_PRESENT');
   });
 
-  it('fires when FBCLID_CAPTURED_AT_LANDING fails while FBP_AND_FBC_COOKIES_PRESENT passes', () => {
-    const results = [makeResult('FBCLID_CAPTURED_AT_LANDING', 'fail'), makeResult('FBP_AND_FBC_COOKIES_PRESENT', 'pass')];
+  it('fires when GBRAID/WBRAID_CAPTURED_AT_LANDING fail while GCL_AW_COOKIE_PRESENT passes (W2 — same Google family, not just gclid)', () => {
+    const results = [
+      makeResult('GBRAID_CAPTURED_AT_LANDING', 'fail'),
+      makeResult('WBRAID_CAPTURED_AT_LANDING', 'fail'),
+      makeResult('GCL_AW_COOKIE_PRESENT', 'pass'),
+    ];
+    const contradictions = detectCaptureContradictions(results);
+    expect(new Set(contradictions.map((c) => c.rule_id))).toEqual(
+      new Set(['GBRAID_CAPTURED_AT_LANDING', 'WBRAID_CAPTURED_AT_LANDING']),
+    );
+  });
+
+  it('fires when FBCLID_CAPTURED_AT_LANDING fails while _fbc is specifically present, regardless of FBP_AND_FBC_COOKIES_PRESENT\'s overall status (W2 — since W4.1 that rule\'s status is _fbp-driven)', () => {
+    const results = [
+      makeResult('FBCLID_CAPTURED_AT_LANDING', 'fail'),
+      makeResult('FBP_AND_FBC_COOKIES_PRESENT', 'pass', ['_fbp present: true', '_fbc present: true']),
+    ];
     const contradictions = detectCaptureContradictions(results);
     expect(contradictions).toHaveLength(1);
     expect(contradictions[0].contradicted_by_rule_id).toBe('FBP_AND_FBC_COOKIES_PRESENT');
   });
 
-  it('fires when any click-ID rule fails while CLICK_ID_WRITTEN_TO_DURABLE_STORAGE passes', () => {
-    const results = [makeResult('WBRAID_CAPTURED_AT_LANDING', 'fail'), makeResult('CLICK_ID_WRITTEN_TO_DURABLE_STORAGE', 'pass')];
-    const contradictions = detectCaptureContradictions(results);
-    expect(contradictions).toHaveLength(1);
-    expect(contradictions[0].rule_id).toBe('WBRAID_CAPTURED_AT_LANDING');
+  it('does not fire on fbclid when FBP_AND_FBC_COOKIES_PRESENT passes on _fbp alone with _fbc absent (W4.1 shape)', () => {
+    const results = [
+      makeResult('FBCLID_CAPTURED_AT_LANDING', 'fail'),
+      makeResult('FBP_AND_FBC_COOKIES_PRESENT', 'pass', ['_fbp present: true', '_fbc present: false']),
+    ];
+    expect(detectCaptureContradictions(results)).toHaveLength(0);
   });
 
-  it('reproduces the Birkenstock 13795830 shape: 5 click-ID FAILs against 4 passing sibling rules', () => {
+  it('no longer fires against the circular CLICK_ID_WRITTEN_TO_DURABLE_STORAGE aggregate (W2.1 — the fixed defect)', () => {
     const results = [
-      makeResult('GCLID_CAPTURED_AT_LANDING', 'fail'),
+      makeResult('WBRAID_CAPTURED_AT_LANDING', 'fail'),
+      makeResult('TTCLID_CAPTURED_AT_LANDING', 'fail'),
+      makeResult('CLICK_ID_WRITTEN_TO_DURABLE_STORAGE', 'pass'),
+    ];
+    expect(detectCaptureContradictions(results)).toHaveLength(0);
+  });
+
+  it('reproduces the corrected 7d64f5e9 shape: no contradiction once gbraid/wbraid/ttclid/msclkid have no aggregate pairing left standing', () => {
+    // gclid passed for real (delimited match in _gcl_ls); gbraid/wbraid/
+    // ttclid/msclkid failed. GCL_AW_COOKIE_PRESENT passed (proves a Google
+    // click ID resolved — contradicts the two Google-family fails).
+    // ttclid/msclkid have no aggregate pairing at all (correctly omitted).
+    const results = [
+      makeResult('GCLID_CAPTURED_AT_LANDING', 'pass'),
       makeResult('GBRAID_CAPTURED_AT_LANDING', 'fail'),
       makeResult('WBRAID_CAPTURED_AT_LANDING', 'fail'),
-      makeResult('FBCLID_CAPTURED_AT_LANDING', 'fail'),
       makeResult('TTCLID_CAPTURED_AT_LANDING', 'fail'),
+      makeResult('MSCLKID_CAPTURED_AT_LANDING', 'fail'),
       makeResult('GCL_AW_COOKIE_PRESENT', 'pass'),
-      makeResult('FBP_AND_FBC_COOKIES_PRESENT', 'pass'),
+      makeResult('FBP_AND_FBC_COOKIES_PRESENT', 'fail', ['_fbp present: true', '_fbc present: false']),
       makeResult('CLICK_ID_WRITTEN_TO_DURABLE_STORAGE', 'pass'),
-      makeResult('CONVERSION_LINKER_ENABLED', 'pass'),
     ];
     const contradictions = detectCaptureContradictions(results);
-    // gclid: contradicted by both GCL_AW_COOKIE_PRESENT and CLICK_ID_WRITTEN_TO_DURABLE_STORAGE
-    // fbclid: contradicted by both FBP_AND_FBC_COOKIES_PRESENT and CLICK_ID_WRITTEN_TO_DURABLE_STORAGE
-    // gbraid/wbraid/ttclid: contradicted only by CLICK_ID_WRITTEN_TO_DURABLE_STORAGE
-    expect(contradictions.length).toBeGreaterThanOrEqual(5);
-    expect(new Set(contradictions.map((c) => c.rule_id))).toEqual(new Set([
-      'GCLID_CAPTURED_AT_LANDING', 'GBRAID_CAPTURED_AT_LANDING', 'WBRAID_CAPTURED_AT_LANDING',
-      'FBCLID_CAPTURED_AT_LANDING', 'TTCLID_CAPTURED_AT_LANDING',
-    ]));
+    // gbraid/wbraid ARE still contradicted here (no click-ID contention
+    // partition has run in this isolated test) — but ttclid/msclkid are
+    // never touched, since neither has an aggregate pairing.
+    expect(new Set(contradictions.map((c) => c.rule_id))).toEqual(
+      new Set(['GBRAID_CAPTURED_AT_LANDING', 'WBRAID_CAPTURED_AT_LANDING']),
+    );
   });
 
   it('does not fire when the sibling rule also failed (no contradiction) or is absent from the run', () => {
@@ -77,17 +103,25 @@ describe('detectCaptureContradictions', () => {
   });
 });
 
-describe('flagCaptureContradictions', () => {
-  it('appends a contradiction line to the failing result\'s evidence without mutating the input', () => {
+describe('partitionContradictions', () => {
+  it('routes a fired contradiction to could_not_be_assessed rather than annotating it in place (W2.2)', () => {
     const results = [makeResult('GCLID_CAPTURED_AT_LANDING', 'fail'), makeResult('GCL_AW_COOKIE_PRESENT', 'pass')];
-    const flagged = flagCaptureContradictions(results);
-    expect(results[0].technical_details.evidence).toHaveLength(0); // input untouched
-    const flaggedGclid = flagged.find((r) => r.rule_id === 'GCLID_CAPTURED_AT_LANDING');
-    expect(flaggedGclid?.technical_details.evidence.some((e) => e.startsWith('⚠ CONTRADICTION:'))).toBe(true);
+    const { assessable, unassessable } = partitionContradictions(results);
+
+    expect(assessable.map((r) => r.rule_id)).toEqual(['GCL_AW_COOKIE_PRESENT']);
+    expect(unassessable).toHaveLength(1);
+    expect(unassessable[0].rule_id).toBe('GCLID_CAPTURED_AT_LANDING');
+    expect(unassessable[0].reason).toContain('GCL_AW_COOKIE_PRESENT');
+
+    // The input is never mutated, and no evidence line is ever appended —
+    // the whole result moves out, it's never decorated in place.
+    expect(results[0].technical_details.evidence).toHaveLength(0);
   });
 
-  it('returns the same array reference when nothing contradicts', () => {
+  it('returns every result assessable and an empty unassessable list when nothing contradicts', () => {
     const results = [makeResult('GCLID_CAPTURED_AT_LANDING', 'pass')];
-    expect(flagCaptureContradictions(results)).toBe(results);
+    const { assessable, unassessable } = partitionContradictions(results);
+    expect(assessable).toBe(results);
+    expect(unassessable).toHaveLength(0);
   });
 });
