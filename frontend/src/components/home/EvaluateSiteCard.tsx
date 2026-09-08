@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { RunAuditForm } from '@/components/audit/RunAuditForm';
 import { MultiChipToggle } from '@/components/audit/MultiChipToggle';
 import { useAudit } from '@/hooks/useAudit';
-import { SITE_TYPE_OPTIONS, DECLARED_PLATFORM_OPTIONS, TRAFFIC_REGION_OPTIONS } from '@/lib/scanInputOptions';
+import { SITE_TYPE_OPTIONS, DECLARED_PLATFORM_OPTIONS, TRAFFIC_REGION_OPTIONS, expandTrafficRegionSelection } from '@/lib/scanInputOptions';
 import type { SiteType, DeclaredPlatform, TrafficRegion } from '@/types/audit';
 
 /**
@@ -149,7 +149,7 @@ export function EvaluateSiteCard() {
             <MultiChipToggle
               options={TRAFFIC_REGION_OPTIONS}
               selected={trafficRegions}
-              onChange={setTrafficRegions}
+              onChange={(next) => setTrafficRegions(expandTrafficRegionSelection(trafficRegions, next))}
             />
           </div>
 

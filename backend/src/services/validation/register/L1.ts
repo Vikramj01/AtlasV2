@@ -289,7 +289,7 @@ function makePixelPresenceRule(opts: {
   id: string;
   rule_id: string;
   check: string;
-  platform: 'meta' | 'tiktok' | 'linkedin' | 'microsoft';
+  platform: 'meta' | 'tiktok' | 'linkedin' | 'microsoft' | 'openai';
   detect: (requests: NetworkRequest[]) => trackingSignals.TagMatch;
   expected: string;
   noneFoundMessage: string;
@@ -370,6 +370,17 @@ export const MICROSOFT_UET_TAG_PRESENT = makePixelPresenceRule({
   expected: 'UET tag loads with a tag ID',
   noneFoundMessage: 'No requests to bat.bing.com detected',
   remediation: 'Install the Microsoft UET tag (via GTM\'s Microsoft Advertising UET tag or the base snippet from Microsoft Ads) firing on every page, with the correct UET Tag ID.',
+});
+
+export const OPENAI_PIXEL_PRESENT = makePixelPresenceRule({
+  id: 'L1.17',
+  rule_id: 'OPENAI_PIXEL_PRESENT',
+  check: 'OpenAI (OAIQ) pixel present',
+  platform: 'openai',
+  detect: trackingSignals.detectOpenAIPixel,
+  expected: 'The OAIQ pixel loader (oaiq.min.js) loads and initialises with a Pixel ID',
+  noneFoundMessage: 'No requests to bzrcdn.openai.com detected',
+  remediation: 'Install the OpenAI Ads measurement pixel (the oaiq snippet from Ads Manager\'s conversions tab) in the page head, calling oaiq(\'init\', \'<PIXEL_ID>\') on every page — this is also what captures the oppref click reference into a first-party __oppref cookie.',
 });
 
 // ── L1.11 — No duplicate container ───────────────────────────────────────────
@@ -737,4 +748,5 @@ export const L1_RULES: ValidationRule[] = [
   SERVER_CONTAINER_ENDPOINT_CONFIGURED,
   SERVER_CONTAINER_FIRST_PARTY_DOMAIN,
   NO_TAG_LOAD_ERRORS,
+  OPENAI_PIXEL_PRESENT,
 ];

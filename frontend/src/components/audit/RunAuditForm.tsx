@@ -13,7 +13,7 @@ import { MultiChipToggle } from '@/components/audit/MultiChipToggle';
 import {
   SITE_TYPE_OPTIONS, SECONDARY_MOTION_OPTIONS, DECLARED_PLATFORM_OPTIONS,
   TRAFFIC_REGION_OPTIONS, CMP_OPTIONS, MONTHLY_SPEND_BAND_OPTIONS,
-  SITE_TYPE_TO_FUNNEL_TYPE, SITE_TYPES_USING_BORROWED_TEMPLATE,
+  SITE_TYPE_TO_FUNNEL_TYPE, SITE_TYPES_USING_BORROWED_TEMPLATE, expandTrafficRegionSelection,
 } from '@/lib/scanInputOptions';
 
 // Step URL fields per (legacy) journey template — see SITE_TYPE_TO_FUNNEL_TYPE
@@ -205,7 +205,7 @@ export function RunAuditForm() {
               <MultiChipToggle
                 options={TRAFFIC_REGION_OPTIONS}
                 selected={trafficRegions}
-                onChange={setTrafficRegions}
+                onChange={(next) => setTrafficRegions(expandTrafficRegionSelection(trafficRegions, next))}
               />
             </div>
             <div className="space-y-1.5">

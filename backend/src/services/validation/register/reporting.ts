@@ -60,6 +60,7 @@ const PLATFORM_RISK_MESSAGES: Record<DeclaredPlatform, string> = {
   microsoft: 'Microsoft Advertising attribution depends on the UET tag and click ID persistence.',
   reddit: 'Reddit Ads attribution depends on the Pixel and click ID persistence.',
   pinterest: 'Pinterest Ads attribution depends on the Tag and click ID persistence.',
+  openai: 'OpenAI (ChatGPT Ads) attribution depends on the OAIQ pixel, oppref persistence, and Conversions API delivery.',
 };
 
 /** Register rules scoped to this platform — 'declared' (L0.1's internal fan-out) counts too, since it evaluates every declared platform. */

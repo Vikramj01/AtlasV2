@@ -71,6 +71,7 @@ const IdentityConfigSchema = z.object({
   wbraid_field: z.string().optional(),
   gbraid_field: z.string().optional(),
   ttclid_field: z.string().optional(),
+  oppref_field: z.string().optional(),
   auto_capture_ip: z.boolean().optional(),
   auto_capture_ua: z.boolean().optional(),
   enabled_identifiers: z.array(z.string()).optional(),
@@ -113,6 +114,7 @@ const SignalEnrichmentSchema = z.object({
   enabled_for_meta: z.boolean(),
   enabled_for_google: z.boolean(),
   enabled_for_tiktok: z.boolean(),
+  enabled_for_openai: z.boolean(),
 });
 
 const ValidateFieldPathSchema = z.object({
@@ -333,6 +335,7 @@ router.put(
         enabled_for_meta: parsed.data.enabled_for_meta,
         enabled_for_google: parsed.data.enabled_for_google,
         enabled_for_tiktok: parsed.data.enabled_for_tiktok,
+        enabled_for_openai: parsed.data.enabled_for_openai,
         validated_at: null,
         validation_score: null,
         validation_warnings: [],

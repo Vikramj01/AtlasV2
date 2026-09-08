@@ -47,6 +47,7 @@ interface SignalFormState {
   enabled_for_meta: boolean;
   enabled_for_google: boolean;
   enabled_for_tiktok: boolean;
+  enabled_for_openai: boolean;
 }
 
 const DEFAULT_FORM: SignalFormState = {
@@ -64,6 +65,7 @@ const DEFAULT_FORM: SignalFormState = {
   enabled_for_meta: true,
   enabled_for_google: true,
   enabled_for_tiktok: false,
+  enabled_for_openai: false,
 };
 
 function configToForm(config: SignalEnrichmentConfig | null): SignalFormState {
@@ -83,6 +85,7 @@ function configToForm(config: SignalEnrichmentConfig | null): SignalFormState {
     enabled_for_meta: config.enabled_for_meta,
     enabled_for_google: config.enabled_for_google,
     enabled_for_tiktok: config.enabled_for_tiktok,
+    enabled_for_openai: config.enabled_for_openai,
   };
 }
 
@@ -118,6 +121,7 @@ function formToRequest(deploymentId: string, signalKey: string, form: SignalForm
     enabled_for_meta: form.enabled_for_meta,
     enabled_for_google: form.enabled_for_google,
     enabled_for_tiktok: form.enabled_for_tiktok,
+    enabled_for_openai: form.enabled_for_openai,
   };
 }
 
@@ -446,6 +450,13 @@ export function SignalEnrichmentStep({
                     onCheckedChange={(v) => updateForm(signal.signal_key, { enabled_for_tiktok: v })}
                   />
                   <Label className="text-sm">Send enriched signal to TikTok Events API</Label>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Switch
+                    checked={form.enabled_for_openai}
+                    onCheckedChange={(v) => updateForm(signal.signal_key, { enabled_for_openai: v })}
+                  />
+                  <Label className="text-sm">Send enriched signal to OpenAI Conversions API</Label>
                 </div>
               </div>
             </TabsContent>

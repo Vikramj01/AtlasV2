@@ -135,10 +135,34 @@ describe('buildV2PlatformBreakdown', () => {
     expect(meta?.status).toBe('not_included'); // no meta-specific rules produced a result
   });
 
-  it('returns a row for all 7 declarable platforms', () => {
+  it('returns a row for all 8 declarable platforms', () => {
     const breakdown = buildV2PlatformBreakdown([], [] as DeclaredPlatform[], []);
-    expect(breakdown).toHaveLength(7);
+    expect(breakdown).toHaveLength(8);
     expect(breakdown.every((p) => p.status === 'not_included')).toBe(true);
+  });
+
+  // ── ATLAS_OPENAI_ADS_AND_REGIONS_PRD Part A (A-W7) ────────────────────────
+
+  it('an audit declaring openai produces an OpenAI row in the Platform Health Summary', () => {
+    const register = [
+      makeRule({ id: 'L1.17', rule_id: 'OPENAI_PIXEL_PRESENT', platform_scope: ['openai'] }),
+      makeRule({ id: 'L2.13', rule_id: 'OPPREF_CAPTURED_AT_LANDING', platform_scope: ['openai'] }),
+    ];
+    const results = [
+      makeResult({ rule_id: 'OPENAI_PIXEL_PRESENT', status: 'pass' }),
+      makeResult({ rule_id: 'OPPREF_CAPTURED_AT_LANDING', status: 'pass' }),
+    ];
+    const breakdown = buildV2PlatformBreakdown(results, ['openai'], register);
+    const openai = breakdown.find((p) => p.platform === 'OpenAI (ChatGPT Ads)');
+    expect(openai).toBeDefined();
+    expect(openai?.status).toBe('healthy');
+  });
+
+  it('an audit not declaring openai reports it Not Included, not Broken', () => {
+    const register = [makeRule({ id: 'L1.17', rule_id: 'OPENAI_PIXEL_PRESENT', platform_scope: ['openai'] })];
+    const breakdown = buildV2PlatformBreakdown([], ['meta'], register);
+    const openai = breakdown.find((p) => p.platform === 'OpenAI (ChatGPT Ads)');
+    expect(openai?.status).toBe('not_included');
   });
 
   // ── Platform Attribution & Determinism PRD Part A (A-W4) ──────────────────

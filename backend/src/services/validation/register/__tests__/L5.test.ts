@@ -20,6 +20,7 @@ import {
   MICRO_CONVERSIONS_FIRE,
   EVENT_NAMES_MATCH_DECLARED_TAXONOMY,
   EVENT_ORDERING_IS_CORRECT,
+  OPENAI_CONVERSION_EVENT_FIRES,
   L5_RULES,
 } from '../L5';
 import type { AuditData, DataLayerEvent, NetworkRequest } from '@/types/audit';
@@ -109,6 +110,16 @@ describe('TIKTOK_CONVERSION_EVENT_FIRES (L5.4)', () => {
   });
   it('fails otherwise', () => {
     expect(TIKTOK_CONVERSION_EVENT_FIRES.test(makeAuditData()).status).toBe('fail');
+  });
+});
+
+describe('OPENAI_CONVERSION_EVENT_FIRES (L5.15)', () => {
+  it('passes when a POST to bzr.openai.com/v1/events is observed', () => {
+    const auditData = makeAuditData({ networkRequests: [makeRequest({ url: 'https://bzr.openai.com/v1/events?pid=pixel-123', method: 'POST' })] });
+    expect(OPENAI_CONVERSION_EVENT_FIRES.test(auditData).status).toBe('pass');
+  });
+  it('fails otherwise', () => {
+    expect(OPENAI_CONVERSION_EVENT_FIRES.test(makeAuditData()).status).toBe('fail');
   });
 });
 
@@ -364,10 +375,10 @@ describe('EVENT_ORDERING_IS_CORRECT (L5.14)', () => {
 });
 
 describe('L5_RULES', () => {
-  it('exports all 12 crawl-detectable L5 rules', () => {
-    expect(L5_RULES).toHaveLength(12);
-    expect(new Set(L5_RULES.map((r) => r.id)).size).toBe(12);
-    expect(new Set(L5_RULES.map((r) => r.rule_id)).size).toBe(12);
+  it('exports all 13 crawl-detectable L5 rules', () => {
+    expect(L5_RULES).toHaveLength(13);
+    expect(new Set(L5_RULES.map((r) => r.id)).size).toBe(13);
+    expect(new Set(L5_RULES.map((r) => r.rule_id)).size).toBe(13);
   });
 
   it('excludes L5.8 (needs in-page navigation capture) and L5.9 (second-pass detectable)', () => {

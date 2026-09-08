@@ -173,6 +173,17 @@ export const TIKTOK_CONVERSION_EVENT_FIRES = makeConversionFiresRule({
   remediation: 'Add a ttq.track(\'CompletePayment\', {...}) (or the relevant standard event) on the confirmed conversion page — the base pixel snippet alone only loads the library, it doesn\'t send a conversion event by itself.',
 });
 
+export const OPENAI_CONVERSION_EVENT_FIRES = makeConversionFiresRule({
+  id: 'L5.15',
+  rule_id: 'OPENAI_CONVERSION_EVENT_FIRES',
+  check: 'OpenAI conversion event fires',
+  platform_scope: ['openai'],
+  detect: trackingSignals.detectOpenAIConversionEvent,
+  expected: 'The OAIQ pixel\'s client-side oaiq(\'measure\', {...}) call reaches bzr.openai.com carrying the confirmed conversion event — the pixel base code alone only loads the SDK, it doesn\'t send a conversion event by itself',
+  noneFoundMessage: 'No POST request to bzr.openai.com/v1/events detected during this crawl',
+  remediation: 'Add an oaiq(\'measure\', {...}) call for the relevant event on the confirmed conversion page. Server-side delivery via the Conversions API is a separate, additional integration this rule cannot observe directly — a fail here means the client-side pixel isn\'t firing a conversion event, not that server-side delivery is necessarily broken too.',
+});
+
 // GA4 isn't a DeclaredPlatform (Scan Inputs models ad platforms only) —
 // platform_scope: 'any', same modeling call as L1.4/L4's GA4 rules.
 export const GA4_CONVERSION_EVENT_FIRES: ValidationRule = {
@@ -692,4 +703,5 @@ export const L5_RULES: ValidationRule[] = [
   MICRO_CONVERSIONS_FIRE,
   EVENT_NAMES_MATCH_DECLARED_TAXONOMY,
   EVENT_ORDERING_IS_CORRECT,
+  OPENAI_CONVERSION_EVENT_FIRES,
 ];

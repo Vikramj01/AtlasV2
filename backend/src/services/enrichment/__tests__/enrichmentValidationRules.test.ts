@@ -18,6 +18,7 @@ const baseIdentity: ClientIdentityConfig = {
   wbraid_field: '',
   gbraid_field: '',
   ttclid_field: '',
+  oppref_field: '',
   auto_capture_ip: true,
   auto_capture_ua: true,
   enabled_identifiers: ['email', 'phone', 'fbc', 'fbp'],
@@ -39,6 +40,7 @@ const purchaseEnrichment: SignalEnrichmentConfig = {
   enabled_for_meta: true,
   enabled_for_google: true,
   enabled_for_tiktok: false,
+  enabled_for_openai: false,
   validated_at: null,
   validation_score: 85,
   validation_warnings: [],
@@ -111,9 +113,9 @@ describe('evaluateEnrichmentRules', () => {
     expect(report.warnings.every((w) => w.field && w.message)).toBe(true);
   });
 
-  it('returns 12 rule results', () => {
+  it('returns 15 rule results', () => {
     const report = evaluateEnrichmentRules(baseIdentity, [purchaseEnrichment]);
-    expect(report.rule_results).toHaveLength(12);
+    expect(report.rule_results).toHaveLength(15);
   });
 
   it('passes IDENT_03 when gclid_field is set but fbc/fbp are empty', () => {
@@ -168,7 +170,7 @@ describe('evaluateEnrichmentRules', () => {
     const cross01 = report.rule_results.find((r) => r.rule_id === 'CROSS_01');
     const cross02 = report.rule_results.find((r) => r.rule_id === 'CROSS_02');
     expect(sig04?.passed).toBe(true);
-    expect(sig04?.message).toBe('1 signal(s) enabled for Meta, 1 for Google, 0 for TikTok');
+    expect(sig04?.message).toBe('1 signal(s) enabled for Meta, 1 for Google, 0 for TikTok, 0 for OpenAI');
     expect(cross01?.passed).toBe(true);
     expect(cross02?.passed).toBe(true);
   });

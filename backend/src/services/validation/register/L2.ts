@@ -20,7 +20,7 @@
 import type { AuditData, ValidationRule, ValidationResult, RuleStatus, DataLayerEvent } from '@/types/audit';
 
 const SYNTHETIC_PARAMS = [
-  'gclid', 'fbclid', 'gbraid', 'wbraid', 'ttclid', 'li_fat_id', 'msclkid',
+  'gclid', 'fbclid', 'gbraid', 'wbraid', 'ttclid', 'li_fat_id', 'msclkid', 'oppref',
   'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term',
 ] as const;
 
@@ -390,6 +390,19 @@ export const MSCLKID_CAPTURED_AT_LANDING = makeClickIdCaptureRule({
   why: 'The Microsoft click ID is read and stored — the entry point for Microsoft attribution',
 });
 
+// id 'L2.13' — added after L2.12 was already reserved (see file header) for
+// a distinct, not-yet-implemented consent-gating rule; this is simply the
+// next free slot, not related to L2.12's topic.
+export const OPPREF_CAPTURED_AT_LANDING = makeClickIdCaptureRule({
+  id: 'L2.13',
+  rule_id: 'OPPREF_CAPTURED_AT_LANDING',
+  check: 'oppref captured at landing',
+  paramName: 'oppref',
+  severity: 'critical',
+  platform_scope: ['openai'],
+  why: 'oppref is read and stored — the entry point for OpenAI (ChatGPT Ads) attribution; OpenAI\'s own pixel captures it automatically into a first-party __oppref cookie, but the Conversions API never reads it for you',
+});
+
 // ── L2.8 — UTM parameters captured ────────────────────────────────────────────
 
 const REQUIRED_UTM_PARAMS = ['utm_source', 'utm_medium', 'utm_campaign'] as const;
@@ -645,6 +658,7 @@ export const L2_RULES: ValidationRule[] = [
   TTCLID_CAPTURED_AT_LANDING,
   LI_FAT_ID_CAPTURED_AT_LANDING,
   MSCLKID_CAPTURED_AT_LANDING,
+  OPPREF_CAPTURED_AT_LANDING,
   UTM_PARAMETERS_CAPTURED,
   LANDING_REDIRECT_PRESERVES_QUERY_STRING,
   CAPTURE_OCCURS_BEFORE_REDIRECT_COMPLETES,

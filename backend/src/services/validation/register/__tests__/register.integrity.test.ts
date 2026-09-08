@@ -22,8 +22,10 @@ const VALID_SEVERITIES = new Set<Severity>(['critical', 'high', 'medium', 'low']
 const VALID_DETECTION_METHODS = new Set<DetectionMethod>(['crawl', 'second_pass', 'credentials', 'connector']);
 
 describe('REGISTER — structural integrity', () => {
-  it('carries exactly 90 rules across the 12 shipped layers (L0-L10, L12)', () => {
-    expect(REGISTER).toHaveLength(90);
+  it('carries exactly 93 rules across the 12 shipped layers (L0-L10, L12)', () => {
+    // 90 + OPPREF_CAPTURED_AT_LANDING (L2.13), OPENAI_PIXEL_PRESENT (L1.17),
+    // OPENAI_CONVERSION_EVENT_FIRES (L5.15) — ATLAS_OPENAI_ADS_AND_REGIONS_PRD Part A.
+    expect(REGISTER).toHaveLength(93);
   });
 
   it('every rule has a unique register id (L#.#)', () => {
@@ -252,10 +254,11 @@ describe('runRegister — end-to-end on a well-instrumented ecommerce site', () 
     expect(results).toHaveLength(applicableCount);
   });
 
-  it('excludes rules scoped to undeclared platforms (tiktok, linkedin, microsoft, reddit, pinterest)', () => {
+  it('excludes rules scoped to undeclared platforms (tiktok, linkedin, microsoft, reddit, pinterest, openai)', () => {
     const tiktokRule = REGISTER.find((r) => r.rule_id === 'TIKTOK_PIXEL_PRESENT');
     expect(tiktokRule).toBeDefined();
     expect(results.some((r) => r.rule_id === 'TIKTOK_PIXEL_PRESENT')).toBe(false);
+    expect(results.some((r) => r.rule_id === 'OPENAI_PIXEL_PRESENT')).toBe(false);
   });
 
   it('mostly passes for the platforms/checks this fixture was built to satisfy', () => {
