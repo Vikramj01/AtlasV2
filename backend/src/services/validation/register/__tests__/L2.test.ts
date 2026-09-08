@@ -14,6 +14,7 @@ import {
   TTCLID_CAPTURED_AT_LANDING,
   LI_FAT_ID_CAPTURED_AT_LANDING,
   MSCLKID_CAPTURED_AT_LANDING,
+  OPPREF_CAPTURED_AT_LANDING,
   UTM_PARAMETERS_CAPTURED,
   LANDING_REDIRECT_PRESERVES_QUERY_STRING,
   CAPTURE_OCCURS_BEFORE_REDIRECT_COMPLETES,
@@ -244,6 +245,31 @@ describe('MSCLKID_CAPTURED_AT_LANDING (L2.7)', () => {
   });
 });
 
+describe('OPPREF_CAPTURED_AT_LANDING (L2.13)', () => {
+  it('is skipped when oppref was never injected into the landing URL', () => {
+    expect(OPPREF_CAPTURED_AT_LANDING.test(makeAuditData()).status).toBe('skipped');
+  });
+
+  it('passes when present in the URL and stored under a namespaced key (a __oppref-shaped cookie)', () => {
+    const auditData = makeAuditData({
+      urlParams: { oppref: 'gAAAAAb123' },
+      cookies: { __oppref: 'gAAAAAb123' },
+    });
+    const result = OPPREF_CAPTURED_AT_LANDING.test(auditData);
+    expect(result.status).toBe('pass');
+    expect(result.technical_details.found).toContain('captured under a different key ("__oppref")');
+  });
+
+  it('fails, with evidence naming every store searched, when absent from every store', () => {
+    const auditData = makeAuditData({ urlParams: { oppref: 'gAAAAAb123' } });
+    const result = OPPREF_CAPTURED_AT_LANDING.test(auditData);
+    expect(result.status).toBe('fail');
+    expect(result.technical_details.evidence.join(' ')).toContain(
+      'Searched localStorage, sessionStorage, cookies, and the dataLayer',
+    );
+  });
+});
+
 // ── L2.8 — UTM parameters captured ────────────────────────────────────────────
 
 describe('UTM_PARAMETERS_CAPTURED (L2.8)', () => {
@@ -349,10 +375,10 @@ describe('REFERRER_PRESERVED_THROUGH_ENTRY (L2.11)', () => {
 });
 
 describe('L2_RULES', () => {
-  it('exports all 11 crawl-detectable L2 rules', () => {
-    expect(L2_RULES).toHaveLength(11);
-    expect(new Set(L2_RULES.map((r) => r.id)).size).toBe(11);
-    expect(new Set(L2_RULES.map((r) => r.rule_id)).size).toBe(11);
+  it('exports all 12 crawl-detectable L2 rules', () => {
+    expect(L2_RULES).toHaveLength(12);
+    expect(new Set(L2_RULES.map((r) => r.id)).size).toBe(12);
+    expect(new Set(L2_RULES.map((r) => r.rule_id)).size).toBe(12);
   });
 
   it('excludes L2.12 (second-pass detectable, deferred)', () => {
@@ -369,7 +395,7 @@ describe('L2.1-2.7 factory-produced rules share the same estimated_effort', () =
   const clickIdCaptureRules = [
     GCLID_CAPTURED_AT_LANDING, GBRAID_CAPTURED_AT_LANDING, WBRAID_CAPTURED_AT_LANDING,
     FBCLID_CAPTURED_AT_LANDING, TTCLID_CAPTURED_AT_LANDING, LI_FAT_ID_CAPTURED_AT_LANDING,
-    MSCLKID_CAPTURED_AT_LANDING,
+    MSCLKID_CAPTURED_AT_LANDING, OPPREF_CAPTURED_AT_LANDING,
   ];
 
   it('every one is defined and identical', () => {

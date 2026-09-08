@@ -145,6 +145,29 @@ export function detectMicrosoftUet(requests: NetworkRequest[]): TagMatch {
 }
 
 /**
+ * OpenAI (ChatGPT Ads) OAIQ Pixel — loader script from bzrcdn.openai.com.
+ * No stable public ID param on the loader itself (pixelId is passed to
+ * oaiq('init', ...) in JS, not the script URL).
+ */
+export function detectOpenAIPixel(requests: NetworkRequest[]): TagMatch {
+  const hits = requests.filter((r) => r.url.includes('bzrcdn.openai.com'));
+  return buildMatch(hits, []);
+}
+
+/**
+ * An OAIQ pixel conversion event call — oaiq('measure', ...) posts directly
+ * to bzr.openai.com/v1/events client-side (confirmed via OpenAI's own
+ * documented CSP guidance requiring connect-src bzr.openai.com), the same
+ * host the server-side Conversions API also uses. Distinct from
+ * detectOpenAIPixel (the base loader), the same way
+ * detectTikTokConversionEvent is distinct from detectTikTokPixel.
+ */
+export function detectOpenAIConversionEvent(requests: NetworkRequest[]): TagMatch {
+  const hits = requests.filter((r) => r.url.includes('bzr.openai.com/v1/events') && r.method === 'POST');
+  return buildMatch(hits, []);
+}
+
+/**
  * Given raw <script src> attribute values collected from the live page,
  * extract GTM container IDs (GTM-XXXXXXX) from the gtm.js loader script.
  */

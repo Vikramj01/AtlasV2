@@ -51,6 +51,7 @@ function makeSyntheticIds() {
     ttclid:      `test_ttclid_${ts}`,
     li_fat_id:   `test_lifatid_${ts}`,
     msclkid:     `test_msclkid_${ts}`,
+    oppref:      `test_oppref_${ts}`,
     utm_source:  'atlas_audit',
     utm_medium:  'cpc',
     utm_campaign: `atlas_audit_${ts}`,

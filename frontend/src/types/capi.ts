@@ -50,7 +50,8 @@ export type IdentifierType =
   | 'gclid'   // Google click ID
   | 'wbraid'  // Google iOS web-to-app
   | 'gbraid'  // Google iOS app-to-web
-  | 'ttclid'; // TikTok click ID
+  | 'ttclid'  // TikTok click ID
+  | 'oppref'; // OpenAI (ChatGPT Ads) click reference
 
 export type ActionSource =
   | 'website'
@@ -252,6 +253,7 @@ export interface AtlasEvent {
     wbraid?: string;
     gbraid?: string;
     ttclid?: string;             // TikTok Click ID
+    oppref?: string;             // OpenAI (ChatGPT Ads) click reference
     client_user_agent?: string;
     client_ip_address?: string;
   };

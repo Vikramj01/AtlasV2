@@ -45,6 +45,10 @@ export const PLATFORM_MATCHER_HOSTS: Record<DeclaredPlatform, string[]> = {
   microsoft: ['bat.bing.com'],
   reddit: ['alb.reddit.com'],
   pinterest: ['ct.pinterest.com', 's.pinimg.com/ct/core.js'],
+  // Pixel loader: bzrcdn.openai.com/sdk/oaiq.min.js. The pixel's own
+  // oaiq('measure', ...) calls, and the server-side Conversions API, both
+  // post to bzr.openai.com/v1/events.
+  openai: ['bzrcdn.openai.com', 'bzr.openai.com'],
 };
 
 const PLATFORM_MATCHERS: Record<DeclaredPlatform, HostMatcher> = Object.fromEntries(
@@ -54,7 +58,7 @@ const PLATFORM_MATCHERS: Record<DeclaredPlatform, HostMatcher> = Object.fromEntr
 ) as Record<DeclaredPlatform, HostMatcher>;
 
 export const ALL_DECLARED_PLATFORMS: DeclaredPlatform[] = [
-  'google_ads', 'meta', 'tiktok', 'linkedin', 'microsoft', 'reddit', 'pinterest',
+  'google_ads', 'meta', 'tiktok', 'linkedin', 'microsoft', 'reddit', 'pinterest', 'openai',
 ];
 
 export const PLATFORM_LABELS: Record<DeclaredPlatform, string> = {
@@ -65,6 +69,7 @@ export const PLATFORM_LABELS: Record<DeclaredPlatform, string> = {
   microsoft: 'Microsoft',
   reddit: 'Reddit',
   pinterest: 'Pinterest',
+  openai: 'OpenAI (ChatGPT Ads)',
 };
 
 /** True if platform's base tag/pixel was observed firing anywhere during the crawl. */

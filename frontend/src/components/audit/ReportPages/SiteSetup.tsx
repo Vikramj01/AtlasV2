@@ -10,6 +10,7 @@ const TAG_PLATFORM_LABELS: Record<DetectedTagPlatform, string> = {
   linkedin_insight: 'LinkedIn Insight Tag',
   tiktok_pixel: 'TikTok Pixel',
   microsoft_uet: 'Microsoft UET',
+  openai_pixel: 'OpenAI (OAIQ) Pixel',
 };
 
 function DetectedBadge({ detected }: { detected: boolean }) {

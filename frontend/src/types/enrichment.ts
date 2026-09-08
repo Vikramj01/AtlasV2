@@ -45,6 +45,7 @@ export interface ClientIdentityConfig {
   wbraid_field: string;
   gbraid_field: string;
   ttclid_field: string;
+  oppref_field: string;
   auto_capture_ip: boolean;
   auto_capture_ua: boolean;
   enabled_identifiers: IdentifierType[];
@@ -93,6 +94,7 @@ export interface SignalEnrichmentConfig {
   enabled_for_meta: boolean;
   enabled_for_google: boolean;
   enabled_for_tiktok: boolean;
+  enabled_for_openai: boolean;
   validated_at: string | null;
   validation_score: number | null;
   validation_warnings: EnrichmentWarning[];
@@ -149,6 +151,7 @@ export interface SaveIdentityConfigRequest {
   wbraid_field?: string;
   gbraid_field?: string;
   ttclid_field?: string;
+  oppref_field?: string;
   auto_capture_ip?: boolean;
   auto_capture_ua?: boolean;
   enabled_identifiers?: IdentifierType[];
@@ -165,6 +168,7 @@ export interface SaveSignalEnrichmentRequest {
   enabled_for_meta: boolean;
   enabled_for_google: boolean;
   enabled_for_tiktok: boolean;
+  enabled_for_openai: boolean;
 }
 
 export interface ValidateFieldPathRequest {

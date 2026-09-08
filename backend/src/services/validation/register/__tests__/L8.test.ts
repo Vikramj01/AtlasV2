@@ -69,6 +69,30 @@ describe('CONSENT_BANNER_PRESENT_WHEN_REQUIRED (L8.1)', () => {
     expect(CONSENT_BANNER_PRESENT_WHEN_REQUIRED.test(auditData).status).toBe('fail');
   });
 
+  // ATLAS_OPENAI_ADS_AND_REGIONS_PRD Part B — the picker's "EEA / Switzerland"
+  // chip sets both `eea` and `switzerland` (frontend expandTrafficRegionSelection);
+  // 'switzerland' alone must still independently trigger this rule so Swiss
+  // FADP traffic keeps triggering the consent-banner expectation.
+  it('fails when only Switzerland traffic is declared but no CMP and no banner is present', () => {
+    const auditData = makeAuditData({ traffic_regions: ['switzerland'], consent_capture: makeCapture({ banner_present: false }) });
+    expect(CONSENT_BANNER_PRESENT_WHEN_REQUIRED.test(auditData).status).toBe('fail');
+  });
+
+  it('passes when the combined EEA + Switzerland selection has a banner detected', () => {
+    const auditData = makeAuditData({ traffic_regions: ['eea', 'switzerland'], consent_capture: makeCapture({ banner_present: true }) });
+    expect(CONSENT_BANNER_PRESENT_WHEN_REQUIRED.test(auditData).status).toBe('pass');
+  });
+
+  it('does not require a banner for Singapore-only traffic (reporting-only region, not regulated)', () => {
+    const auditData = makeAuditData({ traffic_regions: ['singapore'], consent_capture: makeCapture({ banner_present: false }) });
+    expect(CONSENT_BANNER_PRESENT_WHEN_REQUIRED.test(auditData).status).toBe('skipped');
+  });
+
+  it('does not require a banner for UAE/GCC-only traffic (reporting-only region, not regulated)', () => {
+    const auditData = makeAuditData({ traffic_regions: ['gcc'], consent_capture: makeCapture({ banner_present: false }) });
+    expect(CONSENT_BANNER_PRESENT_WHEN_REQUIRED.test(auditData).status).toBe('skipped');
+  });
+
   it('passes when UK traffic is declared and a banner was detected, even with no CMP declared', () => {
     const auditData = makeAuditData({ traffic_regions: ['uk'], consent_capture: makeCapture({ banner_present: true }) });
     expect(CONSENT_BANNER_PRESENT_WHEN_REQUIRED.test(auditData).status).toBe('pass');

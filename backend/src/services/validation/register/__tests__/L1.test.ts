@@ -21,6 +21,7 @@ import {
   SERVER_CONTAINER_ENDPOINT_CONFIGURED,
   SERVER_CONTAINER_FIRST_PARTY_DOMAIN,
   NO_TAG_LOAD_ERRORS,
+  OPENAI_PIXEL_PRESENT,
   L1_RULES,
 } from '../L1';
 import type { AuditData, NetworkRequest } from '@/types/audit';
@@ -369,11 +370,21 @@ describe('NO_TAG_LOAD_ERRORS (L1.16)', () => {
   });
 });
 
+describe('OPENAI_PIXEL_PRESENT (L1.17)', () => {
+  it('passes when bzrcdn.openai.com fires', () => {
+    const auditData = makeAuditData({ networkRequests: [makeRequest({ url: 'https://bzrcdn.openai.com/sdk/oaiq.min.js' })] });
+    expect(OPENAI_PIXEL_PRESENT.test(auditData).status).toBe('pass');
+  });
+  it('fails otherwise', () => {
+    expect(OPENAI_PIXEL_PRESENT.test(makeAuditData()).status).toBe('fail');
+  });
+});
+
 describe('L1_RULES', () => {
-  it('exports all 16 L1 rules', () => {
-    expect(L1_RULES).toHaveLength(16);
-    expect(new Set(L1_RULES.map((r) => r.id)).size).toBe(16);
-    expect(new Set(L1_RULES.map((r) => r.rule_id)).size).toBe(16);
+  it('exports all 17 L1 rules', () => {
+    expect(L1_RULES).toHaveLength(17);
+    expect(new Set(L1_RULES.map((r) => r.id)).size).toBe(17);
+    expect(new Set(L1_RULES.map((r) => r.rule_id)).size).toBe(17);
   });
 });
 

@@ -65,10 +65,24 @@ export type DeclaredPlatform =
   | 'linkedin'
   | 'microsoft'
   | 'reddit'
-  | 'pinterest';
+  | 'pinterest'
+  | 'openai';
 
-/** Regions field granularity the consent layer (L8) needs — distinct from the legacy `Region` (us/eu/global). */
-export type TrafficRegion = 'eea' | 'uk' | 'switzerland' | 'brazil' | 'us' | 'other';
+/**
+ * Regions field granularity the consent layer (L8) needs — distinct from the
+ * legacy `Region` (us/eu/global). ATLAS_OPENAI_ADS_AND_REGIONS_PRD Part B —
+ * added 'singapore'/'gcc', removed 'brazil' (inert in every rule; safe to
+ * drop outright per the PRD). This is a picker-options/type change only —
+ * `traffic_regions` is TEXT[] with no CHECK constraint (migration 20260902002/
+ * 20260903001), so an existing audit stored with 'brazil' still round-trips
+ * through the DB at runtime even though it no longer typechecks as a
+ * TrafficRegion; the region-label renderer (scanInputOptions.ts /
+ * TRAFFIC_REGION_LABELS) falls back to the raw string for any unrecognised
+ * value instead of throwing. 'switzerland' stays in the type and in L8.ts's
+ * REGULATED_TRAFFIC_REGIONS even though it no longer has its own picker
+ * chip — see scanInputOptions.ts's "EEA / Switzerland" combined chip.
+ */
+export type TrafficRegion = 'eea' | 'uk' | 'switzerland' | 'singapore' | 'gcc' | 'us' | 'other';
 
 export type CMP = 'onetrust' | 'cookiebot' | 'usercentrics' | 'custom' | 'none';
 
@@ -355,7 +369,8 @@ export type DetectedTagPlatform =
   | 'google_ads'
   | 'linkedin_insight'
   | 'tiktok_pixel'
-  | 'microsoft_uet';
+  | 'microsoft_uet'
+  | 'openai_pixel';
 
 export interface DataLayerEventInventoryEntry {
   event_name: string;

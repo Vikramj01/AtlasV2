@@ -21,7 +21,9 @@
  * Contention only applies within a family (§2.3) — gclid and ttclid
  * arriving together is unrealistic but not conflicting, so it's excluded
  * by construction (each family here has its own entry, and Meta/TikTok/
- * Microsoft/LinkedIn are all single-member families).
+ * Microsoft/LinkedIn/OpenAI are all single-member families — OpenAI's
+ * oppref shares no linker cookie with any Google/Meta/TikTok identifier,
+ * per ATLAS_OPENAI_ADS_AND_REGIONS_PRD A-W4).
  */
 import type { AuditData, UnassessableFinding, ValidationResult } from '@/types/audit';
 import logger from '@/utils/logger';
@@ -33,6 +35,7 @@ const CLICK_ID_FAMILIES: Record<string, string[]> = {
   tiktok: ['ttclid'],
   microsoft: ['msclkid'],
   linkedin: ['li_fat_id'],
+  openai: ['oppref'],
 };
 
 const PARAM_TO_CAPTURE_RULE_ID: Record<string, string> = {
@@ -43,6 +46,7 @@ const PARAM_TO_CAPTURE_RULE_ID: Record<string, string> = {
   ttclid: 'TTCLID_CAPTURED_AT_LANDING',
   msclkid: 'MSCLKID_CAPTURED_AT_LANDING',
   li_fat_id: 'LI_FAT_ID_CAPTURED_AT_LANDING',
+  oppref: 'OPPREF_CAPTURED_AT_LANDING',
 };
 
 export interface ClickIdContentionPartition {

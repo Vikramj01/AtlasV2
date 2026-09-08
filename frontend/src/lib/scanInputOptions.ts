@@ -25,16 +25,60 @@ export const DECLARED_PLATFORM_OPTIONS: { value: DeclaredPlatform; label: string
   { value: 'microsoft',  label: 'Microsoft' },
   { value: 'reddit',     label: 'Reddit' },
   { value: 'pinterest',  label: 'Pinterest' },
+  { value: 'openai',     label: 'OpenAI (ChatGPT Ads)' },
 ];
 
+/**
+ * ATLAS_OPENAI_ADS_AND_REGIONS_PRD Part B — Singapore/UAE-GCC added, Brazil
+ * dropped (inert in every rule). 'switzerland' has no standalone chip any
+ * more but stays a valid TrafficRegion — selecting "EEA / Switzerland" sets
+ * both `eea` and `switzerland` (see expandTrafficRegionSelection below) so
+ * L8's REGULATED_TRAFFIC_REGIONS consent expectation, which keys off
+ * 'switzerland', keeps firing for EEA/Swiss traffic. Singapore/GCC are
+ * reporting-only for now — deliberately left out of
+ * REGULATED_TRAFFIC_REGIONS (backend L8.ts) so no existing client's consent
+ * verdict changes; see the PRD's Part B3 for the reasoning.
+ */
 export const TRAFFIC_REGION_OPTIONS: { value: TrafficRegion; label: string }[] = [
-  { value: 'eea',         label: 'EEA' },
+  { value: 'eea',         label: 'EEA / Switzerland' },
   { value: 'uk',          label: 'UK' },
-  { value: 'switzerland', label: 'Switzerland' },
-  { value: 'brazil',      label: 'Brazil' },
+  { value: 'singapore',   label: 'Singapore' },
+  { value: 'gcc',         label: 'UAE / GCC' },
   { value: 'us',          label: 'United States' },
   { value: 'other',       label: 'Other' },
 ];
+
+/**
+ * Selecting/deselecting the combined "EEA / Switzerland" chip must set (or
+ * clear) both `eea` and `switzerland` together, since 'switzerland' has no
+ * chip of its own any more but is still what L8's REGULATED_TRAFFIC_REGIONS
+ * checks for Swiss FADP traffic. MultiChipToggle only knows how to toggle
+ * the single value of the chip it renders ('eea'), so this expands that
+ * one-value toggle into the two-value set it needs to represent — called
+ * from the onChange handler in EvaluateSiteCard.tsx/RunAuditForm.tsx rather
+ * than baked into the generic chip component, which stays a plain
+ * single-value-per-chip toggle used elsewhere (declared platforms).
+ */
+export function expandTrafficRegionSelection(
+  previous: TrafficRegion[],
+  next: TrafficRegion[],
+): TrafficRegion[] {
+  const hadEea = previous.includes('eea');
+  const hasEea = next.includes('eea');
+  if (hasEea && !hadEea) return [...next, 'switzerland'];
+  if (!hasEea && hadEea) return next.filter((r) => r !== 'switzerland');
+  return next;
+}
+
+/**
+ * Label for a stored TrafficRegion value, including one no longer offered
+ * in the picker (e.g. a pre-existing audit's 'brazil') — falls back to the
+ * raw value instead of throwing or rendering blank, per
+ * ATLAS_OPENAI_ADS_AND_REGIONS_PRD B4/B5.
+ */
+export function getTrafficRegionLabel(value: string): string {
+  return TRAFFIC_REGION_OPTIONS.find((o) => o.value === value)?.label ?? value;
+}
 
 export const CMP_OPTIONS: { value: CMP; label: string }[] = [
   { value: 'onetrust',     label: 'OneTrust' },

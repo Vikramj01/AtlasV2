@@ -53,8 +53,8 @@ router.get('/', async (req: Request, res: Response) => {
 // ─── POST /api/audits/start ───────────────────────────────────────────────────
 
 const SITE_TYPES = ['plg_saas', 'ecommerce', 'lead_gen_b2b', 'marketplace', 'app_install', 'subscription_media'] as const;
-const DECLARED_PLATFORMS = ['google_ads', 'meta', 'tiktok', 'linkedin', 'microsoft', 'reddit', 'pinterest'] as const;
-const TRAFFIC_REGIONS = ['eea', 'uk', 'switzerland', 'brazil', 'us', 'other'] as const;
+const DECLARED_PLATFORMS = ['google_ads', 'meta', 'tiktok', 'linkedin', 'microsoft', 'reddit', 'pinterest', 'openai'] as const;
+const TRAFFIC_REGIONS = ['eea', 'uk', 'switzerland', 'singapore', 'gcc', 'us', 'other'] as const;
 
 // Bridges a v2 site_type onto the legacy (NOT NULL) funnel_type column so the
 // audits row stays valid and the current journey simulator — still keyed by

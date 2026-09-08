@@ -112,6 +112,10 @@ export function applyIdentityConfig(
     const v = resolve(identityConfig.ttclid_field) ?? rawEventData[identityConfig.ttclid_field];
     if (typeof v === 'string' && v) ud.ttclid = v;
   }
+  if (enabled.has('oppref')) {
+    const v = resolve(identityConfig.oppref_field) ?? rawEventData[identityConfig.oppref_field];
+    if (typeof v === 'string' && v) ud.oppref = v;
+  }
 
   // Auto-capture from request context
   if (identityConfig.auto_capture_ip && requestIp) ud.client_ip_address = requestIp;
