@@ -556,9 +556,26 @@ export function getIssueImpact(ruleId: string): string {
   return RULE_INTERPRETATIONS[ruleId]?.business_impact ?? getIssueHeadline(ruleId);
 }
 
+/**
+ * Whether a result should render as a confident finding at all (Pre-
+ * Connection Scan Confidence Tiering PRD §4.3/§14 point 4) — a raw
+ * `status: 'fail'|'warning'` alone isn't enough once a result's `verdict`
+ * says the coverage behind it couldn't support that claim.
+ * NOT_OBSERVED/INCONCLUSIVE/CONFLICT are exactly the verdicts §4.3 defines
+ * as "not a confident pass/fail" — same set scoring.ts's `isScorable()`
+ * excludes from scoring, applied here to rendering instead. Falls back to
+ * the raw status check for a result with no `verdict` field (v1-legacy, or
+ * a fixture predating register/engine.ts's runRegister()) — unchanged
+ * behaviour for anything that never went through the verdict lattice.
+ */
+function isConfidentFinding(r: ValidationResult): boolean {
+  if (r.verdict !== undefined) return r.verdict === 'FAIL';
+  return r.status === 'fail' || r.status === 'warning';
+}
+
 export function interpretResults(results: ValidationResult[]): ReportIssue[] {
   return results
-    .filter((r) => r.status === 'fail' || r.status === 'warning')  // 'skipped' excluded
+    .filter(isConfidentFinding)  // 'skipped' excluded, and (PRD §4.3) so is any non-FAIL verdict
     .map((r) => {
       const interp = RULE_INTERPRETATIONS[r.rule_id];
       const v2 = isV2Result(r);
