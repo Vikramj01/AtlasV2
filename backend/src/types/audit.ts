@@ -971,10 +971,27 @@ export interface ScoreCoverage {
 }
 
 export interface AuditScores {
-  conversion_signal_health: number;
-  attribution_risk_level: 'Low' | 'Medium' | 'High' | 'Critical';
-  optimization_strength: 'Weak' | 'Moderate' | 'Strong';
-  data_consistency_score: 'Low' | 'Medium' | 'High';
+  /**
+   * Scoring & Coverage Gate PRD §9.1.4 — null when coverage_ratio across
+   * this score's layers (all 13, for this one) falls below
+   * COVERAGE_GATE_THRESHOLD (register/layers.ts, 0.60): "A partial score
+   * would imply confidence the run does not support." Renders as a
+   * Coverage Gate panel, never as a number and never as a blank (§9.1.5).
+   * Non-null for a v1-legacy score (scoring/engine.ts's calculateScores
+   * has no coverage-gate concept) and for any v2 score predating this PRD.
+   */
+  conversion_signal_health: number | null;
+  /** Null under the same gate, applied at this score's own (smaller) layer scope — see attribution_risk_coverage. PRD §9.3: a dimension with no scored layers renders 'Not assessed', never a default-safe label like the old 'Low'/'Moderate'/'High' fallback for zero applicable rules. */
+  attribution_risk_level: 'Low' | 'Medium' | 'High' | 'Critical' | null;
+  optimization_strength: 'Weak' | 'Moderate' | 'Strong' | null;
+  data_consistency_score: 'Low' | 'Medium' | 'High' | null;
+  /**
+   * Set only alongside a withheld (null) conversion_signal_health — PRD
+   * §9.1.4's literal reason code. Sub-scores withhold the same way but
+   * don't get their own reason code; the *_coverage field alongside each
+   * already states how many of its (smaller) layer set scored.
+   */
+  score_withheld_reason?: 'INSUFFICIENT_LAYER_COVERAGE';
   /** Distinct validation_layer values with any result at all vs. with a non-skipped result — the "N of M layers scanned" figure for the header composite. conversion_signal_health_coverage.layers_total is always 13 (ALL_V2_LAYERS.length, register/layers.ts) — see Report Correctness Programme PRD Part D1. */
   conversion_signal_health_coverage?: ScoreCoverage;
   attribution_risk_coverage?: ScoreCoverage;

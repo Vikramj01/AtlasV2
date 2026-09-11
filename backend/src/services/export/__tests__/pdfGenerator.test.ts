@@ -679,6 +679,50 @@ describe('generatePDF — coverage-aware scores', () => {
   });
 });
 
+// ── Coverage Gate panel (Scoring & Coverage Gate PRD §9.1.5/§9.2) ─────────────
+
+describe('generatePDF — withheld scores (Coverage Gate)', () => {
+  it('renders a larger buffer with a Coverage Gate panel when the overall score is withheld', async () => {
+    const withScore = await generatePDF(makeMinimalReport());
+
+    const withheldReport = makeMinimalReport();
+    withheldReport.executive_summary.scores.conversion_signal_health = null;
+    withheldReport.executive_summary.scores.score_withheld_reason = 'INSUFFICIENT_LAYER_COVERAGE';
+    withheldReport.executive_summary.scores.conversion_signal_health_coverage = { layers_tested: 5, layers_total: 13 };
+    const withheld = await generatePDF(withheldReport);
+
+    expect(isPdfBuffer(withheld)).toBe(true);
+    expect(withheld.byteLength).toBeGreaterThan(withScore.byteLength);
+  });
+
+  it('renders without crashing when every sub-score is withheld (null) alongside the overall score', async () => {
+    const report = makeMinimalReport();
+    report.executive_summary.scores.conversion_signal_health = null;
+    report.executive_summary.scores.score_withheld_reason = 'INSUFFICIENT_LAYER_COVERAGE';
+    report.executive_summary.scores.attribution_risk_level = null;
+    report.executive_summary.scores.optimization_strength = null;
+    report.executive_summary.scores.data_consistency_score = null;
+    report.executive_summary.scores.conversion_signal_health_coverage = { layers_tested: 2, layers_total: 13 };
+    report.executive_summary.scores.attribution_risk_coverage = { layers_tested: 0, layers_total: 2 };
+    report.executive_summary.scores.optimization_strength_coverage = { layers_tested: 0, layers_total: 2 };
+    report.executive_summary.scores.data_consistency_coverage = { layers_tested: 0, layers_total: 1 };
+    const buf = await generatePDF(report);
+    expect(isPdfBuffer(buf)).toBe(true);
+  });
+
+  it('renders no Coverage Gate panel when the overall score is present, even with a withheld sub-score', async () => {
+    const withoutSubWithheld = await generatePDF(makeMinimalReport());
+
+    const report = makeMinimalReport();
+    report.executive_summary.scores.attribution_risk_level = null;
+    report.executive_summary.scores.attribution_risk_coverage = { layers_tested: 0, layers_total: 2 };
+    const buf = await generatePDF(report);
+
+    expect(isPdfBuffer(buf)).toBe(true);
+    expect(buf.byteLength).toBeGreaterThan(withoutSubWithheld.byteLength);
+  });
+});
+
 // ── Real page numbering (PRD §3.3/W6) ─────────────────────────────────────────
 
 describe('generatePDF — real page numbering', () => {

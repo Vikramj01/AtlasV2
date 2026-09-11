@@ -1,12 +1,24 @@
 import { StatusBanner } from '@/components/common/StatusBanner';
 import { ScoreCard } from '@/components/common/ScoreCard';
 import { TOOLTIPS } from '@/lib/ui-copy';
-import type { ReportJSON } from '@/types/audit';
+import type { ReportJSON, AuditScores } from '@/types/audit';
 
 function scoreColor(score: number): 'green' | 'yellow' | 'red' {
   if (score >= 80) return 'green';
   if (score >= 60) return 'yellow';
   return 'red';
+}
+
+function riskColor(level: NonNullable<AuditScores['attribution_risk_level']>): 'green' | 'yellow' | 'red' {
+  return level === 'Low' ? 'green' : level === 'Medium' ? 'yellow' : 'red';
+}
+
+function strengthColor(level: NonNullable<AuditScores['optimization_strength']>): 'green' | 'yellow' | 'red' {
+  return level === 'Strong' ? 'green' : level === 'Moderate' ? 'yellow' : 'red';
+}
+
+function consistencyColor(level: NonNullable<AuditScores['data_consistency_score']>): 'green' | 'yellow' | 'red' {
+  return level === 'High' ? 'green' : level === 'Medium' ? 'yellow' : 'red';
 }
 
 interface Props {
@@ -43,6 +55,11 @@ export function ExecutiveSummary({ report }: Props) {
   // can't be exported as a client-facing report at all until re-scanned.
   const insufficientRun = coverage?.run_quality === 'INSUFFICIENT';
 
+  // Scoring & Coverage Gate PRD §9.1.5/§9.2 — a withheld overall score
+  // renders as this panel, "not a number and not a blank."
+  const coverageGateWithheld = scores.score_withheld_reason === 'INSUFFICIENT_LAYER_COVERAGE';
+  const conversionCoverage = scores.conversion_signal_health_coverage;
+
   return (
     <div className="space-y-6">
       <p className="text-sm font-medium text-muted-foreground">{report.website_url}</p>
@@ -54,6 +71,16 @@ export function ExecutiveSummary({ report }: Props) {
             This scan examined {coverage.pages_distinct} of {coverage.pages_requested} requested page{coverage.pages_requested !== 1 ? 's' : ''},
             but the declared conversion surface never settled or too few pages settled overall. This run is not reliable enough
             to support a client-facing report, and PDF/JSON export is disabled below. Re-run the audit with corrected seed URLs.
+          </p>
+        </div>
+      )}
+
+      {coverageGateWithheld && (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-4">
+          <p className="text-sm font-semibold text-slate-900">Coverage Gate — Signal Health score withheld</p>
+          <p className="mt-1 text-sm leading-relaxed text-slate-700">
+            This scan assessed {conversionCoverage?.layers_tested ?? 0} of {conversionCoverage?.layers_total ?? 13} signal layers, below the 60 per cent
+            coverage this score requires. A partial score would imply confidence the run does not support. The layers assessed are reported individually below.
           </p>
         </div>
       )}
@@ -113,10 +140,12 @@ export function ExecutiveSummary({ report }: Props) {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <ScoreCard
           title="Conversion Signal Health"
-          value={`${scores.conversion_signal_health} / 100`}
-          valueColor={scoreColor(scores.conversion_signal_health)}
+          value={scores.conversion_signal_health === null ? 'Not assessed' : `${scores.conversion_signal_health} / 100`}
+          valueColor={scores.conversion_signal_health === null ? 'default' : scoreColor(scores.conversion_signal_health)}
           description={
-            scores.conversion_signal_health >= 80
+            scores.conversion_signal_health === null
+              ? 'Withheld — see the Coverage Gate notice above.'
+              : scores.conversion_signal_health >= 80
               ? 'Signals are reaching your ad platforms.'
               : scores.conversion_signal_health >= 60
               ? 'Most signals are reaching ad platforms, but key data is missing.'
@@ -126,35 +155,35 @@ export function ExecutiveSummary({ report }: Props) {
         />
         <ScoreCard
           title="Attribution Risk"
-          value={scores.attribution_risk_level}
-          valueColor={
-            scores.attribution_risk_level === 'Low' ? 'green'
-            : scores.attribution_risk_level === 'Medium' ? 'yellow'
-            : 'red'
+          value={scores.attribution_risk_level ?? 'Not assessed'}
+          valueColor={scores.attribution_risk_level === null ? 'default' : riskColor(scores.attribution_risk_level)}
+          description={
+            scores.attribution_risk_level === null
+              ? 'Not enough of this score\'s layers were confirmed to give a rating.'
+              : 'Likelihood that ad click IDs are being lost before conversion. Low is best.'
           }
-          description="Likelihood that ad click IDs are being lost before conversion. Low is best."
           tooltipEntry={TOOLTIPS.attributionRisk}
         />
         <ScoreCard
           title="Optimization Strength"
-          value={scores.optimization_strength}
-          valueColor={
-            scores.optimization_strength === 'Strong' ? 'green'
-            : scores.optimization_strength === 'Moderate' ? 'yellow'
-            : 'red'
+          value={scores.optimization_strength ?? 'Not assessed'}
+          valueColor={scores.optimization_strength === null ? 'default' : strengthColor(scores.optimization_strength)}
+          description={
+            scores.optimization_strength === null
+              ? 'Not enough of this score\'s layers were confirmed to give a rating.'
+              : 'How much user data is available to improve ad performance. Strong is best.'
           }
-          description="How much user data is available to improve ad performance. Strong is best."
           tooltipEntry={TOOLTIPS.optimizationStrength}
         />
         <ScoreCard
           title="Data Consistency"
-          value={scores.data_consistency_score}
-          valueColor={
-            scores.data_consistency_score === 'High' ? 'green'
-            : scores.data_consistency_score === 'Medium' ? 'yellow'
-            : 'red'
+          value={scores.data_consistency_score ?? 'Not assessed'}
+          valueColor={scores.data_consistency_score === null ? 'default' : consistencyColor(scores.data_consistency_score)}
+          description={
+            scores.data_consistency_score === null
+              ? 'Not enough of this score\'s layer was confirmed to give a rating.'
+              : 'Consistency of event deduplication between browser and server. High is best.'
           }
-          description="Consistency of event deduplication between browser and server. High is best."
           tooltipEntry={TOOLTIPS.dataConsistency}
         />
       </div>

@@ -206,7 +206,12 @@ export async function markScheduleRan(
  */
 export async function updateScheduleScore(
   scheduleId: string,
-  score: number,
+  // Scoring & Coverage Gate PRD §9 — null when this run's score was
+  // withheld (score_withheld_reason: 'INSUFFICIENT_LAYER_COVERAGE').
+  // Stored as null rather than skipped/stale, so the next scheduled run's
+  // regression check correctly has nothing to compare against instead of
+  // silently diffing against an outdated number.
+  score: number | null,
   ruleSetVersion?: RuleSetVersion,
   coverageFingerprint?: string,
   registerVersion?: string,

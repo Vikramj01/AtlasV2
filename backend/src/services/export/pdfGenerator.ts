@@ -8,6 +8,7 @@
  */
 import PDFDocument from 'pdfkit';
 import type { ReportJSON, ValidationResult, ReportIssue, StepCoverage, StepUrlSource, ScoreCoverage } from '@/types/audit';
+import { ALL_V2_LAYERS } from '@/services/validation/register/layers';
 
 /** Per-step provenance label for the Scan Coverage section — see StepUrlSource's docstring in types/audit.ts. */
 const STEP_SOURCE_LABELS: Record<StepUrlSource, string> = {
@@ -391,6 +392,26 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
     // 4 Score cards (2×2 grid)
     sectionHeading('Scores at a Glance');
 
+    // Coverage Gate panel (Scoring & Coverage Gate PRD §9.1.5/§9.2) — a
+    // withheld overall score renders as this panel, "not a number and not
+    // a blank." Exact copy from §9.2, filled in with this run's real
+    // layer-coverage figures.
+    if (scores.conversion_signal_health === null) {
+      const panelY = doc.y;
+      const layersTested = scores.conversion_signal_health_coverage?.layers_tested ?? 0;
+      const layersTotal = scores.conversion_signal_health_coverage?.layers_total ?? ALL_V2_LAYERS.length;
+      const panelText = `This scan assessed ${layersTested} of ${layersTotal} signal layers, below the 60 per cent coverage this score requires. A partial score would imply confidence the run does not support. The layers assessed are reported individually below.`;
+      const panelTextH = doc.fontSize(9).font('Helvetica').heightOfString(panelText, { width: CONTENT_W - 28 });
+      const panelH = Math.max(40, 22 + panelTextH + 10);
+      doc.fillColor(C.bgLight).rect(LEFT, panelY, CONTENT_W, panelH).fill();
+      doc.fillColor(C.partial).rect(LEFT, panelY, 3, panelH).fill();
+      doc.fillColor(C.darkText).fontSize(10).font('Helvetica-Bold')
+        .text('Coverage Gate — Signal Health score withheld', LEFT + 14, panelY + 8);
+      doc.fillColor(C.midText).fontSize(9).font('Helvetica')
+        .text(panelText, LEFT + 14, panelY + 22, { width: CONTENT_W - 28 });
+      doc.y = panelY + panelH + 10;
+    }
+
     const cardW = (CONTENT_W - 10) / 2;
     const cardH = 78;
     const gridStartY = doc.y;
@@ -408,10 +429,16 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
     // Optimization Strength display value — never "Strong" on partial
     // layer coverage or while a platform is Broken; the underlying
     // categorical score is left untouched (still available to any other
-    // consumer), only this card's rendered text/color is capped.
+    // consumer), only this card's rendered text/color is capped. Withheld
+    // (Scoring & Coverage Gate PRD §9.3 — null, "Not assessed") and
+    // "partial" now describe the same condition for a 2-layer sub-score
+    // like this one (1 of 2 scored is a 0.5 ratio, always below the 0.6
+    // gate), so optimizationPartial already covers it — the `?? 'Not
+    // assessed'` below only needs to satisfy the type, never actually
+    // changes which branch renders.
     const optimizationCapped = optimizationPartial || (anyPlatformBroken && scores.optimization_strength === 'Strong');
     const optimizationDisplay = optimizationCapped && scores.optimization_strength === 'Strong'
-      ? 'Moderate*' : scores.optimization_strength;
+      ? 'Moderate*' : (scores.optimization_strength ?? 'Not assessed');
     const optimizationColor = optimizationPartial ? C.partial
       : optimizationDisplay.startsWith('Strong') ? C.healthy
       : optimizationDisplay.startsWith('Moderate') ? C.atRisk : C.broken;
@@ -419,33 +446,39 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
     // Attribution Risk display value — never "Low" (claiming low risk)
     // while a platform is Broken.
     const attributionCapped = anyPlatformBroken && scores.attribution_risk_level === 'Low';
-    const attributionDisplay = attributionCapped ? 'Medium*' : scores.attribution_risk_level;
+    const attributionDisplay = attributionCapped ? 'Medium*' : (scores.attribution_risk_level ?? 'Not assessed');
     const attributionColor = attributionPartial ? C.partial
       : attributionDisplay.startsWith('Low') ? C.healthy
       : attributionDisplay.startsWith('Medium') ? C.atRisk : C.broken;
 
+    const consistencyDisplay = scores.data_consistency_score ?? 'Not assessed';
     const consistencyColor = consistencyPartial ? C.partial
-      : scores.data_consistency_score === 'High' ? C.healthy
-      : scores.data_consistency_score === 'Medium' ? C.atRisk : C.broken;
+      : consistencyDisplay === 'High' ? C.healthy
+      : consistencyDisplay === 'Medium' ? C.atRisk : C.broken;
 
     const conversionCoverage = scores.conversion_signal_health_coverage;
-    const conversionDescription = conversionCoverage && conversionCoverage.layers_total > 0
+    const conversionDescription = scores.conversion_signal_health === null
+      ? 'Withheld — see the Coverage Gate panel above.'
+      : conversionCoverage && conversionCoverage.layers_total > 0
       ? `Overall signal quality across ${conversionCoverage.layers_tested} of ${conversionCoverage.layers_total} layers scanned (100 = fully healthy)`
       : 'Overall signal quality (100 = fully healthy)';
 
     const scoreCards = [
       {
         label: 'Conversion Signal Health',
-        value: `${scores.conversion_signal_health}/100`,
+        value: scores.conversion_signal_health === null ? 'Not assessed' : `${scores.conversion_signal_health}/100`,
         description: conversionDescription,
-        color: scores.conversion_signal_health >= 80 ? C.healthy
+        color: scores.conversion_signal_health === null ? C.partial
+             : scores.conversion_signal_health >= 80 ? C.healthy
              : scores.conversion_signal_health >= 60 ? C.atRisk
              : C.broken,
       },
       {
-        label: `Attribution Risk${attributionPartial ? ' (partial)' : ''} — Click ID & Storage`,
+        label: `Attribution Risk${attributionPartial ? ' (not assessed)' : ''} — Click ID & Storage`,
         value: attributionDisplay,
-        description: (attributionCapped
+        description: (attributionPartial
+          ? 'Not enough of this score\'s layers were confirmed to give a rating.'
+          : attributionCapped
           ? 'A declared platform has no signal observed — risk cannot be "Low" while that holds.'
           : attributionDisplay === 'Low'
           ? 'Ad attribution is well-configured — low is best'
@@ -455,10 +488,10 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
         color: attributionColor,
       },
       {
-        label: `Optimization Strength${optimizationPartial ? ' (partial)' : ''} — Parameters & Identity`,
+        label: `Optimization Strength${optimizationPartial ? ' (not assessed)' : ''} — Parameters & Identity`,
         value: optimizationDisplay,
         description: (optimizationPartial
-          ? 'Not enough of this score\'s layers ran to give a confident rating.'
+          ? 'Not enough of this score\'s layers were confirmed to give a rating.'
           : optimizationCapped
           ? 'A declared platform has no signal observed — capped below "Strong" until that\'s fixed.'
           : optimizationDisplay === 'Strong'
@@ -469,13 +502,13 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
         color: optimizationColor,
       },
       {
-        label: `Data Consistency${consistencyPartial ? ' (partial)' : ''} — Hygiene & Integrity`,
-        value: scores.data_consistency_score,
+        label: `Data Consistency${consistencyPartial ? ' (not assessed)' : ''} — Hygiene & Integrity`,
+        value: consistencyDisplay,
         description: (consistencyPartial
-          ? 'Not enough of this score\'s layer ran to give a confident rating.'
-          : scores.data_consistency_score === 'High'
+          ? 'Not enough of this score\'s layer was confirmed to give a rating.'
+          : consistencyDisplay === 'High'
           ? 'Data is consistent across platforms — high is best'
-          : scores.data_consistency_score === 'Medium'
+          : consistencyDisplay === 'Medium'
           ? 'Some data inconsistencies detected — high is best'
           : 'Significant data inconsistencies detected — high is best') + coverageSuffix(scores.data_consistency_coverage),
         color: consistencyColor,

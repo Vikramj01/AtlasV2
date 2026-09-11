@@ -70,13 +70,17 @@ auditQueue.on('completed', async (job) => {
     await updateScheduleScore(scheduled_audit_id, currentScore, currentRuleSetVersion, currentCoverageFingerprint, currentRegisterVersion);
 
     // Fire regression alert if score dropped ≥5 points, and the two runs are
-    // actually comparable (see isRegressionComparable's docstring)
+    // actually comparable (see isRegressionComparable's docstring). A
+    // withheld current score (null, Scoring & Coverage Gate PRD §9) has
+    // nothing to compare — `null < number` would otherwise coerce to `0 <
+    // number` and falsely read as a regression every time.
     if (
       isRegressionComparable(
         { rule_set_version: schedule.last_audit_rule_set_version, coverage_fingerprint: schedule.last_audit_coverage_fingerprint, register_version: schedule.last_audit_register_version },
         { rule_set_version: currentRuleSetVersion, coverage_fingerprint: currentCoverageFingerprint, register_version: currentRegisterVersion },
       ) &&
       previousScore !== null &&
+      currentScore !== null &&
       currentScore < previousScore - 5
     ) {
       const delta = Math.round(previousScore - currentScore);

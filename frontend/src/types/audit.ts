@@ -133,11 +133,25 @@ export interface ReportCoverage {
   run_quality: 'COMPLETE' | 'PROVISIONAL' | 'INSUFFICIENT';
 }
 
+/** How many of a score's constituent layers actually scored this run — the "N of M layers scanned" figure. */
+export interface ScoreCoverage {
+  layers_tested: number;
+  layers_total: number;
+}
+
 export interface AuditScores {
-  conversion_signal_health: number;
-  attribution_risk_level: 'Low' | 'Medium' | 'High' | 'Critical';
-  optimization_strength: 'Weak' | 'Moderate' | 'Strong';
-  data_consistency_score: 'Low' | 'Medium' | 'High';
+  // Scoring & Coverage Gate PRD §9 — null when withheld (coverage_ratio
+  // below the 60% threshold, at this score's own layer scope). Renders as
+  // "Not assessed" / a Coverage Gate panel, never a fabricated number/label.
+  conversion_signal_health: number | null;
+  attribution_risk_level: 'Low' | 'Medium' | 'High' | 'Critical' | null;
+  optimization_strength: 'Weak' | 'Moderate' | 'Strong' | null;
+  data_consistency_score: 'Low' | 'Medium' | 'High' | null;
+  score_withheld_reason?: 'INSUFFICIENT_LAYER_COVERAGE';
+  conversion_signal_health_coverage?: ScoreCoverage;
+  attribution_risk_coverage?: ScoreCoverage;
+  optimization_strength_coverage?: ScoreCoverage;
+  data_consistency_coverage?: ScoreCoverage;
 }
 
 export type ValidationLayerFilter =

@@ -271,7 +271,12 @@ router.get('/:audit_id/report', async (req: Request, res: Response) => {
   const currentScore = report.executive_summary.scores.conversion_signal_health;
   const currentDenominator = report.executive_summary.scores.conversion_signal_health_denominator ?? null;
   const currentRegisterVersion = report.register_version ?? null;
-  const comparison = previous
+  // Scoring & Coverage Gate (PRD §9) — a withheld score (null,
+  // score_withheld_reason: 'INSUFFICIENT_LAYER_COVERAGE') has nothing to
+  // diff against a previous numeric score; getPreviousAuditScore already
+  // skips a withheld *previous* run the same way (returns null when that
+  // run's own score was null), so this only needs to guard the current side.
+  const comparison = previous && currentScore !== null
     ? {
         previous_audit_id: previous.audit_id,
         previous_score: previous.score,
