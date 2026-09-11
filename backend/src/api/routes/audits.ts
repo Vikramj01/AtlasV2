@@ -5,6 +5,7 @@ import { authMiddleware } from '@/api/middleware/authMiddleware';
 import { auditLimiter } from '@/api/middleware/auditLimiter';
 import { createAudit, getAudit, getReport, listAudits, deleteAudit, getPreviousAuditScore, linkAuditToClient } from '@/services/database/queries';
 import { getClient } from '@/services/database/clientQueries';
+import { saveRuleConfirmation, getRuleConfirmationsForAudit } from '@/services/database/ruleConfirmationQueries';
 import { getJourneyWithDetails, getLatestSpec } from '@/services/database/journeyQueries';
 import { generatePDF } from '@/services/export/pdfGenerator';
 import { lintReportOutput } from '@/services/reporting/outputLint';
@@ -352,6 +353,71 @@ router.patch('/:audit_id/link-client', async (req: Request, res: Response) => {
     logger.error({ err, audit_id }, 'Failed to link audit to client');
     res.status(500).json({ error: 'Failed to link audit to client' });
   }
+});
+
+// ─── /api/audits/:audit_id/rule-confirmations ─────────────────────────────────
+// Pre-Connection Scan Confidence Tiering PRD §15 — measured accuracy. The
+// client_answer/operator write path: a person (the agency operator, having
+// relayed the client's answer to an open question, or verified a finding
+// themselves) records whether a prior finding was CONFIRMED or REFUTED.
+// The automatic 'rescan' source is never accepted here — see
+// ruleConfirmationRescan.ts, wired into orchestrator.ts, for that path.
+// No frontend UI calls this yet (Sprint 7 scope is the backend mechanism;
+// see the sprint plan doc).
+
+const RuleConfirmationSchema = z.object({
+  rule_id: z.string().min(1),
+  outcome: z.enum(['CONFIRMED', 'REFUTED', 'UNKNOWN']),
+  source: z.enum(['client_answer', 'operator']),
+  note: z.string().max(2000).optional(),
+});
+
+router.post('/:audit_id/rule-confirmations', async (req: Request, res: Response) => {
+  const { user } = req as AuthenticatedRequest;
+  const { audit_id } = req.params;
+
+  const parsed = RuleConfirmationSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid rule confirmation' });
+    return;
+  }
+
+  const audit = await getAudit(audit_id);
+  if (!audit) {
+    res.status(404).json({ error: 'Audit not found' });
+    return;
+  }
+  if (audit.user_id !== user.id) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
+  try {
+    const confirmation = await saveRuleConfirmation({ audit_id, ...parsed.data });
+    logger.info({ audit_id, rule_id: parsed.data.rule_id, outcome: parsed.data.outcome, source: parsed.data.source }, 'Rule confirmation recorded');
+    res.status(201).json(confirmation);
+  } catch (err) {
+    logger.error({ err, audit_id }, 'Failed to save rule confirmation');
+    res.status(500).json({ error: 'Failed to save rule confirmation' });
+  }
+});
+
+router.get('/:audit_id/rule-confirmations', async (req: Request, res: Response) => {
+  const { user } = req as AuthenticatedRequest;
+  const { audit_id } = req.params;
+
+  const audit = await getAudit(audit_id);
+  if (!audit) {
+    res.status(404).json({ error: 'Audit not found' });
+    return;
+  }
+  if (audit.user_id !== user.id) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
+  const confirmations = await getRuleConfirmationsForAudit(audit_id);
+  res.json({ data: confirmations });
 });
 
 // ─── POST /api/audits/start-from-journey ─────────────────────────────────────

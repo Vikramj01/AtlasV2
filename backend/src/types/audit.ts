@@ -1178,6 +1178,28 @@ export interface WithAccessEntry {
   reveals: string;
 }
 
+/**
+ * Pre-Connection Scan Confidence Tiering PRD §15 — measured accuracy. Data
+ * capture only: nothing computes or publishes an accuracy figure from
+ * this yet ("no accuracy figure is published until the sample is
+ * meaningful" — explicitly deferred). See
+ * supabase/migrations/20260913001_rule_confirmations.sql for the full
+ * rationale, including why `finding_id` stays unused today.
+ */
+export type RuleConfirmationOutcome = 'CONFIRMED' | 'REFUTED' | 'UNKNOWN';
+export type RuleConfirmationSource = 'client_answer' | 'rescan' | 'operator';
+
+export interface RuleConfirmation {
+  id: string;
+  audit_id: string;
+  rule_id: string;
+  finding_id: string | null;
+  outcome: RuleConfirmationOutcome;
+  source: RuleConfirmationSource;
+  note: string | null;
+  created_at: string;
+}
+
 export interface ReportJSON {
   audit_id: string;
   website_url: string;

@@ -5,6 +5,8 @@ import type { AuditJobData } from '@/services/queue/jobQueue';
 import type { FunnelType, Region } from '@/types/audit';
 import type { ValidationSpec } from '@/types/journey';
 import { updateAuditStatus, saveValidationResults, saveReport, getAudit, updateAuditCoverage, saveSignalConflicts } from '@/services/database/queries';
+import { getPreviousAuditResults, saveRuleConfirmations } from '@/services/database/ruleConfirmationQueries';
+import { detectRescanConfirmations } from '@/services/reporting/ruleConfirmationRescan';
 import { createBrowserbaseSession, getCDPUrl } from '@/services/browserbase/client';
 import { logUsage } from '@/services/usage/usageLogger';
 import { supabaseAdmin as supabase } from '@/services/database/supabase';
@@ -360,6 +362,25 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
           await saveSignalConflicts(audit_id, signalConflicts);
         } catch (err) {
           logger.warn({ audit_id, err: err instanceof Error ? err.message : String(err) }, 'Failed to persist signal conflicts');
+        }
+
+        // rule_confirmations — automatic re-scan write path (Pre-Connection
+        // Scan Confidence Tiering PRD §15). Compares this run's per-rule
+        // verdicts against the immediately-previous v2 audit for the same
+        // user + site; a rule that failed there and passes here writes a
+        // CONFIRMED/rescan row (see ruleConfirmationRescan.ts for why only
+        // that one direction is ever auto-written). v2-only, and a no-op
+        // when there's no prior v2 audit for this site — never fatal.
+        if (isV2 && auditRow?.user_id) {
+          try {
+            const previous = await getPreviousAuditResults(audit_id, data.website_url, auditRow.user_id);
+            if (previous) {
+              const confirmations = detectRescanConfirmations(audit_id, assessable, previous);
+              await saveRuleConfirmations(confirmations);
+            }
+          } catch (err) {
+            logger.warn({ audit_id, err: err instanceof Error ? err.message : String(err) }, 'Failed to persist rescan rule confirmations');
+          }
         }
 
         // coverage_fingerprint/pages_distinct (§9), plus — for a v2 audit —
