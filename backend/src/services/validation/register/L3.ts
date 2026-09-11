@@ -246,7 +246,7 @@ export const FBP_COOKIE_PRESENT: ValidationRule = {
       status: hasFbp ? 'pass' : 'fail',
       severity: this.severity,
       technical_details: {
-        found: hasFbp ? '_fbp is present' : 'Missing: _fbp',
+        found: hasFbp ? '_fbp is present' : '_fbp not observed',
         expected: "The Meta browser cookie (_fbp) is set — the Pixel's own base signal that it's loading and writing cookies at all",
         evidence: [`_fbp present: ${hasFbp}`],
       },

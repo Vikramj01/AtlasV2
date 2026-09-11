@@ -18,6 +18,7 @@ import { generateBusinessSummary, determineOverallStatus, getIssueHeadline, getI
 import { buildCoverageSummary } from './coverage';
 import { buildOpenQuestions } from './openQuestions';
 import { scanReportForPlaceholders } from './placeholderGuard';
+import { assertReportOutputClean } from './outputLint';
 import { REGISTER_VERSION } from '@/services/validation/register/layers';
 
 // ─── Journey stage mapping ─────────────────────────────────────────────────────
@@ -208,6 +209,17 @@ export function generateReport(
   const flags = scanReportForPlaceholders(report);
   if (flags.length > 0) {
     report.content_quality_warning = { flagged_fields: flags.map((f) => `${f.field}: ${f.matches.join(', ')}`) };
+  }
+
+  // Output vocabulary lint (Pre-Connection Scan Confidence Tiering PRD §5) —
+  // hard gate, v2 only. v1-legacy rule copy (parameterCompleteness.ts,
+  // tagConfiguration.ts, implementationDrift.ts) was never swept for PRD
+  // §5's banned vocabulary and is out of this PRD's scope entirely (no
+  // evidence_class/verdict concept there either) — gating it here would
+  // hard-fail every v1-legacy audit over language nobody has reviewed
+  // against this rule.
+  if (report.rule_set_version === 'v2') {
+    assertReportOutputClean(report);
   }
 
   return report;

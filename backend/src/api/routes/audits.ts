@@ -7,6 +7,7 @@ import { createAudit, getAudit, getReport, listAudits, deleteAudit, getPreviousA
 import { getClient } from '@/services/database/clientQueries';
 import { getJourneyWithDetails, getLatestSpec } from '@/services/database/journeyQueries';
 import { generatePDF } from '@/services/export/pdfGenerator';
+import { lintReportOutput } from '@/services/reporting/outputLint';
 import { auditQueue } from '@/services/queue/jobQueue';
 import { supabaseAdmin } from '@/services/database/supabase';
 import type { FunnelType, Region } from '@/types/audit';
@@ -529,6 +530,22 @@ router.post('/:audit_id/export', async (req: Request, res: Response) => {
   if (!report) {
     res.status(404).json({ error: 'Report not found' });
     return;
+  }
+
+  // Output vocabulary lint (Pre-Connection Scan Confidence Tiering PRD §5)
+  // — hard gate on export too, not just at generation time: catches a
+  // persisted report saved before outputLint.ts existed, or by any path
+  // that bypassed generateReport()'s own gate.
+  if (report.rule_set_version === 'v2') {
+    const violations = lintReportOutput(report);
+    if (violations.length > 0) {
+      logger.error({ audit_id, violations }, 'Export blocked — report failed output vocabulary lint (PRD §5)');
+      res.status(500).json({
+        error: 'Export blocked — this report contains language that cannot ship',
+        message: 'Re-run this audit to regenerate the report through the current pipeline.',
+      });
+      return;
+    }
   }
 
   try {

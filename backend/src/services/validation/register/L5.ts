@@ -457,8 +457,8 @@ export const PAGE_VIEW_FIRES_ON_EVERY_ROUTE: ValidationRule = {
   requires: ['conversion_surface'],
   evidence_class: 'PRESENCE', // PRD §10.6 exact
   remediation: (result) => {
-    const missingLine = result.technical_details.evidence.find((e) => e.startsWith('Missing page_view:'));
-    const missing = missingLine ? missingLine.replace('Missing page_view: ', '') : 'the affected route(s)';
+    const missingLine = result.technical_details.evidence.find((e) => e.startsWith('page_view not observed on:'));
+    const missing = missingLine ? missingLine.replace('page_view not observed on: ', '') : 'the affected route(s)';
     return `Fire a page_view (or the GA4 equivalent) on ${missing} — for a client-side router, this means a route-change listener pushing page_view to dataLayer, not just relying on GTM's default History Change trigger, which many SPA frameworks don't emit standard events for.`;
   },
 
@@ -492,10 +492,10 @@ export const PAGE_VIEW_FIRES_ON_EVERY_ROUTE: ValidationRule = {
       severity: this.severity,
       technical_details: {
         found: missing.length > 0
-          ? `${missing.length} of ${steps.length} route(s) had no page_view: ${missing.join(', ')}`
+          ? `page_view not observed on ${missing.length} of ${steps.length} route(s): ${missing.join(', ')}`
           : `page_view recorded on all ${steps.length} routes`,
         expected: 'Funnel and path analysis are meaningless without a page_view per route change',
-        evidence: [`Sampled routes: ${steps.join(', ')}`, `Missing page_view: ${missing.length > 0 ? missing.join(', ') : 'none'}`],
+        evidence: [`Sampled routes: ${steps.join(', ')}`, `page_view not observed on: ${missing.length > 0 ? missing.join(', ') : 'none'}`],
       },
     };
   },
@@ -516,7 +516,7 @@ export const MICRO_CONVERSIONS_FIRE: ValidationRule = {
   requires: ['conversion_surface'],
   evidence_class: 'PRESENCE', // Not classified by the PRD — same not-found shape as its siblings
   remediation: (result) => {
-    const missing = result.technical_details.evidence.filter((e) => e.endsWith(': missing')).map((e) => e.split(':')[0]);
+    const missing = result.technical_details.evidence.filter((e) => e.endsWith(': not observed')).map((e) => e.split(':')[0]);
     if (missing.length === 0) return 'Push a dataLayer event for each declared micro-conversion at the point it happens (e.g. add_to_cart, sign_up_started).';
     return `Push a dataLayer event for: ${missing.join(', ')} — at the point each one happens. These give early optimisation signal on longer consideration cycles, so missing them isn't as urgent as the primary conversion, but still worth fixing.`;
   },
@@ -549,7 +549,7 @@ export const MICRO_CONVERSIONS_FIRE: ValidationRule = {
       technical_details: {
         found: `${fired.length}/${names.length} declared micro-conversions observed`,
         expected: 'Micro-conversions give early optimisation signal on long consideration cycles',
-        evidence: names.map((n) => `${n}: ${fired.includes(n) ? 'observed' : 'missing'}`),
+        evidence: names.map((n) => `${n}: ${fired.includes(n) ? 'observed' : 'not observed'}`),
       },
     };
   },

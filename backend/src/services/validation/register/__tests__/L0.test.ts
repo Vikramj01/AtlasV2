@@ -79,7 +79,7 @@ describe('DECLARED_PLATFORM_HAS_TAG (L0.1)', () => {
     });
     const result = DECLARED_PLATFORM_HAS_TAG.test(auditData);
     expect(result.status).toBe('fail');
-    expect(result.technical_details.evidence.some((e) => e.includes('Meta') && e.includes('NO TAG'))).toBe(true);
+    expect(result.technical_details.evidence.some((e) => e.includes('Meta') && e.includes('no tag observed'))).toBe(true);
   });
 
   it('is skipped when no platforms are declared', () => {

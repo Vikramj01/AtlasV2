@@ -46,7 +46,7 @@ export const DECLARED_PLATFORM_HAS_TAG: ValidationRule = {
   gated_direction: 'fail',
   remediation: (result) => {
     const missing = result.technical_details.evidence
-      .filter((e) => e.includes('NO TAG DETECTED'))
+      .filter((e) => e.includes('no tag observed'))
       .map((e) => e.split(':')[0]);
     if (missing.length === 0) return "Install the base tag/pixel for every declared platform — verify with each platform's own tag helper (GTM Preview, Meta Pixel Helper, etc.) that it fires on page load.";
     return `Install the base tag/pixel for ${missing.join(', ')} — verify with GTM Preview mode or the platform's own pixel-helper extension that it actually fires on page load, not just that a container is present.`;
@@ -89,14 +89,14 @@ export const DECLARED_PLATFORM_HAS_TAG: ValidationRule = {
           declared.length === 0
             ? 'No platforms declared'
             : missing.length > 0
-              ? `${missing.length} of ${declared.length} declared platform${declared.length !== 1 ? 's' : ''} missing a base tag`
+              ? `${missing.length} of ${declared.length} declared platform${declared.length !== 1 ? 's' : ''} with no base tag observed`
               : `All ${declared.length} declared platform${declared.length !== 1 ? 's' : ''} have a base tag present`,
         expected: 'Every declared platform has its base tag/pixel firing on the site',
         evidence:
           declared.length === 0
             ? ['No platforms declared in Scan Inputs']
             : declared.map(
-                (p) => `${PLATFORM_LABELS[p]}: ${platformTagDetected(p, auditData) ? 'tag present' : 'NO TAG DETECTED — zero measurement on this platform\'s spend'}`,
+                (p) => `${PLATFORM_LABELS[p]}: ${platformTagDetected(p, auditData) ? 'tag present' : 'no tag observed — spend on this platform is unmeasured'}`,
               ),
       },
       ...(declared.length > 0 ? { platform_outcomes } : {}),

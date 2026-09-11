@@ -118,7 +118,7 @@ export function partitionClickIdContention(
     unassessable.push({
       rule_id: r.rule_id,
       step: 'landing',
-      reason: `This scan injected more than one click ID from the same platform family at once (a condition that never occurs on a real visit) and the site's own conversion linker resolved the conflict in favour of a different family member. This does not mean ${paramLabel(param)} capture is broken — it means this run's synthetic input couldn't isolate it. A single-identifier re-test would give a conclusive result.`,
+      reason: `This scan injected more than one click ID from the same platform family at once (a condition that never occurs on a real visit) and the site's own conversion linker resolved the conflict in favour of a different family member. This does not mean ${paramLabel(param)} capture is impaired — it means this run's synthetic input couldn't isolate it. A single-identifier re-test would give a conclusive result.`,
       // Pre-Connection Scan Confidence Tiering PRD §4.3 — two independent
       // family members disagreeing about which one "really" captured is
       // exactly a CONFLICT, not a coverage gap (NOT_OBSERVED).

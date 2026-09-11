@@ -189,6 +189,19 @@ function formatLabel(s: string): string {
   return s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+/**
+ * Pre-Connection Scan Confidence Tiering PRD §5.1 — the platform verdict
+ * label remap. 'Broken'/'Healthy' assert an absence/presence claim with
+ * more confidence than a client-side crawl's platform_breakdown status
+ * (a simple fail-count bucket, not itself coverage-gated) can support.
+ */
+const PLATFORM_STATUS_LABELS: Record<string, string> = {
+  broken: 'No signal observed',
+  at_risk: 'Partial signal observed',
+  healthy: 'Signal observed',
+  not_included: 'Not in scope',
+};
+
 // Banner sub-text needs to stay short — it's a fixed-role teaser, the full
 // business_summary already renders unabridged in the Business Summary
 // section below it — but a hard character-count slice can cut a narrative
@@ -433,7 +446,7 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
         label: `Attribution Risk${attributionPartial ? ' (partial)' : ''} — Click ID & Storage`,
         value: attributionDisplay,
         description: (attributionCapped
-          ? 'A declared platform is Broken — risk cannot be "Low" while that holds.'
+          ? 'A declared platform has no signal observed — risk cannot be "Low" while that holds.'
           : attributionDisplay === 'Low'
           ? 'Ad attribution is well-configured — low is best'
           : attributionDisplay === 'Medium'
@@ -447,7 +460,7 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
         description: (optimizationPartial
           ? 'Not enough of this score\'s layers ran to give a confident rating.'
           : optimizationCapped
-          ? 'A declared platform is Broken — capped below "Strong" until that\'s fixed.'
+          ? 'A declared platform has no signal observed — capped below "Strong" until that\'s fixed.'
           : optimizationDisplay === 'Strong'
           ? 'Sufficient signals for smart bidding — strong is best'
           : optimizationDisplay === 'Moderate'
@@ -652,7 +665,7 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
       const platY = doc.y;
       const pc = statusColor(platform.status);
       const platName = PLATFORM_LABELS[platform.platform] ?? formatLabel(platform.platform);
-      const pillLabel = isNotIncluded ? 'Not Included' : formatLabel(platform.status);
+      const pillLabel = PLATFORM_STATUS_LABELS[platform.status] ?? formatLabel(platform.status);
 
       doc.fillColor(C.bgLight).rect(LEFT, platY, CONTENT_W, cardHeight).fill();
       doc.fillColor(pc).rect(LEFT, platY, 4, cardHeight).fill();
@@ -943,7 +956,7 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
       // GTM Container
       sectionHeading('Google Tag Manager Container');
       const gtmBadgeY = doc.y;
-      pill(gtm_container.detected ? 'Detected' : 'Not Detected', gtm_container.detected ? C.healthy : C.mutedText, LEFT, gtmBadgeY);
+      pill(gtm_container.detected ? 'Detected' : 'Not observed', gtm_container.detected ? C.healthy : C.mutedText, LEFT, gtmBadgeY);
       doc.y = gtmBadgeY + 22;
       if (gtm_container.detected) {
         doc.fillColor(C.darkText).font('Helvetica').fontSize(9)
@@ -982,7 +995,7 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
         doc.fillColor(C.bgLight).rect(LEFT, rowY, CONTENT_W, 22).fill();
         doc.fillColor(C.darkText).fontSize(9).font('Helvetica-Bold')
           .text(TAG_PLATFORM_LABELS[tag.platform] ?? formatLabel(tag.platform), LEFT + 10, rowY + 6);
-        pill(tag.detected ? 'Detected' : 'Not Detected', tag.detected ? C.healthy : C.mutedText, LEFT + CONTENT_W - 90, rowY + 4);
+        pill(tag.detected ? 'Detected' : 'Not observed', tag.detected ? C.healthy : C.mutedText, LEFT + CONTENT_W - 90, rowY + 4);
         if (tag.detected) {
           const detail = `${tag.ids.length > 0 ? `ID${tag.ids.length > 1 ? 's' : ''}: ${tag.ids.join(', ')}  ·  ` : ''}${tag.hit_count} request${tag.hit_count === 1 ? '' : 's'} observed`;
           doc.fillColor(C.lightText).fontSize(7.5).font('Helvetica')

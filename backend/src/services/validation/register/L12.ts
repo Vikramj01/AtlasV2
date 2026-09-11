@@ -170,7 +170,7 @@ export const NO_CONSOLE_ERRORS_FROM_MEASUREMENT_CODE: ValidationRule = {
         found: trackingErrors.length > 0
           ? `${trackingErrors.length} console error(s) referencing measurement code`
           : 'No console errors referencing measurement code',
-        expected: 'A failing tag reports as absent rather than as broken',
+        expected: 'A failing tag reports as absent rather than as functioning',
         evidence: trackingErrors.length > 0
           ? trackingErrors.map((e) => `[${e.step}] ${e.message}`)
           : ['No tracking-related console errors found'],

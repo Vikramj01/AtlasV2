@@ -22,7 +22,7 @@ function DetectedBadge({ detected }: { detected: boolean }) {
           : 'bg-muted text-muted-foreground hover:bg-muted'
       )}
     >
-      {detected ? 'Detected' : 'Not Detected'}
+      {detected ? 'Detected' : 'Not observed'}
     </Badge>
   );
 }
