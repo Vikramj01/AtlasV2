@@ -1,29 +1,16 @@
-export interface AuditFinding {
-  check_id: string;
-  label:    string;
-  passed:   boolean;
-  detail:   string;
-  weight:   number;
-}
-
-export interface AuditSiteMeta {
-  platform:      string | null;
-  business_type: string;
-  tags_detected: string[];
-}
+import type { ReportJSON } from '@/types/audit';
 
 export type AuditStatus = 'pending' | 'scanning' | 'done' | 'failed';
-export type AuditGrade  = 'A' | 'B' | 'C' | 'D';
 
+// A public (no-login) scan runs through the same Check Register v2 engine
+// an authenticated scan does (backend/src/api/routes/publicAudit.ts) — the
+// result is a real ReportJSON, not a separate lightweight shape.
 export interface PublicAuditRun {
   token:       string;
   status:      AuditStatus;
-  score?:      number;
-  grade?:      AuditGrade;
-  findings?:   AuditFinding[];
-  ai_summary?: string;
-  site_meta?:  AuditSiteMeta;
-  error?:      string;
+  progress:    number;
+  report:      ReportJSON | null;
+  error:       string | null;
   expires_at:  string;
 }
 

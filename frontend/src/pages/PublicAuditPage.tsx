@@ -11,7 +11,8 @@ type View = 'idle' | 'scanning' | 'results' | 'error';
 const SCAN_STEPS = [
   'Detecting platform',
   'Loading page in browser',
-  'Scanning tags & pixels',
+  'Scanning tags, pixels & consent signals',
+  'Running the Check Register',
   'Scoring results',
 ];
 
@@ -178,7 +179,7 @@ function IdleView({
           <span className="text-indigo-400">No login required.</span>
         </h1>
         <p className="text-gray-400 text-lg">
-          Paste any URL and get a scored report on your GTM setup, pixels, consent mode, and more — in under 30 seconds.
+          Paste any URL and run it through Atlas's full Check Register — GTM setup, pixels, consent mode, and more — usually in under 2 minutes.
         </p>
       </div>
 
@@ -205,8 +206,8 @@ function IdleView({
 
       <div className="grid grid-cols-3 gap-4 text-sm text-gray-500">
         {[
-          { label: 'Checks run', value: '8' },
-          { label: 'Time to results', value: '~25s' },
+          { label: 'Check Register', value: '12 layers' },
+          { label: 'Time to results', value: '~2 min' },
           { label: 'No login needed', value: '✓' },
         ].map(stat => (
           <div key={stat.label} className="bg-gray-900 rounded-lg p-3">

@@ -54,7 +54,7 @@ function AuditMiniWidget({ navigate }: { navigate: ReturnType<typeof useNavigate
           </form>
           {auditError
             ? <p className="text-red-300 text-xs">{auditError}</p>
-            : <p className="text-white/30 text-xs">8 checks · results in ~25s</p>
+            : <p className="text-white/30 text-xs">Full Check Register · results in ~2 min</p>
           }
         </div>
       </div>
@@ -218,7 +218,7 @@ export function LoginPage() {
             {/* Mobile-only audit CTA */}
             <div className="lg:hidden mb-6 rounded-xl border border-indigo-100 bg-indigo-50 p-4">
               <p className="text-indigo-900 text-sm font-semibold">Try a free instant tag audit</p>
-              <p className="text-indigo-700 text-xs mt-0.5 mb-3">No login needed · Scored report in ~25s</p>
+              <p className="text-indigo-700 text-xs mt-0.5 mb-3">No login needed · Scored report in ~2 min</p>
               <button
                 type="button"
                 onClick={() => navigate('/audit')}

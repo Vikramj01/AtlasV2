@@ -3,21 +3,22 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { publicAuditApi } from '@/lib/api/publicAuditApi';
-import type { PublicAuditRun, AuditGrade } from '@/types/publicAudit';
+import { ReportTabs } from '@/components/audit/ReportTabs';
+import type { PublicAuditRun } from '@/types/publicAudit';
 
-const GRADE_COLOURS: Record<AuditGrade, { ring: string; text: string; bg: string }> = {
-  A: { ring: 'ring-green-500',  text: 'text-green-400',  bg: 'bg-green-500/10'  },
-  B: { ring: 'ring-yellow-500', text: 'text-yellow-400', bg: 'bg-yellow-500/10' },
-  C: { ring: 'ring-orange-500', text: 'text-orange-400', bg: 'bg-orange-500/10' },
-  D: { ring: 'ring-red-500',    text: 'text-red-400',    bg: 'bg-red-500/10'    },
+const GRADE_COLOURS: Record<'A' | 'B' | 'C' | 'D', { ring: string; text: string; bg: string }> = {
+  A: { ring: 'ring-green-500',  text: 'text-green-600',  bg: 'bg-green-500/10'  },
+  B: { ring: 'ring-yellow-500', text: 'text-yellow-600', bg: 'bg-yellow-500/10' },
+  C: { ring: 'ring-orange-500', text: 'text-orange-600', bg: 'bg-orange-500/10' },
+  D: { ring: 'ring-red-500',    text: 'text-red-600',    bg: 'bg-red-500/10'    },
 };
 
-const GRADE_LABELS: Record<AuditGrade, string> = {
-  A: 'Excellent',
-  B: 'Good',
-  C: 'Needs work',
-  D: 'Critical issues',
-};
+function gradeFromScore(score: number): 'A' | 'B' | 'C' | 'D' {
+  if (score >= 85) return 'A';
+  if (score >= 70) return 'B';
+  if (score >= 50) return 'C';
+  return 'D';
+}
 
 interface Props {
   run:          PublicAuditRun;
@@ -25,15 +26,21 @@ interface Props {
   onRunAnother?: () => void;
 }
 
+// Renders a real Check Register v2 report (the same engine an authenticated
+// scan runs) for an anonymous visitor — same ReportTabs content ReportPage
+// uses, wrapped in a signup CTA + email-gate instead of export/Slack/
+// link-to-client actions, which need an account.
 export function AuditReportCard({ run, token, onRunAnother }: Props) {
-  const navigate                        = useNavigate();
-  const grade                           = run.grade ?? 'D';
-  const score                           = run.score ?? 0;
-  const colours                         = GRADE_COLOURS[grade];
-  const [email, setEmail]               = useState('');
-  const [emailUnlocked, setEmailUnlocked] = useState(false);
-  const [emailError, setEmailError]     = useState('');
-  const [copied, setCopied]             = useState(false);
+  const navigate = useNavigate();
+  const report    = run.report;
+  const score     = report?.executive_summary.scores.conversion_signal_health ?? null;
+  const grade     = score !== null ? gradeFromScore(score) : null;
+  const colours   = grade ? GRADE_COLOURS[grade] : GRADE_COLOURS.D;
+
+  const [email, setEmail]                 = useState('');
+  const [emailUnlocked, setEmailUnlocked]  = useState(false);
+  const [emailError, setEmailError]        = useState('');
+  const [copied, setCopied]                = useState(false);
 
   const shareUrl = `${window.location.origin}/audit/results/${token}`;
 
@@ -55,60 +62,43 @@ export function AuditReportCard({ run, token, onRunAnother }: Props) {
     });
   }
 
-  const passed = run.findings?.filter(f => f.passed).length ?? 0;
-  const total  = run.findings?.length ?? 0;
+  if (!report) {
+    return (
+      <div className="max-w-2xl w-full py-8 text-center text-gray-400">
+        This scan did not complete. Please try another URL.
+      </div>
+    );
+  }
 
   return (
-    <div className="max-w-2xl w-full space-y-6 py-8">
+    <div className="max-w-3xl w-full space-y-6 py-8">
       {/* Score header */}
       <div className="flex items-center gap-6">
         <div className={`w-24 h-24 rounded-full ring-4 ${colours.ring} ${colours.bg} flex flex-col items-center justify-center flex-shrink-0`}>
-          <span className={`text-3xl font-bold ${colours.text}`}>{score}</span>
-          <span className={`text-xs ${colours.text}`}>{grade}</span>
+          {score !== null ? (
+            <>
+              <span className={`text-3xl font-bold ${colours.text}`}>{Math.round(score)}</span>
+              <span className={`text-xs ${colours.text}`}>{grade}</span>
+            </>
+          ) : (
+            <span className="text-xs text-gray-500 text-center px-2">Score withheld</span>
+          )}
         </div>
         <div>
-          <p className={`text-xl font-semibold ${colours.text}`}>{GRADE_LABELS[grade]}</p>
-          <p className="text-gray-400 text-sm mt-0.5">{passed} of {total} checks passed</p>
-          {run.site_meta?.platform && (
-            <p className="text-gray-500 text-xs mt-1">Platform: {run.site_meta.platform}</p>
-          )}
+          <p className="text-xl font-semibold text-white">
+            {report.executive_summary.overall_status === 'healthy' ? 'Looking healthy'
+              : report.executive_summary.overall_status === 'partially_broken' ? 'Gaps found'
+              : 'Critical issues found'}
+          </p>
+          <p className="text-gray-400 text-sm mt-0.5 max-w-md">{report.executive_summary.business_summary}</p>
         </div>
       </div>
 
-      {/* AI summary */}
-      {run.ai_summary && (
-        <p className="text-gray-300 text-sm leading-relaxed border-l-2 border-indigo-500 pl-4">
-          {run.ai_summary}
-        </p>
-      )}
-
-      {/* Site meta tags strip */}
-      {run.site_meta?.tags_detected && run.site_meta.tags_detected.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {run.site_meta.tags_detected.map(tag => (
-            <span key={tag} className="px-2 py-0.5 bg-gray-800 rounded text-xs text-gray-300">{tag}</span>
-          ))}
-        </div>
-      )}
-
-      {/* Findings list — gated behind email capture */}
+      {/* Report tabs — email-gated below */}
       <div className="relative">
         <div className={emailUnlocked ? '' : 'select-none pointer-events-none'}>
-          <div className={`space-y-2 transition-all duration-300 ${emailUnlocked ? '' : 'blur-sm opacity-40'}`}>
-            {(run.findings ?? []).map(f => (
-              <div key={f.check_id} className="flex items-start gap-3 bg-gray-900 rounded-lg p-3">
-                <div className={`mt-0.5 w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 text-xs ${
-                  f.passed ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
-                }`}>
-                  {f.passed ? '✓' : '✗'}
-                </div>
-                <div className="min-w-0">
-                  <p className={`text-sm font-medium ${f.passed ? 'text-white' : 'text-red-300'}`}>{f.label}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">{f.detail}</p>
-                </div>
-                <span className="ml-auto text-xs text-gray-600 flex-shrink-0">{f.weight}pts</span>
-              </div>
-            ))}
+          <div className={`rounded-xl bg-white text-foreground overflow-hidden transition-all duration-300 ${emailUnlocked ? '' : 'blur-sm opacity-40'}`}>
+            <ReportTabs report={report} />
           </div>
         </div>
 
@@ -122,8 +112,8 @@ export function AuditReportCard({ run, token, onRunAnother }: Props) {
                 </svg>
               </div>
               <div>
-                <p className="text-white font-semibold text-sm">Unlock the full breakdown</p>
-                <p className="text-gray-400 text-xs mt-1">Enter your email to see all {total} check results and recommendations. We'll also send you a copy.</p>
+                <p className="text-white font-semibold text-sm">Unlock the full report</p>
+                <p className="text-gray-400 text-xs mt-1">Enter your email to see the full breakdown and recommendations. We'll also send you a copy.</p>
               </div>
               <form onSubmit={handleEmailGate} className="space-y-2">
                 <Input
@@ -137,7 +127,7 @@ export function AuditReportCard({ run, token, onRunAnother }: Props) {
                 />
                 {emailError && <p className="text-red-400 text-xs text-left">{emailError}</p>}
                 <Button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 font-medium">
-                  See full results →
+                  See full report →
                 </Button>
               </form>
               <p className="text-gray-600 text-xs">No spam. Report expires in 24 hours.</p>

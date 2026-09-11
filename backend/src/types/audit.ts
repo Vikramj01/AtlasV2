@@ -1285,7 +1285,9 @@ export interface ReportJSON {
 
 export interface AuditRow {
   id: string;
-  user_id: string;
+  // Nullable for a public (no-login) scan — see 20260914001_public_audit_check_register.sql.
+  // Ownership for those runs is the public_token below, not user_id.
+  user_id: string | null;
   website_url: string;
   funnel_type: FunnelType;
   region: Region;
@@ -1337,6 +1339,12 @@ export interface AuditRow {
   // onto the row so the export route (INSUFFICIENT blocks a client-facing
   // PDF/JSON/zip) can check it without unpacking audit_reports.report_json.
   run_quality?: RunQuality | null;
+  // Public (no-login) scan fields — 20260914001_public_audit_check_register.sql.
+  is_public?: boolean;
+  public_token?: string | null;
+  ip_hash?: string | null;
+  expires_at?: string | null;
+  lead_email?: string | null;
 }
 
 /** POST /api/audits/start payload for a Check Register v2 scan. */
