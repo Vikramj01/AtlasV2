@@ -1,4 +1,4 @@
-import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue, crawlQueue, reconciliationSyncQueue, reconciliationRunQueue, reconciliationStatsQueue, reconciliationStaleResyncQueue, gtmContainerSyncQueue, ihcRulesQueue, ihcDriftQueue, ihcAlertQueue, ihcDigestQueue, dmaIngestQueue, dqmQueue, signalMvRefreshQueue, airIngestionQueue, publicAuditQueue, shopifyWebhookEventQueue } from './jobQueue';
+import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue, crawlQueue, reconciliationSyncQueue, reconciliationRunQueue, reconciliationStatsQueue, reconciliationStaleResyncQueue, gtmContainerSyncQueue, ihcRulesQueue, ihcDriftQueue, ihcAlertQueue, ihcDigestQueue, dmaIngestQueue, dqmQueue, signalMvRefreshQueue, airIngestionQueue, shopifyWebhookEventQueue } from './jobQueue';
 import type { GtmContainerSyncJobData, IhcRulesJobData, IhcDriftJobData, IhcAlertJobData, IhcDigestJobData, DQMJobData, AirIngestionJobData } from './jobQueue';
 import { runConfigSyncForConnection, getConnectionsDueForSync, runStatsSyncForConnection, getConnectionsDueForStatsSync, runStaleResyncForConnection, getConnectionsForStaleResync } from '@/services/reconciliation/sync/syncOrchestrator';
 import { executeRun } from '@/services/reconciliation/reconciliationRunner';
@@ -1419,16 +1419,10 @@ airIngestionQueue.add(
   { repeat: { cron: '30 2 * * *' }, jobId: 'air-ingestion-daily' },
 ).catch((err) => logger.error({ err }, 'Failed to schedule AIR ingestion job'));
 
-// ── Public Audit worker ───────────────────────────────────────────────────────
-
-import { runPublicAudit } from '@/services/publicAudit/publicAuditRunner';
-
-publicAuditQueue.process(async (job) => {
-  logger.info({ runId: job.data.run_id, url: job.data.url, jobId: job.id }, 'Public audit job received');
-  await runPublicAudit(job.data.run_id, job.data.url);
-});
-
-logger.info('Public audit queue worker registered');
+// Public (no-login) audits now run through the real Check Register v2
+// pipeline via auditQueue — see api/routes/publicAudit.ts and the
+// auditQueue.process handler above. The old lightweight publicAuditRunner.ts/
+// publicAuditQueue pair has been retired.
 
 // ── Shopify Order/Refund Event worker ─────────────────────────────────────────
 // Loads the staged shopify_webhook_events row, resolves the org/client via

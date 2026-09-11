@@ -1,14 +1,13 @@
 /**
- * Shared consent-banner (CMP) detection/dismissal.
+ * Shared consent-banner (CMP) detection/dismissal, used by the crawl-based
+ * Audit Engine (journeySimulator.ts) — including public no-login scans,
+ * which run through the same orchestrator/journeySimulator pipeline as an
+ * authenticated scan (see api/routes/publicAudit.ts).
  *
- * Extracted from publicAuditRunner.ts's acceptCookieConsent() (Site
- * Evaluation Coverage & Honesty PRD §6.5) so the crawl-based Audit Engine
- * (journeySimulator.ts) and the public no-login instant-audit path share
- * one implementation instead of maintaining two copies that drift apart.
- * publicAuditRunner.ts is refactored to import from here.
- *
- * Selector list + text-match fallback are unchanged from the original —
- * moved verbatim, not rewritten.
+ * Originally extracted from the standalone publicAuditRunner.ts's
+ * acceptCookieConsent() (Site Evaluation Coverage & Honesty PRD §6.5); that
+ * file has since been retired in favor of routing public scans through the
+ * real Check Register v2 engine.
  */
 import type { CMP } from '@/types/audit';
 

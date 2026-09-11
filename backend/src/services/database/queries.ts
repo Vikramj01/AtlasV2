@@ -9,7 +9,9 @@ import { sanitizeForJsonb } from '@/utils/sanitizeJsonb';
 // ─── Audits ───────────────────────────────────────────────────────────────────
 
 export async function createAudit(data: {
-  user_id: string;
+  // Omitted entirely for a public (no-login) scan — is_public: true instead.
+  // See 20260914001_public_audit_check_register.sql.
+  user_id?: string;
   website_url: string;
   funnel_type: FunnelType;
   region: Region;
@@ -30,6 +32,10 @@ export async function createAudit(data: {
   checkout_domain?: string;
   additional_properties?: string[];
   declared_conversions?: DeclaredConversion[];
+  // Public (no-login) scan fields — mutually exclusive with user_id.
+  is_public?: boolean;
+  ip_hash?: string;
+  expires_at?: string;
 }): Promise<AuditRow> {
   const { data: row, error } = await supabaseAdmin
     .from('audits')
@@ -50,6 +56,30 @@ export async function getAudit(audit_id: string): Promise<AuditRow | null> {
 
   if (error) return null;
   return data as AuditRow;
+}
+
+/** Looks up a public (no-login) audit by its access token — the sole access mechanism for these rows, same model as the old public_audit_runs table. */
+export async function getAuditByPublicToken(token: string): Promise<AuditRow | null> {
+  const { data, error } = await supabaseAdmin
+    .from('audits')
+    .select()
+    .eq('public_token', token)
+    .eq('is_public', true)
+    .single();
+
+  if (error) return null;
+  return data as AuditRow;
+}
+
+/** Records the lead-capture email a public-scan visitor entered to unlock their report. */
+export async function setAuditLeadEmail(audit_id: string, email: string): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from('audits')
+    .update({ lead_email: email })
+    .eq('id', audit_id)
+    .eq('is_public', true);
+
+  if (error) throw new Error(`Failed to save lead email: ${error.message}`);
 }
 
 export async function updateAuditStatus(
