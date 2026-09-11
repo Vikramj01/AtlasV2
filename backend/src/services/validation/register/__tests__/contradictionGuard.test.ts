@@ -40,20 +40,20 @@ describe('detectCaptureContradictions', () => {
     );
   });
 
-  it('fires when FBCLID_CAPTURED_AT_LANDING fails while _fbc is specifically present, regardless of FBP_AND_FBC_COOKIES_PRESENT\'s overall status (W2 — since W4.1 that rule\'s status is _fbp-driven)', () => {
+  it('fires when FBCLID_CAPTURED_AT_LANDING fails while _fbc is specifically present, regardless of FBC_COOKIE_PRESENT\'s own status (W2; FBC_COOKIE_PRESENT split out by the Pre-Connection Scan Confidence Tiering PRD §10.4 and always status: \'skipped\' — its evidence, not its status, is what this guard reads)', () => {
     const results = [
       makeResult('FBCLID_CAPTURED_AT_LANDING', 'fail'),
-      makeResult('FBP_AND_FBC_COOKIES_PRESENT', 'pass', ['_fbp present: true', '_fbc present: true']),
+      makeResult('FBC_COOKIE_PRESENT', 'skipped', ['_fbc present: true']),
     ];
     const contradictions = detectCaptureContradictions(results);
     expect(contradictions).toHaveLength(1);
-    expect(contradictions[0].contradicted_by_rule_id).toBe('FBP_AND_FBC_COOKIES_PRESENT');
+    expect(contradictions[0].contradicted_by_rule_id).toBe('FBC_COOKIE_PRESENT');
   });
 
-  it('does not fire on fbclid when FBP_AND_FBC_COOKIES_PRESENT passes on _fbp alone with _fbc absent (W4.1 shape)', () => {
+  it('does not fire on fbclid when FBC_COOKIE_PRESENT reports _fbc absent', () => {
     const results = [
       makeResult('FBCLID_CAPTURED_AT_LANDING', 'fail'),
-      makeResult('FBP_AND_FBC_COOKIES_PRESENT', 'pass', ['_fbp present: true', '_fbc present: false']),
+      makeResult('FBC_COOKIE_PRESENT', 'skipped', ['_fbc present: false']),
     ];
     expect(detectCaptureContradictions(results)).toHaveLength(0);
   });
@@ -79,7 +79,7 @@ describe('detectCaptureContradictions', () => {
       makeResult('TTCLID_CAPTURED_AT_LANDING', 'fail'),
       makeResult('MSCLKID_CAPTURED_AT_LANDING', 'fail'),
       makeResult('GCL_AW_COOKIE_PRESENT', 'pass'),
-      makeResult('FBP_AND_FBC_COOKIES_PRESENT', 'fail', ['_fbp present: true', '_fbc present: false']),
+      makeResult('FBC_COOKIE_PRESENT', 'skipped', ['_fbc present: false']),
       makeResult('CLICK_ID_WRITTEN_TO_DURABLE_STORAGE', 'pass'),
     ];
     const contradictions = detectCaptureContradictions(results);

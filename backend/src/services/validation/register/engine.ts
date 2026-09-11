@@ -29,6 +29,7 @@
  */
 import type {
   AuditData, ValidationRule, ValidationResult, SiteType, DeclaredPlatform, PlatformScope, RulePrecondition,
+  EvidenceClass, GatedDirection, ObservationConfidence, Verdict, RuleStatus, Severity,
 } from '@/types/audit';
 import logger from '@/utils/logger';
 import { L0_RULES, conversionSurfaceReached } from './L0';
@@ -168,6 +169,100 @@ export function deriveConfidence(rule: ValidationRule, auditData: AuditData): 'h
   return unverified ? 'confirm' : 'high';
 }
 
+// ── Confidence tiering (Pre-Connection Scan Confidence Tiering PRD §4) ────────
+
+/** Every evidence_class's fixed gated direction, except 'DERIVED' (varies per rule — see ValidationRule.gated_direction). */
+const GATED_DIRECTION_BY_EVIDENCE_CLASS: Record<Exclude<EvidenceClass, 'DERIVED'>, GatedDirection> = {
+  DIRECT: 'none',
+  PRESENCE: 'fail',
+  PRESENCE_INVERSE: 'pass',
+  INFERRED: 'both',
+};
+
+/**
+ * A rule's gated direction (PRD §4.1) — which raw status direction is an
+ * absence claim needing CONFIRMED confidence to stand. Fixed per
+ * evidence_class except 'DERIVED', whose gated_direction is required and
+ * read directly off the rule (the registry completeness test below asserts
+ * every DERIVED rule declares one).
+ */
+export function gatedDirectionFor(rule: Pick<ValidationRule, 'evidence_class' | 'gated_direction'>): GatedDirection {
+  if (rule.evidence_class === 'DERIVED') {
+    if (!rule.gated_direction) {
+      throw new Error('DERIVED rule is missing gated_direction — see REGISTER_CLASSIFICATION_COVERAGE test');
+    }
+    return rule.gated_direction;
+  }
+  return GATED_DIRECTION_BY_EVIDENCE_CLASS[rule.evidence_class];
+}
+
+/**
+ * The full 4-state observation-confidence axis (PRD §4.2), generalizing
+ * deriveConfidence()'s binary 'high'/'confirm' (kept as-is above — a
+ * separate, narrower disclosure field with its own "never read by scoring"
+ * contract). 'UNSUPPORTED' and 'CONFLICTED' are not derived here: a rule
+ * that never ran (status: 'skipped', however it arose) is UNSUPPORTED by
+ * construction — see runRegister() below — and CONFLICTED is set
+ * exclusively by the cross-signal conflict mechanisms (clickIdContention.ts/
+ * contradictionGuard.ts today) reclassifying an UnassessableFinding's kind,
+ * never by this function.
+ */
+export function deriveObservationConfidence(rule: ValidationRule, auditData: AuditData): ObservationConfidence {
+  return deriveConfidence(rule, auditData) === 'confirm' ? 'PARTIAL' : 'CONFIRMED';
+}
+
+/**
+ * Coverage-aware verdict (PRD §4.3) — the value a future output-vocabulary-
+ * bound renderer keys its phrasing off. `status` must be a result that
+ * actually executed ('pass' | 'fail' | 'warning'); a 'warning' status is
+ * treated as the 'fail' direction for gating purposes — a softer finding is
+ * still a finding, not a clean pass. Callers handle 'skipped'/'not_run'
+ * (and the caught-exception 'warning' path) before ever reaching this
+ * function — see runRegister().
+ */
+export function deriveVerdict(
+  rule: Pick<ValidationRule, 'evidence_class' | 'gated_direction'>,
+  status: Exclude<RuleStatus, 'skipped' | 'not_run'>,
+  confidence: ObservationConfidence,
+): Verdict {
+  if (confidence === 'UNSUPPORTED') return 'INCONCLUSIVE';
+  if (confidence === 'CONFLICTED') return 'CONFLICT';
+
+  const raw: 'pass' | 'fail' = status === 'pass' ? 'pass' : 'fail';
+
+  // INFERRED (PRD §4.3's last row): FAIL is unreachable for this class at
+  // any confidence; PASS still needs CONFIRMED (both directions gated).
+  if (rule.evidence_class === 'INFERRED') {
+    if (raw === 'fail') return 'NOT_OBSERVED';
+    return confidence === 'CONFIRMED' ? 'PASS' : 'NOT_OBSERVED';
+  }
+
+  const gated = gatedDirectionFor(rule);
+  const isGatedDirection = gated === 'both' || gated === raw;
+  if (isGatedDirection && confidence === 'PARTIAL') return 'NOT_OBSERVED';
+  return raw === 'fail' ? 'FAIL' : 'PASS';
+}
+
+/** Severity rank — higher is more severe. */
+const SEVERITY_RANK: Record<Severity, number> = { low: 0, medium: 1, high: 2, critical: 3 };
+
+/**
+ * Applies the confidence-based severity ceiling (PRD §4.4). Only 'PARTIAL'
+ * ever caps here — 'CONFIRMED' is a no-op, and 'UNSUPPORTED'/'CONFLICTED'
+ * results are excluded from scoring/severity display entirely by their own
+ * consumers (scoring.ts's scored(), and the could-not-be-assessed/conflict
+ * sections), so there's no severity for this function to touch on those.
+ */
+export function applySeverityCeiling(
+  severity: Severity,
+  confidence: ObservationConfidence,
+): { severity: Severity; severity_capped_from?: Severity } {
+  if (confidence === 'PARTIAL' && SEVERITY_RANK[severity] > SEVERITY_RANK.high) {
+    return { severity: 'high', severity_capped_from: severity };
+  }
+  return { severity };
+}
+
 /**
  * Run every applicable rule in the Check Register v2 library against the
  * given AuditData. Applicability filtering (site_type/platform_scope) runs
@@ -183,16 +278,47 @@ export function deriveConfidence(rule: ValidationRule, auditData: AuditData): 'h
  * — see deriveConfidence() above. A 'skipped' result doesn't: the technical
  * appendix excludes 'skipped' rows entirely (computeRuleOverviewStats), so
  * there's nothing for the field to disclose anything about.
+ *
+ * Pre-Connection Scan Confidence Tiering PRD §4 — every result additionally
+ * gets `observation_confidence` and `verdict` attached (severity ceilings
+ * applied to `severity` in place, per §4.4). A 'skipped' status — whether it
+ * came from an unmet precondition above, or a rule's own test() returning
+ * it directly (e.g. FBC_COOKIE_PRESENT, always inconclusive in a crawl
+ * context per §10.4) — is uniformly UNSUPPORTED/INCONCLUSIVE: the rule
+ * never produced real evidence either way. `CONFLICTED`/`CONFLICT` are
+ * never set here — exclusively by the cross-signal conflict mechanisms
+ * (clickIdContention.ts/contradictionGuard.ts) reclassifying an
+ * UnassessableFinding's kind in the audit pipeline (orchestrator.ts).
  */
 export function runRegister(auditData: AuditData, rules: ValidationRule[] = REGISTER): ValidationResult[] {
   const applicable = rules.filter((rule) => isRuleApplicable(rule, auditData));
 
   const results = applicable.map((rule) => {
     const unmet = unmetPreconditions(rule, auditData);
-    if (unmet.length > 0) return skippedForPrecondition(rule, unmet, auditData);
+    if (unmet.length > 0) {
+      return { ...skippedForPrecondition(rule, unmet, auditData), observation_confidence: 'UNSUPPORTED' as const, verdict: 'INCONCLUSIVE' as const };
+    }
 
     try {
-      return { ...rule.test(auditData), confidence: deriveConfidence(rule, auditData) };
+      const raw = rule.test(auditData);
+      const confidence = deriveConfidence(rule, auditData);
+
+      if (raw.status === 'skipped' || raw.status === 'not_run') {
+        return { ...raw, confidence, observation_confidence: 'UNSUPPORTED' as const, verdict: 'INCONCLUSIVE' as const };
+      }
+
+      const observation_confidence = deriveObservationConfidence(rule, auditData);
+      const verdict = deriveVerdict(rule, raw.status, observation_confidence);
+      const { severity, severity_capped_from } = applySeverityCeiling(raw.severity, observation_confidence);
+
+      return {
+        ...raw,
+        confidence,
+        severity,
+        ...(severity_capped_from ? { severity_capped_from } : {}),
+        observation_confidence,
+        verdict,
+      };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       logger.warn({ rule_id: rule.rule_id, register_id: rule.id, err: message }, 'Check Register rule threw — returning warning');
@@ -207,6 +333,8 @@ export function runRegister(auditData: AuditData, rules: ValidationRule[] = REGI
           evidence: [`Error: ${message}`],
         },
         confidence: 'high' as const,
+        observation_confidence: 'UNSUPPORTED' as const,
+        verdict: 'INCONCLUSIVE' as const,
       };
     }
   });

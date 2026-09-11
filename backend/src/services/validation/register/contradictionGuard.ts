@@ -21,11 +21,15 @@
  *     each click ID against its *own* platform's linker artefact instead:
  *     gclid/gbraid/wbraid against GCL_AW_COOKIE_PRESENT (_gcl_aw can only
  *     be populated by resolving one of the three), fbclid against the
- *     _fbc component specifically of FBP_AND_FBC_COOKIES_PRESENT (_fbp is
- *     set unconditionally by the Pixel and proves nothing about fbclid
- *     capture — only _fbc, which is only ever populated from a real
- *     fbclid, does). No aggregate pairing exists for ttclid/msclkid/
- *     li_fat_id — omitted rather than inventing one.
+ *     _fbc component specifically of the then-composite
+ *     FBP_AND_FBC_COOKIES_PRESENT (_fbp is set unconditionally by the Pixel
+ *     and proves nothing about fbclid capture — only _fbc, which is only
+ *     ever populated from a real fbclid, does). That composite was later
+ *     split into FBP_COOKIE_PRESENT + FBC_COOKIE_PRESENT (Pre-Connection
+ *     Scan Confidence Tiering PRD §10.4) — this guard now pairs against
+ *     FBC_COOKIE_PRESENT directly, same underlying evidence. No aggregate
+ *     pairing exists for ttclid/msclkid/li_fat_id — omitted rather than
+ *     inventing one.
  *
  *  2. Wrong destination — a fired guard used to append a visible
  *     "⚠ CONTRADICTION:" evidence line onto the still-failing result,
@@ -57,9 +61,10 @@ interface ContradictionSpec {
    * Whether `passing`'s result establishes the fact that rules out
    * `failing`'s FAIL. Defaults to "the rule's overall status is 'pass'" —
    * override when the contradicting fact is narrower than the rule's
-   * overall verdict (e.g. FBP_AND_FBC_COOKIES_PRESENT's overall status is
-   * driven by _fbp alone since W4.1, but the fact that contradicts a
-   * failed fbclid capture is specifically "_fbc is present").
+   * overall verdict (e.g. FBC_COOKIE_PRESENT — split from the former
+   * FBP_AND_FBC_COOKIES_PRESENT by the Pre-Connection Scan Confidence
+   * Tiering PRD §10.4 — always returns status: 'skipped' in a crawl
+   * context, so its evidence, not its status, is what's checked here).
    */
   contradictingFact?: (result: ValidationResult) => boolean;
   explain: (failedRuleId: string) => string;
@@ -76,12 +81,12 @@ const CONTRADICTION_SPECS: ContradictionSpec[] = [
   },
   {
     failing: ['FBCLID_CAPTURED_AT_LANDING'],
-    passing: 'FBP_AND_FBC_COOKIES_PRESENT',
-    // _fbp is set unconditionally by the Meta Pixel and proves nothing
-    // about fbclid capture — only _fbc (populated exclusively from a real
-    // fbclid) does, so this checks that specific evidence line rather than
-    // the rule's overall status (which, since W4.1, is _fbp-driven and
-    // would false-fire here on every run where the Pixel merely loads).
+    // FBC_COOKIE_PRESENT (L3.10) — split from the former
+    // FBP_AND_FBC_COOKIES_PRESENT (Pre-Connection Scan Confidence Tiering
+    // PRD §10.4) — always returns status: 'skipped' (inconclusive in a
+    // crawl context) regardless of whether _fbc is actually present, so
+    // its evidence, never its status, is what's checked here.
+    passing: 'FBC_COOKIE_PRESENT',
     contradictingFact: (result) => result.technical_details.evidence.includes('_fbc present: true'),
     explain: () =>
       'FBCLID_CAPTURED_AT_LANDING failed while _fbc is present — _fbc stores the fbclid it captured '
@@ -156,6 +161,11 @@ export function partitionContradictions(results: ValidationResult[]): Contradict
       rule_id: r.rule_id,
       step: 'landing',
       reason: contradiction.message,
+      // Pre-Connection Scan Confidence Tiering PRD §4.3 — a rule's own FAIL
+      // logically contradicted by a passing sibling rule's evidence is
+      // exactly a CONFLICT between two independent signals about the same
+      // browser state, not a coverage gap (NOT_OBSERVED).
+      kind: 'CONFLICT',
     });
   }
 

@@ -7,8 +7,22 @@
  * matters — is the product domain even reachable. See platformDetection.ts
  * for the shared per-platform tag-presence check L0.1/L0.2 both use.
  */
-import type { AuditData, ValidationRule, ValidationResult, RuleStatus, DeclaredPlatform } from '@/types/audit';
+import type { AuditData, ValidationRule, ValidationResult, RuleStatus, DeclaredPlatform, DeclarationSource, Severity } from '@/types/audit';
 import { ALL_DECLARED_PLATFORMS, PLATFORM_LABELS, platformTagDetected } from './platformDetection';
+
+/**
+ * Pre-Connection Scan Confidence Tiering PRD §8 — severity ceiling for
+ * DECLARED_PLATFORM_HAS_TAG (L0.1) by declaration_source. A local rank map
+ * rather than importing engine.ts's (private, and would create a circular
+ * import — engine.ts already imports L0.ts) — 4 entries, not worth sharing
+ * across that boundary.
+ */
+const LOCAL_SEVERITY_RANK: Record<Severity, number> = { low: 0, medium: 1, high: 2, critical: 3 };
+const DECLARATION_SEVERITY_CEILING: Record<DeclarationSource, Severity | undefined> = {
+  CLIENT_CONFIRMED: undefined,
+  OPERATOR_ASSUMED: 'medium',
+  INFERRED_FROM_SITE: 'low',
+};
 
 // ── L0.1 — Declared platform has a tag present ───────────────────────────────
 //
@@ -26,6 +40,10 @@ export const DECLARED_PLATFORM_HAS_TAG: ValidationRule = {
   platform_scope: 'declared',
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
+  // PRD §10.1 exact — DERIVED (rests on a client declaration, capped by
+  // declaration_source), gated on Fail (missing a tag is the absence claim).
+  evidence_class: 'DERIVED',
+  gated_direction: 'fail',
   remediation: (result) => {
     const missing = result.technical_details.evidence
       .filter((e) => e.includes('NO TAG DETECTED'))
@@ -50,11 +68,22 @@ export const DECLARED_PLATFORM_HAS_TAG: ValidationRule = {
       platform_outcomes[p] = platformTagDetected(p, auditData) ? 'pass' : 'fail';
     }
 
+    // Severity ceiling by declaration_source (PRD §8) — a CRITICAL for a
+    // platform the operator merely assumed was in scope (not confirmed by
+    // the client) rests on a declaration that may simply be wrong. Defaults
+    // to OPERATOR_ASSUMED, the pre-connection default, when unset. Only ever
+    // applies to a genuine fail — a pass has no defect for a ceiling to cap.
+    const declarationSource: DeclarationSource = auditData.declaration_source ?? 'OPERATOR_ASSUMED';
+    const ceiling = DECLARATION_SEVERITY_CEILING[declarationSource];
+    const capped = status === 'fail' && ceiling !== undefined && LOCAL_SEVERITY_RANK[this.severity] > LOCAL_SEVERITY_RANK[ceiling];
+    const effectiveSeverity = capped ? ceiling! : this.severity;
+
     return {
       rule_id: this.rule_id,
       validation_layer: this.layer,
       status,
-      severity: this.severity,
+      severity: effectiveSeverity,
+      ...(capped ? { severity_capped_from: this.severity } : {}),
       technical_details: {
         found:
           declared.length === 0
@@ -90,6 +119,8 @@ export const UNDECLARED_PLATFORM_TAG_DETECTED: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
+  // PRD §10.1 exact — "Positive observation · strongest rule in the set."
+  evidence_class: 'DIRECT',
   remediation: (result) => {
     const names = result.technical_details.evidence
       .filter((e) => e.includes('tag detected but not declared'))
@@ -206,6 +237,8 @@ export const CONVERSION_SURFACE_IDENTIFIED: ValidationRule = {
   platform_scope: 'n/a',
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
+  // PRD §10.1 exact.
+  evidence_class: 'DIRECT',
   remediation: 'Supply a direct URL for the conversion step in Scan Inputs\' url_map (the real checkout/thank-you/signup page — not the homepage), or fix the site\'s own navigation so that page is actually reachable by clicking through from landing. Every rule below this one depends on a real conversion surface being reached, so this is worth fixing before trusting anything else in this report.',
   client_question: 'We could not confirm your conversion page (checkout/thank-you/signup), so every check that depends on it is inconclusive. Can you supply its URL, or a test route we can use?',
 
@@ -291,6 +324,10 @@ export const PRODUCT_DOMAIN_REACHABLE: ValidationRule = {
   platform_scope: 'n/a',
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
+  // Not classified by the PRD — "unreachable" is an absence claim (no valid
+  // response observed from a single live HTTP probe with its own timeout),
+  // gated per the PRD's core principle (§3) rather than treated as DIRECT.
+  evidence_class: 'PRESENCE',
   remediation: (result) => {
     const domainLine = result.technical_details.evidence.find((e) => e.startsWith('product_domain:'));
     const domain = domainLine ? domainLine.replace('product_domain: ', '') : 'the declared product domain';

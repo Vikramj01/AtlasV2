@@ -1,7 +1,7 @@
 /**
  * Layer L1 — Foundation & Tags rule tests.
  *
- * Covers each of the 16 rules' pass/fail/skipped/warning branches.
+ * Covers each of the 18 rules' pass/fail/skipped/warning branches.
  */
 import { describe, it, expect } from 'vitest';
 import {
@@ -9,7 +9,8 @@ import {
   CONTAINER_ID_MATCHES_DECLARED,
   DATALAYER_INITIALISED,
   GA4_CONFIG_TAG_PRESENT,
-  GOOGLE_GLOBAL_SITE_TAG_PRESENT,
+  GTAG_LOADER_PRESENT,
+  GOOGLE_ADS_AW_ID_PRESENT,
   CONVERSION_LINKER_ENABLED,
   META_PIXEL_PRESENT,
   TIKTOK_PIXEL_PRESENT,
@@ -137,18 +138,44 @@ describe('GA4_CONFIG_TAG_PRESENT (L1.4)', () => {
   });
 });
 
-// ── L1.5 — Google global site tag present ────────────────────────────────────
+// ── L1.5 — gtag loader present ────────────────────────────────────────────────
+// ── L1.18 — Google Ads AW- conversion ID present ──────────────────────────────
+//
+// Split from the former GOOGLE_GLOBAL_SITE_TAG_PRESENT (Pre-Connection Scan
+// Confidence Tiering PRD §10.2) — GTAG_LOADER_PRESENT answers "did a gtag.js
+// loader run at all," GOOGLE_ADS_AW_ID_PRESENT answers "does it carry an
+// AW- conversion ID," independently.
 
-describe('GOOGLE_GLOBAL_SITE_TAG_PRESENT (L1.5)', () => {
+describe('GTAG_LOADER_PRESENT (L1.5)', () => {
+  it('passes when any gtag.js loader is present, regardless of ID', () => {
+    const auditData = makeAuditData({
+      networkRequests: [makeRequest({ url: 'https://www.googletagmanager.com/gtag/js?id=G-ABCDEF' })],
+    });
+    expect(GTAG_LOADER_PRESENT.test(auditData).status).toBe('pass');
+  });
+
+  it('fails when no gtag.js loader is found', () => {
+    expect(GTAG_LOADER_PRESENT.test(makeAuditData()).status).toBe('fail');
+  });
+});
+
+describe('GOOGLE_ADS_AW_ID_PRESENT (L1.18)', () => {
   it('passes when gtag.js loads with an Ads conversion ID', () => {
     const auditData = makeAuditData({
       networkRequests: [makeRequest({ url: 'https://www.googletagmanager.com/gtag/js?id=AW-123456789' })],
     });
-    expect(GOOGLE_GLOBAL_SITE_TAG_PRESENT.test(auditData).status).toBe('pass');
+    expect(GOOGLE_ADS_AW_ID_PRESENT.test(auditData).status).toBe('pass');
   });
 
   it('fails when no gtag.js AW- loader is found', () => {
-    expect(GOOGLE_GLOBAL_SITE_TAG_PRESENT.test(makeAuditData()).status).toBe('fail');
+    expect(GOOGLE_ADS_AW_ID_PRESENT.test(makeAuditData()).status).toBe('fail');
+  });
+
+  it('fails when a gtag.js loader is present but without an AW- id (GA4-only)', () => {
+    const auditData = makeAuditData({
+      networkRequests: [makeRequest({ url: 'https://www.googletagmanager.com/gtag/js?id=G-ABCDEF' })],
+    });
+    expect(GOOGLE_ADS_AW_ID_PRESENT.test(auditData).status).toBe('fail');
   });
 });
 
@@ -381,10 +408,10 @@ describe('OPENAI_PIXEL_PRESENT (L1.17)', () => {
 });
 
 describe('L1_RULES', () => {
-  it('exports all 17 L1 rules', () => {
-    expect(L1_RULES).toHaveLength(17);
-    expect(new Set(L1_RULES.map((r) => r.id)).size).toBe(17);
-    expect(new Set(L1_RULES.map((r) => r.rule_id)).size).toBe(17);
+  it('exports all 18 L1 rules', () => {
+    expect(L1_RULES).toHaveLength(18);
+    expect(new Set(L1_RULES.map((r) => r.id)).size).toBe(18);
+    expect(new Set(L1_RULES.map((r) => r.rule_id)).size).toBe(18);
   });
 });
 

@@ -49,6 +49,10 @@ export const CROSS_DOMAIN_LINKER_CONFIGURED: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
+  // Not classified by the PRD — gated per §3's default: whether the linker
+  // mechanism is active at all is an absence claim scaled by how much of
+  // the landing page's outbound-link surface was actually scanned.
+  evidence_class: 'PRESENCE',
   remediation: 'Configure GA4\'s cross-domain measurement (Admin > Data Streams > Configure tag settings > Configure your domains) to include the product/checkout domain — without it, GA4 treats the app or checkout as an entirely separate site and starts a new session for every visitor who crosses the boundary.',
 
   test(auditData: AuditData): ValidationResult {
@@ -102,6 +106,7 @@ export const GL_PARAMETER_APPENDED_ON_OUTBOUND_LINKS: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  evidence_class: 'PRESENCE', // Not classified by the PRD — same reasoning as L4.1
   remediation: (result) => {
     const totalLine = result.technical_details.evidence.find((e) => e.startsWith('Outbound links to product/checkout domain:'));
     const withGlLine = result.technical_details.evidence.find((e) => e.startsWith('Carrying _gl:'));
@@ -157,6 +162,9 @@ export const GA4_CLIENT_ID_PERSISTS_ACROSS_BOUNDARY: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Frontend',
   requires: ['conversion_surface'],
+  // Not classified by the PRD — fail is positive evidence (a real, observed
+  // client_id changed), so pass is the absence claim.
+  evidence_class: 'PRESENCE_INVERSE',
   remediation: 'Turn on GA4\'s cross-domain measurement for the product/checkout domain (Admin > Data Streams > Configure tag settings > Configure your domains) and confirm the linker mechanism (_gl parameter, see L4.1/L4.2) is actually appending to links that cross it — the client_id change usually traces back to one of those two being off.',
 
   test(auditData: AuditData): ValidationResult {
@@ -211,6 +219,7 @@ export const SESSION_NOT_RESTARTED_AT_BOUNDARY: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
   requires: ['conversion_surface'],
+  evidence_class: 'PRESENCE_INVERSE', // Not classified by the PRD — same reasoning as L4.3
   remediation: 'Fix cross-domain measurement (Admin > Data Streams > Configure tag settings > Configure your domains) so GA4 recognizes the product/checkout domain as part of the same site rather than a new referral — a self-referral session restart is almost always this setting missing the domain, not a code-level bug.',
 
   test(auditData: AuditData): ValidationResult {

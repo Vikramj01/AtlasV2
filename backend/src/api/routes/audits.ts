@@ -80,6 +80,7 @@ const StartAuditSchema = z.object({
   site_type: z.enum(SITE_TYPES).optional(),
   secondary_motion: z.enum(['none', 'sales_assisted', 'hybrid']).optional(),
   declared_platforms: z.array(z.enum(DECLARED_PLATFORMS)).optional(),
+  declaration_source: z.enum(['CLIENT_CONFIRMED', 'OPERATOR_ASSUMED', 'INFERRED_FROM_SITE']).optional(),
   primary_channel: z.enum(DECLARED_PLATFORMS).optional(),
   monthly_spend_band: z.string().optional(),
   traffic_regions: z.array(z.enum(TRAFFIC_REGIONS)).optional(),
@@ -110,7 +111,7 @@ router.post('/start', auditLimiter, async (req: Request, res: Response) => {
   }
   const {
     website_url, region, url_map, test_email, test_phone, client_id,
-    site_type, secondary_motion, declared_platforms, primary_channel, monthly_spend_band,
+    site_type, secondary_motion, declared_platforms, declaration_source, primary_channel, monthly_spend_band,
     traffic_regions, cmp, product_domain, checkout_domain, additional_properties, declared_conversions,
   } = parsed.data;
 
@@ -153,6 +154,7 @@ router.post('/start', auditLimiter, async (req: Request, res: Response) => {
         site_type,
         secondary_motion,
         declared_platforms,
+        declaration_source,
         primary_channel,
         monthly_spend_band,
         traffic_regions,
@@ -176,6 +178,7 @@ router.post('/start', auditLimiter, async (req: Request, res: Response) => {
         site_type,
         secondary_motion,
         declared_platforms,
+        declaration_source,
         primary_channel,
         monthly_spend_band,
         traffic_regions,

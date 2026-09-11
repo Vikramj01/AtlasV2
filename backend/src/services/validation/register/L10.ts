@@ -53,6 +53,7 @@ export const EVENT_ID_CONSISTENT_CLIENT_TO_SERVER: ValidationRule = {
   platform_scope: 'n/a',
   detectable_by: 'crawl',
   owner: 'Backend',
+  evidence_class: 'PRESENCE', // Not classified by the PRD
   remediation: (result) => {
     const idLine = result.technical_details.evidence.find((e) => e.startsWith('Client event_id:'));
     const id = idLine ? idLine.replace('Client event_id: ', '') : 'the client-side event_id';
@@ -128,6 +129,7 @@ export const EVENT_ID_FORWARDED_TO_PLATFORM_REQUESTS: ValidationRule = {
   platform_scope: 'n/a',
   detectable_by: 'crawl',
   owner: 'Backend',
+  evidence_class: 'PRESENCE', // Not classified by the PRD
   remediation: (result) => {
     const idLine = result.technical_details.evidence.find((e) => e.startsWith('Platforms checked:'));
     const platforms = idLine ? idLine.replace('Platforms checked: ', '') : 'the declared platform(s)';

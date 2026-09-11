@@ -58,6 +58,7 @@ export const PRIMARY_CONVERSION_EVENT_FIRES: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Frontend',
   requires: ['conversion_surface'],
+  evidence_class: 'PRESENCE', // Not classified by the PRD — same shape as the platform-specific conversion-fires siblings below
   remediation: (result) => {
     const declaredLine = result.technical_details.evidence.find((e) => e.startsWith('Declared primary conversion:'));
     const name = declaredLine ? declaredLine.replace('Declared primary conversion: ', '') : 'the declared conversion event';
@@ -119,6 +120,7 @@ function makeConversionFiresRule(opts: {
     detectable_by: 'crawl',
     owner: 'Frontend',
     requires: ['conversion_surface'],
+    evidence_class: 'PRESENCE', // PRD §10.6 exact (GOOGLE_ADS/META/TIKTOK named; same shape extended to OPENAI)
     remediation: opts.remediation,
 
     test(auditData: AuditData): ValidationResult {
@@ -197,6 +199,7 @@ export const GA4_CONVERSION_EVENT_FIRES: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Frontend',
   requires: ['conversion_surface'],
+  evidence_class: 'PRESENCE', // Not classified by the PRD — same shape as the platform-specific conversion-fires siblings
   remediation: (result) => {
     const nameMatch = result.technical_details.found.match(/en="([^"]+)"/);
     const name = nameMatch ? nameMatch[1] : 'the declared conversion event';
@@ -252,6 +255,11 @@ export const EVENT_FIRES_EXACTLY_ONCE: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Frontend',
   requires: ['conversion_surface'],
+  // Not classified by the PRD — a dedup count of one already-fired,
+  // bounded event across the (already-completed) journey's steps; no
+  // additional coverage risk beyond what PRIMARY_CONVERSION_EVENT_FIRES
+  // already gates.
+  evidence_class: 'DIRECT',
   remediation: (result) => {
     const dupLine = result.technical_details.evidence.find((e) => /: \d+ fire\(s\)/.test(e) && !e.endsWith(': 1 fire(s)'));
     if (!dupLine) return 'Guard the conversion push so it can only fire once per page load — check for a duplicate tag (both GTM and a hardcoded snippet), or a component that re-renders and re-fires the same dataLayer.push().';
@@ -337,6 +345,10 @@ export const FIRES_ON_COMPLETION_NOT_ON_INTENT: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Frontend',
   requires: ['conversion_surface'],
+  // Not classified by the PRD — fail is positive evidence (the event fired
+  // at a non-completion step); pass ("only fired at completion") is an
+  // absence claim scaled by how many intermediate steps the crawl reached.
+  evidence_class: 'PRESENCE_INVERSE',
   remediation: (result) => {
     const stepsLine = result.technical_details.found.match(/fired at (.+?) — before/);
     const steps = stepsLine ? stepsLine[1] : 'the earlier step(s)';
@@ -388,6 +400,7 @@ export const NO_CONVERSION_FIRES_ON_NON_CONVERSION_PAGES: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Frontend',
   requires: ['conversion_surface'],
+  evidence_class: 'PRESENCE_INVERSE', // Not classified by the PRD — NO_ prefix, fail is positive evidence of a misfire
   remediation: (result) => {
     const stepsLine = result.technical_details.evidence.find((e) => e.startsWith('False-positive steps:'));
     const steps = stepsLine ? stepsLine.replace('False-positive steps: ', '') : 'the affected page(s)';
@@ -442,6 +455,7 @@ export const PAGE_VIEW_FIRES_ON_EVERY_ROUTE: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Frontend',
   requires: ['conversion_surface'],
+  evidence_class: 'PRESENCE', // PRD §10.6 exact
   remediation: (result) => {
     const missingLine = result.technical_details.evidence.find((e) => e.startsWith('Missing page_view:'));
     const missing = missingLine ? missingLine.replace('Missing page_view: ', '') : 'the affected route(s)';
@@ -500,6 +514,7 @@ export const MICRO_CONVERSIONS_FIRE: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Frontend',
   requires: ['conversion_surface'],
+  evidence_class: 'PRESENCE', // Not classified by the PRD — same not-found shape as its siblings
   remediation: (result) => {
     const missing = result.technical_details.evidence.filter((e) => e.endsWith(': missing')).map((e) => e.split(':')[0]);
     if (missing.length === 0) return 'Push a dataLayer event for each declared micro-conversion at the point it happens (e.g. add_to_cart, sign_up_started).';
@@ -574,6 +589,9 @@ export const EVENT_NAMES_MATCH_DECLARED_TAXONOMY: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
   requires: ['conversion_surface'],
+  // Not classified by the PRD — fail is positive evidence (an observed
+  // event name violates the naming convention); pass is the absence claim.
+  evidence_class: 'PRESENCE_INVERSE',
   remediation: (result) => {
     const violations = result.technical_details.evidence.filter((e) => e.startsWith('"'));
     if (violations.length === 0) return 'Rename the observed event(s) to match the org\'s naming convention (see Naming Conventions settings) — inconsistent naming makes cross-property and cross-client comparison impossible.';
@@ -645,6 +663,9 @@ export const EVENT_ORDERING_IS_CORRECT: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Frontend',
   requires: ['conversion_surface'],
+  // Not classified by the PRD — a timestamp comparison between two
+  // already-captured events; bounded, no coverage-scaling risk.
+  evidence_class: 'DIRECT',
   remediation: 'Move the conversion dataLayer.push() to fire after GTM (and any consent-gating logic) has finished initializing, not before — an event fired before its own config loads is silently discarded by tags that depend on that config, rather than queued and retried.',
 
   test(auditData: AuditData): ValidationResult {

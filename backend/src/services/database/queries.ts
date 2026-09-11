@@ -2,6 +2,7 @@ import { supabaseAdmin } from './supabase';
 import type {
   AuditRow, AuditStatus, FunnelType, Region, ValidationResult, ReportJSON,
   RuleSetVersion, SiteType, SecondaryMotion, DeclaredPlatform, TrafficRegion, CMP, DeclaredConversion, RunQuality,
+  DeclarationSource,
 } from '@/types/audit';
 import { sanitizeForJsonb } from '@/utils/sanitizeJsonb';
 
@@ -20,6 +21,7 @@ export async function createAudit(data: {
   site_type?: SiteType;
   secondary_motion?: SecondaryMotion;
   declared_platforms?: DeclaredPlatform[];
+  declaration_source?: DeclarationSource;
   primary_channel?: DeclaredPlatform;
   monthly_spend_band?: string;
   traffic_regions?: TrafficRegion[];

@@ -10,7 +10,8 @@ import {
   CLICK_ID_WRITTEN_TO_DURABLE_STORAGE,
   STORAGE_LIFETIME_MEETS_ATTRIBUTION_WINDOW,
   GCL_AW_COOKIE_PRESENT,
-  FBP_AND_FBC_COOKIES_PRESENT,
+  FBP_COOKIE_PRESENT,
+  FBC_COOKIE_PRESENT,
   COOKIE_SCOPED_TO_PARENT_DOMAIN,
   COOKIE_ATTRIBUTES_CORRECT,
   L3_RULES,
@@ -145,29 +146,35 @@ describe('GCL_AW_COOKIE_PRESENT (L3.3)', () => {
   });
 });
 
-// ── L3.4 — _fbp and _fbc cookies present ──────────────────────────────────────
+// ── L3.4 — _fbp cookie present ────────────────────────────────────────────────
+// ── L3.10 — _fbc cookie present ───────────────────────────────────────────────
+//
+// Split from the former FBP_AND_FBC_COOKIES_PRESENT (Pre-Connection Scan
+// Confidence Tiering PRD §10.4) — the composite carried _fbc in its evidence
+// while explicitly not counting it toward the verdict. FBC_COOKIE_PRESENT
+// is now its own rule, always inconclusive (status: 'skipped') in a crawl
+// context.
 
-describe('FBP_AND_FBC_COOKIES_PRESENT (L3.4)', () => {
-  it('passes when both are present', () => {
-    const auditData = makeAuditData({ cookies: { _fbp: 'fb.1.1.1', _fbc: 'fb.1.1.2' } });
-    expect(FBP_AND_FBC_COOKIES_PRESENT.test(auditData).status).toBe('pass');
-  });
-
-  // W4.1 (Click-ID Contention, Contradiction Guard & Settle Enforcement
-  // PRD) — _fbc is only ever populated by the Pixel from a real fbclid
-  // arriving with a genuine Meta-click referrer, which a crawler-injected
-  // fbclid frequently won't reproduce. _fbp alone (the Pixel's own
-  // unconditional base signal) is enough to pass; a missing _fbc is
-  // reported as inconclusive evidence, never a CRITICAL fail on its own.
-  it('passes on _fbp alone, with _fbc reported as inconclusive rather than failing the rule', () => {
+describe('FBP_COOKIE_PRESENT (L3.4)', () => {
+  it('passes when _fbp is present', () => {
     const auditData = makeAuditData({ cookies: { _fbp: 'fb.1.1.1' } });
-    const result = FBP_AND_FBC_COOKIES_PRESENT.test(auditData);
-    expect(result.status).toBe('pass');
-    expect(result.technical_details.evidence.some((e) => e.includes('_fbc inconclusive under synthetic injection'))).toBe(true);
+    expect(FBP_COOKIE_PRESENT.test(auditData).status).toBe('pass');
   });
 
-  it('fails when neither is present', () => {
-    expect(FBP_AND_FBC_COOKIES_PRESENT.test(makeAuditData()).status).toBe('fail');
+  it('passes on _fbp alone, independent of _fbc', () => {
+    const auditData = makeAuditData({ cookies: { _fbp: 'fb.1.1.1', _fbc: 'fb.1.1.2' } });
+    expect(FBP_COOKIE_PRESENT.test(auditData).status).toBe('pass');
+  });
+
+  it('fails when _fbp is absent', () => {
+    expect(FBP_COOKIE_PRESENT.test(makeAuditData()).status).toBe('fail');
+  });
+});
+
+describe('FBC_COOKIE_PRESENT (L3.10)', () => {
+  it('is always skipped (inconclusive) in a crawl context, whether or not _fbc happens to be present', () => {
+    expect(FBC_COOKIE_PRESENT.test(makeAuditData()).status).toBe('skipped');
+    expect(FBC_COOKIE_PRESENT.test(makeAuditData({ cookies: { _fbc: 'fb.1.1.2' } })).status).toBe('skipped');
   });
 });
 
@@ -218,10 +225,10 @@ describe('COOKIE_ATTRIBUTES_CORRECT (L3.6)', () => {
 });
 
 describe('L3_RULES', () => {
-  it('exports all 6 crawl-detectable L3 rules', () => {
-    expect(L3_RULES).toHaveLength(6);
-    expect(new Set(L3_RULES.map((r) => r.id)).size).toBe(6);
-    expect(new Set(L3_RULES.map((r) => r.rule_id)).size).toBe(6);
+  it('exports all 7 crawl-detectable L3 rules', () => {
+    expect(L3_RULES).toHaveLength(7);
+    expect(new Set(L3_RULES.map((r) => r.id)).size).toBe(7);
+    expect(new Set(L3_RULES.map((r) => r.rule_id)).size).toBe(7);
   });
 
   it('excludes the 3 second-pass-detectable rules (L3.7-9)', () => {

@@ -1,5 +1,7 @@
 /**
- * Layer L1 — Foundation & Tags (16 rules).
+ * Layer L1 — Foundation & Tags (18 rules — GOOGLE_GLOBAL_SITE_TAG_PRESENT
+ * split into GTAG_LOADER_PRESENT + GOOGLE_ADS_AW_ID_PRESENT per the
+ * Pre-Connection Scan Confidence Tiering PRD §10.2).
  *
  * The layer beneath every platform-specific check: is a container/tag
  * manager loaded at all, is the dataLayer actually populated, does each
@@ -56,6 +58,7 @@ export const GTM_CONTAINER_LOADED: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
+  evidence_class: 'PRESENCE', // PRD §10.2 exact
   remediation: 'Ensure the GTM snippet (gtm.js) is installed in the <head>, loads before other scripts, and isn\'t blocked by a Content Security Policy, ad blocker, or consent gate. Confirm it connects with GTM Preview mode.',
 
   test(auditData: AuditData): ValidationResult {
@@ -93,6 +96,10 @@ export const CONTAINER_ID_MATCHES_DECLARED: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
+  // Not classified by the PRD. Mixed fail shape (no container at all, or a
+  // mismatch) but both are absence-of-the-correct-live-tag claims scaled by
+  // coverage — gated per §3's default rather than treated as DIRECT.
+  evidence_class: 'PRESENCE',
   remediation: (result) => {
     const declaredLine = result.technical_details.evidence.find((e) => e.startsWith('Declared:'));
     const declared = declaredLine ? declaredLine.replace('Declared: ', '') : 'the connected container';
@@ -150,6 +157,7 @@ export const DATALAYER_INITIALISED: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  evidence_class: 'PRESENCE', // PRD §10.2 exact
   remediation: (result) =>
     result.technical_details.found.includes('never received a push')
       ? "Initialize window.dataLayer = window.dataLayer || []; before GTM loads, and push at least a page_view-shaped event on landing — GTM's own tags read from this array, so nothing else can fire correctly without it."
@@ -189,6 +197,7 @@ export const GA4_CONFIG_TAG_PRESENT: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
+  evidence_class: 'PRESENCE', // PRD §10.6 exact — "Subject to CONF_01"
   remediation: 'Add a GA4 Configuration tag in GTM (or the gtag(\'config\', \'G-XXXXXXX\') snippet directly) firing on All Pages, and confirm in the Network tab that requests reach google-analytics.com/g/collect with a resolved measurement ID.',
   client_question: 'We did not see a GA4 configuration tag firing during the crawl. Is GA4 handled through a different property, delivered server-side, or genuinely not implemented yet?',
 
@@ -212,20 +221,69 @@ export const GA4_CONFIG_TAG_PRESENT: ValidationRule = {
   },
 };
 
-// ── L1.5 — Google global site tag present ────────────────────────────────────
+// ── L1.5 — gtag loader present ────────────────────────────────────────────────
+//
+// Pre-Connection Scan Confidence Tiering PRD §10.2 — split from the former
+// GOOGLE_GLOBAL_SITE_TAG_PRESENT, whose name described the gtag.js loader
+// but whose test() actually only ever checked for an AW- (Google Ads)
+// conversion ID within it, conflating two different questions into one
+// verdict (openart.ai audit c9486929: this rule failed while a gtag.js
+// loader with a different ID was in fact present and firing). This rule now
+// answers only "did a gtag.js loader run at all" — GOOGLE_ADS_AW_ID_PRESENT
+// below answers "does it carry a Google Ads conversion ID" independently.
 
-export const GOOGLE_GLOBAL_SITE_TAG_PRESENT: ValidationRule = {
+export const GTAG_LOADER_PRESENT: ValidationRule = {
   id: 'L1.5',
-  rule_id: 'GOOGLE_GLOBAL_SITE_TAG_PRESENT',
+  rule_id: 'GTAG_LOADER_PRESENT',
   layer: 'foundation_tags',
-  check: 'Google global site tag present',
+  check: 'gtag loader present',
   severity: 'critical',
   applies_to: 'all',
   platform_scope: ['google_ads'],
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
-  remediation: 'Add the Google Ads gtag.js loader (googletagmanager.com/gtag/js?id=AW-XXXXXXXXX) via GTM\'s Google Tag or a direct gtag.js snippet, firing on every page — without it, no Google Ads conversion or remarketing tag downstream of this one can work.',
-  client_question: 'We found no Google Ads (AW-) loader on the site. Does Google Ads run through a different property, a server-side container we could not see from a client-side crawl, or is it not yet implemented?',
+  evidence_class: 'PRESENCE', // PRD §10.2 exact
+  remediation: 'Add the Google gtag.js loader (googletagmanager.com/gtag/js) via GTM\'s Google Tag or a direct gtag.js snippet, firing on every page — every downstream Google Ads/GA4 gtag-based tag needs this loader present first.',
+
+  test(auditData: AuditData): ValidationResult {
+    const hits = auditData.networkRequests.filter((r) => r.url.includes('googletagmanager.com/gtag/js'));
+    const found = hits.length > 0;
+
+    return {
+      rule_id: this.rule_id,
+      validation_layer: this.layer,
+      status: found ? 'pass' : 'fail',
+      severity: this.severity,
+      technical_details: {
+        found: found ? `gtag.js loader loaded (${hits.length} request(s))` : 'No gtag.js loader detected',
+        expected: 'gtag.js loads',
+        evidence: found ? hits.map((r) => r.url) : ['No googletagmanager.com/gtag/js request found'],
+      },
+    };
+  },
+};
+
+// ── L1.18 — Google Ads AW- conversion ID present ─────────────────────────────
+//
+// The AW--specific half of the former GOOGLE_GLOBAL_SITE_TAG_PRESENT — most
+// meaningful once GTAG_LOADER_PRESENT (L1.5) has confirmed a gtag loader
+// runs at all, but evaluated independently here so a genuinely absent AW- ID
+// on a site that DOES run gtag.js for GA4 alone renders as its own distinct
+// finding, not folded into "no gtag tag at all."
+
+export const GOOGLE_ADS_AW_ID_PRESENT: ValidationRule = {
+  id: 'L1.18',
+  rule_id: 'GOOGLE_ADS_AW_ID_PRESENT',
+  layer: 'foundation_tags',
+  check: 'Google Ads AW- conversion ID present',
+  severity: 'critical',
+  applies_to: 'all',
+  platform_scope: ['google_ads'],
+  detectable_by: 'crawl',
+  owner: 'Marketing Ops',
+  evidence_class: 'PRESENCE', // PRD §10.2 exact
+  remediation: 'Add the Google Ads conversion ID (id=AW-XXXXXXXXX) to the gtag loader via GTM\'s Google Tag or a direct gtag.js snippet, firing on every page — without it, no Google Ads conversion or remarketing tag downstream of this one can work.',
+  client_question: 'We found no Google Ads (AW-) conversion ID on the site. Does Google Ads run through a different property, a server-side container we could not see from a client-side crawl, or is it not yet implemented?',
 
   test(auditData: AuditData): ValidationResult {
     const hits = auditData.networkRequests.filter(
@@ -264,6 +322,7 @@ export const CONVERSION_LINKER_ENABLED: ValidationRule = {
   platform_scope: ['google_ads'],
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
+  evidence_class: 'PRESENCE', // PRD §10.2 exact
   remediation: 'Enable Auto-tagging and Conversion Linker in the Google Tag (or add the standalone Conversion Linker GTM tag) firing on All Pages — this writes the _gcl_au cookie that later steps rely on to bridge a click ID across pages, even ones that never see a gclid directly.',
 
   test(auditData: AuditData): ValidationResult {
@@ -305,6 +364,7 @@ function makePixelPresenceRule(opts: {
     platform_scope: [opts.platform],
     detectable_by: 'crawl',
     owner: 'Marketing Ops',
+    evidence_class: 'PRESENCE', // PRD §10.2 exact (META/TIKTOK named; same shape extended to the whole factory family)
     remediation: opts.remediation,
 
     test(auditData: AuditData): ValidationResult {
@@ -398,6 +458,7 @@ export const NO_DUPLICATE_CONTAINER: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
+  evidence_class: 'PRESENCE_INVERSE', // PRD §10.2 exact — pass is the absence claim
   remediation: (result) => {
     const idsLine = result.technical_details.evidence.find((e) => e.startsWith('Container IDs observed:'));
     const ids = idsLine ? idsLine.replace('Container IDs observed: ', '') : 'the extra container';
@@ -467,6 +528,7 @@ export const NO_DUPLICATE_BASE_TAG: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
+  evidence_class: 'PRESENCE_INVERSE', // PRD §10.2 exact
   remediation: (result) => {
     const dupes = result.technical_details.evidence.filter((e) => e.includes('distinct IDs firing'));
     if (dupes.length === 0) return 'Remove the duplicate base tag installation for the affected platform(s) — check for both a GTM-managed tag and a hardcoded script tag on the page, which is the most common cause.';
@@ -533,6 +595,8 @@ export const TAGS_PRESENT_ACROSS_SAMPLED_PAGES: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
+  evidence_class: 'DERIVED', // PRD §10.2 exact — "Inherently coverage-bound · requires all in-scope pages SETTLED"
+  gated_direction: 'fail',
   remediation: (result) => {
     const gapsLine = result.technical_details.evidence.find((e) => e.startsWith('Steps with no tracking:'));
     const gaps = gapsLine ? gapsLine.replace('Steps with no tracking: ', '') : 'the affected page(s)';
@@ -586,6 +650,12 @@ export const SERVER_CONTAINER_ENDPOINT_CONFIGURED: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Backend',
+  // PRD §10.2 exact, RECLASSIFIED — a hostname-shape heuristic can't
+  // authoritatively assert absence: a backend posting conversions directly
+  // to each platform's API needs no sGTM container and is entirely
+  // invisible to a browser crawl. May never emit FAIL (deriveVerdict()
+  // routes a would-be fail to NOT_OBSERVED instead); see engine.ts.
+  evidence_class: 'INFERRED',
   remediation: 'Stand up a server-side GTM (sGTM) container and route client-side events to it via a first-party endpoint — this enables server-side deduplication and gives Meta/TikTok CAPI and Google Ads Enhanced Conversions a durable, cookie-independent delivery path. If sGTM is deliberately out of scope for this site, this can be deprioritized relative to the client-side rules above it.',
   client_question: 'We did not find a first-party server-side container endpoint referenced from the pages we crawled. Is server-side tagging deliberately out of scope for now, or does one exist on an endpoint our heuristics would not recognize?',
 
@@ -624,6 +694,13 @@ export const SERVER_CONTAINER_FIRST_PARTY_DOMAIN: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Backend',
+  // Not classified by the PRD. DERIVED — skipped entirely when its parent
+  // (SERVER_CONTAINER_ENDPOINT_CONFIGURED, now INFERRED) found nothing, so
+  // it inherits that same heuristic uncertainty; fail means "found a
+  // third-party candidate host" (positive evidence), so pass is the
+  // absence claim.
+  evidence_class: 'DERIVED',
+  gated_direction: 'pass',
   remediation: (result) => {
     const hostsLine = result.technical_details.evidence.find((e) => e.startsWith('All candidate hosts:'));
     const hosts = hostsLine ? hostsLine.replace('All candidate hosts: ', '') : 'the third-party sGTM endpoint';
@@ -685,6 +762,7 @@ export const NO_TAG_LOAD_ERRORS: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  evidence_class: 'PRESENCE_INVERSE', // PRD §10.2 exact
   remediation: (result) => {
     const failed = result.technical_details.evidence.slice(0, 3);
     if (failed.length === 0) return 'Investigate the failed tag request(s) reported above — check for CSP blocks, ad-blocker interference, or a stale/incorrect endpoint URL.';
@@ -736,7 +814,8 @@ export const L1_RULES: ValidationRule[] = [
   CONTAINER_ID_MATCHES_DECLARED,
   DATALAYER_INITIALISED,
   GA4_CONFIG_TAG_PRESENT,
-  GOOGLE_GLOBAL_SITE_TAG_PRESENT,
+  GTAG_LOADER_PRESENT,
+  GOOGLE_ADS_AW_ID_PRESENT,
   CONVERSION_LINKER_ENABLED,
   META_PIXEL_PRESENT,
   TIKTOK_PIXEL_PRESENT,

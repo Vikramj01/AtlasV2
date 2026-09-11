@@ -97,6 +97,7 @@ function makeEmailCapturedRule(id: string, ruleId: string, check: string, platfo
     detectable_by: 'crawl',
     owner: 'Backend',
     requires: ['conversion_surface'],
+    evidence_class: 'PRESENCE', // Not classified by the PRD — not-found shape across the whole factory family
     remediation: 'Capture customer email on the conversion event, hashed with SHA-256: {user_data: {email: sha256(customer.email.trim().toLowerCase())}}. Normalize (trim + lowercase) before hashing — an unnormalized value hashes to something that never matches.',
 
     test(auditData: AuditData): ValidationResult {
@@ -152,6 +153,7 @@ export const PHONE_CAPTURED_WHERE_COLLECTED: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Backend',
   requires: ['conversion_surface'],
+  evidence_class: 'PRESENCE', // Not classified by the PRD
   remediation: 'Carry the phone number already collected earlier in the journey through to the conversion event, hashed and normalized to E.164 format: {user_data: {phone: sha256("+15551234567")}}. Since the site already collects it, this is usually a data-plumbing gap rather than a new capture point.',
 
   test(auditData: AuditData): ValidationResult {
@@ -203,6 +205,7 @@ export const NAME_AND_ADDRESS_CAPTURED_WHERE_COLLECTED: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Backend',
   requires: ['conversion_surface'],
+  evidence_class: 'PRESENCE', // Not classified by the PRD
   remediation: 'Carry the name/address fields already collected earlier in the journey through to the conversion event, hashed: {user_data: {first_name: sha256(...), zip: sha256(...), ...}}. Lowest priority of the identity fields — worth doing once email/phone are already in place.',
 
   test(auditData: AuditData): ValidationResult {
@@ -252,6 +255,7 @@ export const EXTERNAL_ID_SET: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Backend',
   requires: ['conversion_surface'],
+  evidence_class: 'PRESENCE', // Not classified by the PRD
   remediation: 'Send a stable internal user/customer ID (not PII — e.g. a database primary key) as external_id on the conversion event: {user_data: {external_id: customer.id}}. This improves match rate and enables Meta to stitch sessions from the same user together.',
 
   test(auditData: AuditData): ValidationResult {
@@ -292,6 +296,10 @@ export const IDENTITY_NORMALISED_BEFORE_HASHING: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Backend',
   requires: ['conversion_surface'],
+  // Not classified by the PRD — bounded to the identity fields (email/
+  // phone) of already-captured conversion events, not an open-ended scan;
+  // only evaluated when a plaintext value already exists.
+  evidence_class: 'DIRECT',
   remediation: (result) => {
     const violations = result.technical_details.evidence.filter((e) => e.includes('is not'));
     if (violations.length === 0) return 'Normalize email (lowercase + trim) and phone (E.164 format, digits with a leading +country code) before hashing — a correctly-hashed but unnormalized value never matches, since a different casing/format hashes to a completely different string.';
@@ -348,6 +356,10 @@ export const HASHED_WITH_SHA256: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Backend',
   requires: ['conversion_surface'],
+  // Not classified by the PRD — bounded to the same small identity-field
+  // set as IDENTITY_NORMALISED_BEFORE_HASHING, not an open-ended network
+  // scan (contrast NO_PLAINTEXT_PII_IN_NETWORK_REQUEST below).
+  evidence_class: 'DIRECT',
   remediation: (result) => {
     const plaintext = result.technical_details.evidence.filter((e) => e.startsWith('email') || e.startsWith('phone'));
     if (plaintext.length === 0) return 'Hash email and phone with SHA-256 before sending: crypto.createHash("sha256").update(email).digest("hex") — sending them in the clear violates both a legal requirement (GDPR/CCPA) and platform policy.';
@@ -408,6 +420,9 @@ export const HASH_FORMAT_VALID: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Backend',
   requires: ['conversion_surface'],
+  // Not classified by the PRD — same bounded identity-field reasoning as
+  // L7.6/L7.7.
+  evidence_class: 'DIRECT',
   remediation: (result) => {
     const malformed = result.technical_details.evidence.filter((e) => e.includes('is not a 64-char'));
     if (malformed.length === 0) return 'Ensure the hashing function produces a standard SHA-256 output: 64 lowercase hexadecimal characters. Check for a different algorithm, uppercase hex, or truncation somewhere in the pipeline.';
@@ -488,6 +503,7 @@ export const NO_PLAINTEXT_PII_IN_NETWORK_REQUEST: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Backend',
   requires: ['conversion_surface'],
+  evidence_class: 'PRESENCE_INVERSE', // PRD §10.6 exact
   remediation: (result) => {
     const emails = result.technical_details.evidence.filter((e) => e.includes('@'));
     const which = emails.length > 0 ? emails.join(', ') : 'the offending value(s)';
@@ -523,6 +539,7 @@ export const NO_PII_IN_URLS_OR_QUERY_STRINGS: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Frontend',
   requires: ['conversion_surface'],
+  evidence_class: 'PRESENCE_INVERSE', // PRD §10.6 exact
   remediation: (result) => {
     const emails = result.technical_details.evidence.filter((e) => e.includes('@'));
     const which = emails.length > 0 ? emails.join(', ') : 'the offending value(s)';
@@ -565,6 +582,7 @@ export const NO_PII_IN_GA4_EVENT_PARAMETERS: ValidationRule = {
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
   requires: ['conversion_surface'],
+  evidence_class: 'PRESENCE_INVERSE', // Not classified by the PRD — same open-ended-scan liability-claim shape as its two named siblings
   remediation: (result) => {
     const emails = result.technical_details.evidence.filter((e) => e.includes('@'));
     const which = emails.length > 0 ? emails.join(', ') : 'the offending value(s)';

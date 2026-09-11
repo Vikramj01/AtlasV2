@@ -62,6 +62,10 @@ export function partitionCoverageAffected(
         rule_id: r.rule_id,
         step: citedStep,
         reason: `The scan could not reach "${citedStep}" and used the landing page instead, so this result isn't evidence about that step.`,
+        // Pre-Connection Scan Confidence Tiering PRD §4.3 — the crawl never
+        // reached what this result's evidence depends on; a coverage gap,
+        // not a conflict between two signals.
+        kind: 'NOT_OBSERVED',
       });
     } else {
       assessable.push(r);

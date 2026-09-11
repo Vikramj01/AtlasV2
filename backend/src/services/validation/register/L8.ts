@@ -35,6 +35,7 @@ export const CONSENT_BANNER_PRESENT_WHEN_REQUIRED: ValidationRule = {
   platform_scope: 'n/a',
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
+  evidence_class: 'PRESENCE', // Not classified by the PRD
   remediation: 'Install a consent management platform (OneTrust, Cookiebot, Usercentrics, or a custom banner) on the landing page — a declared CMP or EEA/UK/Switzerland traffic both mean visitors need to see a consent choice before marketing tags fire.',
 
   test(auditData: AuditData): ValidationResult {
@@ -105,6 +106,10 @@ export const DECLARED_CMP_MATCHES_DETECTED_VENDOR: ValidationRule = {
   platform_scope: 'n/a',
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
+  // Not classified by the PRD — a bounded, singular comparison of 2
+  // already-known facts (the declared CMP config, the detected vendor); no
+  // coverage-scaling risk.
+  evidence_class: 'DIRECT',
   remediation: (result) => {
     const declaredLine = result.technical_details.evidence.find((e) => e.startsWith('Declared:'));
     const detectedLine = result.technical_details.evidence.find((e) => e.startsWith('Detected:'));
@@ -184,6 +189,7 @@ export const NO_DECLARED_PLATFORM_TAGS_FIRE_BEFORE_CONSENT: ValidationRule = {
   platform_scope: 'n/a',
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
+  evidence_class: 'PRESENCE_INVERSE', // Not classified by the PRD — NO_ prefix, explicit compliance-critical liability claim
   remediation: (result) => {
     const firedLine = result.technical_details.evidence.find((e) => e.startsWith('Fired pre-consent:'));
     const fired = firedLine ? firedLine.replace('Fired pre-consent: ', '') : 'the affected platform(s)';

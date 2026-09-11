@@ -273,6 +273,7 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
             site_type: data.site_type as AuditData['site_type'],
             secondary_motion: data.secondary_motion as AuditData['secondary_motion'],
             declared_platforms: data.declared_platforms as AuditData['declared_platforms'],
+            declaration_source: data.declaration_source as AuditData['declaration_source'],
             primary_channel: data.primary_channel as AuditData['primary_channel'],
             monthly_spend_band: data.monthly_spend_band,
             traffic_regions: data.traffic_regions as AuditData['traffic_regions'],

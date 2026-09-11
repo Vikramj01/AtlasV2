@@ -25,6 +25,7 @@ export interface AuditJobData {
   site_type?: string;
   secondary_motion?: string;
   declared_platforms?: string[];
+  declaration_source?: string;
   primary_channel?: string;
   monthly_spend_band?: string;
   traffic_regions?: string[];

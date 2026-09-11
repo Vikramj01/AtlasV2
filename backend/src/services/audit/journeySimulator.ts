@@ -5,7 +5,7 @@
  */
 import type {
   AuditData, FunnelType, Region, DataLayerEvent, NetworkRequest, CookieSnapshot, LocalStorageSnapshot, ConsoleError,
-  RuleSetVersion, SiteType, SecondaryMotion, DeclaredPlatform, TrafficRegion, CMP, DeclaredConversion,
+  RuleSetVersion, SiteType, SecondaryMotion, DeclaredPlatform, DeclarationSource, TrafficRegion, CMP, DeclaredConversion,
   StepCoverage, StepUrlSource, ConsentCapture, SettleOutcome, WaitForOutcome,
 } from '@/types/audit';
 import type { NamingConvention } from '@/types/taxonomy';
@@ -190,6 +190,7 @@ export interface SimulatorOptions {
   site_type?: SiteType;
   secondary_motion?: SecondaryMotion;
   declared_platforms?: DeclaredPlatform[];
+  declaration_source?: DeclarationSource;
   primary_channel?: DeclaredPlatform;
   monthly_spend_band?: string;
   traffic_regions?: TrafficRegion[];
@@ -631,6 +632,7 @@ export async function simulateJourney(
     site_type: opts.site_type,
     secondary_motion: opts.secondary_motion,
     declared_platforms: opts.declared_platforms,
+    declaration_source: opts.declaration_source,
     primary_channel: opts.primary_channel,
     monthly_spend_band: opts.monthly_spend_band,
     traffic_regions: opts.traffic_regions,

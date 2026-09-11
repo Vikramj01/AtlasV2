@@ -285,6 +285,12 @@ function makeClickIdCaptureRule(opts: {
     platform_scope: opts.platform_scope,
     detectable_by: 'crawl',
     owner: 'Frontend',
+    // PRD §10.3 exact (5 of 8 named; same shape extended to the whole
+    // factory family) — "Both sides observed": the scanner knows exactly
+    // what value it injected and searches storage exhaustively, so there's
+    // no coverage risk the way there is for a tag firing over the network.
+    evidence_class: 'DIRECT',
+    synthetic_evidence: true,
     remediation: `Read the injected ${opts.paramName} URL parameter on page load and persist it — a first-party cookie or localStorage, before the user can navigate away. A value sitting only in the URL is lost the moment they click through to another page.`,
     // Report Correctness Programme PRD Part B3 — hardcoded here rather than
     // per-opts, so every rule this factory produces (L2.1-2.7) shares the
@@ -418,6 +424,8 @@ export const UTM_PARAMETERS_CAPTURED: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  evidence_class: 'DIRECT', // PRD §10.3 exact — "Both sides observed · strong rule"
+  synthetic_evidence: true,
   remediation: (result) => {
     const missing = result.technical_details.evidence
       .filter((e) => e.endsWith('in URL but not captured'))
@@ -499,6 +507,8 @@ export const LANDING_REDIRECT_PRESERVES_QUERY_STRING: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  evidence_class: 'DIRECT', // PRD §10.3 exact
+  synthetic_evidence: true,
   remediation: (result) => {
     const strippedLine = result.technical_details.evidence.find((e) => e.startsWith('Stripped:'));
     const stripped = strippedLine ? strippedLine.replace('Stripped: ', '') : 'the affected parameter(s)';
@@ -548,6 +558,10 @@ export const CAPTURE_OCCURS_BEFORE_REDIRECT_COMPLETES: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  // Not classified by the PRD — same family as L2.9 (compares against the
+  // same synthetic injected values, same-page synchronous check).
+  evidence_class: 'DIRECT',
+  synthetic_evidence: true,
   remediation: (result) => {
     const strippedLine = result.technical_details.evidence.find((e) => e.startsWith('Stripped by redirect:'));
     const stripped = strippedLine ? strippedLine.replace('Stripped by redirect: ', '') : 'the affected click ID(s)';
@@ -615,6 +629,8 @@ export const REFERRER_PRESERVED_THROUGH_ENTRY: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  evidence_class: 'DIRECT', // PRD §10.6 exact
+  synthetic_evidence: true,
   remediation: 'Avoid a client-side redirect or meta-refresh on entry that clears document.referrer — use a server-side (HTTP) redirect instead, which preserves it. This is a fallback attribution signal for visits with no click ID, so it\'s lower priority than the click-ID capture rules above.',
 
   test(auditData: AuditData): ValidationResult {

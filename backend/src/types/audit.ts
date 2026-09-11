@@ -91,6 +91,20 @@ export interface DeclaredConversion {
   kind: 'primary' | 'secondary';
 }
 
+/**
+ * Pre-Connection Scan Confidence Tiering PRD §8 — provenance of the
+ * declared_platforms list, capping the severity DECLARED_PLATFORM_HAS_TAG
+ * (L0.1) can assert for a missing tag. The PRD models this per-platform;
+ * this implementation applies one value per scan run, since Scan Inputs
+ * collects the platform list as a single step with no current UI for
+ * confirming platforms individually — revisit if that changes.
+ *   'CLIENT_CONFIRMED'   — the prospect answered the scope questions themselves.
+ *   'OPERATOR_ASSUMED'   — an operator entered it on the prospect's behalf
+ *                          (the pre-connection default — see AuditData.declaration_source).
+ *   'INFERRED_FROM_SITE' — guessed from what the crawl itself observed.
+ */
+export type DeclarationSource = 'CLIENT_CONFIRMED' | 'OPERATOR_ASSUMED' | 'INFERRED_FROM_SITE';
+
 /** The four Scan Inputs collected before a Check Register v2 scan runs, plus the optional unlocks. */
 export interface ScanInputs {
   // 1. Site type
@@ -100,6 +114,8 @@ export interface ScanInputs {
   declared_platforms: DeclaredPlatform[];
   primary_channel: DeclaredPlatform;
   monthly_spend_band?: string;
+  /** See DeclarationSource. Defaults to 'OPERATOR_ASSUMED' when omitted — pre-connection runs default here unless the prospect has answered the scope questions (PRD §8). */
+  declaration_source?: DeclarationSource;
   // 3. Regions
   traffic_regions: TrafficRegion[];
   cmp?: CMP;
@@ -140,6 +156,71 @@ export type DetectionMethod = 'crawl' | 'second_pass' | 'credentials' | 'connect
  * add another precondition without changing this shape.
  */
 export type RulePrecondition = 'conversion_surface' | 'distinct_product_domain';
+
+// ─── Confidence tiering (Pre-Connection Scan Confidence Tiering PRD §4) ──────
+//
+// Two orthogonal axes, per the PRD's core principle: "Any verdict that
+// asserts an absence requires coverage. Any verdict that asserts a presence
+// does not." evidence_class is static (declared at rule definition, below);
+// observation_confidence is computed per run, per rule (register/engine.ts's
+// deriveObservationConfidence()); the two combine into a verdict distinct
+// from the rule's raw pass/fail status (deriveVerdict()).
+
+/**
+ * Evidence class (PRD §4.1) — which raw status direction is an absence claim
+ * that needs coverage to stand, per rule:
+ *   'DIRECT'            — both pass and fail rest on positively observed
+ *                          evidence; never gated (e.g. a synthetic click ID
+ *                          either is or isn't found in storage — the scanner
+ *                          has complete, deterministic knowledge of what to
+ *                          look for and searches exhaustively, so there's no
+ *                          "we just didn't wait long enough" risk).
+ *   'PRESENCE'           — "is X there" — pass is positive evidence, fail is
+ *                          an absence claim gated on coverage.
+ *   'PRESENCE_INVERSE'   — "X must not be there" — fail is positive evidence,
+ *                          pass is the absence claim gated on coverage (e.g.
+ *                          a clean PII scan is a liability claim that scales
+ *                          with how much traffic was actually captured).
+ *   'DERIVED'            — computed from other rules or scope configuration;
+ *                          gated direction varies per rule — see
+ *                          ValidationRule.gated_direction.
+ *   'INFERRED'           — heuristic shape match, never authoritative (e.g.
+ *                          sGTM hostname detection); may never emit a FAIL
+ *                          verdict regardless of confidence (see
+ *                          register/engine.ts's deriveVerdict()).
+ */
+export type EvidenceClass = 'DIRECT' | 'PRESENCE' | 'PRESENCE_INVERSE' | 'DERIVED' | 'INFERRED';
+
+/** Which raw status direction requires CONFIRMED observation confidence to stand as PASS/FAIL — see ValidationRule.gated_direction and register/engine.ts's gatedDirectionFor(). */
+export type GatedDirection = 'fail' | 'pass' | 'both' | 'none';
+
+/**
+ * Observation confidence (PRD §4.2) — computed per run, per rule, by
+ * register/engine.ts's deriveObservationConfidence():
+ *   'CONFIRMED'   — every page in the rule's scope was reached and settled,
+ *                   and the evidence channels the rule reads were captured.
+ *   'PARTIAL'     — some but not all in-scope pages met that bar (the rule
+ *                   still ran and produced evidence, but via an unverified/
+ *                   degraded step — see ValidationResult.confidence).
+ *   'UNSUPPORTED' — the step the rule depends on was not reached, did not
+ *                   settle, or its evidence channel was not captured at all
+ *                   (the rule never ran — status: 'skipped').
+ *   'CONFLICTED'  — two or more independent detectors disagree about the
+ *                   entity this rule evaluates (contradictionGuard.ts/
+ *                   clickIdContention.ts today; a general cross-signal
+ *                   consistency checker is future work).
+ */
+export type ObservationConfidence = 'CONFIRMED' | 'PARTIAL' | 'UNSUPPORTED' | 'CONFLICTED';
+
+/**
+ * Coverage-aware verdict (PRD §4.3) — distinct from the rule's raw
+ * `status`, and the value a future output-vocabulary-bound renderer must
+ * key its phrasing off. Computed by register/engine.ts's deriveVerdict()
+ * from (evidence_class, observation_confidence, raw status). `NOT_OBSERVED`,
+ * `INCONCLUSIVE` and `CONFLICT` are excluded from pass/fail counts and
+ * scoring — never rendered as failures, never silently dropped.
+ */
+export type Verdict = 'PASS' | 'FAIL' | 'NOT_OBSERVED' | 'INCONCLUSIVE' | 'CONFLICT';
 
 /** A single Check Register v2 rule. */
 export interface ValidationRule {
@@ -194,6 +275,32 @@ export interface ValidationRule {
    * field existed.
    */
   estimated_effort?: 'low' | 'medium' | 'high';
+  /**
+   * Pre-Connection Scan Confidence Tiering PRD §4.1/§10 — static evidence
+   * class, required on every rule (a registry unit test asserts this — see
+   * register/engine.ts's REGISTER_CLASSIFICATION_COVERAGE test). Determines
+   * gated direction via GATED_DIRECTION_BY_EVIDENCE_CLASS unless the class
+   * is 'DERIVED', in which case gated_direction below is required instead.
+   */
+  evidence_class: EvidenceClass;
+  /**
+   * Required, and meaningful, only when evidence_class is 'DERIVED' — every
+   * other evidence class has one fixed gated direction (see
+   * GATED_DIRECTION_BY_EVIDENCE_CLASS in register/engine.ts) and must omit
+   * this field. A 'DERIVED' rule's gated direction varies per rule (e.g.
+   * DECLARED_PLATFORM_HAS_TAG gates 'fail'; SERVER_CONTAINER_FIRST_PARTY_DOMAIN
+   * gates 'pass').
+   */
+  gated_direction?: GatedDirection;
+  /**
+   * PRD §10.3 — true when this rule's evidence rests on a scanner-injected
+   * synthetic value (a click ID/UTM param journeySimulator.ts's
+   * makeSyntheticIds() put on the URL) rather than genuine unprompted
+   * visitor behavior. Rendered with a standing note that it may not be
+   * cited as evidence live campaign traffic behaves identically. Omitted
+   * (not `false`) for a rule with no synthetic dependency.
+   */
+  synthetic_evidence?: boolean;
   test(auditData: AuditData): ValidationResult;
 }
 
@@ -567,6 +674,8 @@ export interface AuditData {
   site_type?: SiteType;
   secondary_motion?: SecondaryMotion;
   declared_platforms?: DeclaredPlatform[];
+  /** See ScanInputs.declaration_source — read by DECLARED_PLATFORM_HAS_TAG (L0.1) to cap its severity. */
+  declaration_source?: DeclarationSource;
   primary_channel?: DeclaredPlatform;
   monthly_spend_band?: string;
   traffic_regions?: TrafficRegion[];
@@ -805,6 +914,32 @@ export interface ValidationResult {
    * 'skipped' result, which the technical appendix excludes anyway).
    */
   confidence?: 'high' | 'confirm';
+  /**
+   * Pre-Connection Scan Confidence Tiering PRD §4.2 — the full 4-state
+   * observation-confidence axis, computed alongside `confidence` above by
+   * register/engine.ts's runRegister(). Distinct question from `confidence`
+   * (which answers only "did this depend on an unverified/degraded step"):
+   * this generalizes it to also cover a rule that never ran at all
+   * ('UNSUPPORTED', mirroring status: 'skipped') and a rule caught in a
+   * cross-signal conflict ('CONFLICTED', mirroring an UnassessableFinding
+   * with kind: 'CONFLICT'). Absent for a result predating this field.
+   */
+  observation_confidence?: ObservationConfidence;
+  /**
+   * Pre-Connection Scan Confidence Tiering PRD §4.3 — the coverage-aware
+   * verdict, computed from (evidence_class, observation_confidence, status)
+   * by register/engine.ts's deriveVerdict(). `status` above is unchanged
+   * and still what every existing consumer (scoring, reporting, PDF) reads;
+   * `verdict` is additive, for a future output-vocabulary-bound renderer.
+   */
+  verdict?: Verdict;
+  /**
+   * PRD §4.4 — present only when observation_confidence: 'PARTIAL' capped
+   * `severity` down from the rule's declared value (to 'high', labelled
+   * provisional). `severity` above always holds the *effective*
+   * (post-ceiling) value; this records what it would have been.
+   */
+  severity_capped_from?: Severity;
 }
 
 // ─── Scores ───────────────────────────────────────────────────────────────────
@@ -963,11 +1098,25 @@ export interface PlatformBreakdown {
  * here instead so the report stays honest about what it couldn't check
  * without shipping a false-confidence finding.
  */
+/**
+ * Pre-Connection Scan Confidence Tiering PRD §4.3 verdict-lattice
+ * discriminant for UnassessableFinding — reclassifies what was previously
+ * one undifferentiated bucket fed by four independent producers:
+ * clickIdContention.ts/contradictionGuard.ts (two independent signals
+ * disagree) → 'CONFLICT'; coverageSuppression.ts/degradationSuppression.ts
+ * (the crawl didn't reach/settle what this result's evidence depends on) →
+ * 'NOT_OBSERVED'. Optional: a producer not yet updated to attach it omits
+ * the field rather than guessing.
+ */
+export type UnassessableKind = 'NOT_OBSERVED' | 'INCONCLUSIVE' | 'CONFLICT';
+
 export interface UnassessableFinding {
   rule_id: string;
   /** The step name (StepCoverage.step) this result's evidence cited. */
   step: string;
   reason: string;
+  /** See UnassessableKind. */
+  kind?: UnassessableKind;
 }
 
 export interface ReportJSON {
@@ -1056,6 +1205,8 @@ export interface AuditRow {
   site_type?: SiteType | null;
   secondary_motion?: SecondaryMotion | null;
   declared_platforms?: DeclaredPlatform[];
+  // Pre-Connection Scan Confidence Tiering PRD §8 (20260911002_declaration_source.sql) — null on rows predating this migration; read as 'OPERATOR_ASSUMED' by DECLARED_PLATFORM_HAS_TAG when absent.
+  declaration_source?: DeclarationSource | null;
   primary_channel?: DeclaredPlatform | null;
   monthly_spend_band?: string | null;
   traffic_regions?: TrafficRegion[];
