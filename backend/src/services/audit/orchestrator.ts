@@ -4,7 +4,7 @@
 import type { AuditJobData } from '@/services/queue/jobQueue';
 import type { FunnelType, Region } from '@/types/audit';
 import type { ValidationSpec } from '@/types/journey';
-import { updateAuditStatus, saveValidationResults, saveReport, getAudit, updateAuditCoverage } from '@/services/database/queries';
+import { updateAuditStatus, saveValidationResults, saveReport, getAudit, updateAuditCoverage, saveSignalConflicts } from '@/services/database/queries';
 import { createBrowserbaseSession, getCDPUrl } from '@/services/browserbase/client';
 import { logUsage } from '@/services/usage/usageLogger';
 import { supabaseAdmin as supabase } from '@/services/database/supabase';
@@ -24,7 +24,7 @@ import { computeCoverageFingerprint, computeRunQuality } from '@/services/report
 import { partitionCoverageAffected } from '@/services/reporting/coverageSuppression';
 import { partitionDegradedRuns } from '@/services/reporting/degradationSuppression';
 import { partitionClickIdContention } from '@/services/validation/register/clickIdContention';
-import { partitionContradictions } from '@/services/validation/register/contradictionGuard';
+import { partitionSignalConflicts } from '@/services/validation/register/signalConsistency';
 import { getConnectedGtmContainerId } from '@/services/database/gtmConnectionQueries';
 import { getNamingConvention } from '@/services/database/namingConventionQueries';
 import { buildSiteSetupSummary } from './siteSetupDetector';
@@ -307,15 +307,18 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
           ? partitionClickIdContention(validationResults, auditData)
           : { assessable: validationResults, unassessable: [] };
 
-        // Contradiction guard (W2) — a FAIL a passing sibling rule
-        // logically rules out (e.g. GCLID_CAPTURED_AT_LANDING failing
-        // while GCL_AW_COOKIE_PRESENT passes) is suppressed to
-        // could_not_be_assessed rather than shipped as a self-contradicting
-        // finding (see contradictionGuard.ts for why this replaced the
-        // old in-place annotation).
-        const { assessable: contradictionAssessable, unassessable: contradictionUnassessable } = isV2
-          ? partitionContradictions(contentionAssessable)
-          : { assessable: contentionAssessable, unassessable: [] };
+        // Cross-signal consistency checker (Pre-Connection Scan Confidence
+        // Tiering PRD §6) — CONF_01-CONF_05: independent detectors (a
+        // dataLayer gtag() call, the register's own network-request
+        // matcher, the Site Setup tag inventory's separately-maintained
+        // matcher, a platform's linker cookie) disagreeing about the same
+        // entity moves every rule that entity's evidence touches to
+        // could_not_be_assessed rather than shipping a disputed finding as
+        // a confident pass/fail. Absorbs the former contradictionGuard.ts's
+        // two specs as CONF_05 (see signalConsistency.ts's header for why).
+        const { assessable: consistencyAssessable, unassessable: consistencyUnassessable, conflicts: signalConflicts } = isV2
+          ? partitionSignalConflicts(contentionAssessable, auditData, siteSetup)
+          : { assessable: contentionAssessable, unassessable: [], conflicts: [] };
 
         // Coverage suppression (Signal Health Report: Evidence Integrity &
         // Presentation PRD §5/W3) — a result whose evidence names a step
@@ -323,8 +326,8 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
         // counts, and journey/platform breakdowns; v1 has no step_coverage
         // concept, so its results pass through unfiltered.
         const { assessable: coverageAssessable, unassessable: coverageUnassessable } = isV2
-          ? partitionCoverageAffected(contradictionAssessable, auditData.step_coverage)
-          : { assessable: contradictionAssessable, unassessable: [] };
+          ? partitionCoverageAffected(consistencyAssessable, auditData.step_coverage)
+          : { assessable: consistencyAssessable, unassessable: [] };
 
         // Degradation suppression (Platform Attribution & Determinism PRD
         // Part B, B-W4; widened by W3 above) — a run where any step's
@@ -339,7 +342,7 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
           ? partitionDegradedRuns(coverageAssessable, auditData.step_coverage)
           : { assessable: coverageAssessable, unassessable: [] };
         const unassessable = [
-          ...contentionUnassessable, ...contradictionUnassessable, ...coverageUnassessable, ...degradationUnassessable,
+          ...contentionUnassessable, ...consistencyUnassessable, ...coverageUnassessable, ...degradationUnassessable,
         ];
 
         const scores = isV2 ? calculateV2Scores(assessable) : calculateScores(assessable);
@@ -348,6 +351,16 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
         const customPlatformBreakdown = isV2 ? buildV2PlatformBreakdown(assessable, auditData.declared_platforms) : undefined;
         const report = generateReport(auditData, scores, issues, assessable, siteSetup, customJourneyStages, customPlatformBreakdown, unassessable);
         await saveReport(audit_id, report);
+
+        // signal_conflicts (PRD §6) — auxiliary audit/debugging record of
+        // what the consistency checker found; the report itself already
+        // carries the equivalent could_not_be_assessed entries, so a
+        // failure here is never fatal to the audit.
+        try {
+          await saveSignalConflicts(audit_id, signalConflicts);
+        } catch (err) {
+          logger.warn({ audit_id, err: err instanceof Error ? err.message : String(err) }, 'Failed to persist signal conflicts');
+        }
 
         // coverage_fingerprint/pages_distinct (§9), plus — for a v2 audit —
         // register_version and the conversion_signal_health numerator/

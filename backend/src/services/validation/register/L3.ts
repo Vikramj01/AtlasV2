@@ -288,10 +288,10 @@ export const FBC_COOKIE_PRESENT: ValidationRule = {
         found: hasFbc ? '_fbc present (informational only — not scored)' : '_fbc not present',
         expected: "The Meta click cookie (_fbc) is set from a real fbclid arriving with a genuine Meta-click referrer",
         evidence: [
-          // contradictionGuard.ts's fbclid spec reads this exact line —
-          // FBCLID_CAPTURED_AT_LANDING failing while _fbc is genuinely
-          // present is a logical contradiction even though this rule's own
-          // status is always 'skipped'.
+          // signalConsistency.ts's CONF_05 fbclid spec reads this exact
+          // line — FBCLID_CAPTURED_AT_LANDING failing while _fbc is
+          // genuinely present is a logical contradiction even though this
+          // rule's own status is always 'skipped'.
           `_fbc present: ${hasFbc}`,
           '_fbc is only ever populated by the Pixel from a real fbclid arriving with a genuine Meta-click referrer, which a crawler-injected fbclid cannot reproduce — this cannot be assessed from a pre-connection crawl',
         ],

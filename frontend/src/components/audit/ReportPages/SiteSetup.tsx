@@ -11,6 +11,8 @@ const TAG_PLATFORM_LABELS: Record<DetectedTagPlatform, string> = {
   tiktok_pixel: 'TikTok Pixel',
   microsoft_uet: 'Microsoft UET',
   openai_pixel: 'OpenAI (OAIQ) Pixel',
+  reddit_pixel: 'Reddit Pixel',
+  pinterest_pixel: 'Pinterest Tag',
 };
 
 function DetectedBadge({ detected }: { detected: boolean }) {

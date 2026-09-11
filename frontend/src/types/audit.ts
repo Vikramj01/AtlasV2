@@ -236,7 +236,9 @@ export type DetectedTagPlatform =
   | 'linkedin_insight'
   | 'tiktok_pixel'
   | 'microsoft_uet'
-  | 'openai_pixel';
+  | 'openai_pixel'
+  | 'reddit_pixel'
+  | 'pinterest_pixel';
 
 export interface DataLayerEventInventoryEntry {
   event_name: string;

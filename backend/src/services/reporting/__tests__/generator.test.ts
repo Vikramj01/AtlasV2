@@ -394,10 +394,11 @@ describe('generateReport — could_not_be_assessed', () => {
 
 // W2.2 (Click-ID Contention, Contradiction Guard & Settle Enforcement PRD)
 // — an audit-time assertion so a fired contradiction guard can never reach
-// the report renderer: contradictionGuard.ts now suppresses a fired result
-// to could_not_be_assessed instead of annotating it in place, so no
-// assessable result should ever carry a "CONTRADICTION" evidence line
-// again. This is the safety net if that guarantee is ever broken.
+// the report renderer: signalConsistency.ts's CONF_05 (formerly
+// contradictionGuard.ts) suppresses a fired result to could_not_be_assessed
+// instead of annotating it in place, so no assessable result should ever
+// carry a "CONTRADICTION" evidence line again. This is the safety net if
+// that guarantee is ever broken.
 describe('generateReport — contradiction guard leak assertion (W2.2)', () => {
   it('throws if a result reaching the renderer still carries a CONTRADICTION evidence line', () => {
     const leaked: ValidationResult = {

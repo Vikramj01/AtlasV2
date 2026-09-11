@@ -206,9 +206,9 @@ export type GatedDirection = 'fail' | 'pass' | 'both' | 'none';
  *                   settle, or its evidence channel was not captured at all
  *                   (the rule never ran — status: 'skipped').
  *   'CONFLICTED'  — two or more independent detectors disagree about the
- *                   entity this rule evaluates (contradictionGuard.ts/
- *                   clickIdContention.ts today; a general cross-signal
- *                   consistency checker is future work).
+ *                   entity this rule evaluates (signalConsistency.ts's
+ *                   CONF_01–CONF_05 assertions, or clickIdContention.ts's
+ *                   synthetic multi-click-ID injection artifact).
  */
 export type ObservationConfidence = 'CONFIRMED' | 'PARTIAL' | 'UNSUPPORTED' | 'CONFLICTED';
 
@@ -477,7 +477,16 @@ export type DetectedTagPlatform =
   | 'linkedin_insight'
   | 'tiktok_pixel'
   | 'microsoft_uet'
-  | 'openai_pixel';
+  | 'openai_pixel'
+  // Pre-Connection Scan Confidence Tiering PRD §6, CONF_03 — reddit/
+  // pinterest previously had no tag-inventory entry at all despite the
+  // register's own platformDetection.ts covering both as DeclaredPlatforms,
+  // so a finding naming either (UNDECLARED_PLATFORM_TAG_DETECTED) had
+  // nothing to cross-check against — a structural version of the OpenArt
+  // Reddit-inventory-divergence bug (PRD §1.1 item 3). Closed by adding
+  // both here rather than by fixing the finding in isolation.
+  | 'reddit_pixel'
+  | 'pinterest_pixel';
 
 export interface DataLayerEventInventoryEntry {
   event_name: string;
@@ -1102,7 +1111,7 @@ export interface PlatformBreakdown {
  * Pre-Connection Scan Confidence Tiering PRD §4.3 verdict-lattice
  * discriminant for UnassessableFinding — reclassifies what was previously
  * one undifferentiated bucket fed by four independent producers:
- * clickIdContention.ts/contradictionGuard.ts (two independent signals
+ * clickIdContention.ts/signalConsistency.ts (two independent signals
  * disagree) → 'CONFLICT'; coverageSuppression.ts/degradationSuppression.ts
  * (the crawl didn't reach/settle what this result's evidence depends on) →
  * 'NOT_OBSERVED'. Optional: a producer not yet updated to attach it omits
