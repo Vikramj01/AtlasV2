@@ -1,7 +1,7 @@
 # Sprint Plan · Pre-Connection Scan Confidence Tiering
 
 **Source PRD** · `docs/prd/pre-connection-scan-confidence-tiering.md`
-**Status** · Sprint 0 complete (this document + the two reconstructed prior PRDs below). Sprints 1–8 not started.
+**Status** · Sprints 0–1 complete. Sprints 2–8 not started.
 **Related, already-shipped prior work** (read before touching the register) · `docs/ATLAS_REPORT_CORRECTNESS_PROGRAMME_PRD.md` (Parts A–D), `docs/ATLAS_CLICKID_CONTENTION_CONTRADICTION_GUARD_PRD.md` (waves W1–W5), `docs/ATLAS_REPORT_EVIDENCE_INTEGRITY_PRD.md` (W1–W10), `docs/atlas-sprint-plan-attribution-determinism.md`, `docs/atlas-sprint-plan-site-eval-coverage.md`.
 
 **Decisions locked in for this plan:**
@@ -20,13 +20,14 @@ Two PRDs are referenced pervasively in code comments but had no doc file under `
 
 **Resolved open question:** whether "Settle Enforcement" (W3 of the click-ID PRD) already covers this PRD's §7 settle contract. It does not — W3 is about *deriving scoring exclusion* from a rule's `requires: ['conversion_surface']` precondition tag, not a retry-policy/run-quality state machine. Exhaustive grep confirms zero hits for `settle_state`, `run_quality`, `PROVISIONAL`, `INSUFFICIENT`, `settle_max_attempts` anywhere in the repo. Sprint 1 below is genuinely green-field.
 
-## Sprint 1 — Settle contract & run quality (PRD §7, Phase 1 — highest priority)
-Green-field. Builds on the existing per-step `SettleOutcome` (`'settled'|'quiet_period_cap_reached'|'navigation_failed'`) and `gotoAndSettle()` in `dataCapture.ts` — extend, don't replace.
-- Add per-page `settle_state` (`SETTLED|TIMEOUT|ERROR|NOT_REACHED`) on `crawl_pages`, with retry policy (`settle_max_attempts`, default 2; idle/max ms escalate 50% per attempt), attempts persisted.
-- Add run-level `run_quality` (`COMPLETE|PROVISIONAL|INSUFFICIENT`) on audit runs + `crawl_runs`.
-- `INSUFFICIENT` blocks client-facing render; renders an internal run-quality summary + re-run prompt instead.
-- `PROVISIONAL` renders with run quality stated in the report header.
-- Migration: `crawl_pages.settle_state/settle_attempts/settle_ms`; `run_quality` + placeholder columns for `coverage_ratio`/`score_withheld_reason` (populated for real in Sprint 5) on audits/`crawl_runs`.
+## Sprint 1 — Settle contract & run quality (PRD §7, Phase 1 — highest priority) — DONE
+Shipped in commit `46af9dd`. Scoping decisions made during implementation, differing from the PRD's literal text:
+- **No `crawl_pages`/`crawl_runs` changes.** The PRD's §7.1 names `crawl_pages`, but that table belongs to the unrelated Crawl Signal Extractor (CSE) feature (`services/crawl/`). The Direct Audit incidents this PRD exists to fix (OpenArt, Birkenstock) all run through the Audit Engine (`services/audit/journeySimulator.ts`, the `audits` table, per-run `StepCoverage[]` — not a per-page DB row), so all Sprint 1 work targets that path instead.
+- **No new `settle_state` enum.** Reused the existing `SettleOutcome` (`'settled'|'quiet_period_cap_reached'|'navigation_failed'`, already load-bearing across L3/L5/`degradationSuppression.ts`/`coverageSuppression.ts`) rather than introducing a parallel `SETTLED|TIMEOUT|ERROR|NOT_REACHED` enum that would have meant a second source of truth for the same fact.
+- **Retry policy**: `gotoAndSettleWithRetries()` (`dataCapture.ts`) — up to `settle_max_attempts` (default 2) additional attempts, escalating `navigationTimeoutMs`/`maxSettleMs` by 1.5x each retry; `StepCoverage` gains `settle_attempts`. Wired into `journeySimulator.ts`'s step loop in place of the old single-attempt `gotoAndSettle()` call.
+- **`computeRunQuality()`** (`coverage.ts`) — `COMPLETE|PROVISIONAL|INSUFFICIENT` derived from `StepCoverage[]`: INSUFFICIENT when the declared conversion surface (a step distinct from landing that navigated successfully) never settled, or fewer than two steps settled overall. One implementation, reused by both `ReportCoverage.run_quality` (report header display) and a new durable `audits.run_quality` column (migration `20260911001_settle_contract_run_quality.sql`) — the export gate reads the column, never re-derives it.
+- **Where "blocks client-facing render" landed**: not the `GET /:audit_id/report` read endpoint (still shows the operator the run internally, with run_quality stated in the header) — the actual gate is `POST /:audit_id/export`, which returns 409 for `INSUFFICIENT` before ever calling `getReport`/`generatePDF`. That endpoint is the real "client-facing artifact" boundary; the in-app report view is not.
+- Frontend: run-quality badge in the `ReportPage.tsx` header, a distinct INSUFFICIENT banner in `ExecutiveSummary.tsx` ahead of the existing partial-coverage banner, export buttons disabled with an explanatory tooltip. Also fixed a latent bug in `auditApi.export()` — it never checked `r.ok`, so a blocked export would have silently downloaded a "PDF" containing the JSON error body.
 
 ## Sprint 2 — Evidence class, verdict lattice, severity ceilings (PRD §4, §8, §10)
 Extends, doesn't duplicate: the existing binary `confidence: 'high'|'confirm'` field (`audit.ts`, derived by `deriveConfidence()` in `engine.ts`) and the existing undifferentiated `UnassessableFinding{rule_id, step, reason}` bucket that four producers already write into (`clickIdContention.ts`, `contradictionGuard.ts`, `coverageSuppression.ts`, `degradationSuppression.ts`).
