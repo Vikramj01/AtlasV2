@@ -349,7 +349,7 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
         const issues = interpretResults(assessable);
         const customJourneyStages = isV2 ? buildV2LayerStages(assessable) : undefined;
         const customPlatformBreakdown = isV2 ? buildV2PlatformBreakdown(assessable, auditData.declared_platforms) : undefined;
-        const report = generateReport(auditData, scores, issues, assessable, siteSetup, customJourneyStages, customPlatformBreakdown, unassessable);
+        const report = generateReport(auditData, scores, issues, assessable, siteSetup, customJourneyStages, customPlatformBreakdown, unassessable, signalConflicts);
         await saveReport(audit_id, report);
 
         // signal_conflicts (PRD §6) — auxiliary audit/debugging record of

@@ -392,6 +392,47 @@ describe('generateReport — could_not_be_assessed', () => {
   });
 });
 
+// Pre-Connection Scan Confidence Tiering PRD §6/§11.2 — "Signals in conflict".
+
+describe('generateReport — signal_conflicts', () => {
+  it('omits the field entirely when no signalConflicts param is passed', () => {
+    const report = generateReport(makeAuditData(), makeScores(), [], [], makeSiteSetup());
+    expect(report.signal_conflicts).toBeUndefined();
+  });
+
+  it('omits the field when an empty array is passed', () => {
+    const report = generateReport(makeAuditData(), makeScores(), [], [], makeSiteSetup(), undefined, undefined, undefined, []);
+    expect(report.signal_conflicts).toBeUndefined();
+  });
+
+  it('surfaces conflicts when present', () => {
+    const conflicts = [
+      { assertion_id: 'CONF_01' as const, entity: 'GA4', source_a: 'DL', reading_a: 'a', source_b: 'NET', reading_b: 'b', affected_rule_ids: ['GA4_CONFIG_TAG_PRESENT'] },
+    ];
+    const report = generateReport(makeAuditData(), makeScores(), [], [], makeSiteSetup(), undefined, undefined, undefined, conflicts);
+    expect(report.signal_conflicts).toEqual(conflicts);
+  });
+});
+
+// Pre-Connection Scan Confidence Tiering PRD §12 — "With access".
+
+describe('generateReport — with_access', () => {
+  it('omits the field when nothing in the registry resolves anything this run raised', () => {
+    const report = generateReport(makeAuditData(), makeScores(), [], [], makeSiteSetup());
+    expect(report.with_access).toBeUndefined();
+  });
+
+  it('populates with_access when an issue matches a registry entry', () => {
+    const issues = [{
+      rule_id: 'DECLARED_PLATFORM_HAS_TAG', validation_layer: 'scope_configuration' as const, severity: 'critical' as const,
+      problem: 'x', why_it_matters: 'x', fix_summary: 'x', recommended_owner: 'x', estimated_effort: 'low' as const,
+    }];
+    const report = generateReport(makeAuditData(), makeScores(), issues, [], makeSiteSetup());
+    expect(report.with_access).toHaveLength(1);
+    expect(report.with_access?.[0].check).toBe('Platform reconciliation');
+  });
+});
+
 // W2.2 (Click-ID Contention, Contradiction Guard & Settle Enforcement PRD)
 // — an audit-time assertion so a fired contradiction guard can never reach
 // the report renderer: signalConsistency.ts's CONF_05 (formerly

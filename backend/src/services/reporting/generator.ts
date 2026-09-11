@@ -13,10 +13,12 @@ import type {
   RuleStatus,
   SiteSetupSummary,
   UnassessableFinding,
+  SignalConflict,
 } from '@/types/audit';
 import { generateBusinessSummary, determineOverallStatus, getIssueHeadline, getIssueImpact } from '@/services/interpretation/engine';
 import { buildCoverageSummary } from './coverage';
 import { buildOpenQuestions } from './openQuestions';
+import { buildWithAccessSection } from './withAccessRegistry';
 import { scanReportForPlaceholders } from './placeholderGuard';
 import { assertReportOutputClean } from './outputLint';
 import { REGISTER_VERSION } from '@/services/validation/register/layers';
@@ -163,6 +165,7 @@ export function generateReport(
   customJourneyStages?: JourneyStage[],
   customPlatformBreakdown?: PlatformBreakdown[],
   unassessable?: UnassessableFinding[],
+  signalConflicts?: SignalConflict[],
 ): ReportJSON {
   assertNoUnsuppressedContradictions(results);
   const resultMap = new Map(results.map((r) => [r.rule_id, r]));
@@ -199,9 +202,26 @@ export function generateReport(
     report.could_not_be_assessed = unassessable;
   }
 
-  const openQuestions = buildOpenQuestions(auditData, results);
+  // Pre-Connection Scan Confidence Tiering PRD §6/§11.2 — "Signals in
+  // conflict" section. Omitted (not an empty array) when nothing
+  // conflicted, matching could_not_be_assessed's convention above.
+  if (signalConflicts && signalConflicts.length > 0) {
+    report.signal_conflicts = signalConflicts;
+  }
+
+  const openQuestions = buildOpenQuestions(auditData, results, unassessable);
   if (openQuestions) {
     report.open_questions = openQuestions;
+  }
+
+  // Pre-Connection Scan Confidence Tiering PRD §12 — "With access" section.
+  // Built last, since it needs to know what this run actually raised
+  // (open_questions, could_not_be_assessed, platform_breakdown) to decide
+  // which registry entries resolve something real (§12.1 — no aspirational
+  // entries).
+  const withAccess = buildWithAccessSection(report);
+  if (withAccess && withAccess.length > 0) {
+    report.with_access = withAccess;
   }
 
   // Pre-render placeholder guard (PRD "Signal Health Report" Issue 4) —

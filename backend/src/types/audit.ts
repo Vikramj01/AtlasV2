@@ -1145,6 +1145,39 @@ export interface UnassessableFinding {
   kind?: UnassessableKind;
 }
 
+/**
+ * Pre-Connection Scan Confidence Tiering PRD §6 — one fired cross-signal
+ * consistency assertion (CONF_01–CONF_05, register/signalConsistency.ts).
+ * Defined here (not in signalConsistency.ts) so ReportJSON can reference
+ * it without a services→types→services import cycle; signalConsistency.ts
+ * imports it back from here.
+ */
+export interface SignalConflict {
+  assertion_id: 'CONF_01' | 'CONF_02' | 'CONF_03' | 'CONF_04' | 'CONF_05';
+  entity: string;
+  source_a: string;
+  reading_a: string;
+  source_b: string;
+  reading_b: string;
+  affected_rule_ids: string[];
+}
+
+/**
+ * Pre-Connection Scan Confidence Tiering PRD §12 — a connected-tier
+ * check/module, declared in reporting/withAccessRegistry.ts and rendered
+ * in the report's "With access" section (PRD §12.3) only when it resolves
+ * a real finding or open question raised *in this run* — never
+ * aspirational (§12.1).
+ */
+export interface WithAccessEntry {
+  check: string;
+  requires_connection: ('google_ads' | 'meta' | 'tiktok' | 'ga4' | 'linkedin')[];
+  /** rule_ids (or open-question text) this entry resolves, when present in this run. */
+  answers_question_for: string[];
+  /** One line: what the check returns. */
+  reveals: string;
+}
+
 export interface ReportJSON {
   audit_id: string;
   website_url: string;
@@ -1195,6 +1228,23 @@ export interface ReportJSON {
    * rendering an empty heading, per PRD §B3.
    */
   open_questions?: string[];
+  /**
+   * Pre-Connection Scan Confidence Tiering PRD §6/§11.2 — every conflict
+   * signalConsistency.ts's CONF_01–CONF_05 (or clickIdContention.ts) fired
+   * this run, for the "Signals in conflict" section: both readings shown,
+   * no winner picked. Omitted (not an empty array) when nothing
+   * conflicted, matching could_not_be_assessed's convention.
+   */
+  signal_conflicts?: SignalConflict[];
+  /**
+   * Pre-Connection Scan Confidence Tiering PRD §12 — the "With access"
+   * section: connected-tier checks/modules that would resolve a real
+   * finding or open question raised in this run. Built by
+   * reporting/withAccessRegistry.ts's buildWithAccessSection(), which
+   * filters the static registry down to only entries with something to
+   * resolve here. Omitted (not an empty array) when nothing applies.
+   */
+  with_access?: WithAccessEntry[];
   /**
    * Set by the pre-render placeholder guard (PRD "Signal Health Report"
    * Issue 4) when a narrative field contains literal placeholder-shaped

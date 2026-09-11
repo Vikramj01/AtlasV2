@@ -723,6 +723,54 @@ describe('generatePDF — withheld scores (Coverage Gate)', () => {
   });
 });
 
+// ── Report rename + new sections (Pre-Connection Scan Confidence Tiering PRD §11/§12) ──
+
+describe('generatePDF — Signal Observation Report rename', () => {
+  it('titles a v2 report "Signal Observation Report"', async () => {
+    const report = makeMinimalReport({ rule_set_version: 'v2' });
+    const buf = await generatePDF(report);
+    expect(buf.toString('latin1')).toContain('Signal Observation Report');
+  });
+
+  it('titles a v1-legacy (or version-less) report "Signal Health Report"', async () => {
+    const buf = await generatePDF(makeMinimalReport());
+    expect(buf.toString('latin1')).toContain('Signal Health Report');
+  });
+});
+
+describe('generatePDF — Signals in Conflict section', () => {
+  it('renders a larger buffer with the section when signal_conflicts is present', async () => {
+    const without = await generatePDF(makeMinimalReport());
+    const report = makeMinimalReport({
+      signal_conflicts: [
+        { assertion_id: 'CONF_01', entity: 'GA4', source_a: 'DL', reading_a: 'config call observed', source_b: 'NET', reading_b: 'no collect request found', affected_rule_ids: ['GA4_CONFIG_TAG_PRESENT'] },
+      ],
+    });
+    const withConflict = await generatePDF(report);
+    expect(isPdfBuffer(withConflict)).toBe(true);
+    expect(withConflict.byteLength).toBeGreaterThan(without.byteLength);
+  });
+
+  it('renders without the section when signal_conflicts is absent', async () => {
+    const buf = await generatePDF(makeMinimalReport());
+    expect(isPdfBuffer(buf)).toBe(true);
+  });
+});
+
+describe('generatePDF — With Access section', () => {
+  it('renders a larger buffer with the section when with_access is present', async () => {
+    const without = await generatePDF(makeMinimalReport());
+    const report = makeMinimalReport({
+      with_access: [
+        { check: 'Platform reconciliation', requires_connection: ['google_ads', 'meta'], answers_question_for: ['DECLARED_PLATFORM_HAS_TAG'], reveals: 'Whether platform-reported conversions match what this scan observed.' },
+      ],
+    });
+    const withAccess = await generatePDF(report);
+    expect(isPdfBuffer(withAccess)).toBe(true);
+    expect(withAccess.byteLength).toBeGreaterThan(without.byteLength);
+  });
+});
+
 // ── Real page numbering (PRD §3.3/W6) ─────────────────────────────────────────
 
 describe('generatePDF — real page numbering', () => {

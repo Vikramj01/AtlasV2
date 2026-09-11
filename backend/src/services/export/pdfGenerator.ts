@@ -177,6 +177,15 @@ const TAG_PLATFORM_LABELS: Record<string, string> = {
   microsoft_uet:    'Microsoft UET',
 };
 
+/** WithAccessEntry.requires_connection labels (PRD §12.2's literal 5-platform union). */
+const CONNECTION_PLATFORM_LABELS: Record<string, string> = {
+  google_ads: 'Google Ads',
+  meta:       'Meta',
+  tiktok:     'TikTok',
+  ga4:        'Google Analytics 4',
+  linkedin:   'LinkedIn',
+};
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 function statusColor(status: string): string {
@@ -231,12 +240,21 @@ function coverageSuffix(coverage: ScoreCoverage | undefined): string {
 
 export function generatePDF(report: ReportJSON): Promise<Buffer> {
   return new Promise((resolve, reject) => {
+    // Pre-Connection Scan Confidence Tiering PRD §11.1 — pre-connection
+    // output is renamed "Signal Observation Report"; "Signal Health
+    // Report" is reserved for a connected (post-access) run. This
+    // codebase has no separate connected-scan pipeline yet (the whole v2
+    // Check Register is pre-connection today — PRD §17 Q3's resolution:
+    // a connected scan reuses the same rule IDs, no separate registry),
+    // so the split is simply v2 (rule_set_version) vs. v1-legacy.
+    const reportTitle = report.rule_set_version === 'v2' ? 'Signal Observation Report' : 'Signal Health Report';
+
     const doc = new PDFDocument({
       size: 'A4',
       margin: 50,
       bufferPages: true,
       info: {
-        Title: 'Atlas Signal Health Report',
+        Title: `Atlas ${reportTitle}`,
         Author: 'Atlas',
         CreationDate: new Date(report.generated_at),
       },
@@ -275,7 +293,7 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
       topBar();
       const savedY = doc.y;
       doc.fillColor(C.lightText).fontSize(8).font('Helvetica')
-        .text(`ATLAS SIGNAL HEALTH REPORT  ·  ${section}`, LEFT, 18);
+        .text(`ATLAS ${reportTitle.toUpperCase()}  ·  ${section}`, LEFT, 18);
       if (pageLabelOverride) {
         doc.fillColor(C.mutedText).text(pageLabelOverride, LEFT, 18, { align: 'right', width: CONTENT_W });
       } else {
@@ -320,7 +338,7 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
     });
 
     doc.fillColor(C.darkText).fontSize(22).font('Helvetica-Bold')
-      .text('Signal Health Report', LEFT, 56);
+      .text(reportTitle, LEFT, 56);
     doc.fillColor(C.midText).fontSize(11).font('Helvetica-Bold')
       .text(report.website_url, LEFT);
     doc.fillColor(C.lightText).fontSize(10).font('Helvetica')
@@ -596,32 +614,6 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
       }
     }
 
-    // Could not be assessed (PRD §5/W3 — "suppress, do not annotate") —
-    // findings whose evidence named a step the scan substituted the
-    // landing page for. Never counted in issues, scores, or breakdowns;
-    // listed here so the report stays honest about what it skipped rather
-    // than silently dropping it with no trace.
-    if (report.could_not_be_assessed && report.could_not_be_assessed.length > 0) {
-      sectionHeading('Could Not Be Assessed');
-      // Report Correctness Programme PRD Part B4 — generic preamble, since
-      // this section now has two distinct exclusion causes (a page the
-      // scan couldn't reach and substituted the landing page for, or a step
-      // whose navigation didn't fully settle before the check ran); each
-      // item below already states its own specific reason. Also fixes the
-      // "used the landing page for instead" typo.
-      doc.fillColor(C.midText).fontSize(9).font('Helvetica')
-        .text(
-          'These checks are excluded from every count and score above — each one names its own reason below, rather than being reported as a finding.',
-          LEFT, doc.y, { width: CONTENT_W },
-        );
-      doc.moveDown(0.3);
-      for (const item of report.could_not_be_assessed) {
-        doc.fillColor(C.lightText).fontSize(8.5).font('Helvetica')
-          .text(`• ${item.rule_id.replace(/_/g, ' ')} — ${item.reason}`, LEFT + 4, doc.y, { width: CONTENT_W - 8 });
-        doc.moveDown(0.15);
-      }
-    }
-
     // Business summary
     sectionHeading('Business Summary');
     doc.fillColor(C.midText).fontSize(10).font('Helvetica')
@@ -654,26 +646,105 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
     }
 
     // ══════════════════════════════════════════════════════════════════════
-    // PAGE — Open Questions (Report Honesty PRD §B3) — its own page right
-    // after Executive Summary, so a reader who never reaches the appendix
-    // still sees Atlas asking rather than pronouncing. Omitted entirely (no
-    // page added) when this run raised nothing to ask.
+    // PAGE — Signals in conflict / Open Questions / Not assessed / With
+    // access (Pre-Connection Scan Confidence Tiering PRD §11.2 items 3-6) —
+    // its own page right after Executive Summary, so a reader who never
+    // reaches the appendix still sees Atlas asking and disclosing rather
+    // than pronouncing. Each section is independently omitted when this
+    // run raised nothing for it; the whole page is skipped when none of
+    // the four have anything.
     // ══════════════════════════════════════════════════════════════════════
 
-    if (report.open_questions && report.open_questions.length > 0) {
+    const hasConflicts = !!report.signal_conflicts && report.signal_conflicts.length > 0;
+    const hasQuestions = !!report.open_questions && report.open_questions.length > 0;
+    const hasUnassessed = !!report.could_not_be_assessed && report.could_not_be_assessed.length > 0;
+    const hasWithAccess = !!report.with_access && report.with_access.length > 0;
+
+    if (hasConflicts || hasQuestions || hasUnassessed || hasWithAccess) {
       doc.addPage();
-      pageHeader('Open Questions');
-      sectionHeading('Open Questions');
-      doc.fillColor(C.midText).fontSize(9).font('Helvetica')
-        .text(
-          'These are configurations whose intent only you can confirm — not defects, but worth a quick answer before anyone acts on the findings below.',
-          LEFT, doc.y, { width: CONTENT_W },
-        );
-      doc.moveDown(0.3);
-      for (const question of report.open_questions) {
-        doc.fillColor(C.darkText).fontSize(9.5).font('Helvetica')
-          .text(`•  ${question}`, LEFT + 4, doc.y, { width: CONTENT_W - 8 });
-        doc.moveDown(0.2);
+      pageHeader('Signals, Questions & Coverage');
+
+      // Signals in conflict (PRD §6/§11.2 item 3) — two independent
+      // detectors disagree about the same entity; both readings shown,
+      // no winner picked.
+      if (hasConflicts) {
+        sectionHeading('Signals in Conflict');
+        doc.fillColor(C.midText).fontSize(9).font('Helvetica')
+          .text(
+            'Two of our own detectors read the following differently. We\'re showing both readings rather than picking a winner.',
+            LEFT, doc.y, { width: CONTENT_W },
+          );
+        doc.moveDown(0.3);
+        for (const conflict of report.signal_conflicts!) {
+          doc.fillColor(C.darkText).fontSize(9.5).font('Helvetica-Bold')
+            .text(conflict.entity, LEFT + 4, doc.y, { width: CONTENT_W - 8 });
+          doc.fillColor(C.lightText).fontSize(8.5).font('Helvetica')
+            .text(`${conflict.source_a} reports: ${conflict.reading_a}`, LEFT + 4, doc.y, { width: CONTENT_W - 8 });
+          doc.fillColor(C.lightText).fontSize(8.5).font('Helvetica')
+            .text(`${conflict.source_b} reports: ${conflict.reading_b}`, LEFT + 4, doc.y, { width: CONTENT_W - 8 });
+          doc.moveDown(0.25);
+        }
+      }
+
+      // Questions for your team (Report Honesty PRD §B3; extended by
+      // Pre-Connection Scan Confidence Tiering PRD §11.3).
+      if (hasQuestions) {
+        if (hasConflicts) doc.moveDown(0.3);
+        sectionHeading('Questions for Your Team');
+        doc.fillColor(C.midText).fontSize(9).font('Helvetica')
+          .text(
+            'These are configurations whose intent only you can confirm — not defects, but worth a quick answer before anyone acts on the findings below.',
+            LEFT, doc.y, { width: CONTENT_W },
+          );
+        doc.moveDown(0.3);
+        for (const question of report.open_questions!) {
+          doc.fillColor(C.darkText).fontSize(9.5).font('Helvetica')
+            .text(`•  ${question}`, LEFT + 4, doc.y, { width: CONTENT_W - 8 });
+          doc.moveDown(0.2);
+        }
+      }
+
+      // Not assessed, and why (PRD §5/W3 — "suppress, do not annotate";
+      // PRD §11.2 item 5) — findings whose evidence named a step the scan
+      // substituted the landing page for, or that a cross-signal conflict
+      // check reclassified. Never counted in issues, scores, or
+      // breakdowns; listed here so the report stays honest about what it
+      // skipped rather than silently dropping it with no trace.
+      if (hasUnassessed) {
+        if (hasConflicts || hasQuestions) doc.moveDown(0.3);
+        sectionHeading('Not Assessed, and Why');
+        doc.fillColor(C.midText).fontSize(9).font('Helvetica')
+          .text(
+            'These checks are excluded from every count and score above — each one names its own reason below, rather than being reported as a finding.',
+            LEFT, doc.y, { width: CONTENT_W },
+          );
+        doc.moveDown(0.3);
+        for (const item of report.could_not_be_assessed!) {
+          doc.fillColor(C.lightText).fontSize(8.5).font('Helvetica')
+            .text(`• ${item.rule_id.replace(/_/g, ' ')} — ${item.reason}`, LEFT + 4, doc.y, { width: CONTENT_W - 8 });
+          doc.moveDown(0.15);
+        }
+      }
+
+      // With access — what a connected scan adds (PRD §12/§11.2 item 6).
+      if (hasWithAccess) {
+        if (hasConflicts || hasQuestions || hasUnassessed) doc.moveDown(0.3);
+        sectionHeading('With Access — What a Connected Scan Adds');
+        doc.fillColor(C.midText).fontSize(9).font('Helvetica')
+          .text(
+            'These checks need read-only access to your ad accounts. None of the connections below write anything.',
+            LEFT, doc.y, { width: CONTENT_W },
+          );
+        doc.moveDown(0.3);
+        for (const entry of report.with_access!) {
+          doc.fillColor(C.darkText).fontSize(9.5).font('Helvetica-Bold')
+            .text(entry.check, LEFT + 4, doc.y, { width: CONTENT_W - 8 });
+          doc.fillColor(C.lightText).fontSize(8.5).font('Helvetica')
+            .text(`Needs: ${entry.requires_connection.map((p) => CONNECTION_PLATFORM_LABELS[p] ?? p).join(', ')} (read-only)`, LEFT + 4, doc.y, { width: CONTENT_W - 8 });
+          doc.fillColor(C.lightText).fontSize(8.5).font('Helvetica')
+            .text(entry.reveals, LEFT + 4, doc.y, { width: CONTENT_W - 8 });
+          doc.moveDown(0.25);
+        }
       }
     }
 

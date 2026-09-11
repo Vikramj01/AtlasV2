@@ -8,6 +8,9 @@ import { OpenQuestions } from '@/components/audit/ReportPages/OpenQuestions';
 import { JourneyBreakdown } from '@/components/audit/ReportPages/JourneyBreakdown';
 import { PlatformImpact } from '@/components/audit/ReportPages/PlatformImpact';
 import { IssuesFixes } from '@/components/audit/ReportPages/IssuesFixes';
+import { SignalsInConflict } from '@/components/audit/ReportPages/SignalsInConflict';
+import { NotAssessed } from '@/components/audit/ReportPages/NotAssessed';
+import { WithAccess } from '@/components/audit/ReportPages/WithAccess';
 import { ContentQualityWarningBanner } from '@/components/audit/ContentQualityWarningBanner';
 import { SiteSetup } from '@/components/audit/ReportPages/SiteSetup';
 import { HowToReadThisReport } from '@/components/audit/ReportPages/HowToReadThisReport';
@@ -24,18 +27,26 @@ export function ReportPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [exporting, setExporting] = useState(false);
 
-  // Open Questions (Report Honesty PRD §B3) only gets a tab when this run
-  // actually raised one — an empty tab whose page just says "nothing to
-  // ask" is worse than not showing the tab at all. Ids are assigned by
-  // position after filtering, not hardcoded, so this conditional section
-  // never has to be kept in sync with a second numbering elsewhere.
+  // Open Questions (Report Honesty PRD §B3), Signals in Conflict, Not
+  // Assessed, and With Access (Pre-Connection Scan Confidence Tiering PRD
+  // §11.2/§6/§12) each only get a tab when this run actually raised
+  // something for them — an empty tab whose page just says "nothing here"
+  // is worse than not showing the tab at all. Ids are assigned by position
+  // after filtering, not hardcoded, so this conditional section never has
+  // to be kept in sync with a second numbering elsewhere. Order follows
+  // PRD §11.2's spine (findings, then conflicts/questions/not-assessed/
+  // with-access clustered together as the report's consultative core,
+  // technical detail last) adapted onto Atlas's richer tab set.
   const sections = report
     ? [
         { label: 'Executive Summary', show: true, render: () => <ExecutiveSummary report={report} /> },
-        { label: 'Open Questions', show: (report.open_questions?.length ?? 0) > 0, render: () => <OpenQuestions report={report} /> },
         { label: 'Journey Breakdown', show: true, render: () => <JourneyBreakdown report={report} /> },
         { label: 'Platform Impact', show: true, render: () => <PlatformImpact report={report} /> },
         { label: 'Issues & Fixes', show: true, render: () => <IssuesFixes report={report} /> },
+        { label: 'Signals in Conflict', show: (report.signal_conflicts?.length ?? 0) > 0, render: () => <SignalsInConflict report={report} /> },
+        { label: 'Open Questions', show: (report.open_questions?.length ?? 0) > 0, render: () => <OpenQuestions report={report} /> },
+        { label: 'Not Assessed', show: (report.could_not_be_assessed?.length ?? 0) > 0, render: () => <NotAssessed report={report} /> },
+        { label: 'With Access', show: (report.with_access?.length ?? 0) > 0, render: () => <WithAccess report={report} /> },
         { label: 'Site Setup', show: true, render: () => <SiteSetup report={report} /> },
         { label: 'How to Read This Report', show: true, render: () => <HowToReadThisReport /> },
         { label: 'Technical Appendix', show: true, render: () => <TechnicalAppendix report={report} /> },
@@ -50,6 +61,10 @@ export function ReportPage() {
   // actual gate.
   const runQuality = report?.executive_summary.coverage?.run_quality;
   const exportBlocked = runQuality === 'INSUFFICIENT';
+
+  // Pre-Connection Scan Confidence Tiering PRD §11.1 — see the header JSX
+  // below for the full rationale; matches pdfGenerator.ts's own naming.
+  const reportTitle = report?.rule_set_version === 'v2' ? 'Signal Observation Report' : 'Signal Health Report';
 
   const handleExport = async (format: 'pdf' | 'json' | 'both', label: string) => {
     if (!auditId) return;
@@ -113,6 +128,14 @@ export function ReportPage() {
                 </span>
               )}
             </h1>
+            {/* Pre-Connection Scan Confidence Tiering PRD §11.1 — pre-
+                connection output is renamed "Signal Observation Report";
+                "Signal Health Report" is reserved for a connected
+                (post-access) run. Matches the PDF export's own title
+                (pdfGenerator.ts). */}
+            <p className="mt-0.5 text-sm font-medium text-muted-foreground/80">
+              {reportTitle}
+            </p>
             <p className="mt-0.5 text-sm text-muted-foreground">
               {new Date(report.generated_at).toLocaleDateString('en-US', {
                 year: 'numeric', month: 'long', day: 'numeric',

@@ -51,6 +51,21 @@ export const DECLARED_PLATFORM_HAS_TAG: ValidationRule = {
     if (missing.length === 0) return "Install the base tag/pixel for every declared platform — verify with each platform's own tag helper (GTM Preview, Meta Pixel Helper, etc.) that it fires on page load.";
     return `Install the base tag/pixel for ${missing.join(', ')} — verify with GTM Preview mode or the platform's own pixel-helper extension that it actually fires on page load, not just that a container is present.`;
   },
+  // Pre-Connection Scan Confidence Tiering PRD §8 — "a capped finding
+  // renders as an open question rather than a defect": only when
+  // declaration_source capped this result's severity (i.e. the platform's
+  // presence wasn't CLIENT_CONFIRMED) — a client-confirmed declaration
+  // that's genuinely missing its tag is a real defect, not a question
+  // about whether the platform belongs in scope at all. Returns '' to opt
+  // out, which collectClientQuestions' `!!q` filter already drops.
+  client_question: (result) => {
+    if (!result.severity_capped_from) return '';
+    const missing = result.technical_details.evidence
+      .filter((e) => e.includes('no tag observed'))
+      .map((e) => e.split(':')[0]);
+    const names = missing.length > 0 ? missing.join(', ') : 'a declared platform';
+    return `We didn't find a base tag for ${names}, and this declaration wasn't confirmed by you directly. Is ${missing.length > 1 ? 'this genuinely part of' : 'it genuinely part of'} your paid media mix, or should it come out of Scan Inputs?`;
+  },
 
   test(auditData: AuditData): ValidationResult {
     const declared = auditData.declared_platforms ?? [];

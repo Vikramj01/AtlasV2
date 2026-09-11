@@ -52,19 +52,9 @@
  *    (post-connection), not part of the pre-connection Audit Engine's
  *    AuditData. No assertion here uses it.
  */
-import type { AuditData, DataLayerEvent, DeclaredPlatform, DetectedTagPlatform, SiteSetupSummary, UnassessableFinding, ValidationResult } from '@/types/audit';
+import type { AuditData, DataLayerEvent, DeclaredPlatform, DetectedTagPlatform, SignalConflict, SiteSetupSummary, UnassessableFinding, ValidationResult } from '@/types/audit';
 import { platformTagDetected, PLATFORM_LABELS } from './platformDetection';
 import logger from '@/utils/logger';
-
-export interface SignalConflict {
-  assertion_id: 'CONF_01' | 'CONF_02' | 'CONF_03' | 'CONF_04' | 'CONF_05';
-  entity: string;
-  source_a: string;
-  reading_a: string;
-  source_b: string;
-  reading_b: string;
-  affected_rule_ids: string[];
-}
 
 function findResult(results: ValidationResult[], ruleId: string): ValidationResult | undefined {
   return results.find((r) => r.rule_id === ruleId);

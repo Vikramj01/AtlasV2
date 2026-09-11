@@ -2,9 +2,8 @@ import { supabaseAdmin } from './supabase';
 import type {
   AuditRow, AuditStatus, FunnelType, Region, ValidationResult, ReportJSON,
   RuleSetVersion, SiteType, SecondaryMotion, DeclaredPlatform, TrafficRegion, CMP, DeclaredConversion, RunQuality,
-  DeclarationSource,
+  DeclarationSource, SignalConflict,
 } from '@/types/audit';
-import type { SignalConflict } from '@/services/validation/register/signalConsistency';
 import { sanitizeForJsonb } from '@/utils/sanitizeJsonb';
 
 // ─── Audits ───────────────────────────────────────────────────────────────────
