@@ -217,6 +217,8 @@ export function buildSiteSetupSummary(
       toTagSignal('tiktok_pixel', trackingSignals.detectTikTokPixel(networkRequests)),
       toTagSignal('microsoft_uet', trackingSignals.detectMicrosoftUet(networkRequests)),
       toTagSignal('openai_pixel', trackingSignals.detectOpenAIPixel(networkRequests)),
+      toTagSignal('reddit_pixel', trackingSignals.detectReddit(networkRequests)),
+      toTagSignal('pinterest_pixel', trackingSignals.detectPinterest(networkRequests)),
     ],
     gtm_container: buildGtmContainerSignal(gtmIds, connectedContainerId),
     possible_server_side_gtm: detectPossibleServerSideGtm(networkRequests, hostname),

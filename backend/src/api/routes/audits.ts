@@ -5,8 +5,10 @@ import { authMiddleware } from '@/api/middleware/authMiddleware';
 import { auditLimiter } from '@/api/middleware/auditLimiter';
 import { createAudit, getAudit, getReport, listAudits, deleteAudit, getPreviousAuditScore, linkAuditToClient } from '@/services/database/queries';
 import { getClient } from '@/services/database/clientQueries';
+import { saveRuleConfirmation, getRuleConfirmationsForAudit } from '@/services/database/ruleConfirmationQueries';
 import { getJourneyWithDetails, getLatestSpec } from '@/services/database/journeyQueries';
 import { generatePDF } from '@/services/export/pdfGenerator';
+import { lintReportOutput } from '@/services/reporting/outputLint';
 import { auditQueue } from '@/services/queue/jobQueue';
 import { supabaseAdmin } from '@/services/database/supabase';
 import type { FunnelType, Region } from '@/types/audit';
@@ -270,7 +272,12 @@ router.get('/:audit_id/report', async (req: Request, res: Response) => {
   const currentScore = report.executive_summary.scores.conversion_signal_health;
   const currentDenominator = report.executive_summary.scores.conversion_signal_health_denominator ?? null;
   const currentRegisterVersion = report.register_version ?? null;
-  const comparison = previous
+  // Scoring & Coverage Gate (PRD §9) — a withheld score (null,
+  // score_withheld_reason: 'INSUFFICIENT_LAYER_COVERAGE') has nothing to
+  // diff against a previous numeric score; getPreviousAuditScore already
+  // skips a withheld *previous* run the same way (returns null when that
+  // run's own score was null), so this only needs to guard the current side.
+  const comparison = previous && currentScore !== null
     ? {
         previous_audit_id: previous.audit_id,
         previous_score: previous.score,
@@ -346,6 +353,71 @@ router.patch('/:audit_id/link-client', async (req: Request, res: Response) => {
     logger.error({ err, audit_id }, 'Failed to link audit to client');
     res.status(500).json({ error: 'Failed to link audit to client' });
   }
+});
+
+// ─── /api/audits/:audit_id/rule-confirmations ─────────────────────────────────
+// Pre-Connection Scan Confidence Tiering PRD §15 — measured accuracy. The
+// client_answer/operator write path: a person (the agency operator, having
+// relayed the client's answer to an open question, or verified a finding
+// themselves) records whether a prior finding was CONFIRMED or REFUTED.
+// The automatic 'rescan' source is never accepted here — see
+// ruleConfirmationRescan.ts, wired into orchestrator.ts, for that path.
+// No frontend UI calls this yet (Sprint 7 scope is the backend mechanism;
+// see the sprint plan doc).
+
+const RuleConfirmationSchema = z.object({
+  rule_id: z.string().min(1),
+  outcome: z.enum(['CONFIRMED', 'REFUTED', 'UNKNOWN']),
+  source: z.enum(['client_answer', 'operator']),
+  note: z.string().max(2000).optional(),
+});
+
+router.post('/:audit_id/rule-confirmations', async (req: Request, res: Response) => {
+  const { user } = req as AuthenticatedRequest;
+  const { audit_id } = req.params;
+
+  const parsed = RuleConfirmationSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid rule confirmation' });
+    return;
+  }
+
+  const audit = await getAudit(audit_id);
+  if (!audit) {
+    res.status(404).json({ error: 'Audit not found' });
+    return;
+  }
+  if (audit.user_id !== user.id) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
+  try {
+    const confirmation = await saveRuleConfirmation({ audit_id, ...parsed.data });
+    logger.info({ audit_id, rule_id: parsed.data.rule_id, outcome: parsed.data.outcome, source: parsed.data.source }, 'Rule confirmation recorded');
+    res.status(201).json(confirmation);
+  } catch (err) {
+    logger.error({ err, audit_id }, 'Failed to save rule confirmation');
+    res.status(500).json({ error: 'Failed to save rule confirmation' });
+  }
+});
+
+router.get('/:audit_id/rule-confirmations', async (req: Request, res: Response) => {
+  const { user } = req as AuthenticatedRequest;
+  const { audit_id } = req.params;
+
+  const audit = await getAudit(audit_id);
+  if (!audit) {
+    res.status(404).json({ error: 'Audit not found' });
+    return;
+  }
+  if (audit.user_id !== user.id) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
+  const confirmations = await getRuleConfirmationsForAudit(audit_id);
+  res.json({ data: confirmations });
 });
 
 // ─── POST /api/audits/start-from-journey ─────────────────────────────────────
@@ -529,6 +601,22 @@ router.post('/:audit_id/export', async (req: Request, res: Response) => {
   if (!report) {
     res.status(404).json({ error: 'Report not found' });
     return;
+  }
+
+  // Output vocabulary lint (Pre-Connection Scan Confidence Tiering PRD §5)
+  // — hard gate on export too, not just at generation time: catches a
+  // persisted report saved before outputLint.ts existed, or by any path
+  // that bypassed generateReport()'s own gate.
+  if (report.rule_set_version === 'v2') {
+    const violations = lintReportOutput(report);
+    if (violations.length > 0) {
+      logger.error({ audit_id, violations }, 'Export blocked — report failed output vocabulary lint (PRD §5)');
+      res.status(500).json({
+        error: 'Export blocked — this report contains language that cannot ship',
+        message: 'Re-run this audit to regenerate the report through the current pipeline.',
+      });
+      return;
+    }
   }
 
   try {

@@ -200,3 +200,45 @@ describe('ExecutiveSummary — coverage banner', () => {
     expect(screen.queryByText('Insufficient run quality — export blocked')).toBeNull();
   });
 });
+
+// Scoring & Coverage Gate PRD §9.1.5/§9.2 — a withheld overall score
+// renders as a dedicated panel, and each withheld sub-score renders "Not
+// assessed" rather than a fabricated default label.
+describe('ExecutiveSummary — Coverage Gate', () => {
+  it('renders the Coverage Gate panel and "Not assessed" when the overall score is withheld', () => {
+    const report = makeReport();
+    report.executive_summary.scores = {
+      conversion_signal_health: null,
+      score_withheld_reason: 'INSUFFICIENT_LAYER_COVERAGE',
+      attribution_risk_level: 'Medium',
+      optimization_strength: 'Moderate',
+      data_consistency_score: 'Medium',
+      conversion_signal_health_coverage: { layers_tested: 5, layers_total: 13 },
+    };
+    render(<ExecutiveSummary report={report} />);
+    expect(screen.queryByText('Coverage Gate — Signal Health score withheld')).not.toBeNull();
+    const panel = screen.getByText(/This scan assessed/);
+    expect(panel.textContent).toContain('5 of 13 signal layers');
+    expect(screen.getByText('Not assessed')).not.toBeNull();
+  });
+
+  it('renders no Coverage Gate panel when the overall score is present', () => {
+    render(<ExecutiveSummary report={makeReport()} />);
+    expect(screen.queryByText('Coverage Gate — Signal Health score withheld')).toBeNull();
+  });
+
+  it('renders "Not assessed" for a withheld sub-score without withholding the overall score or panel', () => {
+    const report = makeReport();
+    report.executive_summary.scores = {
+      conversion_signal_health: 55,
+      attribution_risk_level: null,
+      optimization_strength: 'Moderate',
+      data_consistency_score: 'Medium',
+      attribution_risk_coverage: { layers_tested: 0, layers_total: 2 },
+    };
+    render(<ExecutiveSummary report={report} />);
+    expect(screen.queryByText('Coverage Gate — Signal Health score withheld')).toBeNull();
+    expect(screen.getByText('Not assessed')).not.toBeNull();
+    expect(screen.getByText('55 / 100')).not.toBeNull();
+  });
+});

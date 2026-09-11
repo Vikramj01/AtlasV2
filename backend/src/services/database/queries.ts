@@ -2,7 +2,7 @@ import { supabaseAdmin } from './supabase';
 import type {
   AuditRow, AuditStatus, FunnelType, Region, ValidationResult, ReportJSON,
   RuleSetVersion, SiteType, SecondaryMotion, DeclaredPlatform, TrafficRegion, CMP, DeclaredConversion, RunQuality,
-  DeclarationSource,
+  DeclarationSource, SignalConflict,
 } from '@/types/audit';
 import { sanitizeForJsonb } from '@/utils/sanitizeJsonb';
 
@@ -136,6 +136,33 @@ export async function saveValidationResults(
 
   const { error } = await supabaseAdmin.from('audit_results').insert(rows);
   if (error) throw new Error(`Failed to save validation results: ${error.message}`);
+}
+
+// ─── Signal conflicts (Pre-Connection Scan Confidence Tiering PRD §6) ─────────
+
+/**
+ * Persists every conflict signalConsistency.ts's partitionSignalConflicts()
+ * found on this run — purely for audit/debugging visibility (the report
+ * itself reads the equivalent could_not_be_assessed entries already
+ * embedded in report_json, not this table). A no-op on an empty array, so
+ * callers don't need to special-case "nothing conflicted".
+ */
+export async function saveSignalConflicts(audit_id: string, conflicts: SignalConflict[]): Promise<void> {
+  if (conflicts.length === 0) return;
+
+  const rows = conflicts.map((c) => ({
+    audit_id,
+    assertion_id: c.assertion_id,
+    entity: c.entity,
+    source_a: c.source_a,
+    reading_a: c.reading_a,
+    source_b: c.source_b,
+    reading_b: c.reading_b,
+    affected_rule_ids: sanitizeForJsonb(c.affected_rule_ids),
+  }));
+
+  const { error } = await supabaseAdmin.from('signal_conflicts').insert(rows);
+  if (error) throw new Error(`Failed to save signal conflicts: ${error.message}`);
 }
 
 // ─── Audit reports ────────────────────────────────────────────────────────────

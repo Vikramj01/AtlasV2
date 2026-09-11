@@ -133,11 +133,25 @@ export interface ReportCoverage {
   run_quality: 'COMPLETE' | 'PROVISIONAL' | 'INSUFFICIENT';
 }
 
+/** How many of a score's constituent layers actually scored this run — the "N of M layers scanned" figure. */
+export interface ScoreCoverage {
+  layers_tested: number;
+  layers_total: number;
+}
+
 export interface AuditScores {
-  conversion_signal_health: number;
-  attribution_risk_level: 'Low' | 'Medium' | 'High' | 'Critical';
-  optimization_strength: 'Weak' | 'Moderate' | 'Strong';
-  data_consistency_score: 'Low' | 'Medium' | 'High';
+  // Scoring & Coverage Gate PRD §9 — null when withheld (coverage_ratio
+  // below the 60% threshold, at this score's own layer scope). Renders as
+  // "Not assessed" / a Coverage Gate panel, never a fabricated number/label.
+  conversion_signal_health: number | null;
+  attribution_risk_level: 'Low' | 'Medium' | 'High' | 'Critical' | null;
+  optimization_strength: 'Weak' | 'Moderate' | 'Strong' | null;
+  data_consistency_score: 'Low' | 'Medium' | 'High' | null;
+  score_withheld_reason?: 'INSUFFICIENT_LAYER_COVERAGE';
+  conversion_signal_health_coverage?: ScoreCoverage;
+  attribution_risk_coverage?: ScoreCoverage;
+  optimization_strength_coverage?: ScoreCoverage;
+  data_consistency_coverage?: ScoreCoverage;
 }
 
 export type ValidationLayerFilter =
@@ -236,7 +250,9 @@ export type DetectedTagPlatform =
   | 'linkedin_insight'
   | 'tiktok_pixel'
   | 'microsoft_uet'
-  | 'openai_pixel';
+  | 'openai_pixel'
+  | 'reddit_pixel'
+  | 'pinterest_pixel';
 
 export interface DataLayerEventInventoryEntry {
   event_name: string;
@@ -282,6 +298,33 @@ export interface SiteSetupSummary {
   possible_server_side_gtm: PossibleServerSideGtm;
 }
 
+/** A rule result excluded from every client-facing finding, count, and score because the crawl couldn't confidently assess it — see backend types/audit.ts's UnassessableFinding for the full model. */
+export interface UnassessableFinding {
+  rule_id: string;
+  step: string;
+  reason: string;
+  kind?: 'NOT_OBSERVED' | 'INCONCLUSIVE' | 'CONFLICT';
+}
+
+/** Pre-Connection Scan Confidence Tiering PRD §6 — one fired cross-signal consistency assertion (CONF_01–CONF_05). */
+export interface SignalConflict {
+  assertion_id: 'CONF_01' | 'CONF_02' | 'CONF_03' | 'CONF_04' | 'CONF_05';
+  entity: string;
+  source_a: string;
+  reading_a: string;
+  source_b: string;
+  reading_b: string;
+  affected_rule_ids: string[];
+}
+
+/** Pre-Connection Scan Confidence Tiering PRD §12 — a connected-tier check/module that resolves a real finding or open question raised in this run. */
+export interface WithAccessEntry {
+  check: string;
+  requires_connection: ('google_ads' | 'meta' | 'tiktok' | 'ga4' | 'linkedin')[];
+  answers_question_for: string[];
+  reveals: string;
+}
+
 export interface ReportJSON {
   audit_id: string;
   website_url: string;
@@ -317,6 +360,12 @@ export interface ReportJSON {
    * ReportJSON.open_questions.
    */
   open_questions?: string[];
+  /** Findings suppressed by the fallback_landing cross-reference or a cross-signal conflict — see UnassessableFinding. Omitted (not an empty array) when nothing was suppressed. */
+  could_not_be_assessed?: UnassessableFinding[];
+  /** Pre-Connection Scan Confidence Tiering PRD §6 — every conflict fired this run. Omitted when nothing conflicted. */
+  signal_conflicts?: SignalConflict[];
+  /** Pre-Connection Scan Confidence Tiering PRD §12 — connected-tier checks that would resolve something raised in this run. Omitted when nothing applies. */
+  with_access?: WithAccessEntry[];
 }
 
 // API response shapes

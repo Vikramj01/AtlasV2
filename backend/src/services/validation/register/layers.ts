@@ -29,6 +29,38 @@ export const ALL_V2_LAYERS: ValidationLayerV2[] = [
   'consent', 'server_side_delivery', 'deduplication', 'reconciliation', 'hygiene_integrity',
 ];
 
+/**
+ * Scoring & Coverage Gate (Pre-Connection Scan Confidence Tiering PRD §9).
+ *
+ * Every layer's relative importance to the overall score — PRD §9.1.2
+ * declares this per layer but gives no differentiated weighting scheme, so
+ * (matching the same "ship a fixed value, revisit only if it misbehaves"
+ * call already made for COVERAGE_GATE_THRESHOLD, PRD §17 Q2) every layer
+ * defaults to equal weight.
+ */
+export const LAYER_WEIGHT: Record<ValidationLayerV2, number> = Object.fromEntries(
+  ALL_V2_LAYERS.map((layer) => [layer, 1]),
+) as Record<ValidationLayerV2, number>;
+
+/**
+ * The fraction of a layer's applicable-this-run rules that must reach
+ * `verdict: 'PASS' | 'FAIL'` (§4.3's CONFIRMED-and-resolved verdicts)
+ * before that layer counts toward coverage_ratio at all (PRD §9.1.2 —
+ * "min_confirmed_rules"). Expressed as a ratio of *this run's applicable*
+ * rules rather than a hardcoded absolute count against the full register:
+ * a fixed absolute number would either go stale every time a rule is
+ * added/split/removed (the exact drift class ALL_V2_LAYERS/
+ * PLATFORM_MATCHER_HOSTS already exist to prevent elsewhere in this
+ * register), or — worse — permanently exclude a legitimately rule-thin
+ * layer for a site_type that applies_to filters most of that layer's
+ * rules out of scope for. A shared default, like LAYER_WEIGHT above, since
+ * the PRD specifies no differentiated per-layer scheme.
+ */
+export const MIN_CONFIRMED_RATIO = 0.5;
+
+/** PRD §9.1.4 — below this, the overall (and, at their own layer scope, each sub-) score is withheld rather than shown partial. */
+export const COVERAGE_GATE_THRESHOLD = 0.6;
+
 export const LAYER_LABELS: Record<ValidationLayerV2, string> = {
   scope_configuration: 'L0 · Scope & Configuration',
   foundation_tags: 'L1 · Foundation & Tags',

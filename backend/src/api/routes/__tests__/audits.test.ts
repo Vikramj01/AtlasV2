@@ -26,6 +26,11 @@ vi.mock('@/services/database/clientQueries', () => ({
   getClient: vi.fn(),
 }));
 
+vi.mock('@/services/database/ruleConfirmationQueries', () => ({
+  saveRuleConfirmation: vi.fn(),
+  getRuleConfirmationsForAudit: vi.fn(),
+}));
+
 vi.mock('@/services/database/supabase', () => ({
   supabaseAdmin: {
     from: vi.fn(() => ({
@@ -72,6 +77,7 @@ vi.mock('@/config/env', () => ({
 import * as dbQueries from '@/services/database/queries';
 import * as journeyQueries from '@/services/database/journeyQueries';
 import * as clientQueries from '@/services/database/clientQueries';
+import * as ruleConfirmationQueries from '@/services/database/ruleConfirmationQueries';
 import { auditQueue } from '@/services/queue/jobQueue';
 import * as pdfGenerator from '@/services/export/pdfGenerator';
 import auditRouter from '../audits';
@@ -690,6 +696,106 @@ describe('PATCH /api/audits/:audit_id/link-client', () => {
     const res = await buildApp()
       .patch('/api/audits/audit-001/link-client')
       .send({ client_id: CLIENT_ID });
+
+    expect(res.status).toBe(404);
+  });
+});
+
+// ── POST/GET /api/audits/:audit_id/rule-confirmations (PRD §15) ───────────────
+
+describe('POST /api/audits/:audit_id/rule-confirmations', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  const MOCK_CONFIRMATION = {
+    id: 'rc-001', audit_id: 'audit-001', rule_id: 'GA4_CONFIG_TAG_PRESENT', finding_id: null,
+    outcome: 'REFUTED', source: 'client_answer', note: 'GA4 was actually installed all along.', created_at: '2026-01-01T00:00:00Z',
+  };
+
+  it('records a confirmation for an audit the user owns', async () => {
+    vi.mocked(dbQueries.getAudit).mockResolvedValue(MOCK_AUDIT as any);
+    vi.mocked(ruleConfirmationQueries.saveRuleConfirmation).mockResolvedValue(MOCK_CONFIRMATION as any);
+
+    const res = await buildApp()
+      .post('/api/audits/audit-001/rule-confirmations')
+      .send({ rule_id: 'GA4_CONFIG_TAG_PRESENT', outcome: 'REFUTED', source: 'client_answer', note: 'GA4 was actually installed all along.' });
+
+    expect(res.status).toBe(201);
+    expect(res.body).toEqual(MOCK_CONFIRMATION);
+    expect(ruleConfirmationQueries.saveRuleConfirmation).toHaveBeenCalledWith({
+      audit_id: 'audit-001', rule_id: 'GA4_CONFIG_TAG_PRESENT', outcome: 'REFUTED', source: 'client_answer', note: 'GA4 was actually installed all along.',
+    });
+  });
+
+  it('returns 400 for an invalid outcome', async () => {
+    const res = await buildApp()
+      .post('/api/audits/audit-001/rule-confirmations')
+      .send({ rule_id: 'GA4_CONFIG_TAG_PRESENT', outcome: 'MAYBE', source: 'client_answer' });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects source: "rescan" — that source is system-only, never accepted from a caller', async () => {
+    const res = await buildApp()
+      .post('/api/audits/audit-001/rule-confirmations')
+      .send({ rule_id: 'GA4_CONFIG_TAG_PRESENT', outcome: 'CONFIRMED', source: 'rescan' });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when rule_id is missing', async () => {
+    const res = await buildApp()
+      .post('/api/audits/audit-001/rule-confirmations')
+      .send({ outcome: 'CONFIRMED', source: 'operator' });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 404 when the audit does not exist', async () => {
+    vi.mocked(dbQueries.getAudit).mockResolvedValue(null);
+
+    const res = await buildApp()
+      .post('/api/audits/audit-001/rule-confirmations')
+      .send({ rule_id: 'GA4_CONFIG_TAG_PRESENT', outcome: 'CONFIRMED', source: 'operator' });
+
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 403 when the audit belongs to another user', async () => {
+    vi.mocked(dbQueries.getAudit).mockResolvedValue({ ...MOCK_AUDIT, user_id: 'other-user' } as any);
+
+    const res = await buildApp()
+      .post('/api/audits/audit-001/rule-confirmations')
+      .send({ rule_id: 'GA4_CONFIG_TAG_PRESENT', outcome: 'CONFIRMED', source: 'operator' });
+
+    expect(res.status).toBe(403);
+  });
+});
+
+describe('GET /api/audits/:audit_id/rule-confirmations', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('lists confirmations for an audit the user owns', async () => {
+    vi.mocked(dbQueries.getAudit).mockResolvedValue(MOCK_AUDIT as any);
+    vi.mocked(ruleConfirmationQueries.getRuleConfirmationsForAudit).mockResolvedValue([{ id: 'rc-001' } as any]);
+
+    const res = await buildApp().get('/api/audits/audit-001/rule-confirmations');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual([{ id: 'rc-001' }]);
+  });
+
+  it('returns 403 when the audit belongs to another user', async () => {
+    vi.mocked(dbQueries.getAudit).mockResolvedValue({ ...MOCK_AUDIT, user_id: 'other-user' } as any);
+
+    const res = await buildApp().get('/api/audits/audit-001/rule-confirmations');
+
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 404 when the audit does not exist', async () => {
+    vi.mocked(dbQueries.getAudit).mockResolvedValue(null);
+
+    const res = await buildApp().get('/api/audits/audit-001/rule-confirmations');
 
     expect(res.status).toBe(404);
   });

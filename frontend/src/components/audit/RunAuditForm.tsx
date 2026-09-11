@@ -156,7 +156,7 @@ export function RunAuditForm() {
             <div>
               <p className="text-sm font-medium">2. Ad platforms</p>
               <p className="text-xs text-muted-foreground">
-                Only declared platforms are scored — everything else reports Out of Scope, not Broken.
+                Only declared platforms are scored — everything else reports Not in scope, not No signal observed.
               </p>
             </div>
             <div className="space-y-1.5">

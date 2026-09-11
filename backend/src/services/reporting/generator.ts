@@ -13,11 +13,14 @@ import type {
   RuleStatus,
   SiteSetupSummary,
   UnassessableFinding,
+  SignalConflict,
 } from '@/types/audit';
 import { generateBusinessSummary, determineOverallStatus, getIssueHeadline, getIssueImpact } from '@/services/interpretation/engine';
 import { buildCoverageSummary } from './coverage';
 import { buildOpenQuestions } from './openQuestions';
+import { buildWithAccessSection } from './withAccessRegistry';
 import { scanReportForPlaceholders } from './placeholderGuard';
+import { assertReportOutputClean } from './outputLint';
 import { REGISTER_VERSION } from '@/services/validation/register/layers';
 
 // ─── Journey stage mapping ─────────────────────────────────────────────────────
@@ -137,11 +140,11 @@ function buildPlatformBreakdown(resultMap: Map<string, ValidationResult>): Platf
  * Audit-time assertion (Click-ID Contention, Contradiction Guard & Settle
  * Enforcement PRD W2.2) — a fired contradiction guard must suppress the
  * finding, never render inside it as evidence against itself. Now that
- * contradictionGuard.ts routes a fired result to could_not_be_assessed
- * instead of annotating it in place, this string should never appear in
- * any result reaching the renderer again; this throws rather than
- * silently shipping a self-contradicting finding if that guarantee is
- * ever broken by a future change.
+ * signalConsistency.ts's CONF_05 (formerly contradictionGuard.ts) routes a
+ * fired result to could_not_be_assessed instead of annotating it in place,
+ * this string should never appear in any result reaching the renderer
+ * again; this throws rather than silently shipping a self-contradicting
+ * finding if that guarantee is ever broken by a future change.
  */
 function assertNoUnsuppressedContradictions(results: ValidationResult[]): void {
   const leaked = results.find((r) => r.technical_details.evidence.some((e) => e.includes('CONTRADICTION')));
@@ -162,6 +165,7 @@ export function generateReport(
   customJourneyStages?: JourneyStage[],
   customPlatformBreakdown?: PlatformBreakdown[],
   unassessable?: UnassessableFinding[],
+  signalConflicts?: SignalConflict[],
 ): ReportJSON {
   assertNoUnsuppressedContradictions(results);
   const resultMap = new Map(results.map((r) => [r.rule_id, r]));
@@ -198,9 +202,26 @@ export function generateReport(
     report.could_not_be_assessed = unassessable;
   }
 
-  const openQuestions = buildOpenQuestions(auditData, results);
+  // Pre-Connection Scan Confidence Tiering PRD §6/§11.2 — "Signals in
+  // conflict" section. Omitted (not an empty array) when nothing
+  // conflicted, matching could_not_be_assessed's convention above.
+  if (signalConflicts && signalConflicts.length > 0) {
+    report.signal_conflicts = signalConflicts;
+  }
+
+  const openQuestions = buildOpenQuestions(auditData, results, unassessable);
   if (openQuestions) {
     report.open_questions = openQuestions;
+  }
+
+  // Pre-Connection Scan Confidence Tiering PRD §12 — "With access" section.
+  // Built last, since it needs to know what this run actually raised
+  // (open_questions, could_not_be_assessed, platform_breakdown) to decide
+  // which registry entries resolve something real (§12.1 — no aspirational
+  // entries).
+  const withAccess = buildWithAccessSection(report);
+  if (withAccess && withAccess.length > 0) {
+    report.with_access = withAccess;
   }
 
   // Pre-render placeholder guard (PRD "Signal Health Report" Issue 4) —
@@ -208,6 +229,17 @@ export function generateReport(
   const flags = scanReportForPlaceholders(report);
   if (flags.length > 0) {
     report.content_quality_warning = { flagged_fields: flags.map((f) => `${f.field}: ${f.matches.join(', ')}`) };
+  }
+
+  // Output vocabulary lint (Pre-Connection Scan Confidence Tiering PRD §5) —
+  // hard gate, v2 only. v1-legacy rule copy (parameterCompleteness.ts,
+  // tagConfiguration.ts, implementationDrift.ts) was never swept for PRD
+  // §5's banned vocabulary and is out of this PRD's scope entirely (no
+  // evidence_class/verdict concept there either) — gating it here would
+  // hard-fail every v1-legacy audit over language nobody has reviewed
+  // against this rule.
+  if (report.rule_set_version === 'v2') {
+    assertReportOutputClean(report);
   }
 
   return report;

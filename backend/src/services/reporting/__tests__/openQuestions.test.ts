@@ -5,7 +5,8 @@
  */
 import { describe, it, expect } from 'vitest';
 import { buildOpenQuestions } from '../openQuestions';
-import type { AuditData, StepCoverage, ValidationResult } from '@/types/audit';
+import { DECLARED_PLATFORM_HAS_TAG } from '@/services/validation/register/L0';
+import type { AuditData, StepCoverage, UnassessableFinding, ValidationResult } from '@/types/audit';
 
 function makeAuditData(overrides: Partial<AuditData> = {}): AuditData {
   return {
@@ -99,5 +100,74 @@ describe('buildOpenQuestions', () => {
     const questions = buildOpenQuestions(auditData, results);
     expect(questions).toHaveLength(2);
     expect(questions?.[1]).toMatch(/could not confirm your order confirmation page/i);
+  });
+});
+
+// Pre-Connection Scan Confidence Tiering PRD §11.3 — extends the mechanism
+// to CONFLICT-kind could_not_be_assessed entries and non-CLIENT_CONFIRMED
+// DERIVED findings (§8).
+
+describe('buildOpenQuestions — CONFLICT-kind findings (PRD §11.3)', () => {
+  function makeFinding(overrides: Partial<UnassessableFinding> = {}): UnassessableFinding {
+    return { rule_id: 'GA4_CONFIG_TAG_PRESENT', step: 'landing', reason: 'Signals disagree on GA4.', kind: 'CONFLICT', ...overrides };
+  }
+
+  it('emits a question built from a CONFLICT-kind finding\'s own reason text', () => {
+    const finding = makeFinding({ reason: 'Signals disagree on GA4 — DL reports: gtag(\'config\', \'G-XXXX\') observed. NET reports: no collect request found.' });
+    const questions = buildOpenQuestions(makeAuditData(), [], [finding]);
+    expect(questions).toHaveLength(1);
+    expect(questions?.[0]).toContain('Signals disagree on GA4');
+    expect(questions?.[0]).toMatch(/which reading is accurate/i);
+  });
+
+  it('emits one question per CONFLICT-kind finding, in order', () => {
+    const findings = [makeFinding({ rule_id: 'A', reason: 'Reason A.' }), makeFinding({ rule_id: 'B', reason: 'Reason B.' })];
+    const questions = buildOpenQuestions(makeAuditData(), [], findings);
+    expect(questions).toHaveLength(2);
+    expect(questions?.[0]).toContain('Reason A.');
+    expect(questions?.[1]).toContain('Reason B.');
+  });
+
+  it('does not emit a question for a NOT_OBSERVED-kind finding (a crawl limitation, not something the client can answer)', () => {
+    const finding = makeFinding({ kind: 'NOT_OBSERVED', reason: 'The scan could not reach this step.' });
+    expect(buildOpenQuestions(makeAuditData(), [], [finding])).toBeUndefined();
+  });
+
+  it('does not emit a question for a finding with no kind set', () => {
+    const finding = makeFinding({ kind: undefined });
+    expect(buildOpenQuestions(makeAuditData(), [], [finding])).toBeUndefined();
+  });
+
+  it('defaults to no unassessable findings when the parameter is omitted', () => {
+    expect(buildOpenQuestions(makeAuditData(), [])).toBeUndefined();
+  });
+});
+
+describe('buildOpenQuestions — DECLARED_PLATFORM_HAS_TAG (non-CLIENT_CONFIRMED DERIVED finding, PRD §8/§11.3)', () => {
+  it('asks a question when the declaration was not CLIENT_CONFIRMED (severity capped)', () => {
+    const auditData = makeAuditData({ declared_platforms: ['meta'], declaration_source: 'OPERATOR_ASSUMED' });
+    const result = DECLARED_PLATFORM_HAS_TAG.test(auditData);
+    expect(result.severity_capped_from).toBeDefined();
+    const questions = buildOpenQuestions(makeAuditData(), [result]);
+    expect(questions).toHaveLength(1);
+    expect(questions?.[0]).toContain('Meta');
+  });
+
+  it('does not ask a question when the declaration was CLIENT_CONFIRMED (a real defect, not an open question)', () => {
+    const auditData = makeAuditData({ declared_platforms: ['meta'], declaration_source: 'CLIENT_CONFIRMED' });
+    const result = DECLARED_PLATFORM_HAS_TAG.test(auditData);
+    expect(result.severity_capped_from).toBeUndefined();
+    expect(buildOpenQuestions(makeAuditData(), [result])).toBeUndefined();
+  });
+
+  it('does not ask a question when the platform is present (nothing capped, nothing to ask)', () => {
+    const auditData = makeAuditData({
+      declared_platforms: ['meta'],
+      declaration_source: 'OPERATOR_ASSUMED',
+      networkRequests: [{ url: 'https://facebook.com/tr?id=123', method: 'GET', headers: {}, timestamp: Date.now(), step: 'landing' }],
+    });
+    const result = DECLARED_PLATFORM_HAS_TAG.test(auditData);
+    expect(result.status).toBe('pass');
+    expect(buildOpenQuestions(makeAuditData(), [result])).toBeUndefined();
   });
 });

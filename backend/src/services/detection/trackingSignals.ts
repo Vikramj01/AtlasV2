@@ -167,6 +167,18 @@ export function detectOpenAIConversionEvent(requests: NetworkRequest[]): TagMatc
   return buildMatch(hits, []);
 }
 
+/** Reddit Pixel — alb.reddit.com. No stable public ID param to extract. */
+export function detectReddit(requests: NetworkRequest[]): TagMatch {
+  const hits = requests.filter((r) => r.url.includes('alb.reddit.com'));
+  return buildMatch(hits, []);
+}
+
+/** Pinterest Tag — ct.pinterest.com, or the s.pinimg.com/ct/core.js loader. No stable public ID param to extract. */
+export function detectPinterest(requests: NetworkRequest[]): TagMatch {
+  const hits = requests.filter((r) => r.url.includes('ct.pinterest.com') || r.url.includes('s.pinimg.com/ct/core.js'));
+  return buildMatch(hits, []);
+}
+
 /**
  * Given raw <script src> attribute values collected from the live page,
  * extract GTM container IDs (GTM-XXXXXXX) from the gtm.js loader script.

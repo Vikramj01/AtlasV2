@@ -8,6 +8,7 @@
  */
 import PDFDocument from 'pdfkit';
 import type { ReportJSON, ValidationResult, ReportIssue, StepCoverage, StepUrlSource, ScoreCoverage } from '@/types/audit';
+import { ALL_V2_LAYERS } from '@/services/validation/register/layers';
 
 /** Per-step provenance label for the Scan Coverage section — see StepUrlSource's docstring in types/audit.ts. */
 const STEP_SOURCE_LABELS: Record<StepUrlSource, string> = {
@@ -176,6 +177,15 @@ const TAG_PLATFORM_LABELS: Record<string, string> = {
   microsoft_uet:    'Microsoft UET',
 };
 
+/** WithAccessEntry.requires_connection labels (PRD §12.2's literal 5-platform union). */
+const CONNECTION_PLATFORM_LABELS: Record<string, string> = {
+  google_ads: 'Google Ads',
+  meta:       'Meta',
+  tiktok:     'TikTok',
+  ga4:        'Google Analytics 4',
+  linkedin:   'LinkedIn',
+};
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 function statusColor(status: string): string {
@@ -188,6 +198,19 @@ function statusColor(status: string): string {
 function formatLabel(s: string): string {
   return s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
+
+/**
+ * Pre-Connection Scan Confidence Tiering PRD §5.1 — the platform verdict
+ * label remap. 'Broken'/'Healthy' assert an absence/presence claim with
+ * more confidence than a client-side crawl's platform_breakdown status
+ * (a simple fail-count bucket, not itself coverage-gated) can support.
+ */
+const PLATFORM_STATUS_LABELS: Record<string, string> = {
+  broken: 'No signal observed',
+  at_risk: 'Partial signal observed',
+  healthy: 'Signal observed',
+  not_included: 'Not in scope',
+};
 
 // Banner sub-text needs to stay short — it's a fixed-role teaser, the full
 // business_summary already renders unabridged in the Business Summary
@@ -217,12 +240,21 @@ function coverageSuffix(coverage: ScoreCoverage | undefined): string {
 
 export function generatePDF(report: ReportJSON): Promise<Buffer> {
   return new Promise((resolve, reject) => {
+    // Pre-Connection Scan Confidence Tiering PRD §11.1 — pre-connection
+    // output is renamed "Signal Observation Report"; "Signal Health
+    // Report" is reserved for a connected (post-access) run. This
+    // codebase has no separate connected-scan pipeline yet (the whole v2
+    // Check Register is pre-connection today — PRD §17 Q3's resolution:
+    // a connected scan reuses the same rule IDs, no separate registry),
+    // so the split is simply v2 (rule_set_version) vs. v1-legacy.
+    const reportTitle = report.rule_set_version === 'v2' ? 'Signal Observation Report' : 'Signal Health Report';
+
     const doc = new PDFDocument({
       size: 'A4',
       margin: 50,
       bufferPages: true,
       info: {
-        Title: 'Atlas Signal Health Report',
+        Title: `Atlas ${reportTitle}`,
         Author: 'Atlas',
         CreationDate: new Date(report.generated_at),
       },
@@ -261,7 +293,7 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
       topBar();
       const savedY = doc.y;
       doc.fillColor(C.lightText).fontSize(8).font('Helvetica')
-        .text(`ATLAS SIGNAL HEALTH REPORT  ·  ${section}`, LEFT, 18);
+        .text(`ATLAS ${reportTitle.toUpperCase()}  ·  ${section}`, LEFT, 18);
       if (pageLabelOverride) {
         doc.fillColor(C.mutedText).text(pageLabelOverride, LEFT, 18, { align: 'right', width: CONTENT_W });
       } else {
@@ -306,7 +338,7 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
     });
 
     doc.fillColor(C.darkText).fontSize(22).font('Helvetica-Bold')
-      .text('Signal Health Report', LEFT, 56);
+      .text(reportTitle, LEFT, 56);
     doc.fillColor(C.midText).fontSize(11).font('Helvetica-Bold')
       .text(report.website_url, LEFT);
     doc.fillColor(C.lightText).fontSize(10).font('Helvetica')
@@ -378,6 +410,26 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
     // 4 Score cards (2×2 grid)
     sectionHeading('Scores at a Glance');
 
+    // Coverage Gate panel (Scoring & Coverage Gate PRD §9.1.5/§9.2) — a
+    // withheld overall score renders as this panel, "not a number and not
+    // a blank." Exact copy from §9.2, filled in with this run's real
+    // layer-coverage figures.
+    if (scores.conversion_signal_health === null) {
+      const panelY = doc.y;
+      const layersTested = scores.conversion_signal_health_coverage?.layers_tested ?? 0;
+      const layersTotal = scores.conversion_signal_health_coverage?.layers_total ?? ALL_V2_LAYERS.length;
+      const panelText = `This scan assessed ${layersTested} of ${layersTotal} signal layers, below the 60 per cent coverage this score requires. A partial score would imply confidence the run does not support. The layers assessed are reported individually below.`;
+      const panelTextH = doc.fontSize(9).font('Helvetica').heightOfString(panelText, { width: CONTENT_W - 28 });
+      const panelH = Math.max(40, 22 + panelTextH + 10);
+      doc.fillColor(C.bgLight).rect(LEFT, panelY, CONTENT_W, panelH).fill();
+      doc.fillColor(C.partial).rect(LEFT, panelY, 3, panelH).fill();
+      doc.fillColor(C.darkText).fontSize(10).font('Helvetica-Bold')
+        .text('Coverage Gate — Signal Health score withheld', LEFT + 14, panelY + 8);
+      doc.fillColor(C.midText).fontSize(9).font('Helvetica')
+        .text(panelText, LEFT + 14, panelY + 22, { width: CONTENT_W - 28 });
+      doc.y = panelY + panelH + 10;
+    }
+
     const cardW = (CONTENT_W - 10) / 2;
     const cardH = 78;
     const gridStartY = doc.y;
@@ -395,10 +447,16 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
     // Optimization Strength display value — never "Strong" on partial
     // layer coverage or while a platform is Broken; the underlying
     // categorical score is left untouched (still available to any other
-    // consumer), only this card's rendered text/color is capped.
+    // consumer), only this card's rendered text/color is capped. Withheld
+    // (Scoring & Coverage Gate PRD §9.3 — null, "Not assessed") and
+    // "partial" now describe the same condition for a 2-layer sub-score
+    // like this one (1 of 2 scored is a 0.5 ratio, always below the 0.6
+    // gate), so optimizationPartial already covers it — the `?? 'Not
+    // assessed'` below only needs to satisfy the type, never actually
+    // changes which branch renders.
     const optimizationCapped = optimizationPartial || (anyPlatformBroken && scores.optimization_strength === 'Strong');
     const optimizationDisplay = optimizationCapped && scores.optimization_strength === 'Strong'
-      ? 'Moderate*' : scores.optimization_strength;
+      ? 'Moderate*' : (scores.optimization_strength ?? 'Not assessed');
     const optimizationColor = optimizationPartial ? C.partial
       : optimizationDisplay.startsWith('Strong') ? C.healthy
       : optimizationDisplay.startsWith('Moderate') ? C.atRisk : C.broken;
@@ -406,34 +464,40 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
     // Attribution Risk display value — never "Low" (claiming low risk)
     // while a platform is Broken.
     const attributionCapped = anyPlatformBroken && scores.attribution_risk_level === 'Low';
-    const attributionDisplay = attributionCapped ? 'Medium*' : scores.attribution_risk_level;
+    const attributionDisplay = attributionCapped ? 'Medium*' : (scores.attribution_risk_level ?? 'Not assessed');
     const attributionColor = attributionPartial ? C.partial
       : attributionDisplay.startsWith('Low') ? C.healthy
       : attributionDisplay.startsWith('Medium') ? C.atRisk : C.broken;
 
+    const consistencyDisplay = scores.data_consistency_score ?? 'Not assessed';
     const consistencyColor = consistencyPartial ? C.partial
-      : scores.data_consistency_score === 'High' ? C.healthy
-      : scores.data_consistency_score === 'Medium' ? C.atRisk : C.broken;
+      : consistencyDisplay === 'High' ? C.healthy
+      : consistencyDisplay === 'Medium' ? C.atRisk : C.broken;
 
     const conversionCoverage = scores.conversion_signal_health_coverage;
-    const conversionDescription = conversionCoverage && conversionCoverage.layers_total > 0
+    const conversionDescription = scores.conversion_signal_health === null
+      ? 'Withheld — see the Coverage Gate panel above.'
+      : conversionCoverage && conversionCoverage.layers_total > 0
       ? `Overall signal quality across ${conversionCoverage.layers_tested} of ${conversionCoverage.layers_total} layers scanned (100 = fully healthy)`
       : 'Overall signal quality (100 = fully healthy)';
 
     const scoreCards = [
       {
         label: 'Conversion Signal Health',
-        value: `${scores.conversion_signal_health}/100`,
+        value: scores.conversion_signal_health === null ? 'Not assessed' : `${scores.conversion_signal_health}/100`,
         description: conversionDescription,
-        color: scores.conversion_signal_health >= 80 ? C.healthy
+        color: scores.conversion_signal_health === null ? C.partial
+             : scores.conversion_signal_health >= 80 ? C.healthy
              : scores.conversion_signal_health >= 60 ? C.atRisk
              : C.broken,
       },
       {
-        label: `Attribution Risk${attributionPartial ? ' (partial)' : ''} — Click ID & Storage`,
+        label: `Attribution Risk${attributionPartial ? ' (not assessed)' : ''} — Click ID & Storage`,
         value: attributionDisplay,
-        description: (attributionCapped
-          ? 'A declared platform is Broken — risk cannot be "Low" while that holds.'
+        description: (attributionPartial
+          ? 'Not enough of this score\'s layers were confirmed to give a rating.'
+          : attributionCapped
+          ? 'A declared platform has no signal observed — risk cannot be "Low" while that holds.'
           : attributionDisplay === 'Low'
           ? 'Ad attribution is well-configured — low is best'
           : attributionDisplay === 'Medium'
@@ -442,12 +506,12 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
         color: attributionColor,
       },
       {
-        label: `Optimization Strength${optimizationPartial ? ' (partial)' : ''} — Parameters & Identity`,
+        label: `Optimization Strength${optimizationPartial ? ' (not assessed)' : ''} — Parameters & Identity`,
         value: optimizationDisplay,
         description: (optimizationPartial
-          ? 'Not enough of this score\'s layers ran to give a confident rating.'
+          ? 'Not enough of this score\'s layers were confirmed to give a rating.'
           : optimizationCapped
-          ? 'A declared platform is Broken — capped below "Strong" until that\'s fixed.'
+          ? 'A declared platform has no signal observed — capped below "Strong" until that\'s fixed.'
           : optimizationDisplay === 'Strong'
           ? 'Sufficient signals for smart bidding — strong is best'
           : optimizationDisplay === 'Moderate'
@@ -456,13 +520,13 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
         color: optimizationColor,
       },
       {
-        label: `Data Consistency${consistencyPartial ? ' (partial)' : ''} — Hygiene & Integrity`,
-        value: scores.data_consistency_score,
+        label: `Data Consistency${consistencyPartial ? ' (not assessed)' : ''} — Hygiene & Integrity`,
+        value: consistencyDisplay,
         description: (consistencyPartial
-          ? 'Not enough of this score\'s layer ran to give a confident rating.'
-          : scores.data_consistency_score === 'High'
+          ? 'Not enough of this score\'s layer was confirmed to give a rating.'
+          : consistencyDisplay === 'High'
           ? 'Data is consistent across platforms — high is best'
-          : scores.data_consistency_score === 'Medium'
+          : consistencyDisplay === 'Medium'
           ? 'Some data inconsistencies detected — high is best'
           : 'Significant data inconsistencies detected — high is best') + coverageSuffix(scores.data_consistency_coverage),
         color: consistencyColor,
@@ -550,32 +614,6 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
       }
     }
 
-    // Could not be assessed (PRD §5/W3 — "suppress, do not annotate") —
-    // findings whose evidence named a step the scan substituted the
-    // landing page for. Never counted in issues, scores, or breakdowns;
-    // listed here so the report stays honest about what it skipped rather
-    // than silently dropping it with no trace.
-    if (report.could_not_be_assessed && report.could_not_be_assessed.length > 0) {
-      sectionHeading('Could Not Be Assessed');
-      // Report Correctness Programme PRD Part B4 — generic preamble, since
-      // this section now has two distinct exclusion causes (a page the
-      // scan couldn't reach and substituted the landing page for, or a step
-      // whose navigation didn't fully settle before the check ran); each
-      // item below already states its own specific reason. Also fixes the
-      // "used the landing page for instead" typo.
-      doc.fillColor(C.midText).fontSize(9).font('Helvetica')
-        .text(
-          'These checks are excluded from every count and score above — each one names its own reason below, rather than being reported as a finding.',
-          LEFT, doc.y, { width: CONTENT_W },
-        );
-      doc.moveDown(0.3);
-      for (const item of report.could_not_be_assessed) {
-        doc.fillColor(C.lightText).fontSize(8.5).font('Helvetica')
-          .text(`• ${item.rule_id.replace(/_/g, ' ')} — ${item.reason}`, LEFT + 4, doc.y, { width: CONTENT_W - 8 });
-        doc.moveDown(0.15);
-      }
-    }
-
     // Business summary
     sectionHeading('Business Summary');
     doc.fillColor(C.midText).fontSize(10).font('Helvetica')
@@ -608,26 +646,105 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
     }
 
     // ══════════════════════════════════════════════════════════════════════
-    // PAGE — Open Questions (Report Honesty PRD §B3) — its own page right
-    // after Executive Summary, so a reader who never reaches the appendix
-    // still sees Atlas asking rather than pronouncing. Omitted entirely (no
-    // page added) when this run raised nothing to ask.
+    // PAGE — Signals in conflict / Open Questions / Not assessed / With
+    // access (Pre-Connection Scan Confidence Tiering PRD §11.2 items 3-6) —
+    // its own page right after Executive Summary, so a reader who never
+    // reaches the appendix still sees Atlas asking and disclosing rather
+    // than pronouncing. Each section is independently omitted when this
+    // run raised nothing for it; the whole page is skipped when none of
+    // the four have anything.
     // ══════════════════════════════════════════════════════════════════════
 
-    if (report.open_questions && report.open_questions.length > 0) {
+    const hasConflicts = !!report.signal_conflicts && report.signal_conflicts.length > 0;
+    const hasQuestions = !!report.open_questions && report.open_questions.length > 0;
+    const hasUnassessed = !!report.could_not_be_assessed && report.could_not_be_assessed.length > 0;
+    const hasWithAccess = !!report.with_access && report.with_access.length > 0;
+
+    if (hasConflicts || hasQuestions || hasUnassessed || hasWithAccess) {
       doc.addPage();
-      pageHeader('Open Questions');
-      sectionHeading('Open Questions');
-      doc.fillColor(C.midText).fontSize(9).font('Helvetica')
-        .text(
-          'These are configurations whose intent only you can confirm — not defects, but worth a quick answer before anyone acts on the findings below.',
-          LEFT, doc.y, { width: CONTENT_W },
-        );
-      doc.moveDown(0.3);
-      for (const question of report.open_questions) {
-        doc.fillColor(C.darkText).fontSize(9.5).font('Helvetica')
-          .text(`•  ${question}`, LEFT + 4, doc.y, { width: CONTENT_W - 8 });
-        doc.moveDown(0.2);
+      pageHeader('Signals, Questions & Coverage');
+
+      // Signals in conflict (PRD §6/§11.2 item 3) — two independent
+      // detectors disagree about the same entity; both readings shown,
+      // no winner picked.
+      if (hasConflicts) {
+        sectionHeading('Signals in Conflict');
+        doc.fillColor(C.midText).fontSize(9).font('Helvetica')
+          .text(
+            'Two of our own detectors read the following differently. We\'re showing both readings rather than picking a winner.',
+            LEFT, doc.y, { width: CONTENT_W },
+          );
+        doc.moveDown(0.3);
+        for (const conflict of report.signal_conflicts!) {
+          doc.fillColor(C.darkText).fontSize(9.5).font('Helvetica-Bold')
+            .text(conflict.entity, LEFT + 4, doc.y, { width: CONTENT_W - 8 });
+          doc.fillColor(C.lightText).fontSize(8.5).font('Helvetica')
+            .text(`${conflict.source_a} reports: ${conflict.reading_a}`, LEFT + 4, doc.y, { width: CONTENT_W - 8 });
+          doc.fillColor(C.lightText).fontSize(8.5).font('Helvetica')
+            .text(`${conflict.source_b} reports: ${conflict.reading_b}`, LEFT + 4, doc.y, { width: CONTENT_W - 8 });
+          doc.moveDown(0.25);
+        }
+      }
+
+      // Questions for your team (Report Honesty PRD §B3; extended by
+      // Pre-Connection Scan Confidence Tiering PRD §11.3).
+      if (hasQuestions) {
+        if (hasConflicts) doc.moveDown(0.3);
+        sectionHeading('Questions for Your Team');
+        doc.fillColor(C.midText).fontSize(9).font('Helvetica')
+          .text(
+            'These are configurations whose intent only you can confirm — not defects, but worth a quick answer before anyone acts on the findings below.',
+            LEFT, doc.y, { width: CONTENT_W },
+          );
+        doc.moveDown(0.3);
+        for (const question of report.open_questions!) {
+          doc.fillColor(C.darkText).fontSize(9.5).font('Helvetica')
+            .text(`•  ${question}`, LEFT + 4, doc.y, { width: CONTENT_W - 8 });
+          doc.moveDown(0.2);
+        }
+      }
+
+      // Not assessed, and why (PRD §5/W3 — "suppress, do not annotate";
+      // PRD §11.2 item 5) — findings whose evidence named a step the scan
+      // substituted the landing page for, or that a cross-signal conflict
+      // check reclassified. Never counted in issues, scores, or
+      // breakdowns; listed here so the report stays honest about what it
+      // skipped rather than silently dropping it with no trace.
+      if (hasUnassessed) {
+        if (hasConflicts || hasQuestions) doc.moveDown(0.3);
+        sectionHeading('Not Assessed, and Why');
+        doc.fillColor(C.midText).fontSize(9).font('Helvetica')
+          .text(
+            'These checks are excluded from every count and score above — each one names its own reason below, rather than being reported as a finding.',
+            LEFT, doc.y, { width: CONTENT_W },
+          );
+        doc.moveDown(0.3);
+        for (const item of report.could_not_be_assessed!) {
+          doc.fillColor(C.lightText).fontSize(8.5).font('Helvetica')
+            .text(`• ${item.rule_id.replace(/_/g, ' ')} — ${item.reason}`, LEFT + 4, doc.y, { width: CONTENT_W - 8 });
+          doc.moveDown(0.15);
+        }
+      }
+
+      // With access — what a connected scan adds (PRD §12/§11.2 item 6).
+      if (hasWithAccess) {
+        if (hasConflicts || hasQuestions || hasUnassessed) doc.moveDown(0.3);
+        sectionHeading('With Access — What a Connected Scan Adds');
+        doc.fillColor(C.midText).fontSize(9).font('Helvetica')
+          .text(
+            'These checks need read-only access to your ad accounts. None of the connections below write anything.',
+            LEFT, doc.y, { width: CONTENT_W },
+          );
+        doc.moveDown(0.3);
+        for (const entry of report.with_access!) {
+          doc.fillColor(C.darkText).fontSize(9.5).font('Helvetica-Bold')
+            .text(entry.check, LEFT + 4, doc.y, { width: CONTENT_W - 8 });
+          doc.fillColor(C.lightText).fontSize(8.5).font('Helvetica')
+            .text(`Needs: ${entry.requires_connection.map((p) => CONNECTION_PLATFORM_LABELS[p] ?? p).join(', ')} (read-only)`, LEFT + 4, doc.y, { width: CONTENT_W - 8 });
+          doc.fillColor(C.lightText).fontSize(8.5).font('Helvetica')
+            .text(entry.reveals, LEFT + 4, doc.y, { width: CONTENT_W - 8 });
+          doc.moveDown(0.25);
+        }
       }
     }
 
@@ -652,7 +769,7 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
       const platY = doc.y;
       const pc = statusColor(platform.status);
       const platName = PLATFORM_LABELS[platform.platform] ?? formatLabel(platform.platform);
-      const pillLabel = isNotIncluded ? 'Not Included' : formatLabel(platform.status);
+      const pillLabel = PLATFORM_STATUS_LABELS[platform.status] ?? formatLabel(platform.status);
 
       doc.fillColor(C.bgLight).rect(LEFT, platY, CONTENT_W, cardHeight).fill();
       doc.fillColor(pc).rect(LEFT, platY, 4, cardHeight).fill();
@@ -943,7 +1060,7 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
       // GTM Container
       sectionHeading('Google Tag Manager Container');
       const gtmBadgeY = doc.y;
-      pill(gtm_container.detected ? 'Detected' : 'Not Detected', gtm_container.detected ? C.healthy : C.mutedText, LEFT, gtmBadgeY);
+      pill(gtm_container.detected ? 'Detected' : 'Not observed', gtm_container.detected ? C.healthy : C.mutedText, LEFT, gtmBadgeY);
       doc.y = gtmBadgeY + 22;
       if (gtm_container.detected) {
         doc.fillColor(C.darkText).font('Helvetica').fontSize(9)
@@ -982,7 +1099,7 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
         doc.fillColor(C.bgLight).rect(LEFT, rowY, CONTENT_W, 22).fill();
         doc.fillColor(C.darkText).fontSize(9).font('Helvetica-Bold')
           .text(TAG_PLATFORM_LABELS[tag.platform] ?? formatLabel(tag.platform), LEFT + 10, rowY + 6);
-        pill(tag.detected ? 'Detected' : 'Not Detected', tag.detected ? C.healthy : C.mutedText, LEFT + CONTENT_W - 90, rowY + 4);
+        pill(tag.detected ? 'Detected' : 'Not observed', tag.detected ? C.healthy : C.mutedText, LEFT + CONTENT_W - 90, rowY + 4);
         if (tag.detected) {
           const detail = `${tag.ids.length > 0 ? `ID${tag.ids.length > 1 ? 's' : ''}: ${tag.ids.join(', ')}  ·  ` : ''}${tag.hit_count} request${tag.hit_count === 1 ? '' : 's'} observed`;
           doc.fillColor(C.lightText).fontSize(7.5).font('Helvetica')

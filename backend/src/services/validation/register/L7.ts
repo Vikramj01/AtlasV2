@@ -181,7 +181,7 @@ export const PHONE_CAPTURED_WHERE_COLLECTED: ValidationRule = {
       status,
       severity: this.severity,
       technical_details: {
-        found: atConversion ? 'Phone present on the conversion event' : 'Phone was collected but is missing from the conversion event',
+        found: atConversion ? 'Phone present on the conversion event' : 'Phone was collected but not observed on the conversion event',
         expected: 'Phone is the second strongest match key — dropping it between collection and conversion wastes the signal',
         evidence: [`Collected somewhere in the journey: ${collectedAnywhere}`, `Present at conversion: ${atConversion}`],
       },
@@ -233,7 +233,7 @@ export const NAME_AND_ADDRESS_CAPTURED_WHERE_COLLECTED: ValidationRule = {
       status,
       severity: this.severity,
       technical_details: {
-        found: atConversion ? 'A name/address field is present on the conversion event' : 'Name/address was collected but is missing from the conversion event',
+        found: atConversion ? 'A name/address field is present on the conversion event' : 'Name/address was collected but not observed on the conversion event',
         expected: 'Name and address give an incremental match rate improvement when the business already has them',
         evidence: [`Collected somewhere in the journey: ${collectedAnywhere}`, `Present at conversion: ${atConversion}`],
       },

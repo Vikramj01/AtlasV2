@@ -206,9 +206,9 @@ export type GatedDirection = 'fail' | 'pass' | 'both' | 'none';
  *                   settle, or its evidence channel was not captured at all
  *                   (the rule never ran — status: 'skipped').
  *   'CONFLICTED'  — two or more independent detectors disagree about the
- *                   entity this rule evaluates (contradictionGuard.ts/
- *                   clickIdContention.ts today; a general cross-signal
- *                   consistency checker is future work).
+ *                   entity this rule evaluates (signalConsistency.ts's
+ *                   CONF_01–CONF_05 assertions, or clickIdContention.ts's
+ *                   synthetic multi-click-ID injection artifact).
  */
 export type ObservationConfidence = 'CONFIRMED' | 'PARTIAL' | 'UNSUPPORTED' | 'CONFLICTED';
 
@@ -477,7 +477,16 @@ export type DetectedTagPlatform =
   | 'linkedin_insight'
   | 'tiktok_pixel'
   | 'microsoft_uet'
-  | 'openai_pixel';
+  | 'openai_pixel'
+  // Pre-Connection Scan Confidence Tiering PRD §6, CONF_03 — reddit/
+  // pinterest previously had no tag-inventory entry at all despite the
+  // register's own platformDetection.ts covering both as DeclaredPlatforms,
+  // so a finding naming either (UNDECLARED_PLATFORM_TAG_DETECTED) had
+  // nothing to cross-check against — a structural version of the OpenArt
+  // Reddit-inventory-divergence bug (PRD §1.1 item 3). Closed by adding
+  // both here rather than by fixing the finding in isolation.
+  | 'reddit_pixel'
+  | 'pinterest_pixel';
 
 export interface DataLayerEventInventoryEntry {
   event_name: string;
@@ -962,10 +971,27 @@ export interface ScoreCoverage {
 }
 
 export interface AuditScores {
-  conversion_signal_health: number;
-  attribution_risk_level: 'Low' | 'Medium' | 'High' | 'Critical';
-  optimization_strength: 'Weak' | 'Moderate' | 'Strong';
-  data_consistency_score: 'Low' | 'Medium' | 'High';
+  /**
+   * Scoring & Coverage Gate PRD §9.1.4 — null when coverage_ratio across
+   * this score's layers (all 13, for this one) falls below
+   * COVERAGE_GATE_THRESHOLD (register/layers.ts, 0.60): "A partial score
+   * would imply confidence the run does not support." Renders as a
+   * Coverage Gate panel, never as a number and never as a blank (§9.1.5).
+   * Non-null for a v1-legacy score (scoring/engine.ts's calculateScores
+   * has no coverage-gate concept) and for any v2 score predating this PRD.
+   */
+  conversion_signal_health: number | null;
+  /** Null under the same gate, applied at this score's own (smaller) layer scope — see attribution_risk_coverage. PRD §9.3: a dimension with no scored layers renders 'Not assessed', never a default-safe label like the old 'Low'/'Moderate'/'High' fallback for zero applicable rules. */
+  attribution_risk_level: 'Low' | 'Medium' | 'High' | 'Critical' | null;
+  optimization_strength: 'Weak' | 'Moderate' | 'Strong' | null;
+  data_consistency_score: 'Low' | 'Medium' | 'High' | null;
+  /**
+   * Set only alongside a withheld (null) conversion_signal_health — PRD
+   * §9.1.4's literal reason code. Sub-scores withhold the same way but
+   * don't get their own reason code; the *_coverage field alongside each
+   * already states how many of its (smaller) layer set scored.
+   */
+  score_withheld_reason?: 'INSUFFICIENT_LAYER_COVERAGE';
   /** Distinct validation_layer values with any result at all vs. with a non-skipped result — the "N of M layers scanned" figure for the header composite. conversion_signal_health_coverage.layers_total is always 13 (ALL_V2_LAYERS.length, register/layers.ts) — see Report Correctness Programme PRD Part D1. */
   conversion_signal_health_coverage?: ScoreCoverage;
   attribution_risk_coverage?: ScoreCoverage;
@@ -1102,7 +1128,7 @@ export interface PlatformBreakdown {
  * Pre-Connection Scan Confidence Tiering PRD §4.3 verdict-lattice
  * discriminant for UnassessableFinding — reclassifies what was previously
  * one undifferentiated bucket fed by four independent producers:
- * clickIdContention.ts/contradictionGuard.ts (two independent signals
+ * clickIdContention.ts/signalConsistency.ts (two independent signals
  * disagree) → 'CONFLICT'; coverageSuppression.ts/degradationSuppression.ts
  * (the crawl didn't reach/settle what this result's evidence depends on) →
  * 'NOT_OBSERVED'. Optional: a producer not yet updated to attach it omits
@@ -1117,6 +1143,61 @@ export interface UnassessableFinding {
   reason: string;
   /** See UnassessableKind. */
   kind?: UnassessableKind;
+}
+
+/**
+ * Pre-Connection Scan Confidence Tiering PRD §6 — one fired cross-signal
+ * consistency assertion (CONF_01–CONF_05, register/signalConsistency.ts).
+ * Defined here (not in signalConsistency.ts) so ReportJSON can reference
+ * it without a services→types→services import cycle; signalConsistency.ts
+ * imports it back from here.
+ */
+export interface SignalConflict {
+  assertion_id: 'CONF_01' | 'CONF_02' | 'CONF_03' | 'CONF_04' | 'CONF_05';
+  entity: string;
+  source_a: string;
+  reading_a: string;
+  source_b: string;
+  reading_b: string;
+  affected_rule_ids: string[];
+}
+
+/**
+ * Pre-Connection Scan Confidence Tiering PRD §12 — a connected-tier
+ * check/module, declared in reporting/withAccessRegistry.ts and rendered
+ * in the report's "With access" section (PRD §12.3) only when it resolves
+ * a real finding or open question raised *in this run* — never
+ * aspirational (§12.1).
+ */
+export interface WithAccessEntry {
+  check: string;
+  requires_connection: ('google_ads' | 'meta' | 'tiktok' | 'ga4' | 'linkedin')[];
+  /** rule_ids (or open-question text) this entry resolves, when present in this run. */
+  answers_question_for: string[];
+  /** One line: what the check returns. */
+  reveals: string;
+}
+
+/**
+ * Pre-Connection Scan Confidence Tiering PRD §15 — measured accuracy. Data
+ * capture only: nothing computes or publishes an accuracy figure from
+ * this yet ("no accuracy figure is published until the sample is
+ * meaningful" — explicitly deferred). See
+ * supabase/migrations/20260913001_rule_confirmations.sql for the full
+ * rationale, including why `finding_id` stays unused today.
+ */
+export type RuleConfirmationOutcome = 'CONFIRMED' | 'REFUTED' | 'UNKNOWN';
+export type RuleConfirmationSource = 'client_answer' | 'rescan' | 'operator';
+
+export interface RuleConfirmation {
+  id: string;
+  audit_id: string;
+  rule_id: string;
+  finding_id: string | null;
+  outcome: RuleConfirmationOutcome;
+  source: RuleConfirmationSource;
+  note: string | null;
+  created_at: string;
 }
 
 export interface ReportJSON {
@@ -1169,6 +1250,23 @@ export interface ReportJSON {
    * rendering an empty heading, per PRD §B3.
    */
   open_questions?: string[];
+  /**
+   * Pre-Connection Scan Confidence Tiering PRD §6/§11.2 — every conflict
+   * signalConsistency.ts's CONF_01–CONF_05 (or clickIdContention.ts) fired
+   * this run, for the "Signals in conflict" section: both readings shown,
+   * no winner picked. Omitted (not an empty array) when nothing
+   * conflicted, matching could_not_be_assessed's convention.
+   */
+  signal_conflicts?: SignalConflict[];
+  /**
+   * Pre-Connection Scan Confidence Tiering PRD §12 — the "With access"
+   * section: connected-tier checks/modules that would resolve a real
+   * finding or open question raised in this run. Built by
+   * reporting/withAccessRegistry.ts's buildWithAccessSection(), which
+   * filters the static registry down to only entries with something to
+   * resolve here. Omitted (not an empty array) when nothing applies.
+   */
+  with_access?: WithAccessEntry[];
   /**
    * Set by the pre-render placeholder guard (PRD "Signal Health Report"
    * Issue 4) when a narrative field contains literal placeholder-shaped

@@ -12,7 +12,8 @@ import {
   REGISTER, gatedDirectionFor, deriveObservationConfidence, deriveVerdict, applySeverityCeiling,
 } from '../engine';
 import { calculateV2Scores } from '../scoring';
-import type { AuditData, ValidationRule, DeclaredPlatform, StepCoverage } from '@/types/audit';
+import { ALL_V2_LAYERS } from '../layers';
+import type { AuditData, ValidationRule, DeclaredPlatform, StepCoverage, ValidationLayerV2 } from '@/types/audit';
 
 vi.mock('@/utils/logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -47,6 +48,19 @@ function makeRule(overrides: Partial<ValidationRule> = {}): ValidationRule {
     }),
     ...overrides,
   };
+}
+
+/**
+ * Enough confirmed-passing rules in layers other than `usedLayers` to
+ * clear the Scoring & Coverage Gate's 60% floor (8 of 13 layers, PRD §9),
+ * so a scoring-consequence test can isolate its own denominator/numerator
+ * arithmetic without the gate withholding the score as an incidental
+ * side effect.
+ */
+function fillerRules(usedLayers: ValidationLayerV2[], count = 8): ValidationRule[] {
+  return ALL_V2_LAYERS.filter((l) => !usedLayers.includes(l))
+    .slice(0, count)
+    .map((layer, i) => makeRule({ rule_id: `filler-${i}`, layer }));
 }
 
 function makeAuditData(overrides: Partial<AuditData> = {}): AuditData {
@@ -268,27 +282,39 @@ describe('runRegister — requires (precondition gating)', () => {
     // reached the page that would carry it.
     const gatedRule = makeRule({
       rule_id: 'GATED',
+      layer: 'parameter_completeness',
       requires: ['conversion_surface'],
       test: () => ({ rule_id: 'GATED', validation_layer: 'parameter_completeness', status: 'fail', severity: 'high', technical_details: { found: '', expected: '', evidence: [] } }),
     });
-    const passingRule = makeRule({ rule_id: 'PASSES' });
+    const passingRule = makeRule({ rule_id: 'PASSES' }); // default layer: foundation_tags
+    // Scoring & Coverage Gate PRD §9 — with only GATED/PASSES's 2 layers in
+    // play, coverage_ratio would be 2/13, well below the 0.60 floor, and
+    // the score this test is about would be withheld before ever reaching
+    // the denominator/numerator behaviour under test. Filler rules in 8
+    // other layers clear that floor without changing GATED/PASSES's own
+    // arithmetic (they're both still 'pass', so they don't drag anything
+    // down — see the recomputed expected scores below).
+    const filler = fillerRules(['parameter_completeness', 'foundation_tags']);
 
     const homepageOnly = makeAuditData({ step_coverage: [makeStep({ step: 'landing', distinct_from_landing: false })] });
-    const results = runRegister(homepageOnly, [gatedRule, passingRule]);
+    const results = runRegister(homepageOnly, [gatedRule, passingRule, ...filler]);
 
-    expect(results.map((r) => r.status)).toEqual(['skipped', 'pass']);
-    // Denominator is 1 (PASSES only) — GATED is excluded entirely, never
-    // counted as a failure just because the crawl couldn't reach it.
+    expect(results.slice(0, 2).map((r) => r.status)).toEqual(['skipped', 'pass']);
+    // Denominator is PASSES + 8 filler (all passing) — GATED is excluded
+    // entirely, never counted as a failure just because the crawl
+    // couldn't reach it.
     expect(calculateV2Scores(results).conversion_signal_health).toBe(100);
 
-    // Same two rules, but the crawl DID reach a real conversion surface —
+    // Same rules, but the crawl DID reach a real conversion surface —
     // GATED's test() now actually runs, and its genuine 'fail' correctly
     // drags the score down. Precondition gating only ever removes rules
     // from the denominator; it never protects a real failure from scoring.
+    // 1 fail + 9 passes, all severity 'high' (weight 2): numerator 18,
+    // denominator 20 → 90.
     const reachedConversionSurface = makeAuditData({ step_coverage: [makeStep({ step: 'landing', distinct_from_landing: false }), makeStep()] });
-    const resultsReached = runRegister(reachedConversionSurface, [gatedRule, passingRule]);
-    expect(resultsReached.map((r) => r.status)).toEqual(['fail', 'pass']);
-    expect(calculateV2Scores(resultsReached).conversion_signal_health).toBe(50);
+    const resultsReached = runRegister(reachedConversionSurface, [gatedRule, passingRule, ...filler]);
+    expect(resultsReached.slice(0, 2).map((r) => r.status)).toEqual(['fail', 'pass']);
+    expect(calculateV2Scores(resultsReached).conversion_signal_health).toBe(90);
   });
 });
 

@@ -343,7 +343,7 @@ export const GBRAID_CAPTURED_AT_LANDING = makeClickIdCaptureRule({
   paramName: 'gbraid',
   severity: 'critical',
   platform_scope: ['google_ads'],
-  why: 'gbraid is read and stored — iOS app-to-web clicks arrive as gbraid; missing it silently drops iOS traffic',
+  why: 'gbraid is read and stored — iOS app-to-web clicks arrive as gbraid; not capturing it silently drops iOS traffic',
 });
 
 export const WBRAID_CAPTURED_AT_LANDING = makeClickIdCaptureRule({

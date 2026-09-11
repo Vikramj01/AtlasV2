@@ -18,11 +18,15 @@ const JARGON_TOOLTIP_BY_RULE: Record<string, (typeof TOOLTIPS)[keyof typeof TOOL
   EVENT_ID_CONSISTENCY_CLIENT_TO_SERVER: TOOLTIPS.eventId,
 };
 
+// Pre-Connection Scan Confidence Tiering PRD §5.1 — the platform verdict
+// label remap. 'Broken'/'Healthy' assert an absence/presence claim with
+// more confidence than platform_breakdown's status (a simple fail-count
+// bucket, not itself coverage-gated) can support.
 const PLATFORM_STATUS_CONFIG = {
-  healthy:       { badge: 'bg-green-100 text-green-700 hover:bg-green-100',  label: 'Healthy' },
-  at_risk:       { badge: 'bg-yellow-100 text-yellow-700 hover:bg-yellow-100', label: 'At Risk' },
-  broken:        { badge: 'bg-red-100 text-red-700 hover:bg-red-100',         label: 'Broken' },
-  not_included:  { badge: 'bg-muted text-muted-foreground hover:bg-muted',    label: 'Not Included' },
+  healthy:       { badge: 'bg-green-100 text-green-700 hover:bg-green-100',  label: 'Signal observed' },
+  at_risk:       { badge: 'bg-yellow-100 text-yellow-700 hover:bg-yellow-100', label: 'Partial signal observed' },
+  broken:        { badge: 'bg-red-100 text-red-700 hover:bg-red-100',         label: 'No signal observed' },
+  not_included:  { badge: 'bg-muted text-muted-foreground hover:bg-muted',    label: 'Not in scope' },
 };
 
 const RULE_LABELS: Record<string, { pass: string; fail: string }> = {

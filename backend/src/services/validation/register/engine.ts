@@ -204,7 +204,7 @@ export function gatedDirectionFor(rule: Pick<ValidationRule, 'evidence_class' | 
  * that never ran (status: 'skipped', however it arose) is UNSUPPORTED by
  * construction — see runRegister() below — and CONFLICTED is set
  * exclusively by the cross-signal conflict mechanisms (clickIdContention.ts/
- * contradictionGuard.ts today) reclassifying an UnassessableFinding's kind,
+ * signalConsistency.ts today) reclassifying an UnassessableFinding's kind,
  * never by this function.
  */
 export function deriveObservationConfidence(rule: ValidationRule, auditData: AuditData): ObservationConfidence {
@@ -287,7 +287,7 @@ export function applySeverityCeiling(
  * context per §10.4) — is uniformly UNSUPPORTED/INCONCLUSIVE: the rule
  * never produced real evidence either way. `CONFLICTED`/`CONFLICT` are
  * never set here — exclusively by the cross-signal conflict mechanisms
- * (clickIdContention.ts/contradictionGuard.ts) reclassifying an
+ * (clickIdContention.ts/signalConsistency.ts) reclassifying an
  * UnassessableFinding's kind in the audit pipeline (orchestrator.ts).
  */
 export function runRegister(auditData: AuditData, rules: ValidationRule[] = REGISTER): ValidationResult[] {
