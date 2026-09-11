@@ -1,7 +1,8 @@
 import { supabaseAdmin } from './supabase';
 import type {
   AuditRow, AuditStatus, FunnelType, Region, ValidationResult, ReportJSON,
-  RuleSetVersion, SiteType, SecondaryMotion, DeclaredPlatform, TrafficRegion, CMP, DeclaredConversion,
+  RuleSetVersion, SiteType, SecondaryMotion, DeclaredPlatform, TrafficRegion, CMP, DeclaredConversion, RunQuality,
+  DeclarationSource,
 } from '@/types/audit';
 import { sanitizeForJsonb } from '@/utils/sanitizeJsonb';
 
@@ -20,6 +21,7 @@ export async function createAudit(data: {
   site_type?: SiteType;
   secondary_motion?: SecondaryMotion;
   declared_platforms?: DeclaredPlatform[];
+  declaration_source?: DeclarationSource;
   primary_channel?: DeclaredPlatform;
   monthly_spend_band?: string;
   traffic_regions?: TrafficRegion[];
@@ -65,10 +67,12 @@ export async function updateAuditStatus(
 
 /**
  * Persists coverage_fingerprint/pages_distinct (Site Evaluation Coverage &
- * Honesty PRD §9) and register_version/conversion_signal_health_numerator/
- * _denominator (Report Correctness Programme PRD Part D3/D4) onto the
- * audits row — see 20260903002_audit_coverage_fingerprint.sql and
- * 20260906002_score_comparability.sql. All fields undefined for an
+ * Honesty PRD §9), register_version/conversion_signal_health_numerator/
+ * _denominator (Report Correctness Programme PRD Part D3/D4), and
+ * run_quality (Pre-Connection Scan Confidence Tiering PRD §7.3) onto the
+ * audits row — see 20260903002_audit_coverage_fingerprint.sql,
+ * 20260906002_score_comparability.sql and
+ * 20260911001_settle_contract_run_quality.sql. All fields undefined for an
  * AuditData/score shape that never computed them (Journey-Builder mode, a
  * v1-legacy audit, a run predating these fields); called unconditionally
  * by the orchestrator regardless, so the columns are simply left null
@@ -82,6 +86,7 @@ export async function updateAuditCoverage(
     register_version?: string;
     conversion_signal_health_numerator?: number;
     conversion_signal_health_denominator?: number;
+    run_quality?: RunQuality;
   },
 ): Promise<void> {
   const { error } = await supabaseAdmin
@@ -92,6 +97,7 @@ export async function updateAuditCoverage(
       register_version: fields.register_version ?? null,
       conversion_signal_health_numerator: fields.conversion_signal_health_numerator ?? null,
       conversion_signal_health_denominator: fields.conversion_signal_health_denominator ?? null,
+      run_quality: fields.run_quality ?? null,
     })
     .eq('id', audit_id);
 

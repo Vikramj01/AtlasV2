@@ -1,5 +1,8 @@
 /**
- * Layer L3 — Storage Durability (6 of 9 rules — see note on L3.7-9 below).
+ * Layer L3 — Storage Durability (7 of 10 rules — see note on L3.7-9 below;
+ * FBP_AND_FBC_COOKIES_PRESENT split into FBP_COOKIE_PRESENT (L3.4) +
+ * FBC_COOKIE_PRESENT (L3.10) per the Pre-Connection Scan Confidence
+ * Tiering PRD §10.4).
  *
  * L2 (Click ID Capture) asked "did the page read the identifier at all."
  * This layer asks the harder question: is where it landed durable enough
@@ -53,6 +56,8 @@ export const CLICK_ID_WRITTEN_TO_DURABLE_STORAGE: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  evidence_class: 'DIRECT', // PRD §10.4 exact
+  synthetic_evidence: true,
   remediation: (result) => {
     const sessionOnlyLine = result.technical_details.found.includes(':')
       ? result.technical_details.found.split(': ')[1]
@@ -113,6 +118,12 @@ export const STORAGE_LIFETIME_MEETS_ATTRIBUTION_WINDOW: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  // Not classified by the PRD — matches by cookie name, not synthetic
+  // value; a real visitor's own cookie trips this identically. Property
+  // (max-age) of an already-found cookie, gated to exist by
+  // GCL_AW_COOKIE_PRESENT/FBP_COOKIE_PRESENT above — no coverage risk
+  // beyond what those already gate.
+  evidence_class: 'DIRECT',
   remediation: (result) => {
     const violations = result.technical_details.evidence.filter((e) => {
       const match = e.match(/(\d+)d \(needs (\d+)d\)/);
@@ -178,6 +189,7 @@ export const GCL_AW_COOKIE_PRESENT: ValidationRule = {
   platform_scope: ['google_ads'],
   detectable_by: 'crawl',
   owner: 'Frontend',
+  evidence_class: 'PRESENCE', // PRD §10.4 exact
   remediation: 'Enable Auto-tagging and add the Conversion Linker tag (via GTM or gtag.js) firing on every page — it\'s the mechanism that sets _gcl_aw, and Google Ads Enhanced Conversions reads this cookie directly.',
 
   test(auditData: AuditData): ValidationResult {
@@ -198,34 +210,35 @@ export const GCL_AW_COOKIE_PRESENT: ValidationRule = {
   },
 };
 
-// ── L3.4 — _fbp and _fbc cookies present ──────────────────────────────────────
+// ── L3.4 — _fbp cookie present ────────────────────────────────────────────────
+//
+// Pre-Connection Scan Confidence Tiering PRD §10.4 — split from the former
+// FBP_AND_FBC_COOKIES_PRESENT. The composite rule failed on _fbp alone while
+// carrying _fbc in its evidence with an explicit "not counted toward this
+// result" caveat — one rule shouldn't both cite and not-count its own
+// evidence. FBP_COOKIE_PRESENT now owns the real, gated check (unchanged
+// from the composite's W4.1 fail condition); FBC_COOKIE_PRESENT below is its
+// own rule, always inconclusive in a crawl context.
 
-export const FBP_AND_FBC_COOKIES_PRESENT: ValidationRule = {
+export const FBP_COOKIE_PRESENT: ValidationRule = {
   id: 'L3.4',
-  rule_id: 'FBP_AND_FBC_COOKIES_PRESENT',
+  rule_id: 'FBP_COOKIE_PRESENT',
   layer: 'storage_durability',
-  check: '_fbp and _fbc cookies present',
+  check: '_fbp cookie present',
   severity: 'critical',
   applies_to: 'all',
   platform_scope: ['meta'],
   detectable_by: 'crawl',
   owner: 'Frontend',
-  remediation: (result) => {
-    const missing = result.technical_details.found.startsWith('Missing:') ? result.technical_details.found.replace('Missing: ', '') : '_fbp';
-    return `Ensure the Meta Pixel base code is installed and firing on every page — ${missing} is set automatically by the Pixel itself, so a missing cookie almost always means the Pixel isn't loading on this page at all, not a separate cookie bug.`;
-  },
+  evidence_class: 'PRESENCE', // PRD §10.4 exact
+  remediation: 'Ensure the Meta Pixel base code is installed and firing on every page — _fbp is set automatically by the Pixel itself, so a missing cookie almost always means the Pixel isn\'t loading on this page at all, not a separate cookie bug.',
 
-  // W4.1 (Click-ID Contention, Contradiction Guard & Settle Enforcement
-  // PRD) — _fbc is written by the Meta Pixel only from a genuine fbclid
-  // arriving with a real Meta-click referrer; a crawler-injected fbclid
-  // frequently won't produce it, which is a property of synthetic
-  // injection, not a site defect. _fbp has no such caveat — the Pixel
-  // sets it unconditionally on load. The fail condition is scoped to
-  // _fbp alone; a missing _fbc is reported as an inconclusive evidence
-  // line, never a CRITICAL fail on its own.
+  // W4.1 (Click-ID Contention, Contradiction Guard & Settle Enforcement PRD)
+  // — the Pixel sets _fbp unconditionally on load, with no dependency on a
+  // real fbclid/referrer the way _fbc has (see FBC_COOKIE_PRESENT below), so
+  // this is a clean, gated PRESENCE check with no synthetic-injection caveat.
   test(auditData: AuditData): ValidationResult {
     const hasFbp = !!auditData.cookies?.['_fbp'];
-    const hasFbc = !!auditData.cookies?.['_fbc'];
 
     return {
       rule_id: this.rule_id,
@@ -235,12 +248,52 @@ export const FBP_AND_FBC_COOKIES_PRESENT: ValidationRule = {
       technical_details: {
         found: hasFbp ? '_fbp is present' : 'Missing: _fbp',
         expected: "The Meta browser cookie (_fbp) is set — the Pixel's own base signal that it's loading and writing cookies at all",
+        evidence: [`_fbp present: ${hasFbp}`],
+      },
+    };
+  },
+};
+
+// ── L3.10 — _fbc cookie present ───────────────────────────────────────────────
+//
+// PRD §10.4 exact: "disabled in crawl context. Always INCONCLUSIVE: only a
+// genuine Meta-click referrer populates it, which a synthetic crawl cannot
+// reproduce." Always returns status: 'skipped' from test() itself (not a
+// `requires` precondition — there's no step this depends on, the signal is
+// just structurally unobtainable) — engine.ts's runRegister() treats any
+// 'skipped' result, however it arose, as observation_confidence:
+// 'UNSUPPORTED' / verdict: 'INCONCLUSIVE'.
+
+export const FBC_COOKIE_PRESENT: ValidationRule = {
+  id: 'L3.10',
+  rule_id: 'FBC_COOKIE_PRESENT',
+  layer: 'storage_durability',
+  check: '_fbc cookie present',
+  severity: 'critical',
+  applies_to: 'all',
+  platform_scope: ['meta'],
+  detectable_by: 'crawl',
+  owner: 'Frontend',
+  evidence_class: 'PRESENCE',
+  remediation: 'Not assessable from a synthetic crawl — see a connected scan\'s CAPI delivery and match-rate diagnostics instead.',
+
+  test(auditData: AuditData): ValidationResult {
+    const hasFbc = !!auditData.cookies?.['_fbc'];
+    return {
+      rule_id: this.rule_id,
+      validation_layer: this.layer,
+      status: 'skipped',
+      severity: this.severity,
+      technical_details: {
+        found: hasFbc ? '_fbc present (informational only — not scored)' : '_fbc not present',
+        expected: "The Meta click cookie (_fbc) is set from a real fbclid arriving with a genuine Meta-click referrer",
         evidence: [
-          `_fbp present: ${hasFbp}`,
+          // contradictionGuard.ts's fbclid spec reads this exact line —
+          // FBCLID_CAPTURED_AT_LANDING failing while _fbc is genuinely
+          // present is a logical contradiction even though this rule's own
+          // status is always 'skipped'.
           `_fbc present: ${hasFbc}`,
-          ...(hasFbc
-            ? []
-            : ['_fbc inconclusive under synthetic injection — it is only ever populated by the Pixel from a real fbclid arriving with a genuine Meta-click referrer, which a crawler-injected fbclid cannot reproduce; not counted toward this result']),
+          '_fbc is only ever populated by the Pixel from a real fbclid arriving with a genuine Meta-click referrer, which a crawler-injected fbclid cannot reproduce — this cannot be assessed from a pre-connection crawl',
         ],
       },
     };
@@ -264,6 +317,9 @@ export const COOKIE_SCOPED_TO_PARENT_DOMAIN: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  // Not classified by the PRD — property (domain attribute) of an
+  // already-found cookie, no coverage-scaling risk.
+  evidence_class: 'DIRECT',
   remediation: (result) => {
     const names = result.technical_details.found.includes(': ') ? result.technical_details.found.split(': ')[1] : 'the affected cookie(s)';
     return `Set the Domain attribute explicitly to the parent domain (e.g. ".example.com") when writing ${names} — without it, the browser scopes the cookie to the exact host it was set on, and it silently disappears the moment the journey crosses to an app or checkout subdomain.`;
@@ -322,6 +378,7 @@ export const COOKIE_ATTRIBUTES_CORRECT: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  evidence_class: 'DIRECT', // PRD §10.4 exact
   remediation: (result) => {
     const violations = result.technical_details.evidence.filter((e) => e.includes('SameSite=None') || e.includes('SameSite=Strict'));
     if (violations.length === 0) return 'Set SameSite=Lax (or None with Secure) on the affected cookie(s) — Strict drops the cookie on return from a third-party payment or SSO host, and None without Secure is rejected by the browser outright.';
@@ -369,7 +426,8 @@ export const L3_RULES: ValidationRule[] = [
   CLICK_ID_WRITTEN_TO_DURABLE_STORAGE,
   STORAGE_LIFETIME_MEETS_ATTRIBUTION_WINDOW,
   GCL_AW_COOKIE_PRESENT,
-  FBP_AND_FBC_COOKIES_PRESENT,
+  FBP_COOKIE_PRESENT,
+  FBC_COOKIE_PRESENT,
   COOKIE_SCOPED_TO_PARENT_DOMAIN,
   COOKIE_ATTRIBUTES_CORRECT,
 ];

@@ -3,7 +3,7 @@
  * PRD §6.4) and computeCoverageFingerprint (§9).
  */
 import { describe, it, expect } from 'vitest';
-import { buildCoverageSummary, computeCoverageFingerprint } from '../coverage';
+import { buildCoverageSummary, computeCoverageFingerprint, computeRunQuality } from '../coverage';
 import type { AuditData, StepCoverage, ValidationResult } from '@/types/audit';
 
 function makeStep(overrides: Partial<StepCoverage> = {}): StepCoverage {
@@ -229,6 +229,69 @@ describe('buildCoverageSummary', () => {
     const coverage = buildCoverageSummary(auditData, []);
     expect(coverage?.partial).toBe(false);
     expect(coverage?.degraded_steps).toEqual([]);
+  });
+});
+
+// ── computeRunQuality (Pre-Connection Scan Confidence Tiering PRD §7.3) ────
+
+describe('computeRunQuality', () => {
+  it('returns INSUFFICIENT for an empty step array', () => {
+    expect(computeRunQuality([])).toBe('INSUFFICIENT');
+  });
+
+  it('returns COMPLETE when every step settled', () => {
+    const steps = [
+      makeStep({ step: 'landing', settle_outcome: 'settled' }),
+      makeStep({ step: 'product', distinct_from_landing: true, settle_outcome: 'settled' }),
+      makeStep({ step: 'checkout', distinct_from_landing: true, settle_outcome: 'settled' }),
+    ];
+    expect(computeRunQuality(steps)).toBe('COMPLETE');
+  });
+
+  it('returns PROVISIONAL when some but not all steps settled, and the conversion surface itself settled', () => {
+    const steps = [
+      makeStep({ step: 'landing', settle_outcome: 'settled' }),
+      makeStep({ step: 'product', distinct_from_landing: true, settle_outcome: 'settled' }),
+      makeStep({ step: 'checkout', distinct_from_landing: true, settle_outcome: 'quiet_period_cap_reached' }),
+    ];
+    expect(computeRunQuality(steps)).toBe('PROVISIONAL');
+  });
+
+  it('returns INSUFFICIENT when a conversion surface was reached but none of those steps settled', () => {
+    const steps = [
+      makeStep({ step: 'landing', settle_outcome: 'settled' }),
+      makeStep({ step: 'product', distinct_from_landing: true, navigation_success: true, settle_outcome: 'quiet_period_cap_reached' }),
+      makeStep({ step: 'checkout', distinct_from_landing: true, navigation_success: true, settle_outcome: 'navigation_failed' }),
+    ];
+    // 1 settled step overall (landing) is also < 2, so this would be
+    // INSUFFICIENT either way — the next test isolates the conversion
+    // surface condition on its own.
+    expect(computeRunQuality(steps)).toBe('INSUFFICIENT');
+  });
+
+  it('returns INSUFFICIENT when the only conversion-surface step never settled, even with 2+ other settled steps', () => {
+    const steps = [
+      makeStep({ step: 'landing', settle_outcome: 'settled' }),
+      makeStep({ step: 'search', distinct_from_landing: false, settle_outcome: 'settled' }),
+      makeStep({ step: 'checkout', distinct_from_landing: true, navigation_success: true, settle_outcome: 'quiet_period_cap_reached' }),
+    ];
+    expect(computeRunQuality(steps)).toBe('INSUFFICIENT');
+  });
+
+  it('returns INSUFFICIENT when fewer than two steps settled overall, even with no conversion surface reached', () => {
+    const steps = [
+      makeStep({ step: 'landing', settle_outcome: 'settled' }),
+      makeStep({ step: 'product', distinct_from_landing: false, navigation_success: false, settle_outcome: 'navigation_failed' }),
+    ];
+    expect(computeRunQuality(steps)).toBe('INSUFFICIENT');
+  });
+
+  it('returns INSUFFICIENT for a single-step run even though that one step settled cleanly', () => {
+    // A single-step (homepage-only) audit can never reach 2 settled steps by
+    // this function's own rule — this documents that a bare-URL scan is
+    // structurally INSUFFICIENT, not a bug in this rule.
+    const steps = [makeStep({ step: 'landing', settle_outcome: 'settled' })];
+    expect(computeRunQuality(steps)).toBe('INSUFFICIENT');
   });
 });
 

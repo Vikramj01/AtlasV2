@@ -124,6 +124,13 @@ export interface ReportCoverage {
   partial: boolean;
   /** Step names that degraded — empty when `partial` is false. */
   degraded_steps: string[];
+  /**
+   * Run-level settle-reliability verdict (Pre-Connection Scan Confidence
+   * Tiering PRD §7.3) — see backend types/audit.ts's RunQuality docstring.
+   * 'INSUFFICIENT' means this run's PDF/JSON/zip export is blocked
+   * server-side until the site is re-scanned.
+   */
+  run_quality: 'COMPLETE' | 'PROVISIONAL' | 'INSUFFICIENT';
 }
 
 export interface AuditScores {

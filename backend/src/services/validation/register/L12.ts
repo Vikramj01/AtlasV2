@@ -81,6 +81,7 @@ export const NO_STAGING_OR_TEST_CONTAINER_IN_PRODUCTION: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Marketing Ops',
+  evidence_class: 'PRESENCE_INVERSE', // PRD §10.5 exact
   remediation: 'Publish the GTM container\'s live version to production and remove gtm_preview/gtm_auth from the loader snippet — a preview/debug container serving real traffic sends events nowhere real platforms can see, while looking like everything is working.',
 
   test(auditData: AuditData): ValidationResult {
@@ -134,6 +135,7 @@ export const NO_CONSOLE_ERRORS_FROM_MEASUREMENT_CODE: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  evidence_class: 'PRESENCE_INVERSE', // PRD §10.5 exact
   remediation: (result) => {
     const errors = result.technical_details.evidence.filter((e) => e.startsWith('['));
     if (errors.length === 0) return 'Fix the JavaScript error(s) thrown by measurement code — check the browser console for the exact stack trace. A tag that errors out reports as simply absent everywhere else in this register, not as broken.';
@@ -191,6 +193,7 @@ export const TAG_LOAD_DOES_NOT_MATERIALLY_DELAY_PAGE: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  evidence_class: 'DIRECT', // PRD §10.5 exact — "Measured, not inferred"
   remediation: (result) => {
     const slow = result.technical_details.evidence.filter((e) => e.includes('ms'));
     if (slow.length === 0) return `Move the affected tag(s) to load asynchronously (async/defer, or via GTM which already does this) rather than blocking rendering — a tag that takes longer than ${SLOW_LOAD_THRESHOLD_MS}ms risks timing out on slow connections entirely.`;
@@ -243,6 +246,7 @@ export const CONVERSION_SURFACE_REACHABLE_WITHOUT_JS_ERRORS: ValidationRule = {
   platform_scope: 'any',
   detectable_by: 'crawl',
   owner: 'Frontend',
+  evidence_class: 'DIRECT', // PRD §10.6 exact — "Requires conversion page SETTLED"
   remediation: (result) => {
     const errors = result.technical_details.evidence.filter((e) => !e.startsWith('No '));
     if (errors.length === 0) return 'Fix the JavaScript error(s) on the conversion/confirmation page — an intermittently-erroring confirmation page is an intermittently-failing conversion, even when the tag configuration itself is correct.';

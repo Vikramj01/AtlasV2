@@ -86,6 +86,50 @@ describe('DECLARED_PLATFORM_HAS_TAG (L0.1)', () => {
     const result = DECLARED_PLATFORM_HAS_TAG.test(makeAuditData({ declared_platforms: [] }));
     expect(result.status).toBe('skipped');
   });
+
+  // Pre-Connection Scan Confidence Tiering PRD §8 — severity ceiling by
+  // declaration_source. A missing-tag fail rests entirely on a declaration
+  // that may simply be wrong, so its severity shouldn't outrank how
+  // confident Atlas is that the declaration itself is correct.
+  describe('severity ceiling by declaration_source (§8)', () => {
+    const failingAuditData = (declaration_source?: 'CLIENT_CONFIRMED' | 'OPERATOR_ASSUMED' | 'INFERRED_FROM_SITE') =>
+      makeAuditData({ declared_platforms: ['meta'], networkRequests: [], declaration_source });
+
+    it('defaults to OPERATOR_ASSUMED when unset, capping severity to medium', () => {
+      const result = DECLARED_PLATFORM_HAS_TAG.test(failingAuditData(undefined));
+      expect(result.severity).toBe('medium');
+      expect(result.severity_capped_from).toBe('critical');
+    });
+
+    it('CLIENT_CONFIRMED applies no cap — stays at the declared critical severity', () => {
+      const result = DECLARED_PLATFORM_HAS_TAG.test(failingAuditData('CLIENT_CONFIRMED'));
+      expect(result.severity).toBe('critical');
+      expect(result.severity_capped_from).toBeUndefined();
+    });
+
+    it('OPERATOR_ASSUMED caps at medium', () => {
+      const result = DECLARED_PLATFORM_HAS_TAG.test(failingAuditData('OPERATOR_ASSUMED'));
+      expect(result.severity).toBe('medium');
+      expect(result.severity_capped_from).toBe('critical');
+    });
+
+    it('INFERRED_FROM_SITE caps at low', () => {
+      const result = DECLARED_PLATFORM_HAS_TAG.test(failingAuditData('INFERRED_FROM_SITE'));
+      expect(result.severity).toBe('low');
+      expect(result.severity_capped_from).toBe('critical');
+    });
+
+    it('a passing result carries no severity cap regardless of declaration_source', () => {
+      const auditData = makeAuditData({
+        declared_platforms: ['meta'],
+        networkRequests: [makeRequest({ url: 'https://www.facebook.com/tr?id=123' })],
+        declaration_source: 'OPERATOR_ASSUMED',
+      });
+      const result = DECLARED_PLATFORM_HAS_TAG.test(auditData);
+      expect(result.status).toBe('pass');
+      expect(result.severity_capped_from).toBeUndefined();
+    });
+  });
 });
 
 // ── L0.2 — Undeclared platform tag detected ─────────────────────────────────

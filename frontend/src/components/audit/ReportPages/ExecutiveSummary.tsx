@@ -36,9 +36,27 @@ export function ExecutiveSummary({ report }: Props) {
   const notScannedLayers = coverage?.layers_not_tested.filter((l) => l.state === 'not_scanned') ?? [];
   const notApplicableLayers = coverage?.layers_not_tested.filter((l) => l.state === 'not_applicable') ?? [];
 
+  // Pre-Connection Scan Confidence Tiering PRD §7.3 — an INSUFFICIENT run
+  // gets its own prominent notice ahead of everything else on the page,
+  // not folded into the amber "Limited scan coverage" banner below: this
+  // isn't a caveat on an otherwise-usable report, it's the reason this run
+  // can't be exported as a client-facing report at all until re-scanned.
+  const insufficientRun = coverage?.run_quality === 'INSUFFICIENT';
+
   return (
     <div className="space-y-6">
       <p className="text-sm font-medium text-muted-foreground">{report.website_url}</p>
+
+      {insufficientRun && coverage && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-5 py-4">
+          <p className="text-sm font-semibold text-red-900">Insufficient run quality — export blocked</p>
+          <p className="mt-1 text-sm leading-relaxed text-red-800">
+            This scan examined {coverage.pages_distinct} of {coverage.pages_requested} requested page{coverage.pages_requested !== 1 ? 's' : ''},
+            but the declared conversion surface never settled or too few pages settled overall. This run is not reliable enough
+            to support a client-facing report, and PDF/JSON export is disabled below. Re-run the audit with corrected seed URLs.
+          </p>
+        </div>
+      )}
 
       {(limitedCoverage || partialSettle) && coverage && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4">

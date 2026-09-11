@@ -9,6 +9,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   isApplicableToSiteType, isApplicableToDeclaredPlatforms, isRuleApplicable, runRegister, deriveConfidence,
+  REGISTER, gatedDirectionFor, deriveObservationConfidence, deriveVerdict, applySeverityCeiling,
 } from '../engine';
 import { calculateV2Scores } from '../scoring';
 import type { AuditData, ValidationRule, DeclaredPlatform, StepCoverage } from '@/types/audit';
@@ -33,6 +34,10 @@ function makeRule(overrides: Partial<ValidationRule> = {}): ValidationRule {
     platform_scope: 'any',
     detectable_by: 'crawl',
     owner: 'Marketing Ops',
+    // Defaults to DIRECT (never gated) so existing status-based assertions
+    // in this file are unaffected by the confidence-tiering verdict lattice
+    // — override per-test when a case actually needs to exercise gating.
+    evidence_class: 'DIRECT',
     test: () => ({
       rule_id,
       validation_layer: layer,
@@ -173,11 +178,15 @@ describe('runRegister', () => {
   });
 
   it('defaults to the REGISTER export when no rules argument is passed', () => {
-    // REGISTER now carries L0 (4), L1 (16), L2 (11), L3 (6), L4 (4), L5
-    // (12), L6 (15), L7 (11), L8 (3), L9 (2), L10 (2), and L12 (4) rules —
-    // 90 total. L11 is still scoped out (needs platform connectors, not
-    // crawl data). Locks in that runRegister() with no explicit rules
-    // argument actually reaches the real library, not an empty stand-in.
+    // REGISTER now carries L0 (4), L1 (18), L2 (12), L3 (7), L4 (4), L5
+    // (13), L6 (15), L7 (11), L8 (3), L9 (2), L10 (2), and L12 (4) rules —
+    // 95 total (Pre-Connection Scan Confidence Tiering PRD splits added 2:
+    // GOOGLE_GLOBAL_SITE_TAG_PRESENT -> GTAG_LOADER_PRESENT +
+    // GOOGLE_ADS_AW_ID_PRESENT; FBP_AND_FBC_COOKIES_PRESENT ->
+    // FBP_COOKIE_PRESENT + FBC_COOKIE_PRESENT). L11 is still scoped out
+    // (needs platform connectors, not crawl data). Locks in that
+    // runRegister() with no explicit rules argument actually reaches the
+    // real library, not an empty stand-in.
     const results = runRegister(makeAuditData());
     expect(results.length).toBeGreaterThan(0);
     expect(results.map((r) => r.rule_id)).toContain('DECLARED_PLATFORM_HAS_TAG');
@@ -367,5 +376,177 @@ describe('deriveConfidence', () => {
     const results = runRegister(auditData, [failingGatedRule, ungatedRule]);
     const withoutConfidence = results.map(({ confidence: _confidence, ...rest }) => rest);
     expect(calculateV2Scores(results)).toEqual(calculateV2Scores(withoutConfidence));
+  });
+});
+
+// ── Confidence tiering (Pre-Connection Scan Confidence Tiering PRD §4) ──────
+
+describe('registry classification coverage', () => {
+  it('every rule in REGISTER declares an evidence_class', () => {
+    const unclassified = REGISTER.filter((r) => !r.evidence_class).map((r) => r.rule_id);
+    expect(unclassified).toEqual([]);
+  });
+
+  it('every DERIVED rule declares a gated_direction, and no other class does', () => {
+    const derivedMissingGate = REGISTER.filter((r) => r.evidence_class === 'DERIVED' && !r.gated_direction).map((r) => r.rule_id);
+    expect(derivedMissingGate).toEqual([]);
+
+    const nonDerivedWithGate = REGISTER.filter((r) => r.evidence_class !== 'DERIVED' && r.gated_direction).map((r) => r.rule_id);
+    expect(nonDerivedWithGate).toEqual([]);
+  });
+});
+
+describe('gatedDirectionFor', () => {
+  it('returns the fixed direction for DIRECT/PRESENCE/PRESENCE_INVERSE/INFERRED', () => {
+    expect(gatedDirectionFor({ evidence_class: 'DIRECT' })).toBe('none');
+    expect(gatedDirectionFor({ evidence_class: 'PRESENCE' })).toBe('fail');
+    expect(gatedDirectionFor({ evidence_class: 'PRESENCE_INVERSE' })).toBe('pass');
+    expect(gatedDirectionFor({ evidence_class: 'INFERRED' })).toBe('both');
+  });
+
+  it('returns the declared gated_direction for DERIVED', () => {
+    expect(gatedDirectionFor({ evidence_class: 'DERIVED', gated_direction: 'pass' })).toBe('pass');
+  });
+
+  it('throws for a DERIVED rule missing gated_direction', () => {
+    expect(() => gatedDirectionFor({ evidence_class: 'DERIVED' })).toThrow();
+  });
+});
+
+describe('deriveObservationConfidence', () => {
+  const ungatedRule = makeRule({ rule_id: 'UNGATED' });
+  const gatedRule = makeRule({ rule_id: 'GATED', requires: ['conversion_surface'] });
+
+  it("maps deriveConfidence 'high' to CONFIRMED", () => {
+    expect(deriveObservationConfidence(ungatedRule, makeAuditData())).toBe('CONFIRMED');
+  });
+
+  it("maps deriveConfidence 'confirm' to PARTIAL", () => {
+    const auditData = makeAuditData({
+      step_coverage: [makeStep({ step: 'landing', distinct_from_landing: false }), makeStep({ source: 'heuristic', http_status: 200, wait_for_outcome: 'not_declared' })],
+    });
+    expect(deriveObservationConfidence(gatedRule, auditData)).toBe('PARTIAL');
+  });
+});
+
+describe('deriveVerdict', () => {
+  it('DIRECT never gates — PASS/FAIL as raw regardless of confidence', () => {
+    expect(deriveVerdict({ evidence_class: 'DIRECT' }, 'pass', 'CONFIRMED')).toBe('PASS');
+    expect(deriveVerdict({ evidence_class: 'DIRECT' }, 'fail', 'PARTIAL')).toBe('FAIL');
+  });
+
+  it('PRESENCE gates fail: PARTIAL fail becomes NOT_OBSERVED, PARTIAL pass stays PASS', () => {
+    expect(deriveVerdict({ evidence_class: 'PRESENCE' }, 'fail', 'CONFIRMED')).toBe('FAIL');
+    expect(deriveVerdict({ evidence_class: 'PRESENCE' }, 'fail', 'PARTIAL')).toBe('NOT_OBSERVED');
+    expect(deriveVerdict({ evidence_class: 'PRESENCE' }, 'pass', 'PARTIAL')).toBe('PASS');
+  });
+
+  it('PRESENCE_INVERSE gates pass: PARTIAL pass becomes NOT_OBSERVED, PARTIAL fail stays FAIL', () => {
+    expect(deriveVerdict({ evidence_class: 'PRESENCE_INVERSE' }, 'pass', 'CONFIRMED')).toBe('PASS');
+    expect(deriveVerdict({ evidence_class: 'PRESENCE_INVERSE' }, 'pass', 'PARTIAL')).toBe('NOT_OBSERVED');
+    expect(deriveVerdict({ evidence_class: 'PRESENCE_INVERSE' }, 'fail', 'PARTIAL')).toBe('FAIL');
+  });
+
+  it('DERIVED reads gated_direction — gates fail here', () => {
+    expect(deriveVerdict({ evidence_class: 'DERIVED', gated_direction: 'fail' }, 'fail', 'PARTIAL')).toBe('NOT_OBSERVED');
+    expect(deriveVerdict({ evidence_class: 'DERIVED', gated_direction: 'fail' }, 'pass', 'PARTIAL')).toBe('PASS');
+  });
+
+  it('INFERRED: FAIL is unreachable at any confidence; PASS still needs CONFIRMED', () => {
+    expect(deriveVerdict({ evidence_class: 'INFERRED' }, 'fail', 'CONFIRMED')).toBe('NOT_OBSERVED');
+    expect(deriveVerdict({ evidence_class: 'INFERRED' }, 'fail', 'PARTIAL')).toBe('NOT_OBSERVED');
+    expect(deriveVerdict({ evidence_class: 'INFERRED' }, 'pass', 'CONFIRMED')).toBe('PASS');
+    expect(deriveVerdict({ evidence_class: 'INFERRED' }, 'pass', 'PARTIAL')).toBe('NOT_OBSERVED');
+  });
+
+  it('UNSUPPORTED confidence always renders INCONCLUSIVE, regardless of evidence_class', () => {
+    expect(deriveVerdict({ evidence_class: 'PRESENCE' }, 'fail', 'UNSUPPORTED')).toBe('INCONCLUSIVE');
+  });
+
+  it('CONFLICTED confidence always renders CONFLICT', () => {
+    expect(deriveVerdict({ evidence_class: 'DIRECT' }, 'pass', 'CONFLICTED')).toBe('CONFLICT');
+  });
+
+  it("treats a 'warning' status as the fail direction for gating", () => {
+    expect(deriveVerdict({ evidence_class: 'PRESENCE' }, 'warning', 'PARTIAL')).toBe('NOT_OBSERVED');
+  });
+});
+
+describe('applySeverityCeiling', () => {
+  it('CONFIRMED never caps', () => {
+    expect(applySeverityCeiling('critical', 'CONFIRMED')).toEqual({ severity: 'critical' });
+  });
+
+  it('PARTIAL caps critical/high-above down to high, recording severity_capped_from', () => {
+    expect(applySeverityCeiling('critical', 'PARTIAL')).toEqual({ severity: 'high', severity_capped_from: 'critical' });
+  });
+
+  it('PARTIAL does not touch a severity already at or below high', () => {
+    expect(applySeverityCeiling('high', 'PARTIAL')).toEqual({ severity: 'high' });
+    expect(applySeverityCeiling('low', 'PARTIAL')).toEqual({ severity: 'low' });
+  });
+});
+
+describe('runRegister — verdict/observation_confidence wiring', () => {
+  it('a precondition-skip result gets UNSUPPORTED/INCONCLUSIVE', () => {
+    const gatedRule = makeRule({ rule_id: 'GATED', requires: ['conversion_surface'] });
+    const [result] = runRegister(makeAuditData({ step_coverage: [makeStep({ step: 'landing', distinct_from_landing: false })] }), [gatedRule]);
+    expect(result.status).toBe('skipped');
+    expect(result.observation_confidence).toBe('UNSUPPORTED');
+    expect(result.verdict).toBe('INCONCLUSIVE');
+  });
+
+  it("a rule whose own test() returns 'skipped' also gets UNSUPPORTED/INCONCLUSIVE", () => {
+    const selfSkippingRule = makeRule({
+      rule_id: 'SELF_SKIPS',
+      test: () => ({ rule_id: 'SELF_SKIPS', validation_layer: 'foundation_tags', status: 'skipped', severity: 'high', technical_details: { found: '', expected: '', evidence: [] } }),
+    });
+    const [result] = runRegister(makeAuditData(), [selfSkippingRule]);
+    expect(result.observation_confidence).toBe('UNSUPPORTED');
+    expect(result.verdict).toBe('INCONCLUSIVE');
+  });
+
+  it('a thrown rule gets UNSUPPORTED/INCONCLUSIVE alongside its warning status', () => {
+    const throwingRule = makeRule({ rule_id: 'THROWS', test: () => { throw new Error('boom'); } });
+    const [result] = runRegister(makeAuditData(), [throwingRule]);
+    expect(result.status).toBe('warning');
+    expect(result.observation_confidence).toBe('UNSUPPORTED');
+    expect(result.verdict).toBe('INCONCLUSIVE');
+  });
+
+  it('a gated PRESENCE rule at PARTIAL confidence renders NOT_OBSERVED and caps severity, without changing status', () => {
+    const gatedRule = makeRule({
+      rule_id: 'GATED_FAIL',
+      requires: ['conversion_surface'],
+      severity: 'critical',
+      evidence_class: 'PRESENCE',
+      test: () => ({ rule_id: 'GATED_FAIL', validation_layer: 'foundation_tags', status: 'fail', severity: 'critical', technical_details: { found: '', expected: '', evidence: [] } }),
+    });
+    const auditData = makeAuditData({
+      step_coverage: [makeStep({ step: 'landing', distinct_from_landing: false }), makeStep({ source: 'heuristic', http_status: 200, wait_for_outcome: 'not_declared' })],
+    });
+    const [result] = runRegister(auditData, [gatedRule]);
+    expect(result.status).toBe('fail'); // unchanged — existing consumers still see the raw status
+    expect(result.observation_confidence).toBe('PARTIAL');
+    expect(result.verdict).toBe('NOT_OBSERVED');
+    expect(result.severity).toBe('high');
+    expect(result.severity_capped_from).toBe('critical');
+  });
+
+  it('a CONFIRMED gated PRESENCE fail renders FAIL with no severity cap', () => {
+    const gatedRule = makeRule({
+      rule_id: 'GATED_FAIL',
+      requires: ['conversion_surface'],
+      severity: 'critical',
+      evidence_class: 'PRESENCE',
+      test: () => ({ rule_id: 'GATED_FAIL', validation_layer: 'foundation_tags', status: 'fail', severity: 'critical', technical_details: { found: '', expected: '', evidence: [] } }),
+    });
+    const auditData = makeAuditData({
+      step_coverage: [makeStep({ step: 'landing', distinct_from_landing: false }), makeStep()],
+    });
+    const [result] = runRegister(auditData, [gatedRule]);
+    expect(result.verdict).toBe('FAIL');
+    expect(result.severity).toBe('critical');
+    expect(result.severity_capped_from).toBeUndefined();
   });
 });

@@ -21,7 +21,7 @@ import type { ValidationLayerV2 } from '@/types/audit';
  * it; only the display can note that two scores aren't directly comparable
  * across a version change.
  */
-export const REGISTER_VERSION = '1.0.0';
+export const REGISTER_VERSION = '1.1.0';
 
 export const ALL_V2_LAYERS: ValidationLayerV2[] = [
   'scope_configuration', 'foundation_tags', 'click_id_capture', 'storage_durability',

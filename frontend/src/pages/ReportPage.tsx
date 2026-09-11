@@ -43,6 +43,14 @@ export function ReportPage() {
     : [];
   const pages = sections.filter((s) => s.show).map((s, i) => ({ id: i + 1, label: s.label, render: s.render }));
 
+  // Settle contract & run quality (Pre-Connection Scan Confidence Tiering
+  // PRD §7.3) — stated in the report header, not a footnote. An
+  // INSUFFICIENT run blocks export server-side (POST /:audit_id/export
+  // returns 409); disabling the buttons here is a UX courtesy, not the
+  // actual gate.
+  const runQuality = report?.executive_summary.coverage?.run_quality;
+  const exportBlocked = runQuality === 'INSUFFICIENT';
+
   const handleExport = async (format: 'pdf' | 'json' | 'both', label: string) => {
     if (!auditId) return;
     setExporting(true);
@@ -55,8 +63,8 @@ export function ReportPage() {
       a.download = `atlas-report-${auditId}.${ext}`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch {
-      alert(`Export failed for "${label}". Please try again.`);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : `Export failed for "${label}". Please try again.`);
     } finally {
       setExporting(false);
     }
@@ -93,6 +101,17 @@ export function ReportPage() {
             <h1 className="text-xl font-bold text-foreground">
               {SECTION_LABELS.auditEngine.primary}
               <span className="text-muted-foreground text-sm font-normal ml-2">{SECTION_LABELS.auditEngine.technical}</span>
+              {runQuality && runQuality !== 'COMPLETE' && (
+                <span
+                  className={`ml-2 align-middle rounded-full px-2 py-0.5 text-xs font-medium ${
+                    runQuality === 'INSUFFICIENT'
+                      ? 'bg-red-100 text-red-800'
+                      : 'bg-amber-100 text-amber-800'
+                  }`}
+                >
+                  {runQuality === 'INSUFFICIENT' ? 'Insufficient run quality' : 'Provisional run quality'}
+                </span>
+              )}
             </h1>
             <p className="mt-0.5 text-sm text-muted-foreground">
               {new Date(report.generated_at).toLocaleDateString('en-US', {
@@ -108,7 +127,8 @@ export function ReportPage() {
               variant="outline"
               size="sm"
               onClick={() => handleExport('pdf', 'Marketing Report')}
-              disabled={exporting}
+              disabled={exporting || exportBlocked}
+              title={exportBlocked ? 'This scan did not settle enough of the site to export a client-facing report — re-run with corrected seed URLs.' : undefined}
             >
               Download Marketing Report (PDF)
             </Button>
@@ -116,7 +136,8 @@ export function ReportPage() {
               variant="outline"
               size="sm"
               onClick={() => handleExport('json', 'Developer Report')}
-              disabled={exporting}
+              disabled={exporting || exportBlocked}
+              title={exportBlocked ? 'This scan did not settle enough of the site to export a client-facing report — re-run with corrected seed URLs.' : undefined}
             >
               Download Developer Report
             </Button>

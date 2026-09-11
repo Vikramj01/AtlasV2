@@ -80,6 +80,7 @@ const StartAuditSchema = z.object({
   site_type: z.enum(SITE_TYPES).optional(),
   secondary_motion: z.enum(['none', 'sales_assisted', 'hybrid']).optional(),
   declared_platforms: z.array(z.enum(DECLARED_PLATFORMS)).optional(),
+  declaration_source: z.enum(['CLIENT_CONFIRMED', 'OPERATOR_ASSUMED', 'INFERRED_FROM_SITE']).optional(),
   primary_channel: z.enum(DECLARED_PLATFORMS).optional(),
   monthly_spend_band: z.string().optional(),
   traffic_regions: z.array(z.enum(TRAFFIC_REGIONS)).optional(),
@@ -110,7 +111,7 @@ router.post('/start', auditLimiter, async (req: Request, res: Response) => {
   }
   const {
     website_url, region, url_map, test_email, test_phone, client_id,
-    site_type, secondary_motion, declared_platforms, primary_channel, monthly_spend_band,
+    site_type, secondary_motion, declared_platforms, declaration_source, primary_channel, monthly_spend_band,
     traffic_regions, cmp, product_domain, checkout_domain, additional_properties, declared_conversions,
   } = parsed.data;
 
@@ -153,6 +154,7 @@ router.post('/start', auditLimiter, async (req: Request, res: Response) => {
         site_type,
         secondary_motion,
         declared_platforms,
+        declaration_source,
         primary_channel,
         monthly_spend_band,
         traffic_regions,
@@ -176,6 +178,7 @@ router.post('/start', auditLimiter, async (req: Request, res: Response) => {
         site_type,
         secondary_motion,
         declared_platforms,
+        declaration_source,
         primary_channel,
         monthly_spend_band,
         traffic_regions,
@@ -502,6 +505,23 @@ router.post('/:audit_id/export', async (req: Request, res: Response) => {
   }
   if (audit.status !== 'completed') {
     res.status(409).json({ error: 'Report not ready', status: audit.status });
+    return;
+  }
+
+  // Settle contract & run quality (Pre-Connection Scan Confidence Tiering
+  // PRD §7.3) — an INSUFFICIENT run (the declared conversion surface never
+  // settled, or fewer than two steps settled overall) does not render a
+  // client-facing report. This export endpoint is exactly the boundary
+  // that matters: the in-app report view still shows the run internally
+  // (with its run_quality stated in the header) so the operator can see
+  // what happened, but the PDF/JSON/zip artifact meant to leave Atlas is
+  // blocked until the site is re-scanned with corrected seed URLs.
+  if (audit.run_quality === 'INSUFFICIENT') {
+    res.status(409).json({
+      error: 'Export blocked — this scan did not settle enough of the site to support a client-facing report',
+      run_quality: 'INSUFFICIENT',
+      message: 'The declared conversion surface never settled, or too few pages settled overall, on this run. Re-run the audit with corrected seed URLs before exporting.',
+    });
     return;
   }
 

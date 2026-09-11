@@ -22,10 +22,13 @@ const VALID_SEVERITIES = new Set<Severity>(['critical', 'high', 'medium', 'low']
 const VALID_DETECTION_METHODS = new Set<DetectionMethod>(['crawl', 'second_pass', 'credentials', 'connector']);
 
 describe('REGISTER — structural integrity', () => {
-  it('carries exactly 93 rules across the 12 shipped layers (L0-L10, L12)', () => {
+  it('carries exactly 95 rules across the 12 shipped layers (L0-L10, L12)', () => {
     // 90 + OPPREF_CAPTURED_AT_LANDING (L2.13), OPENAI_PIXEL_PRESENT (L1.17),
     // OPENAI_CONVERSION_EVENT_FIRES (L5.15) — ATLAS_OPENAI_ADS_AND_REGIONS_PRD Part A.
-    expect(REGISTER).toHaveLength(93);
+    // 93 + 2 — Pre-Connection Scan Confidence Tiering PRD §10.2/§10.4 splits:
+    // GOOGLE_GLOBAL_SITE_TAG_PRESENT -> GTAG_LOADER_PRESENT + GOOGLE_ADS_AW_ID_PRESENT;
+    // FBP_AND_FBC_COOKIES_PRESENT -> FBP_COOKIE_PRESENT + FBC_COOKIE_PRESENT.
+    expect(REGISTER).toHaveLength(95);
   });
 
   it('every rule has a unique register id (L#.#)', () => {
@@ -316,7 +319,8 @@ describe('runRegister — end-to-end on a bare, untracked AuditData', () => {
       'CONVERSION_SURFACE_IDENTIFIED',
       'DATALAYER_INITIALISED',
       'GA4_CONFIG_TAG_PRESENT',
-      'GOOGLE_GLOBAL_SITE_TAG_PRESENT',
+      'GTAG_LOADER_PRESENT',
+      'GOOGLE_ADS_AW_ID_PRESENT',
       'CONVERSION_LINKER_ENABLED',
       'GCLID_CAPTURED_AT_LANDING',
       'GCL_AW_COOKIE_PRESENT',

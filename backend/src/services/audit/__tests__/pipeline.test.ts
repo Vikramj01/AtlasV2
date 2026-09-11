@@ -369,9 +369,11 @@ describe('simulateJourney — step_coverage', () => {
 
     const auditData = await simulateJourney(mockBrowser as never, BASE_OPTS);
 
-    // Each step navigates exactly once — gotoAndSettle makes a single
-    // domcontentloaded attempt per step, no retry within a step.
-    expect(mockPage.goto).toHaveBeenCalledTimes(4);
+    // Each of the 3 successful steps navigates exactly once; the failing
+    // 'confirmation' step retries up to DEFAULT_SETTLE_RETRY_CONFIG's
+    // maxAttempts (2) additional times — 3 attempts total — before giving
+    // up (Pre-Connection Scan Confidence Tiering PRD §7.2). 3 + 3 = 6.
+    expect(mockPage.goto).toHaveBeenCalledTimes(6);
 
     const coverage = auditData.step_coverage!;
     expect(coverage).toHaveLength(4);
@@ -380,6 +382,7 @@ describe('simulateJourney — step_coverage', () => {
     expect(confirmation.navigation_success).toBe(false);
     expect(confirmation.error).toBeTruthy();
     expect(confirmation.settle_outcome).toBe('navigation_failed');
+    expect(confirmation.settle_attempts).toBe(3);
     expect(confirmation.degraded).toBe(true);
 
     const otherSteps = coverage.filter((s) => s.step !== 'confirmation');

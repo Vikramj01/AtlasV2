@@ -125,23 +125,29 @@ export function partitionDegradedRuns(
     const citedDegradedStep = quotedTokens(r).find((t) => degradedStepSet.has(t));
     const requiresConversionSurface = RULE_BY_ID.get(r.rule_id)?.requires?.includes('conversion_surface') === true;
 
+    // Pre-Connection Scan Confidence Tiering PRD §4.3 — every path below is
+    // "the crawl didn't settle what this result's evidence depends on," a
+    // coverage gap rather than a conflict between two signals.
     if (citedDegradedStep) {
       unassessable.push({
         rule_id: r.rule_id,
         step: citedDegradedStep,
         reason: `This scan's navigation didn't fully settle on "${citedDegradedStep}", so this result — which is evidence about that specific step — isn't reliable; its ${r.status} verdict may reflect the scan not waiting long enough, not the site's real behavior.`,
+        kind: 'NOT_OBSERVED',
       });
     } else if (requiresConversionSurface) {
       unassessable.push({
         rule_id: r.rule_id,
         step: stepList,
         reason: `This scan's navigation didn't fully settle on ${stepNoun} ${stepList}, so the conversion-surface evidence this check depends on (network requests, dataLayer events, or cookies gathered while reaching it) may not have had time to appear — its ${r.status} verdict isn't reliable.`,
+        kind: 'NOT_OBSERVED',
       });
     } else if (ABSENCE_SENSITIVE_RULE_IDS.has(r.rule_id)) {
       unassessable.push({
         rule_id: r.rule_id,
         step: stepList,
         reason: `This scan's navigation didn't fully settle on ${stepNoun} ${stepList}, so a request or cookie this check depends on may not have had time to appear — its ${r.status} verdict isn't reliable.`,
+        kind: 'NOT_OBSERVED',
       });
     } else {
       assessable.push(r);

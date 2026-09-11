@@ -17,6 +17,7 @@ import {
   collectDeep,
   evaluateAcrossFrames,
   gotoAndSettle,
+  gotoAndSettleWithRetries,
   type StepRef,
 } from '../dataCapture';
 import { ALL_DECLARED_PLATFORMS, PLATFORM_MATCHER_HOSTS, PLATFORM_LABELS } from '@/services/validation/register/platformDetection';
@@ -364,6 +365,68 @@ describe('gotoAndSettle', () => {
     const result = await gotoAndSettle(page, 'https://bad.example', () => 0, {}, fastConfig);
     expect(result.navigationSuccess).toBe(false);
     expect(result.httpStatus).toBeUndefined();
+  });
+});
+
+// ─── gotoAndSettleWithRetries (Pre-Connection Scan Confidence Tiering PRD §7.2) ─
+
+describe('gotoAndSettleWithRetries', () => {
+  const fastConfig = { navigationTimeoutMs: 1000, quietPeriodMs: 1, maxSettleMs: 10, pollIntervalMs: 1 };
+  const fastRetryConfig = { maxAttempts: 2, escalationFactor: 1.5 };
+
+  it('returns attempts: 1 when the first attempt settles', async () => {
+    const page = { goto: vi.fn().mockResolvedValue({ status: () => 200 }) };
+    const result = await gotoAndSettleWithRetries(page, 'https://example.com', () => 0, {}, fastConfig, fastRetryConfig);
+    expect(result.attempts).toBe(1);
+    expect(result.settleOutcome).toBe('settled');
+    expect(page.goto).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries and succeeds once a later attempt settles', async () => {
+    const page = { goto: vi.fn().mockResolvedValue({ status: () => 200 }) };
+    // Never quiet on the first attempt; quiet from the second attempt onward.
+    const getInFlight = () => (page.goto.mock.calls.length >= 2 ? 0 : 1);
+    const result = await gotoAndSettleWithRetries(page, 'https://example.com', getInFlight, {}, fastConfig, fastRetryConfig);
+    expect(result.attempts).toBe(2);
+    expect(result.settleOutcome).toBe('settled');
+    expect(page.goto).toHaveBeenCalledTimes(2);
+  });
+
+  it('gives up after maxAttempts additional retries and reports the final unsettled outcome', async () => {
+    const page = { goto: vi.fn().mockResolvedValue({ status: () => 200 }) };
+    const getInFlight = () => 1; // never quiet
+    const result = await gotoAndSettleWithRetries(page, 'https://example.com', getInFlight, {}, fastConfig, fastRetryConfig);
+    expect(result.attempts).toBe(3); // 1 initial + 2 retries
+    expect(result.settleOutcome).toBe('quiet_period_cap_reached');
+    expect(page.goto).toHaveBeenCalledTimes(3);
+  });
+
+  it('escalates the timing budget by escalationFactor on each retry', async () => {
+    const page = { goto: vi.fn().mockResolvedValue({ status: () => 200 }) };
+    await gotoAndSettleWithRetries(page, 'https://example.com', () => 1, {}, fastConfig, fastRetryConfig);
+    const timeouts = page.goto.mock.calls.map((call) => (call[1] as { timeout: number }).timeout);
+    expect(timeouts).toEqual([1000, 1500, 2250]);
+  });
+
+  it('retries a navigation_failed attempt and reports the eventual success', async () => {
+    let call = 0;
+    const page = {
+      goto: vi.fn().mockImplementation(() => {
+        call += 1;
+        return call === 1 ? Promise.reject(new Error('net::ERR_CONNECTION_RESET')) : Promise.resolve({ status: () => 200 });
+      }),
+    };
+    const result = await gotoAndSettleWithRetries(page, 'https://example.com', () => 0, {}, fastConfig, fastRetryConfig);
+    expect(result.navigationSuccess).toBe(true);
+    expect(result.settleOutcome).toBe('settled');
+    expect(result.attempts).toBe(2);
+  });
+
+  it('defaults to no retries when maxAttempts is 0', async () => {
+    const page = { goto: vi.fn().mockResolvedValue({ status: () => 200 }) };
+    const result = await gotoAndSettleWithRetries(page, 'https://example.com', () => 1, {}, fastConfig, { maxAttempts: 0, escalationFactor: 1.5 });
+    expect(result.attempts).toBe(1);
+    expect(page.goto).toHaveBeenCalledTimes(1);
   });
 });
 

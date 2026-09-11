@@ -5,7 +5,7 @@
  */
 import type {
   AuditData, FunnelType, Region, DataLayerEvent, NetworkRequest, CookieSnapshot, LocalStorageSnapshot, ConsoleError,
-  RuleSetVersion, SiteType, SecondaryMotion, DeclaredPlatform, TrafficRegion, CMP, DeclaredConversion,
+  RuleSetVersion, SiteType, SecondaryMotion, DeclaredPlatform, DeclarationSource, TrafficRegion, CMP, DeclaredConversion,
   StepCoverage, StepUrlSource, ConsentCapture, SettleOutcome, WaitForOutcome,
 } from '@/types/audit';
 import type { NamingConvention } from '@/types/taxonomy';
@@ -23,11 +23,13 @@ import {
   mergeDetailedCookies,
   collectDeep,
   evaluateAcrossFrames,
-  gotoAndSettle,
+  gotoAndSettleWithRetries,
   DEFAULT_SETTLE_CONFIG,
+  DEFAULT_SETTLE_RETRY_CONFIG,
   type StepRef,
   type DeepQueryArgs,
   type SettleConfig,
+  type SettleRetryConfig,
 } from './dataCapture';
 import { extractGa4ClientId, ga4SessionStartDetected } from '@/services/detection/trackingSignals';
 import { detectConsentBanner, dismissConsentBanner, type EvaluatePage } from '@/services/detection/consentBanner';
@@ -188,6 +190,7 @@ export interface SimulatorOptions {
   site_type?: SiteType;
   secondary_motion?: SecondaryMotion;
   declared_platforms?: DeclaredPlatform[];
+  declaration_source?: DeclarationSource;
   primary_channel?: DeclaredPlatform;
   monthly_spend_band?: string;
   traffic_regions?: TrafficRegion[];
@@ -214,6 +217,15 @@ export interface SimulatorOptions {
    * production budget. Defaults to DEFAULT_SETTLE_CONFIG when omitted.
    */
   settleConfig?: SettleConfig;
+  /**
+   * Overrides the production settle-retry policy (dataCapture.ts's
+   * gotoAndSettleWithRetries/DEFAULT_SETTLE_RETRY_CONFIG) — same reason as
+   * settleConfig above (tests shrinking real budgets), plus lets a test
+   * disable retries entirely (maxAttempts: 0) to exercise a single-attempt
+   * outcome deterministically. Defaults to DEFAULT_SETTLE_RETRY_CONFIG when
+   * omitted.
+   */
+  settleRetryConfig?: SettleRetryConfig;
 }
 
 /**
@@ -278,6 +290,7 @@ export async function simulateJourney(
   const inFlightTracker = interceptNetworkRequests(page, networkRequests, stepRef);
   interceptConsoleErrors(page, consoleErrors, stepRef);
   const settleConfig = opts.settleConfig ?? DEFAULT_SETTLE_CONFIG;
+  const settleRetryConfig = opts.settleRetryConfig ?? DEFAULT_SETTLE_RETRY_CONFIG;
 
   let landingFinalUrl: string | undefined;
   let landingReferrerCaptured: string | undefined;
@@ -328,6 +341,7 @@ export async function simulateJourney(
       let stepError: string | undefined;
       let settleOutcome: SettleOutcome | undefined;
       let settleMs: number | undefined;
+      let settleAttempts: number | undefined;
       let waitForOutcome: WaitForOutcome | undefined;
       let httpStatus: number | undefined;
 
@@ -339,20 +353,25 @@ export async function simulateJourney(
       try {
         logger.debug({ step: step.name, url }, 'Navigating to step');
 
-        // Deterministic settle sequence (Platform Attribution & Determinism
-        // PRD B-W2) — replaces the old "networkidle, or silently fall back
-        // to domcontentloaded" binary, which made a fast degraded run and a
-        // fully-settled run indistinguishable in the output. settleOutcome/
-        // settleMs are recorded on stepCoverage below either way.
-        const settleResult = await gotoAndSettle(
-          page as Parameters<typeof gotoAndSettle>[0],
+        // Deterministic settle sequence with retries (Platform Attribution &
+        // Determinism PRD B-W2; retry policy added by the Pre-Connection
+        // Scan Confidence Tiering PRD §7.2) — replaces the old "networkidle,
+        // or silently fall back to domcontentloaded" binary, which made a
+        // fast degraded run and a fully-settled run indistinguishable in the
+        // output, and gives a merely-slow page a real second/third look with
+        // more time before recording it as degraded. settleOutcome/settleMs/
+        // settleAttempts are recorded on stepCoverage below either way.
+        const settleResult = await gotoAndSettleWithRetries(
+          page as Parameters<typeof gotoAndSettleWithRetries>[0],
           url,
           inFlightTracker.getInFlightCount,
           step.name === 'landing' ? { referer: LANDING_REFERRER } : {},
           settleConfig,
+          settleRetryConfig,
         );
         settleOutcome = settleResult.settleOutcome;
         settleMs = settleResult.settleMs;
+        settleAttempts = settleResult.attempts;
         httpStatus = settleResult.httpStatus;
 
         if (!settleResult.navigationSuccess) {
@@ -516,6 +535,7 @@ export async function simulateJourney(
         ...(stepError ? { error: stepError } : {}),
         ...(settleOutcome ? { settle_outcome: settleOutcome } : {}),
         ...(settleMs !== undefined ? { settle_ms: settleMs } : {}),
+        ...(settleAttempts !== undefined ? { settle_attempts: settleAttempts } : {}),
         ...(waitForOutcome ? { wait_for_outcome: waitForOutcome } : {}),
         ...(httpStatus !== undefined ? { http_status: httpStatus } : {}),
         requests_in_flight_at_snapshot: inFlightTracker.getInFlightCount(),
@@ -612,6 +632,7 @@ export async function simulateJourney(
     site_type: opts.site_type,
     secondary_motion: opts.secondary_motion,
     declared_platforms: opts.declared_platforms,
+    declaration_source: opts.declaration_source,
     primary_channel: opts.primary_channel,
     monthly_spend_band: opts.monthly_spend_band,
     traffic_regions: opts.traffic_regions,
