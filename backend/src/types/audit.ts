@@ -447,6 +447,25 @@ export type StepUrlSource = 'user_supplied' | 'sitemap' | 'nav_link' | 'heuristi
  */
 export type SettleOutcome = 'settled' | 'quiet_period_cap_reached' | 'navigation_failed';
 
+/**
+ * Run-level settle reliability (Pre-Connection Scan Confidence Tiering PRD
+ * §7.3) — computed once per run from every step's settle_outcome plus
+ * whether the declared conversion surface itself settled (see
+ * reporting/coverage.ts's computeRunQuality). Distinct from
+ * StepCoverage.degraded/ReportCoverage.partial, which flag *which* steps
+ * didn't settle: run_quality is the run-wide verdict on whether that's bad
+ * enough to withhold a client-facing report at all.
+ *   'COMPLETE' — every in-scope step reached 'settled'.
+ *   'PROVISIONAL' — at least one step didn't reach 'settled', but the run
+ *      still clears the INSUFFICIENT bar below. Renders with the run
+ *      quality stated in the report header, not blocked.
+ *   'INSUFFICIENT' — the declared conversion surface (a step distinct from
+ *      landing that navigated successfully) never settled, or fewer than
+ *      two steps settled overall. Blocks a client-facing PDF/JSON/zip
+ *      export (see routes/audits.ts's POST /:audit_id/export).
+ */
+export type RunQuality = 'COMPLETE' | 'PROVISIONAL' | 'INSUFFICIENT';
+
 /** Whether a step's declared `waitFor` selector matched before its own timeout, or wasn't declared for this step at all. */
 export type WaitForOutcome = 'matched' | 'timed_out' | 'not_declared';
 
@@ -481,6 +500,14 @@ export interface StepCoverage {
   settle_outcome?: SettleOutcome;
   /** Milliseconds spent from the start of goto to the settle decision. */
   settle_ms?: number;
+  /**
+   * Total navigation attempts made for this step, including the first
+   * (Pre-Connection Scan Confidence Tiering PRD §7.2) — 1 when it settled
+   * on the first try, up to 1 + DEFAULT_SETTLE_RETRY_CONFIG.maxAttempts
+   * when every attempt failed to settle. Absent for a StepCoverage captured
+   * before this field existed, or built outside journeySimulator.ts.
+   */
+  settle_attempts?: number;
   /** Whether this step's declared `waitFor` (if any) matched before its own 5s timeout. */
   wait_for_outcome?: WaitForOutcome;
   /**
@@ -875,6 +902,14 @@ export interface ReportCoverage {
   partial: boolean;
   /** Step names that degraded — empty when `partial` is false. */
   degraded_steps: string[];
+  /**
+   * Run-level settle-reliability verdict (Pre-Connection Scan Confidence
+   * Tiering PRD §7.3) — see RunQuality's docstring. Always present
+   * whenever ReportCoverage itself is (both derive from the same
+   * step_coverage precondition), computed by
+   * reporting/coverage.ts's computeRunQuality.
+   */
+  run_quality: RunQuality;
 }
 
 // ─── Report ───────────────────────────────────────────────────────────────────
@@ -1044,6 +1079,15 @@ export interface AuditRow {
   register_version?: string | null;
   conversion_signal_health_numerator?: number | null;
   conversion_signal_health_denominator?: number | null;
+  // Settle contract & run quality (Pre-Connection Scan Confidence Tiering
+  // PRD §7, 20260911001_settle_contract_run_quality.sql) — null when
+  // step_coverage was never captured (same condition as coverage_fingerprint
+  // above) or for a run predating this migration. See
+  // reporting/coverage.ts's computeRunQuality — the exact same value the
+  // report's executive_summary.coverage.run_quality carries, durably copied
+  // onto the row so the export route (INSUFFICIENT blocks a client-facing
+  // PDF/JSON/zip) can check it without unpacking audit_reports.report_json.
+  run_quality?: RunQuality | null;
 }
 
 /** POST /api/audits/start payload for a Check Register v2 scan. */

@@ -20,7 +20,7 @@ import { calculateV2Scores } from '@/services/validation/register/scoring';
 import { buildV2LayerStages, buildV2PlatformBreakdown } from '@/services/validation/register/reporting';
 import { interpretResults } from '@/services/interpretation/engine';
 import { generateReport } from '@/services/reporting/generator';
-import { computeCoverageFingerprint } from '@/services/reporting/coverage';
+import { computeCoverageFingerprint, computeRunQuality } from '@/services/reporting/coverage';
 import { partitionCoverageAffected } from '@/services/reporting/coverageSuppression';
 import { partitionDegradedRuns } from '@/services/reporting/degradationSuppression';
 import { partitionClickIdContention } from '@/services/validation/register/clickIdContention';
@@ -361,6 +361,16 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
           await updateAuditCoverage(audit_id, {
             coverage_fingerprint: computeCoverageFingerprint(auditData),
             pages_distinct: report.executive_summary.coverage?.pages_distinct,
+            // Settle contract & run quality (Pre-Connection Scan Confidence
+            // Tiering PRD §7.3) — same computeRunQuality() call the report's
+            // own executive_summary.coverage.run_quality used, durably
+            // copied onto the row so the export route (POST
+            // /:audit_id/export) can gate a client-facing PDF/JSON/zip on
+            // it without unpacking audit_reports.report_json. Computed for
+            // both v1 and v2 audits — step_coverage is captured
+            // unconditionally by simulateJourney regardless of
+            // rule_set_version, same as coverage_fingerprint above.
+            run_quality: computeRunQuality(auditData.step_coverage ?? []),
             ...(isV2 && {
               register_version: report.register_version,
               conversion_signal_health_numerator: scores.conversion_signal_health_numerator,

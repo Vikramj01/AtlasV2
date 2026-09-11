@@ -61,7 +61,17 @@ export const auditApi = {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: auth },
         body: JSON.stringify({ format }),
-      }).then((r) => r.blob())
+      }).then(async (r) => {
+        // An INSUFFICIENT run quality (Pre-Connection Scan Confidence
+        // Tiering PRD §7.3) returns a 409 with a JSON error body, not a
+        // file — must check r.ok before calling .blob(), or a blocked
+        // export silently downloads as a "PDF" containing the JSON error.
+        if (!r.ok) {
+          const body = await r.json().catch(() => ({}));
+          throw new Error(body.message ?? body.error ?? `Export failed: ${r.status}`);
+        }
+        return r.blob();
+      })
     );
   },
 

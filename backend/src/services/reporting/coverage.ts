@@ -8,7 +8,7 @@
  * state — per CLAUDE.md rule 12 (no fabricated UI data).
  */
 import crypto from 'crypto';
-import type { AuditData, ValidationResult, ValidationLayerV2, StepCoverage, ReportCoverage, CoverageLayerNotTested } from '@/types/audit';
+import type { AuditData, ValidationResult, ValidationLayerV2, StepCoverage, ReportCoverage, CoverageLayerNotTested, RunQuality } from '@/types/audit';
 import { normalizeUrlForCoverage } from '@/services/audit/journeySimulator';
 import { REGISTER, isRuleApplicable } from '@/services/validation/register/engine';
 import { ALL_V2_LAYERS } from '@/services/validation/register/layers';
@@ -149,6 +149,41 @@ export function degradedStepNames(steps: StepCoverage[]): string[] {
   return steps.filter((s) => s.degraded === true).map((s) => s.step);
 }
 
+/**
+ * Run-level settle-reliability verdict (Pre-Connection Scan Confidence
+ * Tiering PRD §7.3) — the single source of truth reused by both
+ * ReportCoverage (buildCoverageSummary below, for the report header) and
+ * orchestrator.ts (for the durable audits.run_quality column the export
+ * route gates on), so the two can never silently disagree.
+ *
+ * No steps at all (Journey-Builder mode never reaches this — caller returns
+ * undefined first — but a directly-constructed empty array shouldn't read
+ * as a clean run) — 'INSUFFICIENT'.
+ *
+ * The declared conversion surface is "a step distinct from the landing page
+ * that navigated successfully" — the same basic condition
+ * conversionSurfaceReached() (register/L0.ts) tests, without that
+ * function's extra isVerifiedStep() confidence gate, since run_quality asks
+ * "did settling fail on the page that mattered," not "is this evidence
+ * strong enough to score." When at least one such step exists but *none* of
+ * them actually reached 'settled', the run can't support a client-facing
+ * report regardless of how many other steps settled cleanly. Independently,
+ * fewer than two settled steps overall is too little to report on even when
+ * no conversion surface was ever reached (e.g. a bare-URL homepage-only
+ * scan that also failed to settle the homepage itself).
+ */
+export function computeRunQuality(steps: StepCoverage[]): RunQuality {
+  if (steps.length === 0) return 'INSUFFICIENT';
+
+  const settledSteps = steps.filter((s) => s.settle_outcome === 'settled');
+  const conversionSteps = steps.filter((s) => s.distinct_from_landing && s.navigation_success);
+  const conversionSurfaceUnsettled = conversionSteps.length > 0
+    && conversionSteps.every((s) => s.settle_outcome !== 'settled');
+
+  if (conversionSurfaceUnsettled || settledSteps.length < 2) return 'INSUFFICIENT';
+  return settledSteps.length < steps.length ? 'PROVISIONAL' : 'COMPLETE';
+}
+
 export function buildCoverageSummary(auditData: AuditData, results: ValidationResult[]): ReportCoverage | undefined {
   const steps = auditData.step_coverage;
   if (!steps || steps.length === 0) return undefined;
@@ -165,5 +200,6 @@ export function buildCoverageSummary(auditData: AuditData, results: ValidationRe
     rules_not_tested: rulesNotTested,
     partial: degradedSteps.length > 0,
     degraded_steps: degradedSteps,
+    run_quality: computeRunQuality(steps),
   };
 }

@@ -323,6 +323,64 @@ export async function gotoAndSettle(
   return { navigationSuccess: true, settleOutcome, settleMs: Date.now() - start, ...(httpStatus !== undefined ? { httpStatus } : {}) };
 }
 
+// ── Settle retry policy (Pre-Connection Scan Confidence Tiering PRD §7.2) ──
+//
+// A single gotoAndSettle attempt conflates "this page never settles" with
+// "this page needed a bit more time than the default budget gives it" — the
+// OpenArt run's ten unassessable checks all traced to one page that never
+// settled, with no second look at a larger budget before it was recorded as
+// failed. gotoAndSettleWithRetries re-runs the whole gotoAndSettle sequence
+// (not just the quiet-wait) up to retryConfig.maxAttempts additional times
+// when an attempt doesn't reach 'settled', escalating the timing budget by
+// retryConfig.escalationFactor each time, and reports how many attempts it
+// took — the caller (journeySimulator.ts) records this on StepCoverage
+// rather than silently discarding it, same principle as settle_outcome/
+// settle_ms itself.
+
+export interface SettleRetryConfig {
+  /** Additional attempts beyond the first when a step doesn't reach 'settled'. */
+  maxAttempts: number;
+  /** Multiplier applied to navigationTimeoutMs/maxSettleMs on each retry. */
+  escalationFactor: number;
+}
+
+/** Production defaults — PRD §7.2: up to 2 additional attempts (3 total), each with 50% more time than the last. */
+export const DEFAULT_SETTLE_RETRY_CONFIG: SettleRetryConfig = {
+  maxAttempts: 2,
+  escalationFactor: 1.5,
+};
+
+export interface GotoAndSettleWithRetriesResult extends GotoAndSettleResult {
+  /** Total navigation attempts made, including the first — 1 when it settled on the first try. */
+  attempts: number;
+}
+
+export async function gotoAndSettleWithRetries(
+  page: Parameters<typeof gotoAndSettle>[0],
+  url: string,
+  getInFlight: () => number,
+  opts: { referer?: string } = {},
+  config: SettleConfig = DEFAULT_SETTLE_CONFIG,
+  retryConfig: SettleRetryConfig = DEFAULT_SETTLE_RETRY_CONFIG,
+): Promise<GotoAndSettleWithRetriesResult> {
+  let attemptConfig = config;
+  let attempt = 1;
+  let result: GotoAndSettleResult;
+
+  for (;;) {
+    result = await gotoAndSettle(page, url, getInFlight, opts, attemptConfig);
+    if (result.settleOutcome === 'settled' || attempt > retryConfig.maxAttempts) break;
+    attempt += 1;
+    attemptConfig = {
+      ...attemptConfig,
+      navigationTimeoutMs: Math.round(attemptConfig.navigationTimeoutMs * retryConfig.escalationFactor),
+      maxSettleMs: Math.round(attemptConfig.maxSettleMs * retryConfig.escalationFactor),
+    };
+  }
+
+  return { ...result, attempts: attempt };
+}
+
 /**
  * Set up console-error and uncaught-exception interception on a
  * Playwright page — used by Hygiene & Integrity's NO_CONSOLE_ERRORS_FROM_

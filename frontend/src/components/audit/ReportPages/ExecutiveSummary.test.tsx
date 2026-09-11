@@ -54,6 +54,7 @@ describe('ExecutiveSummary — coverage banner', () => {
       rules_not_tested: 0,
       partial: false,
       degraded_steps: [],
+      run_quality: 'COMPLETE',
     };
     render(<ExecutiveSummary report={makeReport(coverage)} />);
     expect(screen.queryByText('Limited scan coverage')).toBeNull();
@@ -72,6 +73,7 @@ describe('ExecutiveSummary — coverage banner', () => {
       rules_not_tested: 42,
       partial: false,
       degraded_steps: [],
+      run_quality: 'COMPLETE',
     };
     render(<ExecutiveSummary report={makeReport(coverage)} />);
     expect(screen.queryByText('Limited scan coverage')).not.toBeNull();
@@ -97,6 +99,7 @@ describe('ExecutiveSummary — coverage banner', () => {
       rules_not_tested: 0,
       partial: false,
       degraded_steps: [],
+      run_quality: 'COMPLETE',
     };
     render(<ExecutiveSummary report={makeReport(coverage)} />);
     expect(screen.queryByText('Limited scan coverage')).toBeNull(); // not_applicable alone never triggers the warning
@@ -116,6 +119,7 @@ describe('ExecutiveSummary — coverage banner', () => {
       rules_not_tested: 42,
       partial: false,
       degraded_steps: [],
+      run_quality: 'COMPLETE',
     };
     render(<ExecutiveSummary report={makeReport(coverage)} />);
     const banner = screen.getByText(/This scan examined/);
@@ -134,6 +138,7 @@ describe('ExecutiveSummary — coverage banner', () => {
       rules_not_tested: 0,
       partial: false,
       degraded_steps: [],
+      run_quality: 'COMPLETE',
     };
     render(<ExecutiveSummary report={makeReport(coverage)} />);
     const banner = screen.getByText(/This scan examined/);
@@ -152,10 +157,46 @@ describe('ExecutiveSummary — coverage banner', () => {
       rules_not_tested: 0,
       partial: true,
       degraded_steps: ['confirmation'],
+      run_quality: 'PROVISIONAL',
     };
     render(<ExecutiveSummary report={makeReport(coverage)} />);
     expect(screen.queryByText('Limited scan coverage')).not.toBeNull();
     const banner = screen.getByText(/This scan examined/);
     expect(banner.textContent).toContain("didn't fully settle on 1 step (confirmation)");
+  });
+
+  // Pre-Connection Scan Confidence Tiering PRD §7.3 — an INSUFFICIENT run
+  // gets its own prominent, distinct notice ahead of the ordinary "Limited
+  // scan coverage" banner.
+  it('renders the Insufficient run quality notice when run_quality is INSUFFICIENT', () => {
+    const coverage: ReportCoverage = {
+      pages_requested: 4,
+      pages_distinct: 1,
+      steps: [],
+      layers_not_tested: [],
+      rules_tested: 10,
+      rules_not_tested: 73,
+      partial: true,
+      degraded_steps: ['checkout'],
+      run_quality: 'INSUFFICIENT',
+    };
+    render(<ExecutiveSummary report={makeReport(coverage)} />);
+    expect(screen.queryByText('Insufficient run quality — export blocked')).not.toBeNull();
+  });
+
+  it('does not render the Insufficient run quality notice for a PROVISIONAL run', () => {
+    const coverage: ReportCoverage = {
+      pages_requested: 4,
+      pages_distinct: 4,
+      steps: [],
+      layers_not_tested: [],
+      rules_tested: 83,
+      rules_not_tested: 0,
+      partial: true,
+      degraded_steps: ['confirmation'],
+      run_quality: 'PROVISIONAL',
+    };
+    render(<ExecutiveSummary report={makeReport(coverage)} />);
+    expect(screen.queryByText('Insufficient run quality — export blocked')).toBeNull();
   });
 });

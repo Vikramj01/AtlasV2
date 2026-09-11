@@ -312,6 +312,23 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
     doc.fillColor(C.lightText).fontSize(10).font('Helvetica')
       .text(`${genDate}  ·  Audit ID: ${report.audit_id}`, LEFT);
 
+    // Run quality (Pre-Connection Scan Confidence Tiering PRD §7.3) —
+    // stated in the header, not a footnote. INSUFFICIENT runs never reach
+    // this generator at all (blocked by the export route before
+    // generatePDF is called), so only PROVISIONAL is reachable here in
+    // practice; COMPLETE renders nothing, matching the "omit rather than
+    // assert a positive claim with no need" pattern used elsewhere.
+    const headerRunQuality = report.executive_summary.coverage?.run_quality;
+    if (headerRunQuality && headerRunQuality !== 'COMPLETE') {
+      doc.fillColor(C.atRisk).fontSize(9).font('Helvetica-Bold')
+        .text(
+          headerRunQuality === 'INSUFFICIENT'
+            ? 'Insufficient run quality — this scan did not settle enough of the site to support this report.'
+            : 'Provisional run quality — not every page in this scan settled cleanly.',
+          LEFT,
+        );
+    }
+
     doc.moveDown(0.8);
 
     // ══════════════════════════════════════════════════════════════════════

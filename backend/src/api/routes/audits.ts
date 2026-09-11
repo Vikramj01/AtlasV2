@@ -505,6 +505,23 @@ router.post('/:audit_id/export', async (req: Request, res: Response) => {
     return;
   }
 
+  // Settle contract & run quality (Pre-Connection Scan Confidence Tiering
+  // PRD §7.3) — an INSUFFICIENT run (the declared conversion surface never
+  // settled, or fewer than two steps settled overall) does not render a
+  // client-facing report. This export endpoint is exactly the boundary
+  // that matters: the in-app report view still shows the run internally
+  // (with its run_quality stated in the header) so the operator can see
+  // what happened, but the PDF/JSON/zip artifact meant to leave Atlas is
+  // blocked until the site is re-scanned with corrected seed URLs.
+  if (audit.run_quality === 'INSUFFICIENT') {
+    res.status(409).json({
+      error: 'Export blocked — this scan did not settle enough of the site to support a client-facing report',
+      run_quality: 'INSUFFICIENT',
+      message: 'The declared conversion surface never settled, or too few pages settled overall, on this run. Re-run the audit with corrected seed URLs before exporting.',
+    });
+    return;
+  }
+
   const report = await getReport(audit_id);
   if (!report) {
     res.status(404).json({ error: 'Report not found' });

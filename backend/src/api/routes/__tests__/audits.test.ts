@@ -541,6 +541,31 @@ describe('POST /api/audits/:audit_id/export', () => {
 
     expect(res.status).toBe(409);
   });
+
+  // Pre-Connection Scan Confidence Tiering PRD §7.3 — an INSUFFICIENT run
+  // does not render a client-facing report. This export endpoint is the
+  // boundary that matters: a client-facing PDF/JSON/zip is blocked
+  // entirely, without ever calling getReport/generatePDF.
+  it('returns 409 and blocks export when run_quality is INSUFFICIENT, for every format', async () => {
+    vi.mocked(dbQueries.getAudit).mockResolvedValue({ ...MOCK_AUDIT, run_quality: 'INSUFFICIENT' } as any);
+
+    for (const format of ['pdf', 'json', 'both'] as const) {
+      const res = await buildApp().post('/api/audits/audit-001/export').send({ format });
+      expect(res.status).toBe(409);
+      expect(res.body.run_quality).toBe('INSUFFICIENT');
+    }
+    expect(dbQueries.getReport).not.toHaveBeenCalled();
+    expect(pdfGenerator.generatePDF).not.toHaveBeenCalled();
+  });
+
+  it('still allows export for a PROVISIONAL run', async () => {
+    vi.mocked(dbQueries.getAudit).mockResolvedValue({ ...MOCK_AUDIT, run_quality: 'PROVISIONAL' } as any);
+    vi.mocked(dbQueries.getReport).mockResolvedValue(MOCK_REPORT as any);
+
+    const res = await buildApp().post('/api/audits/audit-001/export').send({ format: 'json' });
+
+    expect(res.status).toBe(200);
+  });
 });
 
 // ── POST /api/audits/start-from-journey ──────────────────────────────────────
