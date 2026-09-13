@@ -6,25 +6,35 @@
  * (https://datamanager.googleapis.com/$discovery/rest?version=v1): the Event
  * resource used by events.ingest has no adjustment field, and no method in
  * the full API surface (events, audienceMembers, adEvents, userLists,
- * partnerLinks, insights) adjusts a previously-sent conversion. So this
- * module ships two things instead of a single "send the refund" call:
+ * partnerLinks, insights) adjusts a previously-sent conversion — re-verified
+ * on a live fetch at revision 20260904, still true. The standard Google Ads
+ * API is a different story: its ConversionAdjustmentUploadService
+ * (uploadConversionAdjustments) remains generally available and is not
+ * swept into either of Google's 2026 migration waves (Customer Match /
+ * OfflineUserDataJobService, cut Apr 1; offline-conversion-import /
+ * ConversionUploadService.UploadClickConversions, cut Jun 15 — both scoped
+ * to those specific services, not to adjustments). So this module ships
+ * three things instead of a single "send the refund" call:
  *
- *   1. Google audience removal (real, ships today) — removes the refunded
- *      customer from Customer Match/remarketing audiences via DMA, so Google
- *      stops optimizing toward them going forward. Reuses
- *      ingestCustomerMatchBatch() from customerMatch.ts directly; this module
- *      adds no new DMA client code.
- *   2. A best-effort Google Ads conversion-adjustment CSV (for the client to
- *      upload themselves via Google Ads' own "Uploads -> Conversion
- *      Adjustments" UI) — Atlas has no visibility into whether they actually
- *      upload it. The exact column format could not be verified against
- *      Google's primary docs from this environment (support.google.com and
- *      developers.google.com are both network-blocked here); it's built from
- *      corroborating secondary sources and the date-format convention already
- *      used elsewhere in this codebase for Google adjustments
- *      (GoogleConversionAdjustment.gclidDateTimePair). Flagged clearly to the
- *      user as needing verification against their own account's downloaded
- *      template before uploading.
+ *   1. Google audience removal (real, DMA-native) — removes the refunded
+ *      customer from Customer Match/remarketing audiences, so Google stops
+ *      optimizing toward them going forward. Reuses ingestCustomerMatchBatch()
+ *      from customerMatch.ts directly; this module adds no new DMA client code.
+ *   2. An automated Google Ads conversion adjustment (submitGoogleConversion
+ *      Adjustment) — RESTATEMENT/RETRACTION via uploadConversionAdjustments,
+ *      matched by orderId (original_transaction_id) against the single
+ *      conversion_action_id already stored per Google connection (the same
+ *      one googleDelivery.ts uses for live delivery).
+ *   3. A best-effort Google Ads conversion-adjustment CSV, kept as a
+ *      fallback/audit trail regardless of (2)'s outcome — Atlas has no way
+ *      to guarantee Google actually applied an accepted adjustment. The exact
+ *      column format could not be verified against Google's primary docs
+ *      from this environment (support.google.com and developers.google.com
+ *      are both network-blocked here); it's built from corroborating
+ *      secondary sources and the date-format convention shared with (2)'s
+ *      adjustmentDateTime field. Flagged clearly to the user as needing
+ *      verification against their own account's downloaded template before
+ *      uploading.
  *
  * Meta is logged only — no reversal API exists there. GA4 is out of scope —
  * Atlas has no server-side GA4 delivery at all yet (separate open item).
@@ -34,8 +44,16 @@ import { createHash } from 'crypto';
 import { supabaseAdmin } from '@/services/database/supabase';
 import { safeDecryptCredentials } from './credentials';
 import { ingestCustomerMatchBatch } from './customerMatch';
+import { refreshGoogleToken } from './googleDelivery';
+import {
+  GOOGLE_ADS_API_BASE,
+  GOOGLE_ADS_API_VERSION,
+  buildGoogleAdsHeaders,
+  cleanCustomerId,
+  formatGoogleDateTime,
+} from '@/services/offline-conversions/googleOfflineUpload';
 import type { GoogleCredentials } from '@/types/capi';
-import type { RecordRefundInput, RefundEvent, GoogleRemovalStatus } from '@/types/refunds';
+import type { RecordRefundInput, RefundEvent, GoogleRemovalStatus, GoogleAdjustmentStatus } from '@/types/refunds';
 import logger from '@/utils/logger';
 
 // ── PII hashing (storage only — never persist raw) ────────────────────────────
@@ -182,6 +200,124 @@ export async function removeFromGoogleAudience(
     const message = err instanceof Error ? err.message : String(err);
     logger.error({ err: message, orgId, refundId }, '[refundDelivery] Google audience removal failed');
     await updateGoogleRemovalStatus(refundId, 'failed', message);
+  }
+}
+
+// ── Automated Google Ads conversion adjustment ────────────────────────────────
+// Spike outcome (confirmed viable — see the header comment of migration
+// 20260915003_google_conversion_adjustment.sql for the full sourcing):
+// ConversionAdjustmentUploadService/uploadConversionAdjustments remains
+// generally available on the standard Google Ads API and is not swept into
+// either of Google's 2026 migration waves (Customer Match /
+// OfflineUserDataJobService cut Apr 1; offline-conversion-import /
+// ConversionUploadService.UploadClickConversions cut Jun 15 — both scoped
+// to those specific services, not to adjustments).
+//
+// Matches by orderId (original_transaction_id), same as the existing CSV's
+// "Order ID" column, using the single conversion_action_id already stored
+// per Google connection (creds.conversion_action_id — the same one
+// googleDelivery.ts uses for the live pipeline). The CSV stays available
+// as a fallback/audit trail regardless of this call's outcome — Atlas has
+// no way to guarantee Google actually applied an accepted adjustment, and
+// keeping the CSV lets the client verify/re-upload manually if needed.
+
+async function updateGoogleAdjustmentStatus(
+  refundId: string,
+  status: GoogleAdjustmentStatus,
+  errorMessage: string | null,
+): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from('refund_events')
+    .update({
+      google_adjustment_status: status,
+      google_adjustment_error: errorMessage,
+      ...(status === 'submitted' ? { google_adjustment_submitted_at: new Date().toISOString() } : {}),
+    })
+    .eq('id', refundId);
+
+  if (error) {
+    logger.error({ err: error.message, refundId, status }, '[refundDelivery] Failed to update google_adjustment_status');
+  }
+}
+
+interface ConversionAdjustmentPayload {
+  conversionAction: string;
+  orderId: string;
+  adjustmentType: 'RESTATEMENT' | 'RETRACTION';
+  adjustmentDateTime: string;
+  restatementValue?: { adjustedValue: number; currencyCode: string };
+}
+
+interface UploadConversionAdjustmentsResponse {
+  results?: unknown[];
+  partialFailureError?: { code?: number; message?: string };
+}
+
+/**
+ * Submits a single conversion adjustment (RESTATEMENT for partial refunds,
+ * RETRACTION for full) via the standard Google Ads API. Never throws — a
+ * delivery failure must not fail the refund-recording request that already
+ * succeeded; the CSV fallback remains available either way.
+ */
+export async function submitGoogleConversionAdjustment(orgId: string, refundId: string, refund: RefundEvent): Promise<void> {
+  if (refund.is_partial && refund.new_conversion_value === null) {
+    await updateGoogleAdjustmentStatus(refundId, 'skipped', 'Partial refund has no recorded post-refund order total');
+    return;
+  }
+
+  try {
+    const creds = await getActiveGoogleCredentials(orgId);
+    if (!creds) {
+      await updateGoogleAdjustmentStatus(refundId, 'skipped', 'No active Google connection for this organization');
+      return;
+    }
+    if (!creds.conversion_action_id || !creds.customer_id) {
+      await updateGoogleAdjustmentStatus(refundId, 'skipped', 'No conversion_action_id/customer_id configured for this Google connection');
+      return;
+    }
+
+    const customerId = cleanCustomerId(creds.customer_id);
+    const payload: ConversionAdjustmentPayload = {
+      conversionAction: `customers/${customerId}/conversionActions/${creds.conversion_action_id}`,
+      orderId: refund.original_transaction_id,
+      adjustmentType: refund.is_partial ? 'RESTATEMENT' : 'RETRACTION',
+      adjustmentDateTime: formatGoogleDateTime(new Date().toISOString()),
+      ...(refund.is_partial
+        ? { restatementValue: { adjustedValue: refund.new_conversion_value!, currencyCode: refund.currency } }
+        : {}),
+    };
+
+    const url = `${GOOGLE_ADS_API_BASE}/${GOOGLE_ADS_API_VERSION}/customers/${customerId}:uploadConversionAdjustments`;
+    const body = JSON.stringify({ conversionAdjustments: [payload], partialFailure: true });
+
+    const makeRequest = async (token: string): Promise<Response> =>
+      fetch(url, { method: 'POST', headers: buildGoogleAdsHeaders(creds, token), body });
+
+    let accessToken = creds.oauth_access_token;
+    let res = await makeRequest(accessToken);
+
+    if (res.status === 401) {
+      accessToken = await refreshGoogleToken(creds);
+      res = await makeRequest(accessToken);
+    }
+
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({})) as { error?: { message?: string } };
+      await updateGoogleAdjustmentStatus(refundId, 'failed', errBody.error?.message ?? `HTTP ${res.status}`);
+      return;
+    }
+
+    const responseBody = await res.json() as UploadConversionAdjustmentsResponse;
+    if (responseBody.partialFailureError) {
+      await updateGoogleAdjustmentStatus(refundId, 'failed', responseBody.partialFailureError.message ?? 'Partial failure');
+      return;
+    }
+
+    await updateGoogleAdjustmentStatus(refundId, 'submitted', null);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.error({ err: message, orgId, refundId }, '[refundDelivery] Google conversion adjustment submission failed');
+    await updateGoogleAdjustmentStatus(refundId, 'failed', message);
   }
 }
 

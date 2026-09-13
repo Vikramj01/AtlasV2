@@ -2,14 +2,18 @@
  * Refund/return feedback API routes — all endpoints under /api/refunds
  *
  * POST /api/refunds              — record a refund; fires Google audience
- *                                   removal (fire-and-forget)
+ *                                   removal and an automated conversion
+ *                                   adjustment call (both fire-and-forget)
  * GET  /api/refunds              — list refunds for the authenticated org
- * GET  /api/refunds/:id/adjustment.csv — generate + download the best-effort
- *                                   adjustment CSV for one refund
+ * GET  /api/refunds/:id/adjustment.csv — generate + download the adjustment
+ *                                   CSV for one refund (kept as a
+ *                                   fallback/audit trail alongside the
+ *                                   automated call, not replaced by it)
  *
- * All routes require authMiddleware. See refundDelivery.ts for why this
- * feature has no single "send the refund" call — DMA has no adjustment
- * capability, so Google Ads gets two independent, best-effort legs instead.
+ * All routes require authMiddleware. See refundDelivery.ts for why Google
+ * gets three independent legs here rather than one "send the refund" call —
+ * DMA has no adjustment capability at all, while the standard Google Ads
+ * API's uploadConversionAdjustments does (confirmed viable, unlike DMA).
  */
 
 import { Router } from 'express';
@@ -21,6 +25,7 @@ import {
   recordRefund,
   listRefunds,
   removeFromGoogleAudience,
+  submitGoogleConversionAdjustment,
   generateAdjustmentCsv,
   markAdjustmentCsvGenerated,
 } from '@/services/capi/refundDelivery';
@@ -75,6 +80,7 @@ refundsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
     // ingestCustomerMatchBatch's own internal hashing isn't double-applied
     // against an already-hashed value.
     void removeFromGoogleAudience(orgId, refund.id, email, phone);
+    void submitGoogleConversionAdjustment(orgId, refund.id, refund);
 
     res.status(201).json({ data: refund, error: null, message: null });
   } catch (err) {

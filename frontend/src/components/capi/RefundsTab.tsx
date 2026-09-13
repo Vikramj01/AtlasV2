@@ -3,18 +3,20 @@
  * adjustment CSV. Rendered inside CAPIMonitoringDashboard when
  * provider === 'google' and tab === 'refunds'.
  *
- * Two independent Google-side legs (see backend/src/services/capi/refundDelivery.ts
+ * Three independent Google-side legs (see backend/src/services/capi/refundDelivery.ts
  * for why there's no single "send the refund" call — DMA has no conversion-
- * adjustment capability):
+ * adjustment capability, but the standard Google Ads API does):
  *   - Audience removal: real, automatic, shown as a status badge below.
- *   - Adjustment CSV: best-effort format, downloaded and uploaded by the
- *     client themselves in their own Google Ads account — Atlas can't see
- *     whether they actually did.
+ *   - Automated conversion adjustment: real, automatic, via the standard
+ *     Google Ads API — also shown as a status badge below.
+ *   - Adjustment CSV: kept as a fallback/audit trail regardless of the
+ *     automated call's outcome — Atlas has no way to guarantee Google
+ *     actually applied an accepted adjustment.
  */
 
 import { useEffect, useState, type FormEvent, type ChangeEvent } from 'react';
 import { refundsApi } from '@/lib/api/refundsApi';
-import type { RefundEvent, GoogleRemovalStatus } from '@/types/refunds';
+import type { RefundEvent, GoogleRemovalStatus, GoogleAdjustmentStatus } from '@/types/refunds';
 
 const STATUS_BADGE: Record<GoogleRemovalStatus, string> = {
   removed: 'bg-green-100 text-green-700',
@@ -34,6 +36,31 @@ function StatusBadge({ status }: { status: GoogleRemovalStatus }) {
   return (
     <span className={`text-xs px-2 py-0.5 rounded font-medium ${STATUS_BADGE[status]}`}>
       {STATUS_LABEL[status]}
+    </span>
+  );
+}
+
+const ADJUSTMENT_BADGE: Record<GoogleAdjustmentStatus, string> = {
+  submitted: 'bg-green-100 text-green-700',
+  failed: 'bg-red-100 text-red-700',
+  pending: 'bg-amber-100 text-amber-700',
+  skipped: 'bg-gray-100 text-gray-600',
+};
+
+const ADJUSTMENT_LABEL: Record<GoogleAdjustmentStatus, string> = {
+  submitted: 'Adjustment submitted',
+  failed: 'Adjustment failed',
+  pending: 'Submitting…',
+  skipped: 'Skipped (no connection)',
+};
+
+function AdjustmentBadge({ status, error }: { status: GoogleAdjustmentStatus; error: string | null }) {
+  return (
+    <span
+      className={`text-xs px-2 py-0.5 rounded font-medium ${ADJUSTMENT_BADGE[status]}`}
+      title={error ?? undefined}
+    >
+      {ADJUSTMENT_LABEL[status]}
     </span>
   );
 }
@@ -148,10 +175,11 @@ export function RefundsTab() {
       <div className="rounded-lg border border-[#E5E7EB] bg-white px-5 py-5">
         <p className="text-section-header mb-1">Record a Refund</p>
         <p className="text-xs text-[#9CA3AF] mb-4">
-          Removes the customer from Google Ads remarketing/Customer Match audiences automatically.
-          Doesn't correct Google Ads' own conversion reporting — Google's Data Manager API has no
-          adjustment capability, so a best-effort adjustment CSV is generated for you to upload
-          yourself via Google Ads → Uploads → Conversion Adjustments.{' '}
+          Removes the customer from Google Ads remarketing/Customer Match audiences and
+          automatically submits a conversion adjustment (correcting Google Ads' own reporting)
+          via the standard Google Ads API. An adjustment CSV is still generated as a
+          fallback/audit trail regardless of the automated call's outcome — Atlas has no way to
+          guarantee Google actually applied it.{' '}
           <strong>Verify the CSV's column headers against your own account's downloaded template
           before uploading</strong> — Atlas couldn't confirm the exact format against Google's docs.
         </p>
@@ -311,7 +339,8 @@ export function RefundsTab() {
                 <th className="text-left py-2.5 pr-4 text-xs font-semibold uppercase tracking-wide text-[#6B7280]">Date</th>
                 <th className="text-left py-2.5 pr-4 text-xs font-semibold uppercase tracking-wide text-[#6B7280]">Order ID</th>
                 <th className="text-right py-2.5 pr-4 text-xs font-semibold uppercase tracking-wide text-[#6B7280]">Amount</th>
-                <th className="text-left py-2.5 pr-4 text-xs font-semibold uppercase tracking-wide text-[#6B7280]">Google</th>
+                <th className="text-left py-2.5 pr-4 text-xs font-semibold uppercase tracking-wide text-[#6B7280]">Audience</th>
+                <th className="text-left py-2.5 pr-4 text-xs font-semibold uppercase tracking-wide text-[#6B7280]">Adjustment</th>
                 <th className="text-left py-2.5 text-xs font-semibold uppercase tracking-wide text-[#6B7280]">Adjustment CSV</th>
               </tr>
             </thead>
@@ -320,7 +349,7 @@ export function RefundsTab() {
                 <SkeletonRows />
               ) : history.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-8 text-center text-sm text-[#9CA3AF]">
+                  <td colSpan={6} className="py-8 text-center text-sm text-[#9CA3AF]">
                     No refunds recorded yet.
                   </td>
                 </tr>
@@ -341,6 +370,9 @@ export function RefundsTab() {
                     </td>
                     <td className="py-2.5 pr-4">
                       <StatusBadge status={row.google_removal_status} />
+                    </td>
+                    <td className="py-2.5 pr-4">
+                      <AdjustmentBadge status={row.google_adjustment_status} error={row.google_adjustment_error} />
                     </td>
                     <td className="py-2.5">
                       <button

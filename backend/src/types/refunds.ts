@@ -8,6 +8,7 @@
 // Meta is logged only; no reversal API exists there.
 
 export type GoogleRemovalStatus = 'pending' | 'removed' | 'failed' | 'skipped';
+export type GoogleAdjustmentStatus = 'pending' | 'submitted' | 'failed' | 'skipped';
 
 export interface RefundEvent {
   id: string;
@@ -25,6 +26,10 @@ export interface RefundEvent {
   google_removal_status: GoogleRemovalStatus;
   google_removal_error: string | null;
   adjustment_csv_generated_at: string | null;
+  /** Automated uploadConversionAdjustments call outcome — independent of the CSV, which stays available as a fallback/audit trail. */
+  google_adjustment_status: GoogleAdjustmentStatus;
+  google_adjustment_error: string | null;
+  google_adjustment_submitted_at: string | null;
   meta_status: 'logged';
   created_by: string;
   created_at: string;
