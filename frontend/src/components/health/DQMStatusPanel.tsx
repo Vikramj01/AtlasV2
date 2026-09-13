@@ -24,9 +24,18 @@ interface DMAState {
   is_in_backoff: boolean;
 }
 
+interface MetaEmqRow {
+  capi_provider_id: string;
+  dataset_id: string;
+  event_name: string | null;
+  emq_score: number | null;
+  checked_at: string;
+}
+
 interface DQMStatus {
   gtg: { recent_checks: GTGCheck[]; latest_status: string };
   dma: DMAState | null;
+  meta_emq: MetaEmqRow[];
 }
 
 const STATUS_DOT: Record<string, string> = {
@@ -93,6 +102,12 @@ export function DQMStatusPanel() {
   const gtgStatus = data.gtg.latest_status;
   const latestCheck = data.gtg.recent_checks[0];
   const dma = data.dma;
+  const metaEmq = data.meta_emq ?? [];
+  const scoredMetaEmq = metaEmq.filter((r) => r.emq_score !== null);
+  const avgMetaEmq = scoredMetaEmq.length > 0
+    ? scoredMetaEmq.reduce((sum, r) => sum + (r.emq_score as number), 0) / scoredMetaEmq.length
+    : null;
+  const lastMetaEmqCheckedAt = metaEmq[0]?.checked_at ?? null;
 
   const dmaStatus = dma
     ? dma.is_in_backoff
@@ -159,6 +174,25 @@ export function DQMStatusPanel() {
           )}
         </div>
       </div>
+
+      {/* Meta EMQ row — live, Meta-sourced score. Distinct from Atlas's own
+          pre-flight Signal Enrichment Score shown elsewhere. */}
+      {metaEmq.length > 0 && (
+        <div className="flex items-start gap-3">
+          <StatusDot status={avgMetaEmq !== null ? 'pass' : 'unknown'} />
+          <div className="min-w-0">
+            <p className="text-sm font-medium">Meta Event Match Quality (live)</p>
+            {avgMetaEmq !== null ? (
+              <p className="text-xs text-muted-foreground">
+                {avgMetaEmq.toFixed(1)}/10 across {scoredMetaEmq.length} event type{scoredMetaEmq.length !== 1 ? 's' : ''}
+                {lastMetaEmqCheckedAt && <> · Last checked {new Date(lastMetaEmqCheckedAt).toLocaleTimeString()}</>}
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">No score returned yet from Meta's Dataset Quality API</p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

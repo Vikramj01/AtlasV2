@@ -3,6 +3,7 @@
 import { probeGTGPath, saveGTGCheck } from './gtgProbe';
 import { probeSgtmHealth, saveSgtmCheck } from './sgtmProbe';
 import { pollDMADiagnostics, upsertDMAPollState, updateDMABackoff, getDMAPollState } from './dmaPolling';
+import { pollMetaEmqForOrg, saveMetaEmqOutcome } from './metaEmqPolling';
 import { evaluateGTGAlert, evaluateDMAAlert, evaluateSgtmAlert } from './dqmAlertEvaluator';
 import type { GTGStatus } from './dqmAlertEvaluator';
 import { sendDQMAlertNotification } from './dqmAlertDelivery';
@@ -54,7 +55,7 @@ async function loadOrgConfig(orgId: string): Promise<OrgConfig> {
 
 async function writeDQMRunLog(
   orgId: string,
-  checkType: 'gtg' | 'dma' | 'sgtm',
+  checkType: 'gtg' | 'dma' | 'sgtm' | 'meta_emq',
   status: string,
   latencyMs: number | null,
   triggeredBy: 'scheduled' | 'manual',
@@ -177,6 +178,30 @@ export async function runDQMForOrg(
       ? sgtmChecks.reduce((worst, c) => (sgtmStatusRank[c.checkStatus] > sgtmStatusRank[worst.checkStatus] ? c : worst), sgtmChecks[0]).responseMs
       : null;
     await writeDQMRunLog(orgId, 'sgtm', sgtmChecks.length === 0 ? 'not-applicable' : sgtmWorstStatus, sgtmWorstResponseMs, triggeredBy, sgtmAction);
+  }
+
+  // ── Meta EMQ poll — one Dataset Quality API call per connected Meta provider ─
+  // No alert evaluation here (unlike GTG/sGTM/DMA) — this surfaces a live
+  // score for display alongside Atlas's pre-flight estimate, not a health
+  // signal Atlas alerts on.
+  const metaEmqOutcomes = await pollMetaEmqForOrg(orgId).catch((err) => {
+    logger.error({ err, orgId }, 'DQM: Meta EMQ poll failed');
+    return [];
+  });
+
+  await Promise.all(metaEmqOutcomes.map((o) => saveMetaEmqOutcome(o)));
+
+  for (const outcome of metaEmqOutcomes) {
+    const scores = outcome.results.map((r) => r.emq_score).filter((s): s is number => s !== null);
+    const avgEmq = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
+    await writeDQMRunLog(
+      orgId,
+      'meta_emq',
+      outcome.status,
+      null,
+      triggeredBy,
+      avgEmq !== null ? `avg_emq:${avgEmq.toFixed(1)}` : 'none',
+    );
   }
 
   // ── DMA poll — skip if polled recently (cadence gate) ────────────────────────
