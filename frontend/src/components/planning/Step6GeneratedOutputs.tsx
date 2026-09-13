@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { usePlanningStore } from '@/store/planningStore';
 import { useShallow } from 'zustand/react/shallow';
 import { planningApi } from '@/lib/api/planningApi';
+import { ihcApi, type GtmDeploySummary } from '@/lib/api/ihcApi';
 import { GTMContainerPreview } from './GTMContainerPreview';
 import { SignalComparison } from './SignalComparison';
 import { PiiWarningsBanner } from './PiiWarningsBanner';
@@ -169,6 +170,19 @@ function GTMOutputCard({
   } | null>(null);
   const [isMerging, setIsMerging] = useState(false);
   const [mergeError, setMergeError] = useState<string | null>(null);
+  const [oauthConnectionId, setOauthConnectionId] = useState<string | null>(null);
+  const [isDeploying, setIsDeploying] = useState(false);
+  const [deployResult, setDeployResult] = useState<GtmDeploySummary | null>(null);
+  const [deployError, setDeployError] = useState<string | null>(null);
+
+  useEffect(() => {
+    ihcApi.getContainers()
+      .then((containers) => {
+        const oauthConn = containers.find((c) => c.auth_method === 'oauth');
+        if (oauthConn) setOauthConnectionId(oauthConn.id);
+      })
+      .catch(() => {});
+  }, []);
 
   const sizeLabel = output.file_size_bytes
     ? output.file_size_bytes > 1024
@@ -261,6 +275,21 @@ function GTMOutputCard({
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  }
+
+  async function handleDeploy() {
+    if (!oauthConnectionId || !containerContent) return;
+    setIsDeploying(true);
+    setDeployError(null);
+    setDeployResult(null);
+    try {
+      const result = await ihcApi.deployToGtm(oauthConnectionId, containerContent);
+      setDeployResult(result);
+    } catch (err) {
+      setDeployError(err instanceof Error ? err.message : 'Deploy failed. Please try again.');
+    } finally {
+      setIsDeploying(false);
+    }
   }
 
   return (
@@ -406,8 +435,40 @@ function GTMOutputCard({
             )}
           </div>
 
-          {/* Download button */}
-          <div className="mt-4 flex justify-end">
+          {/* Deploy result / error */}
+          {deployResult && (
+            <div className="mt-3 rounded-lg border border-green-200 bg-green-50 px-3 py-2.5 text-xs text-green-800">
+              <p className="font-medium">
+                Deployed as a draft workspace ({deployResult.tags_created} tags, {deployResult.triggers_created} triggers,{' '}
+                {deployResult.variables_created} variables, {deployResult.folders_created} folders).
+              </p>
+              <p className="mt-1">
+                Nothing is live yet — review and publish it in GTM:{' '}
+                <a href={deployResult.workspace_url} target="_blank" rel="noreferrer" className="underline">
+                  Open workspace
+                </a>
+              </p>
+            </div>
+          )}
+          {deployError && (
+            <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-700">
+              {deployError}
+            </div>
+          )}
+
+          {/* Download / Deploy buttons */}
+          <div className="mt-4 flex justify-end gap-2">
+            {oauthConnectionId && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleDeploy}
+                disabled={isDeploying || !containerContent}
+                className="text-xs"
+              >
+                {isDeploying ? 'Deploying…' : 'Deploy to GTM'}
+              </Button>
+            )}
             <Button
               size="sm"
               onClick={handleValidateAndDownload}

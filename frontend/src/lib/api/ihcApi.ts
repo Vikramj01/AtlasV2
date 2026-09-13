@@ -99,6 +99,27 @@ export async function disconnectContainer(connectionId: string): Promise<void> {
   await apiFetch(`/gtm/containers/${connectionId}`, { method: 'DELETE' });
 }
 
+export interface GtmDeploySummary {
+  workspace_id: string;
+  workspace_url: string;
+  folders_created: number;
+  variables_created: number;
+  triggers_created: number;
+  tags_created: number;
+  built_in_variables_enabled: number;
+}
+
+export async function deployToGtm(
+  connectionId: string,
+  containerJson: Record<string, unknown>,
+): Promise<GtmDeploySummary> {
+  const res = await apiFetch<{ data: GtmDeploySummary }>('/gtm/deploy', {
+    method: 'POST',
+    body: JSON.stringify({ connection_id: connectionId, container_json: containerJson }),
+  });
+  return res.data;
+}
+
 // ── Preferences ───────────────────────────────────────────────────────────────
 
 export async function getPreferences(): Promise<IHCPreferences | null> {
@@ -148,6 +169,7 @@ export const ihcApi = {
   getContainers,
   connectGTM,
   uploadContainerJSON,
+  deployToGtm,
   disconnectContainer,
   getPreferences,
   savePreferences,

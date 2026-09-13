@@ -4,6 +4,7 @@
  * POST /api/gtm/connect              — initiate GTM OAuth (returns authUrl)
  * GET  /api/gtm/callback             — OAuth callback; exchanges code, stores tokens
  * POST /api/gtm/upload               — manual container JSON upload
+ * POST /api/gtm/deploy               — push a generated container into a live GTM workspace (OAuth only)
  * GET  /api/gtm/containers           — list connected containers for this org
  * DELETE /api/gtm/containers/:id     — disconnect a container (wipes credentials)
  *
@@ -22,6 +23,8 @@ import { supabaseAdmin } from '@/services/database/supabase';
 import { env } from '@/config/env';
 import { encryptGtmCredentials, decryptGtmCredentials } from '@/services/gtm/gtmCredentials';
 import { parseContainerJson, validateContainerJsonShape } from '@/services/gtm/containerParser';
+import { deployContainerToGtm } from '@/services/gtm/gtmDeployService';
+import type { GTMContainerJSON } from '@/services/planning/generators/gtmContainerGenerator';
 import { gtmContainerSyncQueue } from '@/services/queue/jobQueue';
 import logger from '@/utils/logger';
 
@@ -32,7 +35,11 @@ gtmRouter.use(authMiddleware, planGuard('pro'));
 
 const GTM_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GTM_TOKEN_URL = 'https://oauth2.googleapis.com/token';
-const GTM_SCOPE = 'https://www.googleapis.com/auth/tagmanager.readonly';
+// tagmanager.edit.containers (not tagmanager.publish) — /deploy below creates/
+// updates a draft workspace only. The client still reviews and publishes
+// manually in GTM; requesting publish scope too would be a materially bigger
+// OAuth consent ask and isn't needed for this deploy path.
+const GTM_SCOPE = 'https://www.googleapis.com/auth/tagmanager.readonly https://www.googleapis.com/auth/tagmanager.edit.containers';
 
 function buildRedirectUri(): string {
   return `${env.FRONTEND_URL.replace(/\/$/, '')}/settings/implementation-health/gtm/callback`;
@@ -95,6 +102,11 @@ const callbackSchema = z.object({
 const uploadSchema = z.object({
   property_id: z.string().uuid(),
   client_id: z.string().uuid().optional(),
+  container_json: z.record(z.unknown()),
+});
+
+const deploySchema = z.object({
+  connection_id: z.string().uuid(),
   container_json: z.record(z.unknown()),
 });
 
@@ -328,6 +340,71 @@ gtmRouter.post('/upload', async (req: Request, res: Response): Promise<void> => 
     });
   } catch (err) {
     sendInternalError(res, err, 'POST /api/gtm/upload');
+  }
+});
+
+// ── POST /api/gtm/deploy ──────────────────────────────────────────────────────
+// Pushes an already-generated container spec (from Planning Mode's output
+// generator) into the client's live GTM workspace, for OAuth-connected
+// containers only. Manual-upload connections have no write credentials —
+// those clients keep using the existing download/import flow.
+// Never publishes — see gtmDeployService.ts's header comment.
+
+gtmRouter.post('/deploy', async (req: Request, res: Response): Promise<void> => {
+  const parse = deploySchema.safeParse(req.body);
+  if (!parse.success) {
+    res.status(400).json({ error: 'Invalid request', details: parse.error.flatten() });
+    return;
+  }
+
+  const { connection_id, container_json } = parse.data;
+
+  const validation = validateContainerJsonShape(container_json);
+  if (!validation.valid) {
+    res.status(400).json({ error: `Invalid GTM container JSON: ${validation.error}` });
+    return;
+  }
+
+  try {
+    const orgId = await resolveOrgId(req.user.id);
+
+    const { data: connection, error: connErr } = await supabaseAdmin
+      .from('gtm_container_connections')
+      .select('id, account_id, container_id, auth_method')
+      .eq('id', connection_id)
+      .eq('organization_id', orgId)
+      .single();
+
+    if (connErr || !connection) {
+      res.status(404).json({ error: 'GTM connection not found' });
+      return;
+    }
+
+    if (connection.auth_method !== 'oauth') {
+      res.status(400).json({
+        error: 'This container was connected via manual upload and has no write access. Download and import the JSON manually, or reconnect via OAuth to deploy directly.',
+      });
+      return;
+    }
+
+    if (!connection.account_id) {
+      res.status(400).json({ error: 'This connection is missing its GTM account ID — reconnect via OAuth before deploying.' });
+      return;
+    }
+
+    const accessToken = await refreshGtmToken(connection.id);
+    const summary = await deployContainerToGtm(
+      accessToken,
+      connection.account_id,
+      connection.container_id,
+      container_json as unknown as GTMContainerJSON,
+    );
+
+    logger.info({ connectionId: connection.id, orgId, summary }, 'GTM container deployed');
+
+    res.status(201).json({ data: summary });
+  } catch (err) {
+    sendInternalError(res, err, 'POST /api/gtm/deploy');
   }
 });
 
