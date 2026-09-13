@@ -26,6 +26,7 @@ import {
   listRefunds,
   removeFromGoogleAudience,
   submitGoogleConversionAdjustment,
+  sendMetaRefundSignal,
   generateAdjustmentCsv,
   markAdjustmentCsvGenerated,
 } from '@/services/capi/refundDelivery';
@@ -81,6 +82,7 @@ refundsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
     // against an already-hashed value.
     void removeFromGoogleAudience(orgId, refund.id, email, phone);
     void submitGoogleConversionAdjustment(orgId, refund.id, refund);
+    void sendMetaRefundSignal(orgId, refund);
 
     res.status(201).json({ data: refund, error: null, message: null });
   } catch (err) {

@@ -21,7 +21,9 @@ export interface RefundEvent {
   google_adjustment_status: GoogleAdjustmentStatus;
   google_adjustment_error: string | null;
   google_adjustment_submitted_at: string | null;
-  meta_status: 'logged';
+  /** Not a reversal — outcome of the atlas_refund/atlas_order_cancellation audience-hygiene signal. */
+  meta_status: 'logged' | 'signal_sent' | 'failed' | 'skipped';
+  meta_status_error: string | null;
   created_at: string;
   updated_at: string;
 }

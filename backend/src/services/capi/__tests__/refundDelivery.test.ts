@@ -28,10 +28,15 @@ vi.mock('../googleDelivery', () => ({
   refreshGoogleToken: vi.fn(),
 }));
 
+vi.mock('../metaDelivery', () => ({
+  sendMetaEvents: vi.fn(),
+}));
+
 import { supabaseAdmin } from '@/services/database/supabase';
 import { safeDecryptCredentials } from '../credentials';
 import { refreshGoogleToken } from '../googleDelivery';
-import { submitGoogleConversionAdjustment } from '../refundDelivery';
+import { sendMetaEvents } from '../metaDelivery';
+import { submitGoogleConversionAdjustment, sendMetaRefundSignal } from '../refundDelivery';
 import type { RefundEvent } from '@/types/refunds';
 
 function makeChain(singleData: unknown = null) {
@@ -66,6 +71,7 @@ function makeRefund(overrides: Partial<RefundEvent> = {}): RefundEvent {
     google_adjustment_error: null,
     google_adjustment_submitted_at: null,
     meta_status: 'logged',
+    meta_status_error: null,
     created_by: 'u1',
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
@@ -219,6 +225,85 @@ describe('submitGoogleConversionAdjustment', () => {
     await expect(submitGoogleConversionAdjustment('org-1', 'refund-1', makeRefund())).resolves.toBeUndefined();
     expect(chain.update).toHaveBeenCalledWith(
       expect.objectContaining({ google_adjustment_status: 'failed', google_adjustment_error: 'network down' }),
+    );
+  });
+});
+
+describe('sendMetaRefundSignal', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('skips when the refund has no hashed email or phone', async () => {
+    const chain = makeChain();
+    vi.mocked(supabaseAdmin.from).mockReturnValue(chain);
+
+    await sendMetaRefundSignal('org-1', makeRefund({ hashed_email: null, hashed_phone: null }));
+
+    expect(chain.update).toHaveBeenCalledWith(expect.objectContaining({ meta_status: 'skipped' }));
+    expect(sendMetaEvents).not.toHaveBeenCalled();
+  });
+
+  it('skips when there is no active Meta connection', async () => {
+    const chain = makeChain(null);
+    vi.mocked(supabaseAdmin.from).mockReturnValue(chain);
+
+    await sendMetaRefundSignal('org-1', makeRefund({ hashed_email: 'abc123' }));
+
+    expect(chain.update).toHaveBeenCalledWith(
+      expect.objectContaining({ meta_status: 'skipped', meta_status_error: expect.stringContaining('No active Meta connection') }),
+    );
+  });
+
+  it('sends atlas_order_cancellation for a full refund and marks signal_sent', async () => {
+    const chain = makeChain({ credentials: 'blob' });
+    vi.mocked(supabaseAdmin.from).mockReturnValue(chain);
+    vi.mocked(safeDecryptCredentials).mockReturnValue({ pixel_id: 'px', access_token: 'at', dataset_id: 'ds1' } as any);
+    vi.mocked(sendMetaEvents).mockResolvedValue([{ event_id: 'e1', status: 'delivered', provider_response: {} }] as any);
+
+    await sendMetaRefundSignal('org-1', makeRefund({ is_partial: false, hashed_email: 'abc123', hashed_phone: null }));
+
+    const [[events, identifiersPerEvent, mappings]] = vi.mocked(sendMetaEvents).mock.calls;
+    expect(events[0].event_name).toBe('atlas_order_cancellation');
+    expect(identifiersPerEvent[0]).toEqual([{ type: 'email', value: 'abc123', is_hashed: true }]);
+    expect(mappings[0]).toEqual({ atlas_event: 'atlas_order_cancellation', provider_event: 'atlas_order_cancellation' });
+    expect(chain.update).toHaveBeenCalledWith(expect.objectContaining({ meta_status: 'signal_sent' }));
+  });
+
+  it('sends atlas_refund for a partial refund', async () => {
+    const chain = makeChain({ credentials: 'blob' });
+    vi.mocked(supabaseAdmin.from).mockReturnValue(chain);
+    vi.mocked(safeDecryptCredentials).mockReturnValue({ pixel_id: 'px', access_token: 'at', dataset_id: 'ds1' } as any);
+    vi.mocked(sendMetaEvents).mockResolvedValue([{ event_id: 'e1', status: 'delivered', provider_response: {} }] as any);
+
+    await sendMetaRefundSignal('org-1', makeRefund({ is_partial: true, new_conversion_value: 10, hashed_email: 'abc123' }));
+
+    const [[events]] = vi.mocked(sendMetaEvents).mock.calls;
+    expect(events[0].event_name).toBe('atlas_refund');
+  });
+
+  it('marks failed when Meta delivery fails', async () => {
+    const chain = makeChain({ credentials: 'blob' });
+    vi.mocked(supabaseAdmin.from).mockReturnValue(chain);
+    vi.mocked(safeDecryptCredentials).mockReturnValue({ pixel_id: 'px', access_token: 'at', dataset_id: 'ds1' } as any);
+    vi.mocked(sendMetaEvents).mockResolvedValue([
+      { event_id: 'e1', status: 'failed', provider_response: {}, error_code: '1', error_message: 'invalid token' },
+    ] as any);
+
+    await sendMetaRefundSignal('org-1', makeRefund({ hashed_email: 'abc123' }));
+
+    expect(chain.update).toHaveBeenCalledWith(
+      expect.objectContaining({ meta_status: 'failed', meta_status_error: 'invalid token' }),
+    );
+  });
+
+  it('never throws when sendMetaEvents rejects', async () => {
+    const chain = makeChain({ credentials: 'blob' });
+    vi.mocked(supabaseAdmin.from).mockReturnValue(chain);
+    vi.mocked(safeDecryptCredentials).mockReturnValue({ pixel_id: 'px', access_token: 'at', dataset_id: 'ds1' } as any);
+    vi.mocked(sendMetaEvents).mockRejectedValue(new Error('network down'));
+
+    await expect(sendMetaRefundSignal('org-1', makeRefund({ hashed_email: 'abc123' }))).resolves.toBeUndefined();
+    expect(chain.update).toHaveBeenCalledWith(
+      expect.objectContaining({ meta_status: 'failed', meta_status_error: 'network down' }),
     );
   });
 });

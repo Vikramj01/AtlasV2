@@ -18,6 +18,8 @@ import { useEffect, useState, type FormEvent, type ChangeEvent } from 'react';
 import { refundsApi } from '@/lib/api/refundsApi';
 import type { RefundEvent, GoogleRemovalStatus, GoogleAdjustmentStatus } from '@/types/refunds';
 
+type MetaRefundStatus = RefundEvent['meta_status'];
+
 const STATUS_BADGE: Record<GoogleRemovalStatus, string> = {
   removed: 'bg-green-100 text-green-700',
   failed: 'bg-red-100 text-red-700',
@@ -61,6 +63,33 @@ function AdjustmentBadge({ status, error }: { status: GoogleAdjustmentStatus; er
       title={error ?? undefined}
     >
       {ADJUSTMENT_LABEL[status]}
+    </span>
+  );
+}
+
+// Not a reversal — a new, forward-looking audience-hygiene signal
+// (atlas_refund/atlas_order_cancellation). See refundDelivery.ts.
+const META_STATUS_BADGE: Record<MetaRefundStatus, string> = {
+  signal_sent: 'bg-green-100 text-green-700',
+  failed: 'bg-red-100 text-red-700',
+  logged: 'bg-gray-100 text-gray-600',
+  skipped: 'bg-gray-100 text-gray-600',
+};
+
+const META_STATUS_LABEL: Record<MetaRefundStatus, string> = {
+  signal_sent: 'Signal sent',
+  failed: 'Signal failed',
+  logged: 'Not attempted',
+  skipped: 'Skipped (no connection)',
+};
+
+function MetaStatusBadge({ status, error }: { status: MetaRefundStatus; error: string | null }) {
+  return (
+    <span
+      className={`text-xs px-2 py-0.5 rounded font-medium ${META_STATUS_BADGE[status]}`}
+      title={error ?? undefined}
+    >
+      {META_STATUS_LABEL[status]}
     </span>
   );
 }
@@ -341,6 +370,7 @@ export function RefundsTab() {
                 <th className="text-right py-2.5 pr-4 text-xs font-semibold uppercase tracking-wide text-[#6B7280]">Amount</th>
                 <th className="text-left py-2.5 pr-4 text-xs font-semibold uppercase tracking-wide text-[#6B7280]">Audience</th>
                 <th className="text-left py-2.5 pr-4 text-xs font-semibold uppercase tracking-wide text-[#6B7280]">Adjustment</th>
+                <th className="text-left py-2.5 pr-4 text-xs font-semibold uppercase tracking-wide text-[#6B7280]">Meta</th>
                 <th className="text-left py-2.5 text-xs font-semibold uppercase tracking-wide text-[#6B7280]">Adjustment CSV</th>
               </tr>
             </thead>
@@ -349,7 +379,7 @@ export function RefundsTab() {
                 <SkeletonRows />
               ) : history.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-sm text-[#9CA3AF]">
+                  <td colSpan={7} className="py-8 text-center text-sm text-[#9CA3AF]">
                     No refunds recorded yet.
                   </td>
                 </tr>
@@ -373,6 +403,9 @@ export function RefundsTab() {
                     </td>
                     <td className="py-2.5 pr-4">
                       <AdjustmentBadge status={row.google_adjustment_status} error={row.google_adjustment_error} />
+                    </td>
+                    <td className="py-2.5 pr-4">
+                      <MetaStatusBadge status={row.meta_status} error={row.meta_status_error} />
                     </td>
                     <td className="py-2.5">
                       <button
