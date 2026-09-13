@@ -10,6 +10,7 @@ import type { ConsentDecisions } from '@/types/consent';
 import type {
   DMAEvent,
   DMAEventSource,
+  DMAEventDeviceInfo,
   DMAUserIdentifier,
   DMAAddressInfo,
   DMAConsent,
@@ -81,9 +82,11 @@ export function buildUserIdentifiersFromHashed(identifiers: HashedIdentifier[]):
         address.regionCode = id.value;
         hasAddressField = true;
         break;
-      // external_id/fbc/fbp/gclid/wbraid/gbraid: not part of DMA's
-      // UserIdentifier — fbc/fbp go to Meta only, gclid/wbraid/gbraid go
-      // to Event.adIdentifiers (see buildDMAEvent).
+      // fbc/fbp: not part of DMA at all — Meta-only identifiers.
+      // gclid/wbraid/gbraid go to Event.adIdentifiers (see buildDMAEvent).
+      // external_id goes to the top-level Event.userId field, not into
+      // UserIdentifier[] (see buildDMAEvent) — it identifies the whole
+      // event's actor, not a matchable PII identifier like email/phone.
     }
   }
 
@@ -127,6 +130,14 @@ function customerTypeFromCustomData(customData: AtlasEvent['custom_data']): DMAC
   return undefined;
 }
 
+function buildEventDeviceInfo(userData: AtlasEvent['user_data']): DMAEventDeviceInfo | undefined {
+  if (!userData.client_user_agent && !userData.client_ip_address) return undefined;
+  const info: DMAEventDeviceInfo = {};
+  if (userData.client_user_agent) info.userAgent = userData.client_user_agent;
+  if (userData.client_ip_address) info.ipAddress = userData.client_ip_address;
+  return info;
+}
+
 // ── Event builder ───────────────────────────────────────────────────────────
 
 export interface BuildDMAEventOptions {
@@ -161,9 +172,13 @@ export function buildDMAEvent(
   if (userIdentifiers.length > 0) dmaEvent.userData = { userIdentifiers };
   if (hasAdIdentifiers) dmaEvent.adIdentifiers = adIdentifiers;
   if (customerType) dmaEvent.userProperties = { customerType };
+  if (event.user_data.external_id) dmaEvent.userId = event.user_data.external_id;
 
   const consent = mapConsentToDMA(event.consent_state);
   if (consent) dmaEvent.consent = consent;
+
+  const deviceInfo = buildEventDeviceInfo(event.user_data);
+  if (deviceInfo) dmaEvent.eventDeviceInfo = deviceInfo;
 
   return dmaEvent;
 }
