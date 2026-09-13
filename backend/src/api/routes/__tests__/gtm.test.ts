@@ -41,6 +41,11 @@ vi.mock('@/services/gtm/gtmDeployService', () => ({
   deployContainerToGtm: vi.fn(),
 }));
 
+const mockDedupRedis = { get: vi.fn(), set: vi.fn(), del: vi.fn() };
+vi.mock('@/services/capi/dedupStore', () => ({
+  dedupRedis: mockDedupRedis,
+}));
+
 vi.mock('@/api/middleware/authMiddleware', () => ({
   authMiddleware: (_req: any, _res: any, next: any) => next(),
 }));
@@ -107,22 +112,20 @@ function buildApp() {
 describe('POST /api/gtm/connect', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
-  it('returns auth_url and state for valid request', async () => {
+  it('returns auth_url and state with no body at all', async () => {
     vi.mocked(supabaseAdmin.from).mockReturnValue(
       makeChain([], { organization_id: 'org-001' }) as any,
     );
 
-    const res = await buildApp().post('/api/gtm/connect').send({
-      property_id: '00000000-0000-0000-0000-000000000001',
-    });
+    const res = await buildApp().post('/api/gtm/connect').send({});
 
     expect(res.status).toBe(200);
     expect(res.body.data.auth_url).toContain('accounts.google.com');
     expect(res.body.data.state).toBeDefined();
   });
 
-  it('returns 400 when property_id is missing', async () => {
-    const res = await buildApp().post('/api/gtm/connect').send({});
+  it('returns 400 when client_id is not a valid UUID', async () => {
+    const res = await buildApp().post('/api/gtm/connect').send({ client_id: 'not-a-uuid' });
 
     expect(res.status).toBe(400);
   });
@@ -133,13 +136,14 @@ describe('POST /api/gtm/connect', () => {
 describe('POST /api/gtm/upload', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
-  it('uploads container JSON and returns 201 with metadata', async () => {
-    vi.mocked(supabaseAdmin.from).mockReturnValue(
-      makeChain([], { id: 'conn-001' }) as any,
-    );
+  it('uploads container JSON and returns 201 with metadata, resolving property_id to the org id', async () => {
+    const chain = makeChain([], { id: 'conn-001' });
+    vi.mocked(supabaseAdmin.from).mockImplementation((table: string) => {
+      if (table === 'profiles') return makeChain([], { organization_id: 'org-001' }) as any;
+      return chain as any;
+    });
 
     const res = await buildApp().post('/api/gtm/upload').send({
-      property_id: '00000000-0000-0000-0000-000000000001',
       container_json: {
         exportFormatVersion: 2,
         containerVersion: { container: { containerId: 'GTM-XXXXX' } },
@@ -149,6 +153,10 @@ describe('POST /api/gtm/upload', () => {
     expect(res.status).toBe(201);
     expect(res.body.data.container_id).toBe('GTM-XXXXX');
     expect(gtmContainerSyncQueue.add).toHaveBeenCalledOnce();
+    expect(chain.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ property_id: 'org-001' }),
+      expect.anything(),
+    );
   });
 
   it('returns 400 when container JSON fails shape validation', async () => {
@@ -158,7 +166,6 @@ describe('POST /api/gtm/upload', () => {
     });
 
     const res = await buildApp().post('/api/gtm/upload').send({
-      property_id: '00000000-0000-0000-0000-000000000001',
       container_json: { invalid: true },
     });
 
@@ -166,12 +173,126 @@ describe('POST /api/gtm/upload', () => {
     expect(res.body.error).toContain('Invalid GTM container JSON');
   });
 
-  it('returns 400 when required fields missing', async () => {
-    const res = await buildApp().post('/api/gtm/upload').send({
-      container_json: {},
+  it('returns 400 when container_json is missing entirely', async () => {
+    const res = await buildApp().post('/api/gtm/upload').send({});
+
+    expect(res.status).toBe(400);
+  });
+});
+
+// ── GET /api/gtm/callback (discovery) ────────────────────────────────────────
+
+describe('GET /api/gtm/callback', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  async function getValidState(clientId?: string): Promise<string> {
+    vi.mocked(supabaseAdmin.from).mockReturnValue(
+      makeChain([], { organization_id: 'org-001' }) as any,
+    );
+    const res = await buildApp().post('/api/gtm/connect').send(clientId ? { client_id: clientId } : {});
+    return res.body.data.state as string;
+  }
+
+  it('exchanges the code, discovers accounts/containers, and caches a pending connection', async () => {
+    const state = await getValidState();
+    vi.clearAllMocks();
+
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ access_token: 'at', refresh_token: 'rt', expires_in: 3600, scope: 'x' }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ account: [{ accountId: 'acct1', name: 'My Account' }] }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ container: [{ containerId: 'cont1', name: 'My Container', publicId: 'GTM-XXXXX' }] }) }),
+    );
+
+    const res = await buildApp().get('/api/gtm/callback').query({ code: 'auth-code', state });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.ref).toBeDefined();
+    expect(res.body.data.accounts).toEqual([
+      { accountId: 'acct1', name: 'My Account', containers: [{ containerId: 'cont1', name: 'My Container', publicId: 'GTM-XXXXX' }] },
+    ]);
+    expect(mockDedupRedis.set).toHaveBeenCalledOnce();
+  });
+
+  it('returns 400 on an invalid/tampered state', async () => {
+    const res = await buildApp().get('/api/gtm/callback').query({ code: 'auth-code', state: 'garbage' });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when Google returns no refresh_token', async () => {
+    const state = await getValidState();
+    vi.clearAllMocks();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true, json: async () => ({ access_token: 'at', expires_in: 3600, scope: 'x' }),
+    }));
+
+    const res = await buildApp().get('/api/gtm/callback').query({ code: 'auth-code', state });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('refresh_token');
+  });
+});
+
+// ── POST /api/gtm/callback/finalize ──────────────────────────────────────────
+
+describe('POST /api/gtm/callback/finalize', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('returns 400 when the ref has expired or was never issued', async () => {
+    vi.mocked(supabaseAdmin.from).mockReturnValue(makeChain([], { organization_id: 'org-001' }) as any);
+    mockDedupRedis.get.mockResolvedValue(null);
+
+    const res = await buildApp().post('/api/gtm/callback/finalize').send({
+      ref: '00000000-0000-0000-0000-000000000009',
+      account_id: 'acct1',
+      container_id: 'cont1',
     });
 
     expect(res.status).toBe(400);
+    expect(res.body.error).toContain('expired');
+  });
+
+  it('returns 403 when the pending connection belongs to a different org', async () => {
+    vi.mocked(supabaseAdmin.from).mockReturnValue(makeChain([], { organization_id: 'org-001' }) as any);
+    mockDedupRedis.get.mockResolvedValue(JSON.stringify({
+      orgId: 'org-999', clientId: null, credentials: { access_token: 'at', refresh_token: 'rt', expires_at: 0, scope: 'x' },
+    }));
+
+    const res = await buildApp().post('/api/gtm/callback/finalize').send({
+      ref: '00000000-0000-0000-0000-000000000009',
+      account_id: 'acct1',
+      container_id: 'cont1',
+    });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('persists the connection, queues sync, and returns 201', async () => {
+    const chain = makeChain([], { id: 'conn-001' });
+    vi.mocked(supabaseAdmin.from).mockImplementation((table: string) => {
+      if (table === 'profiles') return makeChain([], { organization_id: 'org-001' }) as any;
+      return chain as any;
+    });
+    mockDedupRedis.get.mockResolvedValue(JSON.stringify({
+      orgId: 'org-001', clientId: 'client-abc', credentials: { access_token: 'at', refresh_token: 'rt', expires_at: 0, scope: 'x' },
+    }));
+
+    const res = await buildApp().post('/api/gtm/callback/finalize').send({
+      ref: '00000000-0000-0000-0000-000000000009',
+      account_id: 'acct1',
+      container_id: 'cont1',
+    });
+
+    expect(res.status).toBe(201);
+    expect(res.body.data.connection_id).toBe('conn-001');
+    expect(mockDedupRedis.del).toHaveBeenCalledOnce();
+    expect(chain.insert).toHaveBeenCalledWith(expect.objectContaining({
+      organization_id: 'org-001',
+      client_id: 'client-abc',
+      property_id: 'org-001',
+      container_id: 'cont1',
+      account_id: 'acct1',
+      auth_method: 'oauth',
+    }));
+    expect(gtmContainerSyncQueue.add).toHaveBeenCalledOnce();
   });
 });
 

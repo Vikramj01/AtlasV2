@@ -71,18 +71,52 @@ export async function getContainers(): Promise<GTMContainer[]> {
 }
 
 export async function connectGTM(
-  propertyId: string,
   clientId?: string,
 ): Promise<{ auth_url: string; state: string }> {
   const res = await apiFetch<{ data: { auth_url: string; state: string } }>('/gtm/connect', {
     method: 'POST',
-    body: JSON.stringify({ property_id: propertyId, client_id: clientId }),
+    body: JSON.stringify({ client_id: clientId }),
+  });
+  return res.data;
+}
+
+export interface GtmDiscoveredContainer {
+  containerId: string;
+  name: string;
+  publicId: string;
+}
+
+export interface GtmDiscoveredAccount {
+  accountId: string;
+  name: string;
+  containers: GtmDiscoveredContainer[];
+}
+
+/** Call after Google redirects back to the callback route with `code`/`state`. */
+export async function discoverGtmAccounts(
+  code: string,
+  state: string,
+): Promise<{ ref: string; accounts: GtmDiscoveredAccount[] }> {
+  const res = await apiFetch<{ data: { ref: string; accounts: GtmDiscoveredAccount[] } }>(
+    `/gtm/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`,
+  );
+  return res.data;
+}
+
+/** Persists the connection once the user has picked an account/container from discoverGtmAccounts(). */
+export async function finalizeGtmConnection(
+  ref: string,
+  accountId: string,
+  containerId: string,
+): Promise<{ connection_id: string }> {
+  const res = await apiFetch<{ data: { connection_id: string; message: string } }>('/gtm/callback/finalize', {
+    method: 'POST',
+    body: JSON.stringify({ ref, account_id: accountId, container_id: containerId }),
   });
   return res.data;
 }
 
 export async function uploadContainerJSON(
-  propertyId: string,
   containerJson: Record<string, unknown>,
   clientId?: string,
 ): Promise<{ connection_id: string; snapshot_id: string; tag_count: number; trigger_count: number }> {
@@ -90,7 +124,7 @@ export async function uploadContainerJSON(
     data: { connection_id: string; snapshot_id: string; tag_count: number; trigger_count: number };
   }>('/gtm/upload', {
     method: 'POST',
-    body: JSON.stringify({ property_id: propertyId, container_json: containerJson, client_id: clientId }),
+    body: JSON.stringify({ container_json: containerJson, client_id: clientId }),
   });
   return res.data;
 }
@@ -168,6 +202,8 @@ export const ihcApi = {
   promoteBaseline,
   getContainers,
   connectGTM,
+  discoverGtmAccounts,
+  finalizeGtmConnection,
   uploadContainerJSON,
   deployToGtm,
   disconnectContainer,
