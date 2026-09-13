@@ -1,9 +1,27 @@
-# L11 Reconciliation — Scoping (not a build plan)
+# L11 Reconciliation — Scoping + Decision
 
-**Status:** Scoping only, per the Google & Meta Platform Compliance PRD §15. L11 has been
-explicitly parked twice already ("not picked up unless asked again" — Site Evaluation
-Coverage & Honesty Phase 4). This document exists so the next time it comes up, the
-decision is a product call informed by real constraints, not a re-litigation from zero.
+**Status: DECIDED (2026-09-13) — greenlit as disclosure-only. Ready to build; not yet built.**
+
+The product call this document deferred (§5.1) has been made:
+
+1. **Yes** — Check Register v2 should surface a client's reconciliation findings.
+2. **Disclosure-only** — L11 findings are rendered in the report but **never enter any
+   score**, in either the numerator or the denominator.
+
+Rationale for (2), beyond the audience-blending concern §4 originally raised: scoring L11
+would mean the *same site* scores differently depending on whether a client happens to have
+connected platforms — directly undercutting the score-comparability work already shipped
+(`20260906002_score_comparability`, `REGISTER_VERSION` stamping, `coverage_fingerprint`).
+There is also established precedent for the disclosure-only shape: `ValidationResult.confidence`
+is "disclosure only, never read by scoring" (Report Honesty sprint).
+
+Sections 1-3 below stand as originally written. §4 and §5 have been rewritten to reflect the
+decision; §6 records the verified implementation path.
+
+*(Original status: scoping only, per the Google & Meta Platform Compliance PRD §15, after L11
+was parked twice — "not picked up unless asked again", Site Evaluation Coverage & Honesty
+Phase 4. The doc existed so the decision would be a product call informed by real constraints
+rather than a re-litigation from zero.)*
 
 ## 1. What L11 would have to do
 
@@ -74,29 +92,68 @@ Candidate rules (illustrative, not a final list):
 - `RECONCILIATION_RUN_RECENT` — fails/degrades confidence if the client's most recent
   reconciliation run is stale (no run in N days) rather than clean.
 
-## 4. Denominator impact
+## 4. Scoring impact — none, by decision
 
-`ALL_V2_LAYERS` is fixed at 13 regardless of what ships — adding real L11 rules doesn't
-change the denominator's *shape*, only what fills it in. The open question is coverage
-gating: `MIN_CONFIRMED_RATIO` (0.5) is computed off *this run's applicable* rules, so for
-every audit with no client or no connected platforms, L11 is simply inapplicable
-(0 applicable rules) and excluded from scoring, same as `not_applicable` today. The
-meaningful behavior change only appears for a client-linked audit whose client **has**
-reconciliation data — for that (likely minority) case, L11 rules would newly enter the
-denominator, and a client with real unresolved drift would see their score reflect it for
-the first time. Whether that's a wanted behavior change (vs. keeping reconciliation
-strictly siloed in its own dashboard) is exactly the product call this scoping doc defers.
+Because L11 is disclosure-only, **no score changes for any audit, ever.** A client-linked
+audit with real unresolved drift scores exactly as it does today; the drift is reported
+rather than priced in. This removes the behaviour change §4 originally worried about, and is
+what preserves score comparability between a bare-URL scan and a client-linked scan of the
+same site.
 
-## 5. Recommendation
+`ALL_V2_LAYERS` stays fixed at 13 — it is the single source of truth for *how many layers the
+rule set defines* and must not shrink (Report Correctness Programme Part D1/D2; shrinking it
+is the exact defect that produced "7 of 11" vs "7 of 12"). Scoring instead reads a separate
+12-layer scored subset.
 
-Don't build against this doc yet. Before any engineering:
+**One display consequence that must be handled:** `layerCoverageFromDecisions()` reports
+`layers_tested / layers_total` where `layers_total = decisions.length`. If L11 is left in the
+scoring decision list but can never be `scored`, every audit forever reports at most 12 of 13
+and the Coverage Gate panel reads as permanently incomplete. L11 must therefore be excluded
+from the *scoring* layer list, not merely forced to `scored: false` within it.
 
-1. **Product decision**: should Check Register v2 (a per-scan report, often run with no
-   client or no connected platforms) ever surface a *client-scoped, connection-dependent*
-   finding? This blends two features with different audiences (a marketer with no
-   platform access yet vs. an agency operator with live connections) in one score.
-2. If yes: confirm the precondition-tag approach in §3 against a real client with active
-   reconciliation findings before writing rule files — same "verify against a live export
-   before generating" discipline already applied to the sGTM field-name work.
-3. Given this has been parked twice already, re-confirm it's actually wanted now, not
-   just theoretically completable, before it's picked up a third time.
+## 5. Decision
+
+Both open questions from the original §5 are resolved (see the Status block above): L11 is
+wanted, and it is disclosure-only. What remains before it ships:
+
+1. **Verify §3's shape against real data** — confirm the precondition-tag approach against a
+   live client with active reconciliation findings before writing rule files. Same
+   "verify against a live source before generating" discipline applied to the sGTM
+   field-name work and the DMA Discovery Document re-fetch. This is the one item from the
+   original recommendation that still stands.
+2. **Decide rule severities** — with no scoring impact, severity drives only report
+   prominence and the Issues/Action Items ordering, so it can be set on presentation
+   grounds alone.
+3. **`REGISTER_VERSION` bump** — required on any rule addition (Key Technical Decision #17),
+   even though these rules never score, since the constant is stamped on every report and
+   read by the regression comparator.
+
+## 6. Implementation path (verified against the code, 2026-09-13)
+
+A trap worth recording, because the obvious approach does not work:
+
+**`LAYER_WEIGHT` is not the lever.** It is consumed in exactly one place — `coverageRatio()`
+in `scoring.ts` — and never reaches the score itself, which runs through
+`weightedSignalHealth(inScoredLayers(scored(results), overallScoredLayers), severityWeights)`
+using *severity* weights. Setting `LAYER_WEIGHT.reconciliation = 0` would keep L11 out of the
+coverage ratio while still letting its results into the composite score via `inScoredLayers()`,
+whose membership comes from `layerScoringDecisions().scored` — a purely rule-count test
+(`inLayer.length > 0 && confirmed >= minRequired`). That would silently produce exactly the
+scoring behaviour this decision rejects.
+
+The shape that actually holds:
+
+- Add a `SCORED_V2_LAYERS` constant to `layers.ts` = `ALL_V2_LAYERS` minus `reconciliation`.
+  `ALL_V2_LAYERS` itself stays at 13 for display/denominator-shape purposes.
+- Pass `SCORED_V2_LAYERS` wherever `scoring.ts` currently defaults to `ALL_V2_LAYERS`, so L11
+  never enters `layerScoringDecisions`, `coverageRatio`, `inScoredLayers`, or
+  `layerCoverageFromDecisions`. Coverage then reads "12 of 12" on a fully-covered run.
+- Render L11 findings through the report's existing disclosure surfaces rather than the
+  Issues/score path — `could_not_be_assessed` already carries a `kind` discriminator
+  (Key Technical Decision #19), so extend that type rather than inventing a parallel bucket.
+- Keep the §3 precondition tags regardless: they still decide `skipped` vs `fail`, which
+  drives what the report *says* even when nothing is scored.
+
+Add a test asserting L11 never appears in any scored layer set — this is the kind of
+invariant that silently regresses, and there is precedent for guarding it (the
+`PLATFORM_MATCHER_HOSTS` invariant test).
