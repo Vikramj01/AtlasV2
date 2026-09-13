@@ -288,6 +288,13 @@ export interface GTMPlatformIds {
   google_ads_conversion_label?: string;
   /** Atlas CAPI provider_token — used to authenticate the Atlas Signal Tag beacon */
   provider_token?: string;
+  /**
+   * Verified server-side GTM transport URL (client_platforms.platform='sgtm',
+   * is_verified=true — see sgtmProbe.ts). When present, the GA4 Config tag is
+   * generated with routing through this endpoint pre-configured instead of a
+   * bare enableSendToServerContainer=false stub.
+   */
+  server_container_url?: string;
 }
 
 export function generateGTMContainer(
@@ -905,6 +912,15 @@ export function generateGTMContainer(
   });
 
   // ── GA4 Config tag ─────────────────────────────────────────────────────────
+  // When platformIds.server_container_url is set (a verified sGTM endpoint on
+  // file — see GTMPlatformIds), routes traffic through it via
+  // enableSendToServerContainer + serverContainerUrl, the same two-parameter
+  // shape SGTM_ROUTING_NOT_CONFIGURED (tagConfiguration.ts) already checks
+  // for on a live container. Field names verified via secondary sources
+  // (developers.google.com/support.google.com are network-blocked in this
+  // sandbox, matching the DMA/refund-CSV precedent elsewhere in this
+  // codebase) — re-confirm against a live GTM export before relying on this
+  // for a client with an unusual server-container setup.
   if (hasGA4) {
     const ga4ConfigId = tagIds.next();
     tags.push({
@@ -915,7 +931,10 @@ export function generateGTMContainer(
       parameter: [
         tmpl('measurementId', '{{CONST - GA4 Measurement ID}}'),
         bool('sendPageView', 'true'),
-        bool('enableSendToServerContainer', 'false'),
+        bool('enableSendToServerContainer', platformIds?.server_container_url ? 'true' : 'false'),
+        ...(platformIds?.server_container_url
+          ? [tmpl('serverContainerUrl', platformIds.server_container_url)]
+          : []),
         ...(secondaryDomains.length > 0
           ? [list('linked_domains', secondaryDomains)]
           : []),
