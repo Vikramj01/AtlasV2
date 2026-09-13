@@ -80,6 +80,7 @@ export async function generateAllOutputs(session: PlanningSession): Promise<Gene
         if (p.platform === 'meta')       platformIds.meta        = p.measurement_id;
         if (p.platform === 'tiktok')     platformIds.tiktok      = p.measurement_id;
         if (p.platform === 'linkedin')   platformIds.linkedin    = p.measurement_id;
+        if (p.platform === 'sgtm' && p.is_verified) platformIds.server_container_url = p.measurement_id;
       }
       logger.info({ sessionId, clientId: session.client_id, platformIds }, 'Resolved platform IDs from client');
     } catch (err) {

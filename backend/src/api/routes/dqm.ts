@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { authMiddleware } from '@/api/middleware/authMiddleware';
 import { supabaseAdmin } from '@/services/database/supabase';
 import { dqmQueue } from '@/services/queue/jobQueue';
+import { getLatestMetaEmqScores } from '@/services/dqm/metaEmqPolling';
 
 export const dqmRouter = Router();
 
@@ -19,7 +20,7 @@ async function resolveOrgId(userId: string): Promise<string> {
 dqmRouter.get('/status', authMiddleware, async (req, res) => {
   const orgId = await resolveOrgId(req.user!.id);
 
-  const [gtgRows, dmaRow] = await Promise.all([
+  const [gtgRows, dmaRow, metaEmqRows] = await Promise.all([
     supabaseAdmin
       .from('dqm_gtg_checks')
       .select('check_status, http_status, response_ms, error_message, checked_at')
@@ -31,6 +32,7 @@ dqmRouter.get('/status', authMiddleware, async (req, res) => {
       .select('last_polled_at, last_successful_at, upload_success_rate, avg_match_rate, total_members_30d, destination_count, error_categories, backoff_until, consecutive_failures, updated_at')
       .eq('org_id', orgId)
       .maybeSingle(),
+    getLatestMetaEmqScores(orgId),
   ]);
 
   type GTGRow = {
@@ -81,6 +83,11 @@ dqmRouter.get('/status', authMiddleware, async (req, res) => {
             updated_at:          dma.updated_at,
           }
         : null,
+      // Live, Meta-sourced Event Match Quality — distinct from Atlas's own
+      // pre-flight Signal Enrichment Score shown elsewhere (e.g.
+      // EnrichmentScoreBadge). Empty when no Meta provider is connected or
+      // no dataset_id is configured.
+      meta_emq: metaEmqRows,
     },
   });
 });

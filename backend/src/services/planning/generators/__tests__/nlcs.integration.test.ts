@@ -591,3 +591,34 @@ describe('Platform-conditional tag generation', () => {
     expect(gAdsTags).toHaveLength(0);
   });
 });
+
+// ── Integration tests: sGTM routing on the GA4 Config tag ─────────────────────
+
+describe('GA4 Config tag sGTM routing', () => {
+  function ga4ConfigTag(container: ReturnType<typeof generateGTMContainer>) {
+    return container.containerVersion.tag.find(t => t.type === 'gaawc')!;
+  }
+  function paramValue(tag: ReturnType<typeof ga4ConfigTag>, key: string) {
+    return tag.parameter.find(p => p.key === key)?.value;
+  }
+
+  it('defaults enableSendToServerContainer to false and omits serverContainerUrl when no verified sGTM endpoint is on file', () => {
+    const session = makeSession('lead_gen', ['ga4']);
+    const recs = [makeRec('r1', 'p1', 'form_submit', 'form_submit', [], [], ['ga4'])];
+    const container = generateGTMContainer(recs, session);
+    const tag = ga4ConfigTag(container);
+    expect(paramValue(tag, 'enableSendToServerContainer')).toBe('false');
+    expect(tag.parameter.some(p => p.key === 'serverContainerUrl')).toBe(false);
+  });
+
+  it('routes through the verified sGTM endpoint when platformIds.server_container_url is set', () => {
+    const session = makeSession('lead_gen', ['ga4']);
+    const recs = [makeRec('r1', 'p1', 'form_submit', 'form_submit', [], [], ['ga4'])];
+    const container = generateGTMContainer(recs, session, {
+      server_container_url: 'https://sgtm.client-example.com',
+    });
+    const tag = ga4ConfigTag(container);
+    expect(paramValue(tag, 'enableSendToServerContainer')).toBe('true');
+    expect(paramValue(tag, 'serverContainerUrl')).toBe('https://sgtm.client-example.com');
+  });
+});

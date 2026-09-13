@@ -2,26 +2,42 @@
  * GTM Container Ingestion — /api/gtm
  *
  * POST /api/gtm/connect              — initiate GTM OAuth (returns authUrl)
- * GET  /api/gtm/callback             — OAuth callback; exchanges code, stores tokens
+ * GET  /api/gtm/callback             — OAuth redirect landing; exchanges code,
+ *                                       discovers the user's GTM accounts/containers,
+ *                                       caches the encrypted tokens under a short-lived
+ *                                       ref (nothing is persisted yet — see below)
+ * POST /api/gtm/callback/finalize    — user's account/container pick; persists the connection
  * POST /api/gtm/upload               — manual container JSON upload
+ * POST /api/gtm/deploy               — push a generated container into a live GTM workspace (OAuth only)
  * GET  /api/gtm/containers           — list connected containers for this org
  * DELETE /api/gtm/containers/:id     — disconnect a container (wipes credentials)
  *
  * All routes require authMiddleware + planGuard('pro').
  * The callback route additionally accepts state as a query param (browser redirect).
+ *
+ * Why two steps: the Tag Manager API needs a specific account_id/container_id
+ * per connection, but there's no way to know which one the user wants until
+ * after they've granted OAuth consent (this is the only point Atlas can call
+ * accounts.list/containers.list). So /callback exchanges the code, lists what
+ * the token has access to, and stashes the encrypted tokens in Redis (never
+ * sent to the browser) under a one-time ref; /callback/finalize takes the
+ * user's picked account_id/container_id + that ref and only then writes the
+ * gtm_container_connections row.
  */
 
 import { Router } from 'express';
 import type { Request, Response } from 'express';
-import { createHmac, randomBytes } from 'crypto';
+import { createHmac, randomBytes, randomUUID } from 'crypto';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { planGuard } from '../middleware/planGuard';
 import { sendInternalError } from '@/utils/apiError';
 import { supabaseAdmin } from '@/services/database/supabase';
 import { env } from '@/config/env';
-import { encryptGtmCredentials, decryptGtmCredentials } from '@/services/gtm/gtmCredentials';
+import { encryptGtmCredentials, decryptGtmCredentials, type GtmOAuthCredentials } from '@/services/gtm/gtmCredentials';
 import { parseContainerJson, validateContainerJsonShape } from '@/services/gtm/containerParser';
+import { deployContainerToGtm } from '@/services/gtm/gtmDeployService';
+import type { GTMContainerJSON } from '@/services/planning/generators/gtmContainerGenerator';
 import { gtmContainerSyncQueue } from '@/services/queue/jobQueue';
 import logger from '@/utils/logger';
 
@@ -32,7 +48,11 @@ gtmRouter.use(authMiddleware, planGuard('pro'));
 
 const GTM_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GTM_TOKEN_URL = 'https://oauth2.googleapis.com/token';
-const GTM_SCOPE = 'https://www.googleapis.com/auth/tagmanager.readonly';
+// tagmanager.edit.containers (not tagmanager.publish) — /deploy below creates/
+// updates a draft workspace only. The client still reviews and publishes
+// manually in GTM; requesting publish scope too would be a materially bigger
+// OAuth consent ask and isn't needed for this deploy path.
+const GTM_SCOPE = 'https://www.googleapis.com/auth/tagmanager.readonly https://www.googleapis.com/auth/tagmanager.edit.containers';
 
 function buildRedirectUri(): string {
   return `${env.FRONTEND_URL.replace(/\/$/, '')}/settings/implementation-health/gtm/callback`;
@@ -49,15 +69,18 @@ async function resolveOrgId(userId: string): Promise<string> {
   return (data as { organization_id: string } | null)?.organization_id ?? userId;
 }
 
-function generateState(orgId: string): string {
+// client_id rides inside the signed state (rather than a query param the
+// frontend would need to persist across the full-page OAuth redirect) — an
+// empty segment means "no client" (org-level connection), not a missing field.
+function generateState(orgId: string, clientId?: string): string {
   const nonce = randomBytes(16).toString('hex');
   const ts = Date.now().toString();
-  const payload = `${nonce}:${orgId}:${ts}`;
+  const payload = `${nonce}:${orgId}:${clientId ?? ''}:${ts}`;
   const hmac = createHmac('sha256', env.OAUTH_STATE_SECRET).update(payload).digest('hex');
   return Buffer.from(`${payload}:${hmac}`).toString('base64url');
 }
 
-function verifyState(state: string): { orgId: string } {
+function verifyState(state: string): { orgId: string; clientId: string | null } {
   let decoded: string;
   try {
     decoded = Buffer.from(state, 'base64url').toString('utf8');
@@ -65,36 +88,128 @@ function verifyState(state: string): { orgId: string } {
     throw new Error('Invalid OAuth state encoding');
   }
   const parts = decoded.split(':');
-  if (parts.length !== 4) throw new Error('Invalid OAuth state format');
+  if (parts.length !== 5) throw new Error('Invalid OAuth state format');
 
-  const [nonce, orgId, ts, receivedHmac] = parts;
-  const payload = `${nonce}:${orgId}:${ts}`;
+  const [nonce, orgId, clientId, ts, receivedHmac] = parts;
+  const payload = `${nonce}:${orgId}:${clientId}:${ts}`;
   const expectedHmac = createHmac('sha256', env.OAUTH_STATE_SECRET).update(payload).digest('hex');
   if (expectedHmac !== receivedHmac) throw new Error('OAuth state HMAC verification failed');
 
   const age = Date.now() - parseInt(ts, 10);
   if (age > 10 * 60 * 1000) throw new Error('OAuth state expired (>10 min)');
 
-  return { orgId };
+  return { orgId, clientId: clientId || null };
+}
+
+// ── Pending connection cache (post-consent, pre-finalize) ─────────────────────
+// The Tag Manager API needs to know which account/container to connect, but
+// that's only choosable after the user has already granted OAuth consent —
+// so the encrypted tokens live here for a short window between /callback
+// (discover) and /callback/finalize (persist), never reaching the browser.
+
+const PENDING_CONNECTION_TTL_S = 10 * 60; // 10 minutes — long enough to pick from a dropdown, short enough to limit exposure
+
+interface PendingGtmConnection {
+  orgId: string;
+  clientId: string | null;
+  credentials: GtmOAuthCredentials;
+}
+
+function pendingConnectionKey(ref: string): string {
+  return `gtm:pending_connect:${ref}`;
+}
+
+// Dynamic import — dedupStore.ts eagerly opens a Redis connection at module
+// load time (env.REDIS_URL), same reason worker.ts dynamically imports its
+// own dependencies rather than importing them at the top of this file.
+async function savePendingConnection(pending: PendingGtmConnection): Promise<string> {
+  const { dedupRedis } = await import('@/services/capi/dedupStore');
+  const ref = randomUUID();
+  await dedupRedis.set(pendingConnectionKey(ref), JSON.stringify(pending), 'EX', PENDING_CONNECTION_TTL_S);
+  return ref;
+}
+
+async function takePendingConnection(ref: string): Promise<PendingGtmConnection | null> {
+  const { dedupRedis } = await import('@/services/capi/dedupStore');
+  const key = pendingConnectionKey(ref);
+  const raw = await dedupRedis.get(key);
+  if (!raw) return null;
+  await dedupRedis.del(key); // one-time use
+  return JSON.parse(raw) as PendingGtmConnection;
+}
+
+// ── Tag Manager API discovery ─────────────────────────────────────────────────
+
+interface GtmAccountSummary {
+  accountId: string;
+  name: string;
+}
+
+interface GtmContainerSummary {
+  containerId: string;
+  name: string;
+  publicId: string;
+}
+
+export interface DiscoveredGtmAccount extends GtmAccountSummary {
+  containers: GtmContainerSummary[];
+}
+
+async function discoverGtmAccounts(accessToken: string): Promise<DiscoveredGtmAccount[]> {
+  const headers = { Authorization: `Bearer ${accessToken}` };
+
+  const accountsRes = await fetch('https://www.googleapis.com/tagmanager/v2/accounts', { headers });
+  if (!accountsRes.ok) {
+    throw new Error(`Failed to list GTM accounts (${accountsRes.status}): ${await accountsRes.text()}`);
+  }
+  const accountsBody = await accountsRes.json() as { account?: GtmAccountSummary[] };
+  const accounts = accountsBody.account ?? [];
+
+  const results: DiscoveredGtmAccount[] = [];
+  for (const account of accounts) {
+    const containersRes = await fetch(
+      `https://www.googleapis.com/tagmanager/v2/accounts/${account.accountId}/containers`,
+      { headers },
+    );
+    if (!containersRes.ok) {
+      logger.warn(
+        { accountId: account.accountId, status: containersRes.status },
+        'GTM discovery: failed to list containers for account — skipping',
+      );
+      results.push({ ...account, containers: [] });
+      continue;
+    }
+    const containersBody = await containersRes.json() as { container?: GtmContainerSummary[] };
+    results.push({ ...account, containers: containersBody.container ?? [] });
+  }
+
+  return results;
 }
 
 // ── Zod schemas ───────────────────────────────────────────────────────────────
 
 const connectSchema = z.object({
   client_id: z.string().uuid().optional(),
-  property_id: z.string().uuid(),
 });
 
 const callbackSchema = z.object({
   code: z.string().min(1),
   state: z.string().min(1),
+});
+
+const finalizeSchema = z.object({
+  ref: z.string().uuid(),
+  account_id: z.string().min(1),
   container_id: z.string().min(1),
-  account_id: z.string().optional(),
 });
 
 const uploadSchema = z.object({
-  property_id: z.string().uuid(),
   client_id: z.string().uuid().optional(),
+  container_json: z.record(z.unknown()),
+});
+
+const deploySchema = z.object({
+  connection_id: z.string().uuid(),
   container_json: z.record(z.unknown()),
 });
 
@@ -110,7 +225,7 @@ gtmRouter.post('/connect', async (req: Request, res: Response): Promise<void> =>
 
   try {
     const orgId = await resolveOrgId(req.user.id);
-    const state = generateState(orgId);
+    const state = generateState(orgId, parse.data.client_id);
 
     const params = new URLSearchParams({
       client_id: env.GOOGLE_OAUTH_CLIENT_ID,
@@ -126,8 +241,6 @@ gtmRouter.post('/connect', async (req: Request, res: Response): Promise<void> =>
       data: {
         auth_url: `${GTM_AUTH_URL}?${params.toString()}`,
         state,
-        property_id: parse.data.property_id,
-        client_id: parse.data.client_id ?? null,
       },
     });
   } catch (err) {
@@ -137,7 +250,9 @@ gtmRouter.post('/connect', async (req: Request, res: Response): Promise<void> =>
 
 // ── GET /api/gtm/callback ─────────────────────────────────────────────────────
 // Called by the frontend after Google redirects back with code + state.
-// Exchanges the code for tokens, stores them encrypted, queues initial sync.
+// Exchanges the code for tokens, discovers the accounts/containers that
+// token can see, and caches the encrypted tokens under a one-time ref for
+// /callback/finalize — nothing is persisted to gtm_container_connections yet.
 
 gtmRouter.get('/callback', async (req: Request, res: Response): Promise<void> => {
   const parse = callbackSchema.safeParse(req.query);
@@ -146,10 +261,10 @@ gtmRouter.get('/callback', async (req: Request, res: Response): Promise<void> =>
     return;
   }
 
-  const { code, state, container_id, account_id } = parse.data;
+  const { code, state } = parse.data;
 
   try {
-    const { orgId } = verifyState(state);
+    const { orgId, clientId } = verifyState(state);
 
     // Exchange code for tokens
     const tokenResponse = await fetch(GTM_TOKEN_URL, {
@@ -183,28 +298,67 @@ gtmRouter.get('/callback', async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    const encrypted = encryptGtmCredentials({
+    const credentials: GtmOAuthCredentials = {
       access_token: tokens.access_token,
       refresh_token: tokens.refresh_token,
       expires_at: Date.now() + tokens.expires_in * 1000,
       scope: tokens.scope,
-    });
+    };
 
-    // Resolve property_id from req.user context — stored in session via state
-    // For now accept property_id from query (passed through the state flow in the frontend)
-    const property_id = req.query['property_id'] as string | undefined;
-    const client_id = req.query['client_id'] as string | undefined;
+    const accounts = await discoverGtmAccounts(credentials.access_token);
+    const ref = await savePendingConnection({ orgId, clientId, credentials });
+
+    logger.info({ orgId, accountCount: accounts.length }, 'GTM OAuth consent granted, accounts discovered');
+
+    res.json({ data: { ref, accounts } });
+  } catch (err) {
+    if (err instanceof Error && err.message.includes('state')) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
+    sendInternalError(res, err, 'GET /api/gtm/callback');
+  }
+});
+
+// ── POST /api/gtm/callback/finalize ───────────────────────────────────────────
+// Persists the connection once the user has picked an account/container from
+// the list /callback returned. property_id has no dedicated UI concept today
+// (every other write path already falls back to organization_id — see
+// worker.ts's crawl-run property_id comment) — resolved the same way here.
+
+gtmRouter.post('/callback/finalize', async (req: Request, res: Response): Promise<void> => {
+  const parse = finalizeSchema.safeParse(req.body);
+  if (!parse.success) {
+    res.status(400).json({ error: 'Invalid request', details: parse.error.flatten() });
+    return;
+  }
+
+  const { ref, account_id, container_id } = parse.data;
+
+  try {
+    const orgId = await resolveOrgId(req.user.id);
+    const pending = await takePendingConnection(ref);
+
+    if (!pending) {
+      res.status(400).json({ error: 'This connection attempt has expired. Please reconnect via OAuth.' });
+      return;
+    }
+
+    if (pending.orgId !== orgId) {
+      res.status(403).json({ error: 'This connection attempt belongs to a different organization.' });
+      return;
+    }
 
     const { data: connection, error: insertErr } = await supabaseAdmin
       .from('gtm_container_connections')
       .insert({
         organization_id: orgId,
-        client_id: client_id ?? null,
-        property_id: property_id ?? orgId,
+        client_id: pending.clientId,
+        property_id: orgId,
         container_id,
-        account_id: account_id ?? null,
+        account_id,
         auth_method: 'oauth',
-        oauth_credentials_encrypted: encrypted,
+        oauth_credentials_encrypted: encryptGtmCredentials(pending.credentials),
       })
       .select('id')
       .single();
@@ -221,15 +375,11 @@ gtmRouter.get('/callback', async (req: Request, res: Response): Promise<void> =>
 
     logger.info({ connectionId: connection.id, orgId }, 'GTM connection created, initial sync queued');
 
-    res.json({
+    res.status(201).json({
       data: { connection_id: connection.id, message: 'GTM connected. Initial sync queued.' },
     });
   } catch (err) {
-    if (err instanceof Error && err.message.includes('state')) {
-      res.status(400).json({ error: err.message });
-      return;
-    }
-    sendInternalError(res, err, 'GET /api/gtm/callback');
+    sendInternalError(res, err, 'POST /api/gtm/callback/finalize');
   }
 });
 
@@ -243,7 +393,7 @@ gtmRouter.post('/upload', async (req: Request, res: Response): Promise<void> => 
     return;
   }
 
-  const { property_id, client_id, container_json } = parse.data;
+  const { client_id, container_json } = parse.data;
 
   const validation = validateContainerJsonShape(container_json);
   if (!validation.valid) {
@@ -255,14 +405,19 @@ gtmRouter.post('/upload', async (req: Request, res: Response): Promise<void> => 
     const orgId = await resolveOrgId(req.user.id);
     const snapshot = parseContainerJson(container_json, 'manual_upload');
 
-    // Upsert connection row for manual uploads (no credentials)
+    // property_id has no dedicated UI concept today — every write path
+    // resolves it to organization_id (see /callback/finalize above and
+    // worker.ts's crawl-run property_id comment). Previously this endpoint
+    // required a caller-supplied UUID; the frontend was sending the literal
+    // string 'default', which failed this route's own Zod validation on
+    // every manual upload.
     const { data: connection, error: connErr } = await supabaseAdmin
       .from('gtm_container_connections')
       .upsert(
         {
           organization_id: orgId,
           client_id: client_id ?? null,
-          property_id,
+          property_id: orgId,
           container_id: snapshot.container_id,
           auth_method: 'manual_upload',
         },
@@ -328,6 +483,71 @@ gtmRouter.post('/upload', async (req: Request, res: Response): Promise<void> => 
     });
   } catch (err) {
     sendInternalError(res, err, 'POST /api/gtm/upload');
+  }
+});
+
+// ── POST /api/gtm/deploy ──────────────────────────────────────────────────────
+// Pushes an already-generated container spec (from Planning Mode's output
+// generator) into the client's live GTM workspace, for OAuth-connected
+// containers only. Manual-upload connections have no write credentials —
+// those clients keep using the existing download/import flow.
+// Never publishes — see gtmDeployService.ts's header comment.
+
+gtmRouter.post('/deploy', async (req: Request, res: Response): Promise<void> => {
+  const parse = deploySchema.safeParse(req.body);
+  if (!parse.success) {
+    res.status(400).json({ error: 'Invalid request', details: parse.error.flatten() });
+    return;
+  }
+
+  const { connection_id, container_json } = parse.data;
+
+  const validation = validateContainerJsonShape(container_json);
+  if (!validation.valid) {
+    res.status(400).json({ error: `Invalid GTM container JSON: ${validation.error}` });
+    return;
+  }
+
+  try {
+    const orgId = await resolveOrgId(req.user.id);
+
+    const { data: connection, error: connErr } = await supabaseAdmin
+      .from('gtm_container_connections')
+      .select('id, account_id, container_id, auth_method')
+      .eq('id', connection_id)
+      .eq('organization_id', orgId)
+      .single();
+
+    if (connErr || !connection) {
+      res.status(404).json({ error: 'GTM connection not found' });
+      return;
+    }
+
+    if (connection.auth_method !== 'oauth') {
+      res.status(400).json({
+        error: 'This container was connected via manual upload and has no write access. Download and import the JSON manually, or reconnect via OAuth to deploy directly.',
+      });
+      return;
+    }
+
+    if (!connection.account_id) {
+      res.status(400).json({ error: 'This connection is missing its GTM account ID — reconnect via OAuth before deploying.' });
+      return;
+    }
+
+    const accessToken = await refreshGtmToken(connection.id);
+    const summary = await deployContainerToGtm(
+      accessToken,
+      connection.account_id,
+      connection.container_id,
+      container_json as unknown as GTMContainerJSON,
+    );
+
+    logger.info({ connectionId: connection.id, orgId, summary }, 'GTM container deployed');
+
+    res.status(201).json({ data: summary });
+  } catch (err) {
+    sendInternalError(res, err, 'POST /api/gtm/deploy');
   }
 });
 

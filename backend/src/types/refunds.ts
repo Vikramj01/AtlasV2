@@ -8,6 +8,7 @@
 // Meta is logged only; no reversal API exists there.
 
 export type GoogleRemovalStatus = 'pending' | 'removed' | 'failed' | 'skipped';
+export type GoogleAdjustmentStatus = 'pending' | 'submitted' | 'failed' | 'skipped';
 
 export interface RefundEvent {
   id: string;
@@ -25,7 +26,19 @@ export interface RefundEvent {
   google_removal_status: GoogleRemovalStatus;
   google_removal_error: string | null;
   adjustment_csv_generated_at: string | null;
-  meta_status: 'logged';
+  /** Automated uploadConversionAdjustments call outcome — independent of the CSV, which stays available as a fallback/audit trail. */
+  google_adjustment_status: GoogleAdjustmentStatus;
+  google_adjustment_error: string | null;
+  google_adjustment_submitted_at: string | null;
+  /**
+   * 'logged' — never attempted (rows recorded before this signal existed).
+   * 'signal_sent'/'failed'/'skipped' — outcome of the automated
+   * atlas_refund/atlas_order_cancellation CAPI event. Never a reversal —
+   * Meta has no adjustment/retraction verb — this is a forward-looking
+   * audience-hygiene signal only.
+   */
+  meta_status: 'logged' | 'signal_sent' | 'failed' | 'skipped';
+  meta_status_error: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;

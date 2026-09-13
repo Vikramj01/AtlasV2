@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   ShieldCheck,
   ShieldAlert,
@@ -13,6 +13,7 @@ import {
   Square,
   CheckSquare,
   EyeOff,
+  Link2,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -22,6 +23,7 @@ import { SectionErrorBoundary } from '@/components/common/ErrorBoundary';
 import { ihcApi } from '@/lib/api/ihcApi';
 import { slackApi } from '@/lib/api/slackApi';
 import { ShareToSlackButton } from '@/components/common/ShareToSlackButton';
+import type { GtmDiscoveredAccount } from '@/lib/api/ihcApi';
 import type { AuditFinding, GTMContainer, BaselineInfo, FindingsSummary, FindingSeverity } from '@/types/ihc';
 
 const SEVERITY_COLORS: Record<FindingSeverity, string> = {
@@ -55,7 +57,7 @@ const LAYER_LABELS: Record<string, string> = {
 
 // ── Section: GTM Containers ───────────────────────────────────────────────────
 
-function GTMContainersSection() {
+export function GTMContainersSection() {
   const [containers, setContainers] = useState<GTMContainer[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -63,6 +65,20 @@ function GTMContainersSection() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const [connecting, setConnecting] = useState(false);
+  const [connectError, setConnectError] = useState<string | null>(null);
+
+  // OAuth callback landing state — set once, while /callback?code=&state= is
+  // being resolved into a picker (or an error) on this same page.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [discovering, setDiscovering] = useState(false);
+  const [discoverError, setDiscoverError] = useState<string | null>(null);
+  const [pendingRef, setPendingRef] = useState<string | null>(null);
+  const [discoveredAccounts, setDiscoveredAccounts] = useState<GtmDiscoveredAccount[] | null>(null);
+  const [selectedContainerKey, setSelectedContainerKey] = useState<string>(''); // `${accountId}::${containerId}`
+  const [finalizing, setFinalizing] = useState(false);
+  const [finalizeError, setFinalizeError] = useState<string | null>(null);
 
   useEffect(() => {
     ihcApi
@@ -72,6 +88,76 @@ function GTMContainersSection() {
       .finally(() => setLoading(false));
   }, []);
 
+  // Land here after Google redirects back with ?code=&state= — resolve it
+  // into a container picker exactly once, then strip the one-time code out
+  // of the URL so a page refresh doesn't try to reuse it.
+  useEffect(() => {
+    const code = searchParams.get('code');
+    const state = searchParams.get('state');
+    if (!code || !state) return;
+
+    setDiscovering(true);
+    setDiscoverError(null);
+    ihcApi.discoverGtmAccounts(code, state)
+      .then(({ ref, accounts }) => {
+        setPendingRef(ref);
+        setDiscoveredAccounts(accounts);
+      })
+      .catch((err) => {
+        setDiscoverError(err instanceof Error ? err.message : 'Failed to complete GTM connection. Please try again.');
+      })
+      .finally(() => {
+        setDiscovering(false);
+        setSearchParams((prev) => {
+          const next = new URLSearchParams(prev);
+          next.delete('code');
+          next.delete('state');
+          next.delete('scope');
+          return next;
+        }, { replace: true });
+      });
+    // Only ever run once per landing on this route with real code/state params.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function handleConnect() {
+    setConnecting(true);
+    setConnectError(null);
+    try {
+      const { auth_url } = await ihcApi.connectGTM();
+      window.location.href = auth_url;
+    } catch (err) {
+      setConnectError(err instanceof Error ? err.message : 'Failed to start GTM connection.');
+      setConnecting(false);
+    }
+  }
+
+  async function handleFinalize() {
+    if (!pendingRef || !selectedContainerKey) return;
+    const [accountId, containerId] = selectedContainerKey.split('::');
+    setFinalizing(true);
+    setFinalizeError(null);
+    try {
+      await ihcApi.finalizeGtmConnection(pendingRef, accountId, containerId);
+      setDiscoveredAccounts(null);
+      setPendingRef(null);
+      setSelectedContainerKey('');
+      const updated = await ihcApi.getContainers();
+      setContainers(updated);
+    } catch (err) {
+      setFinalizeError(err instanceof Error ? err.message : 'Failed to connect this container. Please try again.');
+    } finally {
+      setFinalizing(false);
+    }
+  }
+
+  function handleCancelPicker() {
+    setDiscoveredAccounts(null);
+    setPendingRef(null);
+    setSelectedContainerKey('');
+    setFinalizeError(null);
+  }
+
   async function handleFileUpload(file: File) {
     setUploading(true);
     setUploadError(null);
@@ -79,7 +165,7 @@ function GTMContainersSection() {
     try {
       const text = await file.text();
       const json = JSON.parse(text) as Record<string, unknown>;
-      await ihcApi.uploadContainerJSON('default', json);
+      await ihcApi.uploadContainerJSON(json);
       setUploadSuccess(true);
       const updated = await ihcApi.getContainers();
       setContainers(updated);
@@ -153,6 +239,101 @@ function GTMContainersSection() {
             ))}
           </div>
         )}
+
+        <Separator />
+
+        {/* OAuth connect / discovery / picker */}
+        <div className="space-y-2">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Connect via OAuth</p>
+          <p className="text-xs text-muted-foreground">
+            Grants Atlas edit access so it can read tag configuration and deploy generated containers directly.
+          </p>
+
+          {discovering && (
+            <div className="flex items-center gap-2 rounded-md bg-muted/40 p-3 text-xs text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" /> Finishing Google sign-in…
+            </div>
+          )}
+
+          {discoverError && (
+            <div className="flex items-start gap-2 rounded-md bg-red-50 border border-red-200 p-3 text-xs text-red-700">
+              <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+              {discoverError}
+            </div>
+          )}
+
+          {connectError && (
+            <div className="flex items-start gap-2 rounded-md bg-red-50 border border-red-200 p-3 text-xs text-red-700">
+              <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+              {connectError}
+            </div>
+          )}
+
+          {discoveredAccounts && (
+            <div className="rounded-lg border border-border p-4 space-y-3">
+              <p className="text-sm font-medium">Choose a container to connect</p>
+              {discoveredAccounts.every((a) => a.containers.length === 0) ? (
+                <p className="text-xs text-muted-foreground">
+                  No containers found on this Google account. Create one in Tag Manager, then reconnect.
+                </p>
+              ) : (
+                <>
+                  <select
+                    value={selectedContainerKey}
+                    onChange={(e) => setSelectedContainerKey(e.target.value)}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  >
+                    <option value="" disabled>Select a container…</option>
+                    {discoveredAccounts.map((account) => (
+                      <optgroup key={account.accountId} label={account.name}>
+                        {account.containers.map((c) => (
+                          <option key={c.containerId} value={`${account.accountId}::${c.containerId}`}>
+                            {c.name} ({c.publicId})
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                  {finalizeError && (
+                    <div className="flex items-start gap-2 rounded-md bg-red-50 border border-red-200 p-3 text-xs text-red-700">
+                      <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                      {finalizeError}
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      onClick={handleFinalize}
+                      disabled={!selectedContainerKey || finalizing}
+                      className="gap-2"
+                    >
+                      {finalizing ? <><Loader2 className="h-4 w-4 animate-spin" /> Connecting…</> : 'Connect this container'}
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={handleCancelPicker} disabled={finalizing}>
+                      Cancel
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {!discoveredAccounts && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleConnect}
+              disabled={connecting || discovering}
+              className="gap-2"
+            >
+              {connecting ? (
+                <><Loader2 className="h-4 w-4 animate-spin" /> Redirecting to Google…</>
+              ) : (
+                <><Link2 className="h-4 w-4" /> Connect with Google</>
+              )}
+            </Button>
+          )}
+        </div>
 
         <Separator />
 

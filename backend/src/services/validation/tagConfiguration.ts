@@ -907,11 +907,13 @@ export const META_CROSS_DOMAIN_FBCLID_MISSING = {
 // (client_platforms.platform = 'sgtm', is_verified = true — see sgtmProbe.ts
 // and the /platforms/sgtm/verify endpoint) but the live GA4 Config tag isn't
 // actually routing traffic through it (enableSendToServerContainer absent or
-// false). A client with no verified sGTM endpoint is never flagged — Atlas
-// doesn't yet generate the routing config itself (deferred pending
-// verification of the exact tag-JSON field, see Sprint 3 plan), so this rule
-// only catches drift for endpoints a human already configured and Atlas
-// separately confirmed are reachable.
+// false). Atlas's own generator (gtmContainerGenerator.ts) now pre-configures
+// this when a verified endpoint exists at generation time, but this rule
+// audits the client's actual live/uploaded container, not what Atlas last
+// generated — a client can edit their container after import (or configure
+// sGTM manually without ever using Atlas's generator), so drift here is
+// still real and still worth flagging. A client with no verified sGTM
+// endpoint is never flagged — there is nothing to check routing against.
 //
 // Severity: high — a silently-dropped server-container route means events
 // fall back to client-side delivery (or are lost) with no visible error.

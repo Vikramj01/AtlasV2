@@ -245,7 +245,13 @@ export async function sendMetaTestEvent(
   return {
     status: 'success',
     provider_response: body,
-    emq_estimate: undefined, // EMQ requires /diagnostics endpoint (Sprint 4)
+    // A single freshly-sent test event can't produce a live EMQ score
+    // synchronously — Meta's Dataset Quality API (GET /dataset_quality)
+    // computes it as a rolling aggregate over recent real delivered
+    // traffic, not per-request. See services/dqm/metaEmqPolling.ts (polled
+    // on the same cadence as other DQM checks, surfaced via
+    // GET /api/dqm/status) for the actual live score.
+    emq_estimate: undefined,
   };
 }
 

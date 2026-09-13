@@ -51,8 +51,8 @@ const DMA_BASE_URL = 'https://datamanager.googleapis.com/v1';
 // this is a read-only conversion-action lookup, not the ingestion path — but
 // track it on the same recurring version-currency check (M1/M3 in
 // ATLAS_CONVERSION_SIGNAL_LAYER_SPRINT_PLAN.md) rather than letting it drift.
-const GOOGLE_ADS_API_VERSION = 'v17';
-const GOOGLE_ADS_API_BASE = 'https://googleads.googleapis.com';
+export const GOOGLE_ADS_API_VERSION = 'v17';
+export const GOOGLE_ADS_API_BASE = 'https://googleads.googleapis.com';
 const BATCH_SIZE = 2_000;
 const RETRY_DELAYS_MS = [30_000, 60_000, 120_000]; // PRD spec: 30s, 60s, 120s
 
@@ -75,11 +75,11 @@ function hashPhone(raw: string): string {
 
 // ── Google Ads / DMA helpers ───────────────────────────────────────────────────
 
-function cleanCustomerId(id: string): string {
+export function cleanCustomerId(id: string): string {
   return id.replace(/-/g, '');
 }
 
-function buildGoogleAdsHeaders(creds: GoogleCredentials, accessToken: string): Record<string, string> {
+export function buildGoogleAdsHeaders(creds: GoogleCredentials, accessToken: string): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${accessToken}`,

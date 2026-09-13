@@ -9,6 +9,30 @@
 // the live API (wrong field names, wrong nesting, and in the audience
 // endpoints' case a wrong URL path casing) — see the incident writeup
 // for the full list of what was wrong and how each was verified.
+//
+// Re-verified 2026-09-15 (revision 20260904) against a fresh fetch of the
+// same live Discovery Document, per the IAB ECAPI/DMA field-parity
+// verification pass (note: Google's own "ECAPI mapping" is a translation
+// FROM IAB Tech Lab's ECAPI 1.0 spec — snake_case fields like `timestamp`,
+// `event_type`, `user_data.customer_identifier` — TO this file's native
+// camelCase DMA schema; DMA never adopted ECAPI's own field names
+// verbatim, unlike this file's header previously implied). Found and
+// closed two real gaps against Atlas's own AtlasEvent data (both already
+// captured elsewhere in the pipeline but never reaching DMA):
+//   - DMAEvent.userId (ECAPI's ~customer_identifier concept) — Atlas
+//     carries this as AtlasEvent.user_data.external_id but
+//     dmaEventBuilder.ts never mapped it through. Now does.
+//   - DMAEvent.eventDeviceInfo (new type below, mirroring the live
+//     DeviceInfo schema) — Atlas carries client_user_agent/client_ip_address
+//     (already sent to Meta) but had no DMA equivalent field declared at
+//     all. Now does, via eventDeviceInfo.userAgent/ipAddress.
+// DMAItem gained itemId/additionalItemParameters (present on the live
+// Item schema, missing here) for completeness — not wired into
+// dmaEventBuilder.ts because Atlas doesn't build cartData.items at all yet
+// (AtlasEvent.custom_data only carries aggregate content_ids/num_items, not
+// a real per-item array with quantity/unit price) — flagged as a follow-up,
+// not a same-pass fix, since it needs an AtlasEvent shape change, not just
+// a new field mapping.
 
 export type DMAEventSource = 'EVENT_SOURCE_UNSPECIFIED' | 'WEB' | 'APP' | 'IN_STORE' | 'PHONE' | 'MESSAGE' | 'OTHER';
 export type DMAConsentStatus = 'CONSENT_STATUS_UNSPECIFIED' | 'CONSENT_GRANTED' | 'CONSENT_DENIED';
@@ -76,7 +100,13 @@ export interface DMAEventParameter {
   value: string;
 }
 
+export interface DMAItemParameter {
+  parameterName?: string;
+  value?: string;
+}
+
 export interface DMAItem {
+  itemId?: string;
   merchantProductId?: string;
   quantity?: string;      // int64 encoded as string per discovery doc
   unitPrice?: number;
@@ -85,6 +115,28 @@ export interface DMAItem {
   merchantFeedLabel?: string;
   merchantFeedLanguageCode?: string;
   customVariables?: DMACustomVariable[];
+  additionalItemParameters?: DMAItemParameter[];
+}
+
+// DeviceInfo — referenced by Event.eventDeviceInfo. Atlas only ever
+// populates userAgent/ipAddress today (the fields it already captures for
+// Meta via AtlasEvent.user_data.client_user_agent/client_ip_address); the
+// rest are declared for completeness, matching this file's existing
+// practice of declaring the full API shape even when only part of it is
+// used by dmaEventBuilder.ts.
+export interface DMAEventDeviceInfo {
+  userAgent?: string;
+  ipAddress?: string;
+  languageCode?: string;
+  operatingSystem?: string;
+  operatingSystemVersion?: string;
+  browser?: string;
+  browserVersion?: string;
+  model?: string;
+  brand?: string;
+  category?: string;
+  screenWidth?: number;
+  screenHeight?: number;
 }
 
 export interface DMACartData {
@@ -115,6 +167,7 @@ export interface DMAEvent {
   userId?: string;
   clientId?: string;      // GA4 web stream client ID
   appInstanceId?: string; // GA4 app stream instance ID
+  eventDeviceInfo?: DMAEventDeviceInfo;
 }
 
 // ── Destinations ────────────────────────────────────────────────────────────
