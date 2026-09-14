@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { DMAClientError, ingestEvents, validateEvents, ingestAudienceMembers, removeAudienceMembers } from '../dmaClient';
+import { DMAClientError, ingestEvents, validateEvents, ingestAudienceMembers, removeAudienceMembers, retrieveRequestStatus } from '../dmaClient';
 import type { DMAIngestEventsRequest, DMAIngestAudienceMembersRequest, DMARemoveAudienceMembersRequest } from '../dmaTypes';
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
@@ -295,5 +295,63 @@ describe('removeAudienceMembers', () => {
     mockFetch(400, { error: { code: 400, message: 'Invalid request', status: 'INVALID_ARGUMENT' } });
 
     await expect(removeAudienceMembers(ORG_ID, MINIMAL_REMOVE_REQUEST)).rejects.toThrow(DMAClientError);
+  });
+});
+
+describe('retrieveRequestStatus', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockDmaCredentials();
+    mockTokens();
+  });
+
+  it('sends a GET to requestStatus:retrieve with the requestId querystring-encoded', async () => {
+    const fetchSpy = mockFetch(200, { requestStatusPerDestination: [] });
+
+    await retrieveRequestStatus(ORG_ID, 'req abc/1');
+
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe('https://datamanager.googleapis.com/v1/requestStatus:retrieve?requestId=req%20abc%2F1');
+    expect(init?.method).toBe('GET');
+    expect(init?.body).toBeUndefined();
+    expect((init?.headers as Record<string, string>)['Authorization']).toBe(`Bearer ${ACCESS_TOKEN}`);
+  });
+
+  it('returns the parsed response body', async () => {
+    const expected = {
+      requestStatusPerDestination: [
+        { requestStatus: 'FAILED', errorInfo: { errorCounts: [{ reason: 'INVALID_HASH', recordCount: '3' }] } },
+      ],
+    };
+    mockFetch(200, expected);
+
+    const result = await retrieveRequestStatus(ORG_ID, 'req-1');
+    expect(result).toEqual(expected);
+  });
+
+  it('refreshes token and retries on 401, same as the POST helpers', async () => {
+    const refreshedToken = 'ya29.refreshed-token';
+    vi.mocked(refreshGoogleToken).mockResolvedValue({
+      access_token: refreshedToken,
+      refresh_token: 'refresh-token',
+      expires_at: FUTURE_EXPIRY,
+      token_type: 'Bearer',
+    });
+
+    const fetchSpy = vi.spyOn(global, 'fetch')
+      .mockResolvedValueOnce({ status: 401, ok: false, text: async () => '{"error":{"code":401,"message":"Unauthorized","status":"UNAUTHENTICATED"}}' } as Response)
+      .mockResolvedValueOnce({ status: 200, ok: true, text: async () => '{"requestStatusPerDestination":[]}' } as Response);
+
+    await retrieveRequestStatus(ORG_ID, 'req-1');
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    const [, retryInit] = fetchSpy.mock.calls[1];
+    expect((retryInit?.headers as Record<string, string>)['Authorization']).toBe(`Bearer ${refreshedToken}`);
+  });
+
+  it('throws DMAClientError on non-2xx response', async () => {
+    mockFetch(404, { error: { code: 404, message: 'Unknown requestId', status: 'NOT_FOUND' } });
+
+    await expect(retrieveRequestStatus(ORG_ID, 'req-missing')).rejects.toThrow(DMAClientError);
   });
 });

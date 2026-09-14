@@ -651,13 +651,15 @@ shopifyWebhookEventQueue.on('failed', (job, err) => {
 // unexpected throw (network error, credential issue), not the normal
 // still-processing path.
 //
-// capi_event_id (live CAPI) and upload_id (offline batch) are mutually
-// exclusive — exactly one is set per job, distinguishing which table's rows
-// to update.
+// capi_event_id (live CAPI), upload_id (offline batch), and enricher_run_id
+// (Customer Match / Bid Signal Enricher audienceMembers:ingest/:remove,
+// added as a Sprint 8 follow-up) are mutually exclusive — exactly one is set
+// per job, distinguishing which table's rows to update.
 
 export interface GoogleDeliveryConfirmationJobData {
   capi_event_id?: string;
   upload_id?: string;
+  enricher_run_id?: string;
   poll_attempt: number; // 1-indexed; incremented on each self-re-enqueue
 }
 

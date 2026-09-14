@@ -74,6 +74,14 @@ export async function pollDMADiagnostics(orgId: string): Promise<DMADiagnosticsR
     return { uploadSuccessRate: 0, avgMatchRate: null, totalMembers30d: 0, destinationCount: 0, errorCategories: {} };
   }
 
+  // status === 'completed' means Google's events:ingest/audienceMembers:ingest
+  // 2xx was accepted AND, where a requestStatus:retrieve confirmation poll
+  // has run (worker.ts's googleDeliveryConfirmationQueue processor), that
+  // poll didn't downgrade it to 'partial' — see enricherQueries.ts's
+  // updateEnricherRunDeliveryConfirmation for the escalate-only downgrade.
+  // A run still awaiting its first poll reads as 'completed' here (accepted,
+  // not yet confirmed) rather than blocking this rate on confirmation, same
+  // as capi_events/offline_conversion_uploads' own status columns.
   const completed = rows.filter(r => r.status === 'completed');
   const uploadSuccessRate = Math.round((completed.length / rows.length) * 100);
 
@@ -97,6 +105,15 @@ export async function pollDMADiagnostics(orgId: string): Promise<DMADiagnosticsR
   const errorCategories: Record<string, number> = {};
   for (const r of rows.filter(r => r.status === 'failed')) {
     const cat = 'delivery_failure';
+    errorCategories[cat] = (errorCategories[cat] ?? 0) + 1;
+  }
+  // 'partial' only exists as a status here via the confirmation poll's
+  // escalate-only downgrade (a run Google's own requestStatus:retrieve
+  // later reported FAILED/PARTIAL_SUCCESS after a synchronous 'completed') —
+  // surfaced as its own category rather than folded into delivery_failure,
+  // since it's confirmed partial success, not a total rejection.
+  for (const r of rows.filter(r => r.status === 'partial')) {
+    const cat = 'delivery_partial';
     errorCategories[cat] = (errorCategories[cat] ?? 0) + 1;
   }
 

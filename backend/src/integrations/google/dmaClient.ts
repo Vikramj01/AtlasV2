@@ -13,6 +13,14 @@
  * connectionTester.ts's header for the full responsibility split. There is
  * no DMA equivalent of adsApiVersion.ts to import here; DMA's version is
  * fixed in DMA_BASE_URL below.
+ *
+ * retrieveRequestStatus() (below) is this side's equivalent of
+ * googleDeliveryConfirmation.ts's retrieveGoogleRequestStatus() — audience
+ * ingestion previously had no bounded async confirmation at all, so
+ * enricher_runs.status='completed' was written on a bare 2xx from
+ * ingestAudienceMembers/removeAudienceMembers and never corrected. See
+ * enricherQueries.ts / worker.ts's googleDeliveryConfirmationQueue processor
+ * for the enricher_run_id branch that now polls this.
  */
 import { supabaseAdmin } from '@/services/database/supabase';
 import { resolveTokens, refreshGoogleToken } from '@/services/connections/tokenManager';
@@ -25,6 +33,7 @@ import type {
   DMAIngestAudienceMembersResponse,
   DMARemoveAudienceMembersRequest,
   DMARemoveAudienceMembersResponse,
+  DMARetrieveRequestStatusResponse,
   DMAApiError,
 } from './dmaTypes';
 
@@ -141,6 +150,31 @@ async function post<T>(orgId: string, path: string, body: unknown): Promise<T> {
   return parseResponse<T>(retryResponse);
 }
 
+async function get<T>(orgId: string, path: string): Promise<T> {
+  const accessToken = await getAccessToken(orgId);
+  const url = `${DMA_BASE_URL}${path}`;
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: buildHeaders(accessToken),
+  });
+
+  if (response.status !== 401) {
+    return parseResponse<T>(response);
+  }
+
+  logger.warn({ orgId, path }, 'DMA: 401 received, forcing token refresh');
+  const connectionId = await resolveLinkedConnectionId(orgId);
+  const refreshed = await refreshGoogleToken(connectionId);
+
+  const retryResponse = await fetch(url, {
+    method: 'GET',
+    headers: buildHeaders(refreshed.access_token),
+  });
+
+  return parseResponse<T>(retryResponse);
+}
+
 export async function ingestEvents(
   orgId: string,
   request: DMAIngestEventsRequest,
@@ -191,4 +225,20 @@ export async function removeAudienceMembers(
     'DMA: removeAudienceMembers',
   );
   return post<DMARemoveAudienceMembersResponse>(orgId, '/audienceMembers:remove', request);
+}
+
+// Bounded async follow-up for a requestId returned by ingestAudienceMembers/
+// removeAudienceMembers above — mirrors googleDeliveryConfirmation.ts's
+// retrieveGoogleRequestStatus() (used by the events:ingest side), but
+// authenticated via this file's own orgId → platform_connections resolution
+// rather than a decrypted capi_providers credential blob, since audience
+// ingestion was never wired to capi_providers in the first place.
+export async function retrieveRequestStatus(
+  orgId: string,
+  requestId: string,
+): Promise<DMARetrieveRequestStatusResponse> {
+  return get<DMARetrieveRequestStatusResponse>(
+    orgId,
+    `/requestStatus:retrieve?requestId=${encodeURIComponent(requestId)}`,
+  );
 }

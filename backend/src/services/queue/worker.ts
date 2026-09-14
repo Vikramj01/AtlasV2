@@ -469,8 +469,8 @@ async function applyGoogleDeliveryAlert(
 }
 
 googleDeliveryConfirmationQueue.process(async (job) => {
-  const { capi_event_id, upload_id, poll_attempt } = job.data;
-  logger.info({ jobId: job.id, capi_event_id, upload_id, poll_attempt }, 'Google delivery confirmation job received');
+  const { capi_event_id, upload_id, enricher_run_id, poll_attempt } = job.data;
+  logger.info({ jobId: job.id, capi_event_id, upload_id, enricher_run_id, poll_attempt }, 'Google delivery confirmation job received');
 
   const { safeDecryptCredentials } = await import('@/services/capi/credentials');
   const {
@@ -606,6 +606,74 @@ googleDeliveryConfirmationQueue.process(async (job) => {
       confirmed: true,
     });
     await applyGoogleDeliveryAlert(upload.organization_id, summary.outcome, summary.reasons);
+    return;
+  }
+
+  if (enricher_run_id) {
+    // Customer Match / Bid Signal Enricher (audienceMembers:ingest/:remove)
+    // — added as a follow-up to this sprint, which originally scoped
+    // confirmation to events:ingest only. Uses dmaClient.ts's own
+    // orgId → platform_connections credential resolution (google_dma_credentials),
+    // not capi_providers/safeDecryptCredentials — audience ingestion was
+    // never wired to the capi_providers credential store.
+    const { getEnricherRunForConfirmation, updateEnricherRunDeliveryConfirmation } = await import(
+      '@/services/database/enricherQueries'
+    );
+    const { retrieveRequestStatus } = await import('@/integrations/google/dmaClient');
+
+    const run = await getEnricherRunForConfirmation(enricher_run_id);
+    if (!run || !run.provider_request_id) {
+      logger.warn({ enricher_run_id }, 'Google delivery confirmation: enricher run or requestId missing — skipping');
+      return;
+    }
+
+    const status = await retrieveRequestStatus(run.org_id, run.provider_request_id);
+    const summary = summarizeDeliveryConfirmation(status);
+
+    if (summary.outcome === 'still_processing') {
+      if (poll_attempt >= GOOGLE_DELIVERY_CONFIRMATION_MAX_ATTEMPTS) {
+        await updateEnricherRunDeliveryConfirmation(enricher_run_id, {
+          downgradeToPartial: false,
+          delivery_confirmed_status: 'poll_exhausted',
+          delivery_confirmation: status,
+          delivery_poll_attempts: poll_attempt,
+          confirmed: true,
+        });
+        logger.warn({ enricher_run_id }, 'Google delivery confirmation: poll attempts exhausted, still PROCESSING');
+        return;
+      }
+      await updateEnricherRunDeliveryConfirmation(enricher_run_id, {
+        downgradeToPartial: false,
+        delivery_confirmation: status,
+        delivery_poll_attempts: poll_attempt,
+        confirmed: false,
+      });
+      await googleDeliveryConfirmationQueue.add(
+        { enricher_run_id, poll_attempt: poll_attempt + 1 },
+        { delay: GOOGLE_DELIVERY_CONFIRMATION_BACKOFF_MS[poll_attempt - 1] },
+      );
+      return;
+    }
+
+    // Escalate-only, same convention as the upload_id branch above: a
+    // confirmed failure/partial downgrades a 'completed' run to 'partial'
+    // (the synchronous accept-as-matched response missed it); never touches
+    // a run already 'partial'/'failed', and confirmed_success never
+    // upgrades anything. dmaPolling.ts's upload_success_rate (Data Manager
+    // Console) is computed off this status column, so this downgrade is
+    // what stops a client showing 100% while Google silently dropped rows.
+    const downgradeToPartial =
+      (summary.outcome === 'confirmed_failed' || summary.outcome === 'confirmed_partial') &&
+      run.status === 'completed';
+
+    await updateEnricherRunDeliveryConfirmation(enricher_run_id, {
+      downgradeToPartial,
+      delivery_confirmed_status: summary.outcome,
+      delivery_confirmation: status,
+      delivery_poll_attempts: poll_attempt,
+      confirmed: true,
+    });
+    await applyGoogleDeliveryAlert(run.org_id, summary.outcome, summary.reasons);
   }
 });
 

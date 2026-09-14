@@ -4,9 +4,15 @@ import { buildAudienceMember } from '@/integrations/google/dmaEventBuilder';
 import type { AddressFields } from '@/integrations/google/dmaEventBuilder';
 import { pushToLinkedInMatchedAudience, type LinkedInAudiencePushResult } from '@/integrations/linkedin/matchedAudiencesClient';
 import { supabaseAdmin } from '@/services/database/supabase';
+import { googleDeliveryConfirmationQueue } from '@/services/queue/jobQueue';
 import logger from '@/utils/logger';
 import { logUsage } from '@/services/usage/usageLogger';
 import type { DMAAudienceMember, DMADestination, DMAAccountType } from '@/integrations/google/dmaTypes';
+
+// Same bounded-delay-before-first-poll rationale as pipeline.ts/worker.ts's
+// other two googleDeliveryConfirmationQueue enqueue sites: Google's own
+// async processing after a 2xx accept isn't instantaneous.
+const GOOGLE_DELIVERY_CONFIRMATION_INITIAL_DELAY_MS = 5 * 60 * 1000;
 
 export interface EnricherContact {
   email?: string;
@@ -123,6 +129,7 @@ export async function runAudienceEnricher(
     let failedCount = 0;
     let memberErrors: Array<{ index: number; code: string; message: string }> = [];
     let dmaResponse: Record<string, unknown> | undefined;
+    let googleRequestId: string | undefined;
 
     if (googleDestinations.length > 0) {
       const audienceMembers = contacts.map(buildUserIdData);
@@ -134,7 +141,10 @@ export async function runAudienceEnricher(
       // anyone (same bug as customerMatch.ts, fixed there for the same
       // reason). Neither method returns per-member results on the live API
       // (just { requestId }) — a successful call means the batch was
-      // accepted for processing; see googleDelivery.ts's matching comment.
+      // accepted for processing, NOT matched; matchedCount/failedCount below
+      // reflect acceptance only, and are corrected (status downgraded,
+      // never the counts themselves — see enricherQueries.ts) by the
+      // requestStatus:retrieve confirmation poll enqueued further down.
       const response = operationType === 'REMOVE'
         ? await removeAudienceMembers(orgId, { audienceMembers, destinations: dmaDestinations })
         : await ingestAudienceMembers(orgId, { audienceMembers, destinations: dmaDestinations });
@@ -142,6 +152,7 @@ export async function runAudienceEnricher(
       failedCount = 0;
       matchedCount = contacts.length;
       dmaResponse = response as unknown as Record<string, unknown>;
+      googleRequestId = response.requestId;
     }
 
     // 3. LinkedIn Matched Audiences push — one call per destination segment.
@@ -186,12 +197,31 @@ export async function runAudienceEnricher(
         matched_count: matchedCount,
         failed_count: failedCount,
         match_rate: matchRate,
+        provider_request_id: googleRequestId ?? null,
         dma_response: {
           ...(dmaResponse ?? {}),
           ...(linkedinResults.length > 0 && { linkedin: linkedinResults }),
         },
       })
       .eq('id', runId);
+
+    // Bounded async follow-up: 'completed' above reflects Google's 2xx
+    // acceptance only, not confirmed delivery — enqueue the same
+    // requestStatus:retrieve poll capi_events/offline uploads already get
+    // (Google Stack Alignment sprint plan, Sprint 8), scoped here to the
+    // audienceMembers:ingest/:remove path that sprint left out. Fire-and-
+    // forget: a failure to enqueue must never fail the run itself, since the
+    // audience push already succeeded from Atlas's side.
+    if (googleRequestId) {
+      void googleDeliveryConfirmationQueue
+        .add({ enricher_run_id: runId, poll_attempt: 1 }, { delay: GOOGLE_DELIVERY_CONFIRMATION_INITIAL_DELAY_MS })
+        .catch((err) => {
+          logger.error(
+            { err: err instanceof Error ? err.message : String(err), runId },
+            'Failed to enqueue Google enricher delivery confirmation poll',
+          );
+        });
+    }
 
     void logUsage({
       org_id: orgId,

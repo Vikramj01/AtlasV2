@@ -265,7 +265,10 @@ export interface DMAApiError {
 // Atlas's live CAPI pipeline (pipeline.ts's deliverToProvider) always calls
 // sendGoogleEvents with a single-event array, so for that path alone one
 // requestId does map to exactly one Atlas event — offline batches remain
-// batch-level truth only.
+// batch-level truth only. Customer Match / Bid Signal Enricher runs
+// (enricherService.ts's runAudienceEnricher) are the same shape as offline
+// batches here — one requestId per run, batch-level truth, not per-member —
+// polled via dmaClient.ts's retrieveRequestStatus().
 export type DMARequestStatus = 'REQUEST_STATUS_UNKNOWN' | 'SUCCESS' | 'PROCESSING' | 'FAILED' | 'PARTIAL_SUCCESS';
 
 export interface DMAErrorCount {
@@ -282,11 +285,17 @@ export interface DMARequestStatusPerDestination {
   destination?: DMADestination;
   requestStatus?: DMARequestStatus;
   eventsIngestionStatus?: { recordCount?: string };
+  // Declared for schema completeness now that dmaClient.ts's
+  // retrieveRequestStatus() also polls this endpoint for
+  // audienceMembers:ingest/:remove requestIds (enricherQueries.ts /
+  // worker.ts's enricher_run_id branch) — Atlas's classification logic
+  // (googleDeliveryConfirmation.ts's summarizeDeliveryConfirmation) only
+  // reads the shared requestStatus/errorInfo fields below, not these two
+  // directly, since it has no per-request-type branching to do.
+  audienceMembersIngestionStatus?: { recordCount?: string };
+  audienceMembersRemovalStatus?: { recordCount?: string };
   errorInfo?: { errorCounts?: DMAErrorCount[] };
   warningInfo?: { warningCounts?: DMAWarningCount[] };
-  // audienceMembersIngestionStatus / audienceMembersRemovalStatus exist on
-  // the live schema too but are irrelevant to events:ingest confirmation —
-  // not declared here since nothing in Atlas reads them from this endpoint.
 }
 
 export interface DMARetrieveRequestStatusResponse {
