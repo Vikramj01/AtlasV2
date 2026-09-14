@@ -1,3 +1,10 @@
+/**
+ * Platform connection test/health-check. The Google Ads branch here uses
+ * the Google Ads REST API (account/config/read operations) — not the Data
+ * Manager API, which handles offline conversion ingestion/delivery only
+ * (googleDelivery.ts, googleOfflineUpload.ts). See adsApiVersion.ts for the
+ * shared version constant and the outage history behind centralizing it.
+ */
 import { env } from '@/config/env';
 import { resolveTokens } from './tokenManager';
 import { getConnectionById } from '@/services/database/connectionQueries';

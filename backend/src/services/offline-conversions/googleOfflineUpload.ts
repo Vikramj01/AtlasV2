@@ -5,12 +5,22 @@
  * using the `events:ingest` endpoint (eventSource: OTHER). Reuses the existing
  * OAuth credentials stored in the CAPI module's `capi_providers` table.
  *
+ * This file straddles both Google APIs by design, not accident: DMA for the
+ * actual ingestion (events:ingest below), Google Ads REST (via
+ * adsApiVersion.ts, `fetchConversionActions()`) only for the read-only GAQL
+ * lookup of which conversion actions exist to upload against — see
+ * connectionTester.ts's header comment for the full responsibility split.
+ *
  * Key behaviours:
  *   - Hashes PII (email, phone) with SHA-256 immediately before upload
  *   - Splits rows into batches of 2,000
  *   - Partial failure mode: one bad row doesn't block the batch
  *   - Exponential backoff: 3 attempts at 30s / 60s / 120s delays
  *   - Fetches conversion actions via Google Ads GAQL search API (unchanged)
+ *   - Batch-level delivery confirmation is a separate, bounded async
+ *     follow-up against requestStatus:retrieve (googleDeliveryConfirmation.ts),
+ *     not per-row — see dmaTypes.ts's DMARequestStatusPerDestination comment
+ *     for why per-row confirmation isn't possible on this API
  */
 
 import crypto from 'crypto';
