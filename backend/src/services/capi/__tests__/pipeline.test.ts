@@ -45,9 +45,14 @@ vi.mock('@/utils/logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
+vi.mock('@/services/queue/jobQueue', () => ({
+  googleDeliveryConfirmationQueue: { add: vi.fn().mockResolvedValue(undefined) },
+}));
+
 import * as capiQueries from '@/services/database/capiQueries';
 import * as metaDelivery from '@/services/capi/metaDelivery';
 import * as googleDelivery from '@/services/capi/googleDelivery';
+import { googleDeliveryConfirmationQueue } from '@/services/queue/jobQueue';
 import { processEvent } from '../pipeline';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -330,5 +335,64 @@ describe('CAPI pipeline — logging', () => {
     expect(capiQueries.createCAPIEvent).toHaveBeenCalledOnce();
     const loggedEvent = vi.mocked(capiQueries.createCAPIEvent).mock.calls[0][0] as any;
     expect(loggedEvent.status).toBe('consent_blocked');
+  });
+});
+
+describe('CAPI pipeline — Google delivery confirmation poll (Sprint 8)', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('persists the events:ingest requestId and enqueues a bounded confirmation poll for Google', async () => {
+    vi.mocked(googleDelivery.sendGoogleEvents).mockResolvedValue([
+      {
+        event_id: 'evt-001',
+        status: 'delivered',
+        provider_response: { requestId: 'req-123', fieldWarnings: [] },
+      },
+    ] as any);
+    vi.mocked(capiQueries.createCAPIEvent).mockResolvedValue({ id: 'capi-event-1' } as any);
+    vi.mocked(capiQueries.incrementProviderCounters).mockResolvedValue(undefined);
+
+    await processEvent(makeEvent() as any, GOOGLE_PROVIDER_CONFIG);
+
+    const loggedEvent = vi.mocked(capiQueries.createCAPIEvent).mock.calls[0][0] as any;
+    expect(loggedEvent.provider_request_id).toBe('req-123');
+    expect(googleDeliveryConfirmationQueue.add).toHaveBeenCalledWith(
+      { capi_event_id: 'capi-event-1', poll_attempt: 1 },
+      expect.objectContaining({ delay: expect.any(Number) }),
+    );
+  });
+
+  it('does not enqueue a confirmation poll for a failed Google submission (nothing to poll)', async () => {
+    vi.mocked(googleDelivery.sendGoogleEvents).mockResolvedValue([
+      {
+        event_id: 'evt-001',
+        status: 'failed',
+        provider_response: { error: { message: 'bad request' } },
+        error_code: 'DELIVERY_FAILED',
+        error_message: 'bad request',
+      },
+    ] as any);
+    vi.mocked(capiQueries.createCAPIEvent).mockResolvedValue({ id: 'capi-event-2' } as any);
+    vi.mocked(capiQueries.incrementProviderCounters).mockResolvedValue(undefined);
+
+    await processEvent(makeEvent() as any, GOOGLE_PROVIDER_CONFIG);
+
+    const loggedEvent = vi.mocked(capiQueries.createCAPIEvent).mock.calls[0][0] as any;
+    expect(loggedEvent.provider_request_id).toBeNull();
+    expect(googleDeliveryConfirmationQueue.add).not.toHaveBeenCalled();
+  });
+
+  it('does not enqueue a confirmation poll for a non-Google provider', async () => {
+    vi.mocked(metaDelivery.sendMetaEvents).mockResolvedValue([
+      { event_id: 'evt-001', status: 'delivered', provider_response: { requestId: 'irrelevant' } },
+    ] as any);
+    vi.mocked(capiQueries.createCAPIEvent).mockResolvedValue({ id: 'capi-event-3' } as any);
+    vi.mocked(capiQueries.incrementProviderCounters).mockResolvedValue(undefined);
+
+    await processEvent(makeEvent() as any, META_PROVIDER_CONFIG);
+
+    const loggedEvent = vi.mocked(capiQueries.createCAPIEvent).mock.calls[0][0] as any;
+    expect(loggedEvent.provider_request_id).toBeNull();
+    expect(googleDeliveryConfirmationQueue.add).not.toHaveBeenCalled();
   });
 });

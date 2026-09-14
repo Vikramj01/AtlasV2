@@ -108,6 +108,11 @@ export interface OfflineConversionUpload {
   processing_started_at: string | null;
   completed_at: string | null;
   updated_at: string;
+  // Sprint 8: delivery confirmation (batch-level, see UploadResult.requestIds)
+  provider_request_ids?: string[] | null;
+  delivery_confirmation?: unknown | null;
+  delivery_confirmed_at?: string | null;
+  delivery_poll_attempts?: number;
 }
 
 export interface CreateUploadInput {
@@ -193,6 +198,12 @@ export interface GoogleRowResult {
 export interface UploadResult {
   partial_failure: boolean;
   row_results: GoogleRowResult[];
+  // events:ingest requestId per successful batch (Google Stack Alignment
+  // sprint plan, Sprint 8) — one requestId per up-to-2,000-row batch, not
+  // per row (see dmaTypes.ts's DMARequestStatusPerDestination comment for
+  // why per-row confirmation isn't possible on this API). Empty for the
+  // Meta upload path, which has no equivalent async confirmation step.
+  requestIds?: string[];
 }
 
 // ── Google conversion actions ─────────────────────────────────────────────────

@@ -45,7 +45,8 @@ export type AlertType =
   | 'connection_expired'
   | 'dqm_gtg'
   | 'dqm_dma'
-  | 'dqm_sgtm';
+  | 'dqm_sgtm'
+  | 'dqm_google_delivery';
 
 export interface HealthAlert {
   id: string;

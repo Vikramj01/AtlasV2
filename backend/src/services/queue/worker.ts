@@ -1,5 +1,5 @@
-import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue, crawlQueue, reconciliationSyncQueue, reconciliationRunQueue, reconciliationStatsQueue, reconciliationStaleResyncQueue, gtmContainerSyncQueue, ihcRulesQueue, ihcDriftQueue, ihcAlertQueue, ihcDigestQueue, dmaIngestQueue, dqmQueue, signalMvRefreshQueue, airIngestionQueue, shopifyWebhookEventQueue } from './jobQueue';
-import type { GtmContainerSyncJobData, IhcRulesJobData, IhcDriftJobData, IhcAlertJobData, IhcDigestJobData, DQMJobData, AirIngestionJobData } from './jobQueue';
+import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue, crawlQueue, reconciliationSyncQueue, reconciliationRunQueue, reconciliationStatsQueue, reconciliationStaleResyncQueue, gtmContainerSyncQueue, ihcRulesQueue, ihcDriftQueue, ihcAlertQueue, ihcDigestQueue, dmaIngestQueue, dqmQueue, signalMvRefreshQueue, airIngestionQueue, shopifyWebhookEventQueue, googleDeliveryConfirmationQueue } from './jobQueue';
+import type { GtmContainerSyncJobData, IhcRulesJobData, IhcDriftJobData, IhcAlertJobData, IhcDigestJobData, DQMJobData, AirIngestionJobData, GoogleDeliveryConfirmationJobData } from './jobQueue';
 import { runConfigSyncForConnection, getConnectionsDueForSync, runStatsSyncForConnection, getConnectionsDueForStatsSync, runStaleResyncForConnection, getConnectionsForStaleResync } from '@/services/reconciliation/sync/syncOrchestrator';
 import { executeRun } from '@/services/reconciliation/reconciliationRunner';
 import type { SyncJobData, StatsSyncJobData, StaleResyncJobData, ReconciliationJobData } from './jobQueue';
@@ -290,6 +290,7 @@ offlineConversionQueue.process(1, async (job) => {
     getRowsForUpload,
     setUploadStatus,
     setUploadCompleted,
+    setUploadRequestIds,
     bulkUpdateRowStatuses,
     purgeRawPii,
   } = await import('@/services/database/offlineConversionQueries');
@@ -397,6 +398,22 @@ offlineConversionQueue.process(1, async (job) => {
 
   await setUploadCompleted(upload_id, uploadResult, uploadedCount, rejectedCount);
 
+  // ── Delivery confirmation poll (Sprint 8, Google path only) ────────────────
+  // Meta's offline upload has no equivalent async confirmation step — this is
+  // scoped to Google per the sprint plan's "Neither Google delivery path
+  // confirms delivery" framing.
+  if (config.provider_type !== 'meta' && uploadResult.requestIds && uploadResult.requestIds.length > 0) {
+    await setUploadRequestIds(upload_id, uploadResult.requestIds);
+    void googleDeliveryConfirmationQueue
+      .add({ upload_id, poll_attempt: 1 }, { delay: 5 * 60 * 1000 })
+      .catch((err) => {
+        logger.error(
+          { err: err instanceof Error ? err.message : String(err), upload_id },
+          'Failed to enqueue Google offline upload delivery confirmation poll',
+        );
+      });
+  }
+
   // ── Purge raw PII ──────────────────────────────────────────────────────────
 
   const purgedCount = await purgeRawPii(upload_id);
@@ -409,6 +426,190 @@ offlineConversionQueue.process(1, async (job) => {
 });
 
 logger.info('Offline conversion upload worker registered');
+
+// ── Google Delivery Confirmation worker ───────────────────────────────────────
+// Google Stack Alignment sprint plan, Sprint 8. Polls requestStatus:retrieve
+// on a bounded, self-re-enqueued delay (not Bull's own attempts/backoff —
+// "still processing" isn't a job failure). Exactly one of capi_event_id
+// (live CAPI, one requestId per event) or upload_id (offline batch, one or
+// more requestIds per upload) is set per job.
+
+const GOOGLE_DELIVERY_CONFIRMATION_MAX_ATTEMPTS = 3;
+const GOOGLE_DELIVERY_CONFIRMATION_BACKOFF_MS = [10 * 60 * 1000, 20 * 60 * 1000]; // delay before attempt 2, then attempt 3
+
+async function applyGoogleDeliveryAlert(
+  orgId: string,
+  outcome: import('@/services/capi/googleDeliveryConfirmation').DeliveryConfirmationOutcome,
+  reasons: string[],
+): Promise<void> {
+  if (outcome === 'still_processing') return; // never called with this outcome — guarded for type completeness
+
+  const { getAlertByType, createAlert, incrementAlertOk, resolveAlert } = await import('@/services/database/healthQueries');
+  const { evaluateGoogleDeliveryAlert } = await import('@/services/dqm/dqmAlertEvaluator');
+  const { sendDQMAlertNotification } = await import('@/services/dqm/dqmAlertDelivery');
+
+  const existing = await getAlertByType(orgId, 'dqm_google_delivery');
+  const decision = evaluateGoogleDeliveryAlert({
+    outcome: outcome as 'confirmed_success' | 'confirmed_partial' | 'confirmed_failed' | 'poll_exhausted',
+    reasons,
+    existingAlertActive: !!existing,
+  });
+
+  if (decision.decision === 'open') {
+    await createAlert(orgId, 'dqm_google_delivery', decision.severity!, decision.title, decision.message, null, null);
+    void sendDQMAlertNotification(orgId, 'dqm_google_delivery', decision.severity!, decision.title, decision.message);
+  } else if (decision.decision === 'resolve' && existing) {
+    const okCount = await incrementAlertOk(existing.id);
+    if (okCount >= 2) await resolveAlert(existing.id);
+  }
+  // 'update' and 'none' need no further DB write here — 'update' rolls the
+  // existing alert's continued presence into the next dashboard read as-is,
+  // matching the GTG/DMA/sGTM convention of not rewriting title/message on
+  // every recurrence.
+}
+
+googleDeliveryConfirmationQueue.process(async (job) => {
+  const { capi_event_id, upload_id, poll_attempt } = job.data;
+  logger.info({ jobId: job.id, capi_event_id, upload_id, poll_attempt }, 'Google delivery confirmation job received');
+
+  const { safeDecryptCredentials } = await import('@/services/capi/credentials');
+  const {
+    retrieveGoogleRequestStatus,
+    summarizeDeliveryConfirmation,
+    mergeDeliveryConfirmationSummaries,
+  } = await import('@/services/capi/googleDeliveryConfirmation');
+
+  if (capi_event_id) {
+    const { getCAPIEventForConfirmation, updateCAPIEventDeliveryConfirmation, getProvider } = await import(
+      '@/services/database/capiQueries'
+    );
+
+    const event = await getCAPIEventForConfirmation(capi_event_id);
+    if (!event || !event.provider_request_id) {
+      logger.warn({ capi_event_id }, 'Google delivery confirmation: event or requestId missing — skipping');
+      return;
+    }
+
+    const provider = await getProvider(event.provider_config_id, event.organization_id);
+    if (!provider) {
+      logger.warn({ capi_event_id }, 'Google delivery confirmation: provider not found — skipping');
+      return;
+    }
+    const creds = safeDecryptCredentials(provider.credentials) as import('@/types/capi').GoogleCredentials;
+
+    const status = await retrieveGoogleRequestStatus(event.provider_request_id, creds);
+    const summary = summarizeDeliveryConfirmation(status);
+
+    if (summary.outcome === 'still_processing') {
+      if (poll_attempt >= GOOGLE_DELIVERY_CONFIRMATION_MAX_ATTEMPTS) {
+        await updateCAPIEventDeliveryConfirmation(capi_event_id, {
+          delivery_confirmed_status: 'poll_exhausted',
+          delivery_confirmation: status,
+          delivery_poll_attempts: poll_attempt,
+          confirmed: true,
+        });
+        logger.warn({ capi_event_id }, 'Google delivery confirmation: poll attempts exhausted, still PROCESSING');
+        return;
+      }
+      await updateCAPIEventDeliveryConfirmation(capi_event_id, {
+        delivery_confirmation: status,
+        delivery_poll_attempts: poll_attempt,
+        confirmed: false,
+      });
+      await googleDeliveryConfirmationQueue.add(
+        { capi_event_id, poll_attempt: poll_attempt + 1 },
+        { delay: GOOGLE_DELIVERY_CONFIRMATION_BACKOFF_MS[poll_attempt - 1] },
+      );
+      return;
+    }
+
+    await updateCAPIEventDeliveryConfirmation(capi_event_id, {
+      delivery_confirmed_status: summary.outcome,
+      delivery_confirmation: status,
+      delivery_poll_attempts: poll_attempt,
+      confirmed: true,
+    });
+    await applyGoogleDeliveryAlert(event.organization_id, summary.outcome, summary.reasons);
+    return;
+  }
+
+  if (upload_id) {
+    const { getUploadForConfirmation, updateUploadDeliveryConfirmation, getConfig } = await import(
+      '@/services/database/offlineConversionQueries'
+    );
+    const { supabaseAdmin } = await import('@/services/database/supabase');
+
+    const upload = await getUploadForConfirmation(upload_id);
+    const requestIds = upload?.provider_request_ids ?? [];
+    if (!upload || requestIds.length === 0) {
+      logger.warn({ upload_id }, 'Google delivery confirmation: upload or requestIds missing — skipping');
+      return;
+    }
+
+    const config = await getConfig(upload.organization_id);
+    if (!config?.capi_provider_id) {
+      logger.warn({ upload_id }, 'Google delivery confirmation: no CAPI provider linked — skipping');
+      return;
+    }
+    const { data: providerRow } = await supabaseAdmin
+      .from('capi_providers')
+      .select('credentials')
+      .eq('id', config.capi_provider_id)
+      .eq('organization_id', upload.organization_id)
+      .single();
+    if (!providerRow) {
+      logger.warn({ upload_id }, 'Google delivery confirmation: provider credentials not found — skipping');
+      return;
+    }
+    const creds = safeDecryptCredentials(providerRow.credentials) as import('@/types/capi').GoogleCredentials;
+
+    const statuses = await Promise.all(requestIds.map((id) => retrieveGoogleRequestStatus(id, creds)));
+    const summary = mergeDeliveryConfirmationSummaries(statuses.map(summarizeDeliveryConfirmation));
+    const rawStatuses = statuses.length === 1 ? statuses[0] : statuses;
+
+    if (summary.outcome === 'still_processing') {
+      if (poll_attempt >= GOOGLE_DELIVERY_CONFIRMATION_MAX_ATTEMPTS) {
+        await updateUploadDeliveryConfirmation(upload_id, {
+          downgradeToPartial: false,
+          delivery_confirmation: rawStatuses,
+          delivery_poll_attempts: poll_attempt,
+          confirmed: true,
+        });
+        logger.warn({ upload_id }, 'Google delivery confirmation: poll attempts exhausted, still PROCESSING');
+        return;
+      }
+      await updateUploadDeliveryConfirmation(upload_id, {
+        downgradeToPartial: false,
+        delivery_confirmation: rawStatuses,
+        delivery_poll_attempts: poll_attempt,
+        confirmed: false,
+      });
+      await googleDeliveryConfirmationQueue.add(
+        { upload_id, poll_attempt: poll_attempt + 1 },
+        { delay: GOOGLE_DELIVERY_CONFIRMATION_BACKOFF_MS[poll_attempt - 1] },
+      );
+      return;
+    }
+
+    // Escalate-only: a confirmed failure/partial downgrades a 'completed'
+    // upload to 'partial' (the synchronous response missed it); never
+    // touches an upload already 'partial'/'failed' from the synchronous
+    // path, and a confirmed_success never upgrades anything.
+    const downgradeToPartial =
+      (summary.outcome === 'confirmed_failed' || summary.outcome === 'confirmed_partial') &&
+      upload.status === 'completed';
+
+    await updateUploadDeliveryConfirmation(upload_id, {
+      downgradeToPartial,
+      delivery_confirmation: rawStatuses,
+      delivery_poll_attempts: poll_attempt,
+      confirmed: true,
+    });
+    await applyGoogleDeliveryAlert(upload.organization_id, summary.outcome, summary.reasons);
+  }
+});
+
+logger.info('Google delivery confirmation worker registered');
 
 // ── Google OAuth Refresh worker ───────────────────────────────────────────────
 // Runs every 30 minutes. For each active Google provider whose access token

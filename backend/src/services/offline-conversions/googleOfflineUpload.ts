@@ -314,7 +314,7 @@ export async function uploadOfflineConversions(
   initialAccessToken: string,
 ): Promise<UploadResult> {
   if (rows.length === 0) {
-    return { partial_failure: false, row_results: [] };
+    return { partial_failure: false, row_results: [], requestIds: [] };
   }
 
   // ── Hash PII for all rows up-front ────────────────────────────────────
@@ -330,6 +330,7 @@ export async function uploadOfflineConversions(
 
   // ── Split into 2,000-row batches ───────────────────────────────────────
   const allResults: GoogleRowResult[] = [];
+  const requestIds: string[] = [];
   let hasPartialFailure = false;
   let currentToken = initialAccessToken;
 
@@ -367,6 +368,7 @@ export async function uploadOfflineConversions(
       if (batchResults.some((r) => r.status === 'rejected')) {
         hasPartialFailure = true;
       }
+      if (response.requestId) requestIds.push(response.requestId);
     }
 
     // 1-second courtesy delay between batches (PRD spec)
@@ -375,7 +377,7 @@ export async function uploadOfflineConversions(
     }
   }
 
-  return { partial_failure: hasPartialFailure, row_results: allResults };
+  return { partial_failure: hasPartialFailure, row_results: allResults, requestIds };
 }
 
 // ── Hashed identifier return (for persisting to DB) ─────────────────────────

@@ -639,3 +639,41 @@ shopifyWebhookEventQueue.on('failed', (job, err) => {
   logger.error({ jobId: job?.id, eventId: job?.data?.event_id, err: err.message }, 'Shopify webhook event job failed');
 });
 
+// ── Google Delivery Confirmation Queue ────────────────────────────────────────
+// Google Stack Alignment sprint plan, Sprint 8: events:ingest's 2xx confirms
+// submission only. This queue polls requestStatus:retrieve on a bounded
+// delay to learn the real outcome. Each job re-enqueues itself (via
+// worker.ts, not Bull's own retry) with an escalating delay while Google
+// still reports PROCESSING, up to MAX_POLL_ATTEMPTS — a self-chained delay
+// rather than Bull's `attempts`/`backoff`, since "still processing" isn't a
+// job failure that should count against Bull's retry budget or log as an
+// error each time. `attempts: 1` here is only a safety net for a genuine
+// unexpected throw (network error, credential issue), not the normal
+// still-processing path.
+//
+// capi_event_id (live CAPI) and upload_id (offline batch) are mutually
+// exclusive — exactly one is set per job, distinguishing which table's rows
+// to update.
+
+export interface GoogleDeliveryConfirmationJobData {
+  capi_event_id?: string;
+  upload_id?: string;
+  poll_attempt: number; // 1-indexed; incremented on each self-re-enqueue
+}
+
+export const googleDeliveryConfirmationQueue = new Bull<GoogleDeliveryConfirmationJobData>(
+  'google-delivery-confirmation',
+  makeBullOpts({
+    attempts: 1,
+    removeOnComplete: 200,
+    removeOnFail: 100,
+  }),
+);
+
+googleDeliveryConfirmationQueue.on('failed', (job, err) => {
+  logger.error(
+    { jobId: job?.id, capiEventId: job?.data?.capi_event_id, uploadId: job?.data?.upload_id, err: err.message },
+    'Google delivery confirmation job failed',
+  );
+});
+
