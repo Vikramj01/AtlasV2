@@ -852,6 +852,20 @@ export interface AuditData {
    */
   client_secondary_domains?: string[];
   /**
+   * The client's verified server-side GTM endpoint URL
+   * (client_platforms.measurement_id where platform = 'sgtm', is_verified =
+   * true), resolved by the caller before rules run — same "resolve outside,
+   * read inside" pattern as sgtmVerified above. Used by
+   * SGTM_ROUTING_NOT_CONFIGURED (tag_configuration layer) to turn its finding
+   * into an actionable remediation: instead of only saying routing is
+   * missing, it names the exact URL the tag's serverContainerUrl parameter
+   * should contain, and flags a tag that routes to a URL other than this one
+   * (stale/drifted config) as its own violation. Undefined when the
+   * connection has no associated client_id, or the client has no verified
+   * sgtm endpoint, same as sgtmVerified.
+   */
+  client_sgtm_endpoint_url?: string;
+  /**
    * The org's Naming Conventions config (services/signals/namingConvention.ts),
    * resolved by the caller before rules run — same "resolve outside, read
    * inside" pattern as sgtmVerified/connected_gtm_container_id above. Used

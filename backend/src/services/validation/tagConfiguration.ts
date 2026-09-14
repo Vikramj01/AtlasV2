@@ -956,6 +956,23 @@ export const META_CROSS_DOMAIN_FBCLID_MISSING = {
 // still real and still worth flagging. A client with no verified sGTM
 // endpoint is never flagged — there is nothing to check routing against.
 //
+// Google Stack Alignment sprint plan, Sprint 7 (C8 remainder, item 3): this
+// rule used to stop at diagnosing that routing was off. It now also checks
+// the routed tag's serverContainerUrl against the client's own verified
+// endpoint (client_platforms.measurement_id — threaded in as
+// AuditData.client_sgtm_endpoint_url by worker.ts, same "resolve outside,
+// read inside" pattern as sgtmVerified) and names the exact expected URL in
+// the finding, so the fix is "set serverContainerUrl to <this value>"
+// instead of a generic "point it at the verified endpoint" that never says
+// which one. A tag with routing enabled but pointed at a stale/wrong URL is
+// now its own violation — previously it would have silently passed. Both
+// parameters (enableSendToServerContainer/serverContainerUrl) are fields
+// Atlas already generates (gtmContainerGenerator.ts); no new GTM schema is
+// introduced. Server-container tag generation (Google destinations routed
+// inside the sGTM container itself) and separate web/server linker rules
+// remain out of scope for this rule and are not built anywhere in Atlas yet
+// — both are gated on live GTM schema verification per the plan.
+//
 // Severity: high — a silently-dropped server-container route means events
 // fall back to client-side delivery (or are lost) with no visible error.
 
@@ -998,13 +1015,22 @@ export const SGTM_ROUTING_NOT_CONFIGURED = {
       };
     }
 
+    const expectedUrl = auditData.client_sgtm_endpoint_url;
     const violations: string[] = [];
 
     for (const tag of ga4ConfigTags) {
       const routed = paramValue(tag, 'enableSendToServerContainer') === 'true';
+      const actualUrl = paramValue(tag, 'serverContainerUrl');
+
       if (!routed) {
         violations.push(
-          `"${tag.name}" (${tag.type}): enableSendToServerContainer is absent or false, but this client has a verified server-side GTM endpoint on file`,
+          expectedUrl
+            ? `"${tag.name}" (${tag.type}): enableSendToServerContainer is absent or false — set it to true with serverContainerUrl "${expectedUrl}"`
+            : `"${tag.name}" (${tag.type}): enableSendToServerContainer is absent or false, but this client has a verified server-side GTM endpoint on file`,
+        );
+      } else if (expectedUrl && actualUrl !== expectedUrl) {
+        violations.push(
+          `"${tag.name}" (${tag.type}): routing is enabled but serverContainerUrl is "${actualUrl ?? '(not set)'}" — the client's verified endpoint is "${expectedUrl}"`,
         );
       }
     }
@@ -1016,8 +1042,10 @@ export const SGTM_ROUTING_NOT_CONFIGURED = {
         status: 'fail',
         severity: this.severity,
         technical_details: {
-          found: `${violations.length} GA4 Config tag${violations.length > 1 ? 's' : ''} not routed through the verified server container`,
-          expected: 'GA4 Config tag has enableSendToServerContainer set to true when a verified server-side GTM endpoint is on file',
+          found: `${violations.length} GA4 Config tag${violations.length > 1 ? 's' : ''} not correctly routed through the verified server container`,
+          expected: expectedUrl
+            ? `GA4 Config tag has enableSendToServerContainer set to true and serverContainerUrl set to "${expectedUrl}"`
+            : 'GA4 Config tag has enableSendToServerContainer set to true when a verified server-side GTM endpoint is on file',
           evidence: violations,
         },
       };
@@ -1030,7 +1058,9 @@ export const SGTM_ROUTING_NOT_CONFIGURED = {
       severity: this.severity,
       technical_details: {
         found: 'GA4 Config tag routes through the verified server-side GTM endpoint',
-        expected: 'enableSendToServerContainer set to true when a verified server-side GTM endpoint is on file',
+        expected: expectedUrl
+          ? `enableSendToServerContainer set to true with serverContainerUrl "${expectedUrl}"`
+          : 'enableSendToServerContainer set to true when a verified server-side GTM endpoint is on file',
         evidence: ['No server-side GTM routing gap detected'],
       },
     };

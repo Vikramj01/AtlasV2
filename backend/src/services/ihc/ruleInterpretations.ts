@@ -170,10 +170,10 @@ export const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
   SGTM_ROUTING_NOT_CONFIGURED: {
     title: 'Server-Side GTM Endpoint Not Routed',
     business_impact:
-      "This client has a verified server-side GTM endpoint on file, but the live GA4 Config tag isn't sending events through it. Server-side tagging is typically adopted specifically to improve match quality and survive ad blockers/ITP — if the routing silently drops, the site reverts to client-side-only delivery without any visible error, and the reliability gains the client is expecting simply aren't happening.",
+      "This client has a verified server-side GTM endpoint on file, but the live GA4 Config tag isn't sending events through it (or is sending them to the wrong endpoint). Server-side tagging is typically adopted specifically to improve match quality and survive ad blockers/ITP — if the routing silently drops or drifts to a stale URL, the site reverts to client-side-only delivery without any visible error, and the reliability gains the client is expecting simply aren't happening.",
     recommended_owner: 'Tag Manager Team',
     fix_summary:
-      'Open the GA4 Config tag in GTM and enable "Send to server container", pointing it at the verified endpoint. Confirm the endpoint URL matches the one verified in Atlas (Client → Platform Configuration), then re-export the container and re-run this check.',
+      'Open the GA4 Config tag in GTM, enable "Send to server container", and set the Server Container URL to the exact address this finding\'s evidence names (Atlas\'s own verified endpoint for this client — Client → Platform Configuration). If routing was already enabled but pointed at a different URL, update it to match rather than assuming it was intentional. Re-export the container and re-run this check to confirm.',
     estimated_effort: 'low',
   },
 };

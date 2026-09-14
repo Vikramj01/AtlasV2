@@ -185,4 +185,61 @@ describe('SGTM_ROUTING_NOT_CONFIGURED', () => {
     const result = SGTM_ROUTING_NOT_CONFIGURED.test(makeAuditData({ gtmContainer: container, sgtmVerified: true }));
     expect(result.status).toBe('pass');
   });
+
+  // ── Sprint 7 (C8 remainder, item 3): diagnosis → remediation ────────────────
+
+  it('names the exact expected serverContainerUrl when routing is missing and the endpoint is known', () => {
+    const tag = makeGa4ConfigTag('googtag', {
+      parameter: [{ type: 'BOOLEAN', key: 'enableSendToServerContainer', value: 'false' }],
+    });
+    const container = makeContainer([tag]);
+    const result = SGTM_ROUTING_NOT_CONFIGURED.test(
+      makeAuditData({ gtmContainer: container, sgtmVerified: true, client_sgtm_endpoint_url: 'https://sgtm.example.com' }),
+    );
+    expect(result.status).toBe('fail');
+    expect(result.technical_details.evidence.join(' ')).toContain('https://sgtm.example.com');
+    expect(result.technical_details.expected).toContain('https://sgtm.example.com');
+  });
+
+  it('falls back to the generic finding when routing is missing and no endpoint URL is known', () => {
+    const tag = makeGa4ConfigTag('googtag', {
+      parameter: [{ type: 'BOOLEAN', key: 'enableSendToServerContainer', value: 'false' }],
+    });
+    const container = makeContainer([tag]);
+    const result = SGTM_ROUTING_NOT_CONFIGURED.test(
+      makeAuditData({ gtmContainer: container, sgtmVerified: true }),
+    );
+    expect(result.status).toBe('fail');
+    expect(result.technical_details.evidence[0]).not.toContain('https://');
+  });
+
+  it('flags routing pointed at a stale/wrong serverContainerUrl even though enableSendToServerContainer is true (drift)', () => {
+    const tag = makeGa4ConfigTag('googtag', {
+      parameter: [
+        { type: 'BOOLEAN', key: 'enableSendToServerContainer', value: 'true' },
+        { type: 'TEMPLATE', key: 'serverContainerUrl', value: 'https://old-sgtm.example.com' },
+      ],
+    });
+    const container = makeContainer([tag]);
+    const result = SGTM_ROUTING_NOT_CONFIGURED.test(
+      makeAuditData({ gtmContainer: container, sgtmVerified: true, client_sgtm_endpoint_url: 'https://sgtm.example.com' }),
+    );
+    expect(result.status).toBe('fail');
+    expect(result.technical_details.evidence.join(' ')).toContain('old-sgtm.example.com');
+    expect(result.technical_details.evidence.join(' ')).toContain('sgtm.example.com');
+  });
+
+  it('passes when routing is enabled and serverContainerUrl matches the verified endpoint exactly', () => {
+    const tag = makeGa4ConfigTag('googtag', {
+      parameter: [
+        { type: 'BOOLEAN', key: 'enableSendToServerContainer', value: 'true' },
+        { type: 'TEMPLATE', key: 'serverContainerUrl', value: 'https://sgtm.example.com' },
+      ],
+    });
+    const container = makeContainer([tag]);
+    const result = SGTM_ROUTING_NOT_CONFIGURED.test(
+      makeAuditData({ gtmContainer: container, sgtmVerified: true, client_sgtm_endpoint_url: 'https://sgtm.example.com' }),
+    );
+    expect(result.status).toBe('pass');
+  });
 });

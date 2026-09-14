@@ -927,6 +927,10 @@ ihcRulesQueue.process(2, async (job) => {
   // Resolve the connection's client (if any) to look up a verified sGTM endpoint —
   // SGTM_ROUTING_NOT_CONFIGURED needs this precomputed since rules stay synchronous.
   let sgtmVerified: boolean | undefined;
+  // The client's verified sGTM endpoint URL — SGTM_ROUTING_NOT_CONFIGURED
+  // needs this precomputed too, so its finding can name the exact expected
+  // value instead of only diagnosing that routing is off (Sprint 7, C8).
+  let clientSgtmEndpointUrl: string | undefined;
   const { data: connection } = await supabaseAdmin
     .from('gtm_container_connections')
     .select('client_id')
@@ -941,11 +945,13 @@ ihcRulesQueue.process(2, async (job) => {
   if (connectionClientId) {
     const { data: sgtmPlatform } = await supabaseAdmin
       .from('client_platforms')
-      .select('is_verified')
+      .select('is_verified, measurement_id')
       .eq('client_id', connectionClientId)
       .eq('platform', 'sgtm')
       .maybeSingle();
-    sgtmVerified = (sgtmPlatform as { is_verified: boolean } | null)?.is_verified ?? false;
+    const sgtmRow = sgtmPlatform as { is_verified: boolean; measurement_id: string | null } | null;
+    sgtmVerified = sgtmRow?.is_verified ?? false;
+    clientSgtmEndpointUrl = sgtmVerified ? (sgtmRow?.measurement_id ?? undefined) : undefined;
 
     const { data: client } = await supabaseAdmin
       .from('clients')
@@ -985,6 +991,7 @@ ihcRulesQueue.process(2, async (job) => {
     gtmContainer: containerSnapshot,
     sgtmVerified,
     client_secondary_domains: clientSecondaryDomains,
+    client_sgtm_endpoint_url: clientSgtmEndpointUrl,
   };
   const passingRuleIds: string[] = [];
   const failingFindings: import('@/services/ihc/findingsWriter').FindingInput[] = [];
