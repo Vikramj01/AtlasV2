@@ -1,3 +1,11 @@
+/**
+ * Reconciliation sync — Google Ads REST API (account/config/read operations:
+ * conversion action + campaign/ad-group config sync via GAQL search). Not
+ * the Data Manager API — that's a separate API, with a separate version
+ * lifecycle, used only for offline conversion ingestion/delivery
+ * (googleDelivery.ts, googleOfflineUpload.ts). See adsApiVersion.ts for the
+ * version this imports and the outage history behind why it's centralized.
+ */
 import { supabaseAdmin } from '@/services/database/supabase';
 import { resolveTokens } from '@/services/connections/tokenManager';
 import { env } from '@/config/env';

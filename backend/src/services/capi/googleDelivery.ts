@@ -4,6 +4,11 @@
  * Sends conversion events to the Google Data Manager API:
  *   POST https://datamanager.googleapis.com/v1/events:ingest
  *
+ * DMA (offline conversion ingestion/delivery) is a distinct API from Google
+ * Ads REST (account/config/read operations, GAQL — googleAdsSync.ts,
+ * connectionTester.ts, etc., all versioned via adsApiVersion.ts). See
+ * connectionTester.ts's header comment for the full responsibility split.
+ *
  * Handles:
  *   - Payload formatting from AtlasEvent → DMAEvent (via dmaEventBuilder.ts,
  *     shared with googleOfflineUpload.ts)
@@ -12,8 +17,10 @@
  *   - validateOnly mode for test events
  *
  * The live events:ingest response only confirms submission (requestId +
- * fieldWarnings) — it does not return per-event delivered/failed status.
- * See sendGoogleEvents()'s inline comment for the resulting scope boundary.
+ * fieldWarnings) — it does not return per-event delivered/failed status
+ * synchronously. See sendGoogleEvents()'s inline comment for how that
+ * requestId is captured; real per-event confirmation is a separate, bounded
+ * async follow-up against requestStatus:retrieve (googleDeliveryConfirmation.ts).
  */
 
 import type {

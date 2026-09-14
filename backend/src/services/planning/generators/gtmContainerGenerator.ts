@@ -9,12 +9,21 @@
  *   Folders:   "Atlas — Configuration", "Atlas — Conversion Events", etc.
  *   Triggers:  "CE - [event_name]"  (Custom Event)
  *   Variables: "DLV - [path]"       (Data Layer Variable)
- *              "CJS - SHA256 Hash"  (Custom JavaScript)
  *   Tags:      "GA4 - Config", "GA4 - [event_name]", "Meta - Purchase", etc.
  *
  * NOTE: this generator is deliberately distinct from gtmDataLayer.ts which
  * produces human-readable code snippets. This generator produces machine-readable
  * import JSON.
+ *
+ * Google Stack Alignment sprint plan, Sprint 6 (C7): a "CJS - SHA256 Hash"
+ * Custom JavaScript variable used to ship here — it normalised its input and
+ * returned it back UNHASHED (`return input; // TODO: implement SHA-256
+ * hashing`), and nothing generated anywhere in this codebase ever referenced
+ * it. Deleted rather than fixed: GTM/Google Ads' own supported hashing
+ * (Enhanced Conversions auto-hashes plaintext email/phone client-side; no
+ * generated tag needs pre-hashed input). Only reintroduce a custom hashing
+ * variable if a concrete generated path genuinely needs pre-hashed input,
+ * and if so, implement the hash properly rather than shipping another stub.
  */
 import type { PlanningRecommendation, PlanningSession } from '@/types/planning';
 import type { IREvent, IRParameter, IRTrigger, ActionType, BusinessType, Platform } from './ir.types';
@@ -61,6 +70,8 @@ export interface GTMTagDef {
   consentSettings?: GTMConsentSettings;
   fingerprint: string;
   tagManagerUrl: string;
+  /** Human-readable notes shown in the GTM UI (visible in tag settings). */
+  notes?: string;
 }
 
 export interface GTMTriggerDef {
@@ -350,28 +361,6 @@ export function generateGTMContainer(
     folderId: FOLDER.VARIABLES,
   });
 
-  // CJS - SHA256 Hash (for Enhanced Conversions / Meta CAPI)
-  const sha256VarId = varIds.next();
-  variables.push({
-    ...stub(),
-    variableId: sha256VarId,
-    name: 'CJS - SHA256 Hash',
-    type: 'jsm',
-    parameter: [
-      tmpl('javascript', `function() {
-  // Returns a SHA-256 hash of a string value
-  // Used by Google Ads Enhanced Conversions and Meta CAPI
-  var input = arguments[0];
-  if (!input) return '';
-  input = input.toLowerCase().trim();
-  // Requires a CryptoJS or SubtleCrypto implementation
-  // Replace with your preferred hashing library
-  return input; // TODO: implement SHA-256 hashing
-}`),
-    ],
-    folderId: FOLDER.VARIABLES,
-  });
-
   // ── Atlas dedup variables (added when Meta is selected) ──────────────────
   // These power the browser-first dedup flow: Event ID is generated per tag
   // fire (not per page load) and passed to Meta Pixel + the Atlas Signal Tag.
@@ -502,9 +491,16 @@ export function generateGTMContainer(
 
   // User data DLVs — only when Google Ads is selected (Enhanced Conversions).
   // For other setups, user_data DLVs are created on-demand via the per-event ensureDlv loop.
+  // first_name/last_name/postal_code/country added in Sprint 6 (C6) alongside
+  // email/phone — see renderGoogleAdsConversionTag()'s own header comment for
+  // the verification caveat on these four.
   if (hasGoogleAds) {
     ensureDlv('user_data.email');
     ensureDlv('user_data.phone_number');
+    ensureDlv('user_data.first_name');
+    ensureDlv('user_data.last_name');
+    ensureDlv('user_data.postal_code');
+    ensureDlv('user_data.country');
   }
 
   // ── All Pages trigger ─────────────────────────────────────────────────────

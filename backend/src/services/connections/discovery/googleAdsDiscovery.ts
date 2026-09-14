@@ -1,3 +1,9 @@
+/**
+ * Post-OAuth account discovery — Google Ads REST API (account/config/read
+ * operations: GAQL customer_client enumeration). Not the Data Manager API —
+ * see connectionTester.ts's header comment for the full responsibility
+ * split and adsApiVersion.ts for version history.
+ */
 import { env } from '@/config/env';
 import type { OAuthTokens, DiscoveredAccount, PlatformConnectionPublic } from '@/types/connections';
 import { GOOGLE_ADS_API_VERSION } from '@/integrations/google/adsApiVersion';

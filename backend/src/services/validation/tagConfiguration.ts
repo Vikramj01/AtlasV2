@@ -38,8 +38,9 @@ const MARKETING_TAG_TYPES = new Set([
   'fls',    // Floodlight Sales
   // GA4
   'ga4_event',
-  'gaawe',  // GA4 (older template name)
-  'gaawc',  // GA4 Config
+  'gaawe',   // GA4 (older template name)
+  'gaawc',   // GA4 Config (legacy — Atlas itself now generates 'googtag')
+  'googtag', // Google tag (unified GA4/Ads config, replaces gaawc)
   // Meta
   'fbt',    // Facebook Pixel (template)
   // LinkedIn
@@ -458,6 +459,7 @@ const REQUIRED_CONSENT_TYPES: Partial<Record<string, string[]>> = {
   ga4_event: ['analytics_storage'],
   gaawe:     ['analytics_storage'],
   gaawc:     ['analytics_storage'],
+  googtag:   ['analytics_storage'],
   fbt:       ['ad_storage', 'ad_user_data'],
   lia:       ['ad_storage'],
   tktk:      ['ad_storage'],
@@ -703,13 +705,36 @@ export const FRAGILE_CSS_SELECTOR_TRIGGER = {
 
 // ── 5.12 GA4_CROSS_DOMAIN_LINKING_MISSING ────────────────────────────────────
 //
-// Fires when the container has a GA4 Config tag (gaawc) with no linked_domains
-// parameter AND the container also has click triggers or custom event triggers
-// whose names/conditions reference a different hostname — a reliable signal that
-// the site routes users across domains without a linker configured.
+// Fires on either of two independent GA4-level cross-domain gaps:
+//   1. Domain decoration missing: the container has a GA4 Config tag with no
+//      linked_domains parameter AND the container also has click triggers or
+//      custom event triggers whose names/conditions reference a different
+//      hostname — a reliable signal that the site routes users across
+//      domains without a linker configured.
+//   2. Declared-vs-actual domain mismatch (Google Stack Alignment sprint
+//      plan, Sprint 4/C5): the client has told Atlas about secondary domains
+//      (clients.secondary_domains) that the GA4 tag's actual linked_domains
+//      list doesn't cover. This check is deliberately independent of both
+//      (1) and of whether a Google Ads Conversion Linker (gclidw) tag exists
+//      at all — GA4-level cross-domain measurement (linked_domains) and
+//      Google Ads' own linker are separate mechanisms serving separate
+//      platforms, so a present-and-correct gclidw tag says nothing about
+//      whether GA4 itself is configured for the same domains.
+//
+// Not yet cross-referenced against live GA4 Admin API state (would confirm
+// the property's own configured cross-domain measurement settings) — no
+// such integration exists in this codebase yet; this rule can only compare
+// what's declared in Atlas (client_secondary_domains) against what's
+// actually in the scanned container.
+//
+// Accepts either 'gaawc' (legacy) or 'googtag' (current) as a GA4 Config
+// tag — Sprint 4 migrated Atlas's own generator to googtag, but this rule
+// must keep auditing existing clients' legacy gaawc containers correctly.
 //
 // Severity: high — silent session splits corrupt funnel data and attribution
 // without any visible error.
+
+const GA4_CONFIG_TAG_TYPES = new Set(['gaawc', 'googtag']);
 
 function hasOutboundClickTrigger(auditData: AuditData): boolean {
   const triggers = auditData.gtmContainer?.triggers ?? [];
@@ -742,7 +767,7 @@ export const GA4_CROSS_DOMAIN_LINKING_MISSING = {
   test(auditData: AuditData): ValidationResult {
     if (!auditData.gtmContainer) return skippedResult(this.rule_id);
 
-    const ga4ConfigTags = auditData.gtmContainer.tags.filter((t) => t.type === 'gaawc');
+    const ga4ConfigTags = auditData.gtmContainer.tags.filter((t) => GA4_CONFIG_TAG_TYPES.has(t.type));
 
     if (ga4ConfigTags.length === 0) {
       return {
@@ -751,7 +776,7 @@ export const GA4_CROSS_DOMAIN_LINKING_MISSING = {
         status: 'skipped',
         severity: this.severity,
         technical_details: {
-          found: 'No GA4 Config tag (gaawc) present in container',
+          found: 'No GA4 Config tag (gaawc or googtag) present in container',
           expected: 'A GA4 Config tag with linked_domains configured if cross-domain links exist',
           evidence: ['Rule skipped — no GA4 Config tag found'],
         },
@@ -759,19 +784,35 @@ export const GA4_CROSS_DOMAIN_LINKING_MISSING = {
     }
 
     const violations: string[] = [];
+    const expectedDomains = auditData.client_secondary_domains ?? [];
 
     for (const tag of ga4ConfigTags) {
       const linkedDomainsParam = tag.parameter?.find((p) => p.key === 'linked_domains');
-      const hasLinkedDomains =
+      const linkedDomains =
         linkedDomainsParam !== undefined &&
         linkedDomainsParam.type === 'LIST' &&
-        Array.isArray(linkedDomainsParam.list) &&
-        linkedDomainsParam.list.length > 0;
+        Array.isArray(linkedDomainsParam.list)
+          ? (linkedDomainsParam.list as Array<{ value?: string }>)
+              .map((item) => item.value)
+              .filter((v): v is string => typeof v === 'string')
+          : [];
+      const hasLinkedDomains = linkedDomains.length > 0;
 
       if (!hasLinkedDomains && hasOutboundClickTrigger(auditData)) {
         violations.push(
-          `"${tag.name}" (gaawc): no linked_domains configured but outbound click triggers are present — sessions will reset at the domain handoff`,
+          `"${tag.name}" (${tag.type}): no linked_domains configured but outbound click triggers are present — sessions will reset at the domain handoff`,
         );
+      }
+
+      // Declared-vs-actual mismatch — independent of the trigger-based check
+      // above and of whether a Google Ads Conversion Linker tag exists.
+      if (expectedDomains.length > 0) {
+        const missing = expectedDomains.filter((d) => !linkedDomains.includes(d));
+        if (missing.length > 0) {
+          violations.push(
+            `"${tag.name}" (${tag.type}): client-declared secondary domain(s) [${missing.join(', ')}] not present in linked_domains — GA4 will not preserve client_id across the handoff to ${missing.length > 1 ? 'these domains' : 'this domain'}, regardless of any Google Ads Conversion Linker configuration`,
+          );
+        }
       }
     }
 
@@ -782,8 +823,8 @@ export const GA4_CROSS_DOMAIN_LINKING_MISSING = {
         status: 'fail',
         severity: this.severity,
         technical_details: {
-          found: `${violations.length} GA4 Config tag${violations.length > 1 ? 's' : ''} missing linked_domains`,
-          expected: 'GA4 Config tag lists all secondary domains in linked_domains so the client_id cookie is passed across the handoff',
+          found: `${violations.length} GA4 Config tag issue${violations.length > 1 ? 's' : ''} found`,
+          expected: 'GA4 Config tag lists every client-declared secondary domain in linked_domains so the client_id cookie is passed across the handoff',
           evidence: violations,
         },
       };
@@ -795,8 +836,8 @@ export const GA4_CROSS_DOMAIN_LINKING_MISSING = {
       status: 'pass',
       severity: this.severity,
       technical_details: {
-        found: 'GA4 Config tag has linked_domains configured or no outbound click triggers detected',
-        expected: 'linked_domains present when outbound cross-domain links exist',
+        found: 'GA4 Config tag has linked_domains configured, covers every client-declared secondary domain, and no undecorated outbound click triggers were detected',
+        expected: 'linked_domains present and covering every client-declared secondary domain',
         evidence: ['No cross-domain tracking gap detected'],
       },
     };
@@ -915,6 +956,23 @@ export const META_CROSS_DOMAIN_FBCLID_MISSING = {
 // still real and still worth flagging. A client with no verified sGTM
 // endpoint is never flagged — there is nothing to check routing against.
 //
+// Google Stack Alignment sprint plan, Sprint 7 (C8 remainder, item 3): this
+// rule used to stop at diagnosing that routing was off. It now also checks
+// the routed tag's serverContainerUrl against the client's own verified
+// endpoint (client_platforms.measurement_id — threaded in as
+// AuditData.client_sgtm_endpoint_url by worker.ts, same "resolve outside,
+// read inside" pattern as sgtmVerified) and names the exact expected URL in
+// the finding, so the fix is "set serverContainerUrl to <this value>"
+// instead of a generic "point it at the verified endpoint" that never says
+// which one. A tag with routing enabled but pointed at a stale/wrong URL is
+// now its own violation — previously it would have silently passed. Both
+// parameters (enableSendToServerContainer/serverContainerUrl) are fields
+// Atlas already generates (gtmContainerGenerator.ts); no new GTM schema is
+// introduced. Server-container tag generation (Google destinations routed
+// inside the sGTM container itself) and separate web/server linker rules
+// remain out of scope for this rule and are not built anywhere in Atlas yet
+// — both are gated on live GTM schema verification per the plan.
+//
 // Severity: high — a silently-dropped server-container route means events
 // fall back to client-side delivery (or are lost) with no visible error.
 
@@ -941,7 +999,7 @@ export const SGTM_ROUTING_NOT_CONFIGURED = {
       };
     }
 
-    const ga4ConfigTags = auditData.gtmContainer.tags.filter((t) => t.type === 'gaawc');
+    const ga4ConfigTags = auditData.gtmContainer.tags.filter((t) => GA4_CONFIG_TAG_TYPES.has(t.type));
 
     if (ga4ConfigTags.length === 0) {
       return {
@@ -950,20 +1008,29 @@ export const SGTM_ROUTING_NOT_CONFIGURED = {
         status: 'skipped',
         severity: this.severity,
         technical_details: {
-          found: 'No GA4 Config tag (gaawc) present in container',
+          found: 'No GA4 Config tag (gaawc or googtag) present in container',
           expected: 'A GA4 Config tag routing through the verified server-side GTM endpoint',
           evidence: ['Rule skipped — no GA4 Config tag found'],
         },
       };
     }
 
+    const expectedUrl = auditData.client_sgtm_endpoint_url;
     const violations: string[] = [];
 
     for (const tag of ga4ConfigTags) {
       const routed = paramValue(tag, 'enableSendToServerContainer') === 'true';
+      const actualUrl = paramValue(tag, 'serverContainerUrl');
+
       if (!routed) {
         violations.push(
-          `"${tag.name}" (gaawc): enableSendToServerContainer is absent or false, but this client has a verified server-side GTM endpoint on file`,
+          expectedUrl
+            ? `"${tag.name}" (${tag.type}): enableSendToServerContainer is absent or false — set it to true with serverContainerUrl "${expectedUrl}"`
+            : `"${tag.name}" (${tag.type}): enableSendToServerContainer is absent or false, but this client has a verified server-side GTM endpoint on file`,
+        );
+      } else if (expectedUrl && actualUrl !== expectedUrl) {
+        violations.push(
+          `"${tag.name}" (${tag.type}): routing is enabled but serverContainerUrl is "${actualUrl ?? '(not set)'}" — the client's verified endpoint is "${expectedUrl}"`,
         );
       }
     }
@@ -975,8 +1042,10 @@ export const SGTM_ROUTING_NOT_CONFIGURED = {
         status: 'fail',
         severity: this.severity,
         technical_details: {
-          found: `${violations.length} GA4 Config tag${violations.length > 1 ? 's' : ''} not routed through the verified server container`,
-          expected: 'GA4 Config tag has enableSendToServerContainer set to true when a verified server-side GTM endpoint is on file',
+          found: `${violations.length} GA4 Config tag${violations.length > 1 ? 's' : ''} not correctly routed through the verified server container`,
+          expected: expectedUrl
+            ? `GA4 Config tag has enableSendToServerContainer set to true and serverContainerUrl set to "${expectedUrl}"`
+            : 'GA4 Config tag has enableSendToServerContainer set to true when a verified server-side GTM endpoint is on file',
           evidence: violations,
         },
       };
@@ -989,7 +1058,9 @@ export const SGTM_ROUTING_NOT_CONFIGURED = {
       severity: this.severity,
       technical_details: {
         found: 'GA4 Config tag routes through the verified server-side GTM endpoint',
-        expected: 'enableSendToServerContainer set to true when a verified server-side GTM endpoint is on file',
+        expected: expectedUrl
+          ? `enableSendToServerContainer set to true with serverContainerUrl "${expectedUrl}"`
+          : 'enableSendToServerContainer set to true when a verified server-side GTM endpoint is on file',
         evidence: ['No server-side GTM routing gap detected'],
       },
     };

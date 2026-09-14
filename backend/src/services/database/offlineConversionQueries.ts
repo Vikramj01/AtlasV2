@@ -174,6 +174,69 @@ export async function setUploadCompleted(
   if (error) throw new Error(`Failed to mark upload as completed: ${error.message}`);
 }
 
+// ── Delivery confirmation (Sprint 8: requestStatus:retrieve polling) ────────
+// Batch-level truth only — see UploadResult.requestIds' comment for why
+// there is no per-row equivalent on this API.
+
+export async function setUploadRequestIds(uploadId: string, requestIds: string[]): Promise<void> {
+  if (requestIds.length === 0) return;
+  const { error } = await supabase
+    .from('offline_conversion_uploads')
+    .update({ provider_request_ids: requestIds })
+    .eq('id', uploadId);
+
+  if (error) throw new Error(`Failed to persist upload request IDs: ${error.message}`);
+}
+
+export interface UploadForConfirmation {
+  id: string;
+  organization_id: string;
+  config_id: string;
+  status: OfflineUploadStatus;
+  provider_request_ids: string[] | null;
+  delivery_poll_attempts: number;
+}
+
+/** No org filter — called from the confirmation poll worker (service role), not a user-facing route. */
+export async function getUploadForConfirmation(uploadId: string): Promise<UploadForConfirmation | null> {
+  const { data, error } = await supabase
+    .from('offline_conversion_uploads')
+    .select('id, organization_id, config_id, status, provider_request_ids, delivery_poll_attempts')
+    .eq('id', uploadId)
+    .maybeSingle();
+
+  if (error) throw new Error(`Failed to load upload for confirmation: ${error.message}`);
+  return data as UploadForConfirmation | null;
+}
+
+/**
+ * Escalate-only: only ever downgrades 'completed' to 'partial' when a
+ * bounded confirmation poll reveals a real failure the synchronous upload
+ * response didn't catch — mirrors the org health_level convention
+ * (Ecommerce Signal Completeness Sprint 1) rather than inventing a new
+ * pattern. Never upgrades an already-'partial'/'failed' status back toward
+ * 'completed' — the caller decides whether to downgrade before calling this.
+ */
+export async function updateUploadDeliveryConfirmation(
+  uploadId: string,
+  update: {
+    downgradeToPartial: boolean;
+    delivery_confirmation: unknown;
+    delivery_poll_attempts: number;
+    confirmed: boolean;
+  },
+): Promise<void> {
+  const patch: Record<string, unknown> = {
+    delivery_confirmation: update.delivery_confirmation ?? null,
+    delivery_poll_attempts: update.delivery_poll_attempts,
+    delivery_confirmed_at: update.confirmed ? new Date().toISOString() : undefined,
+  };
+  if (update.downgradeToPartial) patch.status = 'partial';
+
+  const { error } = await supabase.from('offline_conversion_uploads').update(patch).eq('id', uploadId);
+  if (error) throw new Error(`Failed to update upload delivery confirmation: ${error.message}`);
+}
+
 export async function listUploads(
   organizationId: string,
   page: number,

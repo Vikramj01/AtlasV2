@@ -35,7 +35,9 @@ import {
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 /** GTM tag types that are platform measurement tags — must have consent applied. */
-const PLATFORM_TAG_TYPES = new Set(['gaawc', 'gaawe', 'awct', 'gclidw']);
+// 'gaawc' is legacy — Atlas generates 'googtag' now (Sprint 4) but this rule
+// also runs against previously-generated outputs still on file.
+const PLATFORM_TAG_TYPES = new Set(['googtag', 'gaawc', 'gaawe', 'awct', 'gclidw']);
 
 /** HTML tag name prefixes that identify platform measurement tags. */
 const PLATFORM_HTML_PREFIXES = ['Meta -', 'TikTok -', 'LinkedIn -'];

@@ -236,6 +236,10 @@ export interface CreateCAPIEventInput {
   dedup_matched_at?: string | null;
   // Canonical Event Identity: which platform-native field event_id was written into.
   native_id_field?: string | null;
+  // Google Stack Alignment sprint plan, Sprint 8: events:ingest's requestId,
+  // when provider === 'google' and submission succeeded — see CAPIEvent's
+  // matching field comment (types/capi.ts).
+  provider_request_id?: string | null;
 }
 
 export async function createCAPIEvent(input: CreateCAPIEventInput): Promise<CAPIEvent> {
@@ -273,6 +277,49 @@ export async function updateCAPIEventStatus(
     .eq('id', eventId);
 
   if (error) throw new Error(`Failed to update CAPI event status: ${error.message}`);
+}
+
+// ── Delivery confirmation (Sprint 8: requestStatus:retrieve polling) ────────
+
+export interface CAPIEventForConfirmation {
+  id: string;
+  provider_config_id: string;
+  organization_id: string;
+  provider_request_id: string | null;
+  delivery_poll_attempts: number;
+}
+
+export async function getCAPIEventForConfirmation(eventId: string): Promise<CAPIEventForConfirmation | null> {
+  const { data, error } = await supabase
+    .from('capi_events')
+    .select('id, provider_config_id, organization_id, provider_request_id, delivery_poll_attempts')
+    .eq('id', eventId)
+    .maybeSingle();
+
+  if (error) throw new Error(`Failed to load CAPI event for confirmation: ${error.message}`);
+  return data as CAPIEventForConfirmation | null;
+}
+
+export async function updateCAPIEventDeliveryConfirmation(
+  eventId: string,
+  update: {
+    delivery_confirmed_status?: 'confirmed_success' | 'confirmed_partial' | 'confirmed_failed' | 'poll_exhausted';
+    delivery_confirmation?: unknown;
+    delivery_poll_attempts: number;
+    confirmed: boolean; // true on a terminal outcome — stamps delivery_confirmed_at
+  },
+): Promise<void> {
+  const { error } = await supabase
+    .from('capi_events')
+    .update({
+      delivery_confirmed_status: update.delivery_confirmed_status ?? null,
+      delivery_confirmation: update.delivery_confirmation ?? null,
+      delivery_poll_attempts: update.delivery_poll_attempts,
+      delivery_confirmed_at: update.confirmed ? new Date().toISOString() : undefined,
+    })
+    .eq('id', eventId);
+
+  if (error) throw new Error(`Failed to update CAPI event delivery confirmation: ${error.message}`);
 }
 
 // ── Deduplication check ───────────────────────────────────────────────────────

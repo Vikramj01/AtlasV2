@@ -246,3 +246,49 @@ export interface DMAApiError {
   status: string;
   details?: unknown[];
 }
+
+// ── requestStatus:retrieve (Google Stack Alignment sprint plan, Sprint 8) ──
+//
+// GET v1/requestStatus:retrieve?requestId=<IngestEventsResponse.requestId>
+// Verified against the same live Discovery Document (revision 20260904) as
+// the rest of this file. This is the only way to learn what actually
+// happened to a batch after events:ingest's 2xx, which confirms submission
+// only (requestId + fieldWarnings — field-level validation warnings caught
+// before processing, not delivery outcome).
+//
+// Important scope limit found during verification, not assumed: the
+// response is aggregated per destination by error/warning REASON with a
+// recordCount — there is no per-event or per-row identifier anywhere in
+// this schema. For a request that batched N>1 events/rows together (as
+// googleOfflineUpload.ts's 2,000-row batches do), a FAILED/PARTIAL_SUCCESS
+// destination tells you how many records hit each reason, never which ones.
+// Atlas's live CAPI pipeline (pipeline.ts's deliverToProvider) always calls
+// sendGoogleEvents with a single-event array, so for that path alone one
+// requestId does map to exactly one Atlas event — offline batches remain
+// batch-level truth only.
+export type DMARequestStatus = 'REQUEST_STATUS_UNKNOWN' | 'SUCCESS' | 'PROCESSING' | 'FAILED' | 'PARTIAL_SUCCESS';
+
+export interface DMAErrorCount {
+  reason: string; // PROCESSING_ERROR_REASON_* enum — kept as string, not a closed union, since the live list is 40+ values and growing
+  recordCount?: string; // int64 wire format — Google's client libraries return this as a string
+}
+
+export interface DMAWarningCount {
+  reason: string; // PROCESSING_WARNING_REASON_* enum, same string-not-union rationale as DMAErrorCount
+  recordCount?: string;
+}
+
+export interface DMARequestStatusPerDestination {
+  destination?: DMADestination;
+  requestStatus?: DMARequestStatus;
+  eventsIngestionStatus?: { recordCount?: string };
+  errorInfo?: { errorCounts?: DMAErrorCount[] };
+  warningInfo?: { warningCounts?: DMAWarningCount[] };
+  // audienceMembersIngestionStatus / audienceMembersRemovalStatus exist on
+  // the live schema too but are irrelevant to events:ingest confirmation —
+  // not declared here since nothing in Atlas reads them from this endpoint.
+}
+
+export interface DMARetrieveRequestStatusResponse {
+  requestStatusPerDestination?: DMARequestStatusPerDestination[];
+}

@@ -160,12 +160,11 @@ describe('buildGTMContainer — sitewide Google tag architecture parity with Pla
     expect(result.errors).toEqual([]);
   });
 
-  it('emits the real gaawc/gclidw tag types, not the previous flc/googtag mislabels', () => {
+  it('emits the real googtag/gclidw tag types (Sprint 4 migration), not the previous flc mislabel', () => {
     const types = container.containerVersion.tag.map((t) => t.type);
-    expect(types).toContain('gaawc');
+    expect(types).toContain('googtag');
     expect(types).toContain('gclidw');
     expect(types).not.toContain('flc');
-    expect(types).not.toContain('googtag');
   });
 
   it('GA4 Config and Conversion Linker are structurally IDENTICAL to what Planning produces for the same destinations', () => {
@@ -192,6 +191,20 @@ describe('buildGTMContainer — sitewide Google tag architecture parity with Pla
     const linkerTag = findTag(container.containerVersion.tag, 'Google Ads - Conversion Linker');
     expect(flattenParams(linkerTag.parameter).enableCrossDomainLinking).toBe('true');
     expect(flattenParams(linkerTag.parameter).domains).toEqual(['checkout.acme.example.com']);
+  });
+});
+
+describe('buildGTMContainer — Sprint 5 (C4) linker decision engine parity with Planning', () => {
+  it('suppresses the Conversion Linker for a single-domain client, same as Planning', () => {
+    const client = makeClient({
+      secondary_domains: [],
+      platforms: [makePlatform('ga4', 'G-ACME12345'), makePlatform('google_ads', 'AW-999888777')],
+    });
+    const container = buildGTMContainer(client, [], null);
+    expect(container.containerVersion.tag.some((t) => t.type === 'gclidw')).toBe(false);
+    // The CONST variable is created unconditionally by buildGoogleTagInfrastructure()
+    // regardless of the linker decision (Planning's per-event awct tags depend on it).
+    expect(container.containerVersion.variable.some((v) => v.name === 'CONST - Google Ads Conversion ID')).toBe(true);
   });
 });
 
@@ -247,6 +260,54 @@ describe('buildGTMContainer — per-signal tags use real GTM parameter names', (
   });
 
   it('is fully schema-valid end to end', () => {
+    expect(validateGTMContainer(container).errors).toEqual([]);
+  });
+});
+
+describe('buildGTMContainer — Sprint 6 (C6): per-signal Enhanced Conversions from real client identity config', () => {
+  const client = makeClient({
+    platforms: [makePlatform('ga4', 'G-ACME12345'), makePlatform('google_ads', 'AW-999888777/LaBeL1')],
+  });
+  const signal = makeSignal({
+    key: 'purchase',
+    category: 'conversion',
+    platform_mappings: {
+      google_ads: { event_name: 'conversion', param_mapping: { value: 'ecommerce.value', currency: 'ecommerce.currency' } },
+    },
+  });
+
+  it('adds enhancedConversionsEnabled + userData params only for fields this client actually has configured', () => {
+    const identityConfig = makeIdentityConfig({
+      email_field: 'user.email',
+      phone_field: null,
+      first_name_field: 'user.firstName',
+      last_name_field: null,
+      postal_code_field: null,
+      country_field: null,
+    });
+    const container = buildGTMContainer(client, [makeSignalWithOverrides(signal)], identityConfig);
+    const tag = findTag(container.containerVersion.tag, 'Atlas — Google Ads: Purchase');
+    const params = flattenParams(tag.parameter);
+    expect(params.enhancedConversionsEnabled).toBe('true');
+    expect(params.userDataEmail).toBe('{{DLV - user.email}}');
+    expect(params.userDataFirstName).toBe('{{DLV - user.firstName}}');
+    expect(params).not.toHaveProperty('userDataPhoneNumber');
+    expect(params).not.toHaveProperty('userDataLastName');
+    expect(params).not.toHaveProperty('userDataPostalCode');
+    expect(params).not.toHaveProperty('userDataCountry');
+  });
+
+  it('never requires a field this client does not have — no identity config at all means no Enhanced Conversions params', () => {
+    const container = buildGTMContainer(client, [makeSignalWithOverrides(signal)], null);
+    const tag = findTag(container.containerVersion.tag, 'Atlas — Google Ads: Purchase');
+    const params = flattenParams(tag.parameter);
+    expect(params).not.toHaveProperty('enhancedConversionsEnabled');
+    expect(params).not.toHaveProperty('userDataEmail');
+  });
+
+  it('still passes the schema validator with Enhanced Conversions params present', () => {
+    const identityConfig = makeIdentityConfig({ email_field: 'user.email' });
+    const container = buildGTMContainer(client, [makeSignalWithOverrides(signal)], identityConfig);
     expect(validateGTMContainer(container).errors).toEqual([]);
   });
 });

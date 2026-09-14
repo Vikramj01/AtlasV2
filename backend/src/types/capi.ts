@@ -235,6 +235,16 @@ export interface CAPIEvent {
   error_message: string | null;
   processed_at: string;
   delivered_at: string | null;
+  // Google Stack Alignment sprint plan, Sprint 8: the Data Manager API's
+  // events:ingest requestId, when the provider is 'google' and submission
+  // succeeded — used to poll requestStatus:retrieve for real delivery
+  // confirmation (googleDeliveryConfirmation.ts). Null for every other
+  // provider and for a failed submission (nothing to poll).
+  provider_request_id?: string | null;
+  delivery_confirmed_status?: 'confirmed_success' | 'confirmed_partial' | 'confirmed_failed' | 'poll_exhausted' | null;
+  delivery_confirmation?: unknown | null;
+  delivery_confirmed_at?: string | null;
+  delivery_poll_attempts?: number;
 }
 
 // --- Atlas Event (from WalkerOS pipeline) ---

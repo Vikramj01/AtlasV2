@@ -6,6 +6,11 @@
 // Auth: reuses resolveTokens() from the existing platform_connections OAuth
 // flow. Google Ads tokens already carry the adwords scope from the combined
 // consent screen in googleAdsOAuth.ts — no re-auth needed.
+//
+// Uses the Google Ads REST API (account/config/read operations — GAQL) via
+// adsApiVersion.ts's shared version constant. Not the Data Manager API —
+// see connectionTester.ts's header comment for the full responsibility
+// split.
 
 import { supabaseAdmin } from '@/services/database/supabase';
 import { resolveTokens } from '@/services/connections/tokenManager';

@@ -44,6 +44,34 @@ function nextId(): string {
   return String(++idCounter);
 }
 
+// Google Stack Alignment sprint plan, Sprint 6 (C6): Enhanced Conversions
+// params for the per-signal Google Ads awct tag, built only from identity
+// fields this specific client actually has configured — unlike Planning's
+// generator (which has no per-client identity data at generation time and
+// so always emits fixed dataLayer-path references), Composable Signals
+// generates against a real connected client, so "must not require fields a
+// client does not have" is enforced literally here rather than by relying
+// on an unpopulated dataLayer path resolving empty. References the same
+// `DLV - {fieldPath}` variables buildIdentityVariables() already created —
+// never creates a duplicate variable for the same field.
+function buildEnhancedConversionsParams(identityConfig: ClientIdentityConfig | null): GTMParameter[] {
+  if (!identityConfig) return [];
+  const fields: Array<{ fieldPath: string | null; key: string }> = [
+    { fieldPath: identityConfig.email_field, key: 'userDataEmail' },
+    { fieldPath: identityConfig.phone_field, key: 'userDataPhoneNumber' },
+    { fieldPath: identityConfig.first_name_field, key: 'userDataFirstName' },
+    { fieldPath: identityConfig.last_name_field, key: 'userDataLastName' },
+    { fieldPath: identityConfig.postal_code_field, key: 'userDataPostalCode' },
+    { fieldPath: identityConfig.country_field, key: 'userDataCountry' },
+  ];
+  const configured = fields.filter((f) => f.fieldPath);
+  if (configured.length === 0) return [];
+  return [
+    bool('enhancedConversionsEnabled', 'true'),
+    ...configured.map((f) => tmpl(f.key, `{{DLV - ${f.fieldPath}}}`)),
+  ];
+}
+
 function buildIdentityVariables(identityConfig: ClientIdentityConfig): GTMVariableDef[] {
   const fields: Array<{ fieldPath: string | null; label: string }> = [
     { fieldPath: identityConfig.email_field, label: 'email' },
@@ -72,6 +100,10 @@ function buildIdentityVariables(identityConfig: ClientIdentityConfig): GTMVariab
 
 function tmpl(key: string, value: string): GTMParameter {
   return { type: 'TEMPLATE', key, value };
+}
+
+function bool(key: string, value: string): GTMParameter {
+  return { type: 'BOOLEAN', key, value };
 }
 
 function metaPixelHtml(pixelId: string, event: 'PageView' | string, custom = false): string {
@@ -210,6 +242,7 @@ export function buildGTMContainer(
             tmpl('conversionLabel', conversionId.split('/')[1] ?? ''),
             tmpl('conversionValue', `{{DLV - ${adsMappings.param_mapping?.['value'] ?? 'value'}}}`),
             tmpl('currencyCode', `{{DLV - ${adsMappings.param_mapping?.['currency'] ?? 'currency'}}}`),
+            ...buildEnhancedConversionsParams(identityConfig),
           ],
           firingTriggerId: [signalTriggerId],
           tagFiringOption: 'oncePerEvent',

@@ -182,3 +182,60 @@ export function evaluateDMAAlert(input: DMAAlertInput): AlertEvalResult {
   }
   return { decision: 'none', severity: null, title: '', message: '' };
 }
+
+// ── Google delivery confirmation evaluation (Sprint 8, C8 delivery confirmation) ─
+//
+// Unlike GTG/DMA/sGTM (a recurring per-org probe with a "current state"),
+// this fires once per finalized requestStatus:retrieve confirmation — each
+// live CAPI event or offline batch that Atlas actually sent to Google. There
+// is no natural "current state" to re-poll on a schedule, so the same
+// open/update/resolve shape is driven by each confirmation outcome instead:
+// a confirmed failure/partial opens or refreshes one rolled-up per-org
+// alert (never one alert per event — that would flood health_alerts), and a
+// confirmed success feeds the same consecutive-ok/resolve path the caller
+// already uses for GTG/DMA/sGTM. poll_exhausted deliberately reports 'none'
+// either way — running out of bounded polling attempts while Google was
+// still PROCESSING is not evidence of failure, so it neither opens nor
+// counts toward resolving an alert.
+
+export type GoogleDeliveryConfirmationOutcome =
+  | 'confirmed_success'
+  | 'confirmed_partial'
+  | 'confirmed_failed'
+  | 'poll_exhausted';
+
+export interface GoogleDeliveryAlertInput {
+  outcome: GoogleDeliveryConfirmationOutcome;
+  reasons: string[]; // error/warning reason strings from DMARequestStatusPerDestination, for the alert message
+  existingAlertActive: boolean;
+}
+
+export function evaluateGoogleDeliveryAlert(input: GoogleDeliveryAlertInput): AlertEvalResult {
+  const { outcome, reasons, existingAlertActive } = input;
+
+  if (outcome === 'poll_exhausted') {
+    return { decision: 'none', severity: null, title: '', message: '' };
+  }
+
+  if (outcome === 'confirmed_failed') {
+    const reasonList = reasons.length > 0 ? ` (${reasons.join(', ')})` : '';
+    const message = `Google confirmed a conversion delivery failure${reasonList}. This event was submitted successfully but rejected during processing — it will not appear in Google Ads/GA4.`;
+    return existingAlertActive
+      ? { decision: 'update', severity: 'critical', title: 'Google Delivery Confirmed Failed', message }
+      : { decision: 'open', severity: 'critical', title: 'Google Delivery Confirmed Failed', message };
+  }
+
+  if (outcome === 'confirmed_partial') {
+    const reasonList = reasons.length > 0 ? ` (${reasons.join(', ')})` : '';
+    const message = `Google confirmed a partial delivery failure${reasonList} — some records in a batch were rejected during processing while others succeeded.`;
+    return existingAlertActive
+      ? { decision: 'update', severity: 'warning', title: 'Google Delivery Partially Confirmed', message }
+      : { decision: 'open', severity: 'warning', title: 'Google Delivery Partially Confirmed', message };
+  }
+
+  // confirmed_success
+  if (existingAlertActive) {
+    return { decision: 'resolve', severity: null, title: '', message: '' };
+  }
+  return { decision: 'none', severity: null, title: '', message: '' };
+}

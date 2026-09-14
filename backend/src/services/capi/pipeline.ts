@@ -26,6 +26,7 @@ import type {
 } from '@/types/capi';
 import { safeDecryptCredentials } from './credentials';
 import { isEventDuplicate, createCAPIEvent, incrementProviderCounters } from '@/services/database/capiQueries';
+import { googleDeliveryConfirmationQueue } from '@/services/queue/jobQueue';
 import { getClientIdentityConfig, listSignalEnrichmentConfigs } from '@/services/database/enrichmentQueries';
 import { applyIdentityConfig, applySignalEnrichment } from '@/services/enrichment/enrichmentConfigService';
 import { sendMetaEvents, checkUserParamCompleteness } from './metaDelivery';
@@ -311,9 +312,20 @@ async function runFromDedup(
   const result = results[0];
   const delivered = result.status === 'delivered';
 
+  // Google Stack Alignment sprint plan, Sprint 8: events:ingest's 2xx (what
+  // 'delivered' means here) only confirms submission — capture the
+  // requestId so a follow-up bounded poll can learn the real outcome via
+  // requestStatus:retrieve (googleDeliveryConfirmation.ts). Every other
+  // provider's delivery model already returns a real per-event result from
+  // its own API, so this is Google-only.
+  const googleRequestId =
+    provider === 'google' && delivered
+      ? (result.provider_response as { requestId?: string } | null)?.requestId ?? null
+      : null;
+
   // 6. Log event
   const mapping = resolveProviderEvent(event.event_name, event_mapping);
-  await createCAPIEvent({
+  const capiEvent = await createCAPIEvent({
     provider_config_id: providerId,
     organization_id,
     atlas_event_id: event.event_id,
@@ -331,7 +343,23 @@ async function runFromDedup(
     dedup_key: result.dedup_key ?? null,
     dedup_matched_at: result.dedup_matched_at ?? null,
     native_id_field: result.event_id ? (NATIVE_ID_FIELD[provider] ?? null) : null,
+    provider_request_id: googleRequestId,
   });
+
+  if (googleRequestId && capiEvent?.id) {
+    // Bounded delay before the first poll — Google's own processing isn't
+    // instantaneous. Fire-and-forget: a failure to enqueue must never fail
+    // the delivery itself, since the event already delivered successfully
+    // from Atlas's side.
+    void googleDeliveryConfirmationQueue
+      .add({ capi_event_id: capiEvent.id, poll_attempt: 1 }, { delay: 5 * 60 * 1000 })
+      .catch((err) => {
+        logger.error(
+          { err: err instanceof Error ? err.message : String(err), capiEventId: capiEvent.id },
+          'Failed to enqueue Google delivery confirmation poll',
+        );
+      });
+  }
 
   // 7. Counters
   await incrementProviderCounters(providerId, delivered ? 1 : 0, delivered ? 0 : 1);

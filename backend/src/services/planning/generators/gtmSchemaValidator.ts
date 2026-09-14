@@ -88,13 +88,13 @@ export function validateGTMContainer(json: unknown): GTMValidationResult {
     warnings.push('Missing recommended tag: Atlas - Consent Mode v2 Update');
   }
 
-  const hasGA4Config = tags.some((t) => t.type === 'googtag' || (t.name ?? '').includes('GA4'));
+  const hasGA4Config = tags.some((t) => t.type === 'googtag' || t.type === 'gaawc' || (t.name ?? '').includes('GA4'));
   if (!hasGA4Config) {
     warnings.push('No GA4 configuration tag found — add one if GA4 is a target platform');
   }
 
   // 5. At least one event tag (beyond config)
-  const configTagTypes = new Set(['html', 'googtag', 'flc']);
+  const configTagTypes = new Set(['html', 'googtag', 'gaawc', 'flc']);
   const eventTags = tags.filter((t) => !configTagTypes.has(t.type ?? ''));
   if (eventTags.length === 0) {
     warnings.push('No event tags found — generate outputs from at least one approved recommendation');

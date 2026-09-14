@@ -3,10 +3,17 @@
  *
  * Safety net for Sprints 3-6 (canonical Google tag architecture, gaawc→googtag
  * migration, linker decision engine, User-Provided Data/SHA-256 removal). Per
- * docs/atlas-sprint-plan-google-stack-alignment.md, these fixtures are captured
- * against CURRENT (pre-migration) generator output — the generator emits
- * legacy `gaawc`/`gclidw` today, not `googtag` — so a later sprint has a real
- * before/after diff instead of discovering drift after the fact.
+ * docs/atlas-sprint-plan-google-stack-alignment.md, these fixtures were
+ * originally captured against PRE-Sprint-4 generator output (the generator
+ * emitted legacy `gaawc`/`gclidw`, not `googtag`) so Sprint 4 would have a
+ * real before/after diff instead of discovering drift after the fact.
+ *
+ * Sprint 4 has since landed: the assertions below were updated in the same
+ * change that migrated the generator (see `googleTagArchitecture.ts`) — that
+ * diff itself IS the documented before/after record this suite exists to
+ * enable. `gaawc` is preserved as a legacy READ-side type (every audit/
+ * consent/validator path that recognises tags still accepts it) — see
+ * Scenario F below and `tagConfiguration.crossDomain.test.ts` for that.
  *
  * Deliberately structural, not raw snapshots (that's the gap the sprint plan
  * calls out in C9): each scenario asserts exact tag TYPE, exact parameter
@@ -17,18 +24,20 @@
  * assertions loudly.
  *
  * One fixture (see `realGtmExport.fixture.json`) is a hand-built container
- * shaped like a genuine GTM Admin API export — used for the `googtag` and
- * "mid-migration" (gaawc + googtag coexisting) architectural scenarios the
- * CURRENT generator cannot itself produce, since Atlas has never emitted
- * `googtag` before Sprint 4. Its schema (exportFormatVersion, containerVersion,
- * tag/trigger/variable field names and the specific tag `type` codes used) is
- * built from this codebase's own established knowledge of the GTM export
- * format (see gtmContainerGenerator.ts's GTMContainerJSON type and the real
- * `gaawc`/`gclidw`/`awct`/`flc` type codes already load-bearing elsewhere in
- * this repo), not a fresh live pull — developers.google.com/support.google.com
+ * shaped like a genuine GTM Admin API export — used for the `googtag` +
+ * legacy-`gaawc`-coexisting "mid-migration" architectural scenario a real
+ * client's own container can be in even after Atlas's generator has moved
+ * on. Its schema (exportFormatVersion, containerVersion, tag/trigger/
+ * variable field names and the specific tag `type` codes used) is built from
+ * this codebase's own established knowledge of the GTM export format (see
+ * gtmContainerGenerator.ts's GTMContainerJSON type and the real `gaawc`/
+ * `gclidw`/`awct`/`flc` type codes already load-bearing elsewhere in this
+ * repo), not a fresh live pull — developers.google.com/support.google.com
  * are network-blocked in this sandbox (same caveat as the sprint plan's own
- * verification note). Re-verify against an actual exported container before
- * treating its exact field shape as ground truth for Sprint 3/4 work.
+ * verification note, and as `googleTagArchitecture.ts`'s own header comment
+ * on the `googtag` schema specifically). Re-verify against an actual
+ * exported container before treating its exact field shape as ground truth
+ * for Sprint 5/6 work.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
@@ -126,7 +135,7 @@ function resolveFiringTriggers(container: GTMContainerJSON, tag: GTMTagDef) {
 // Sprint 4 ships googtag. This scenario is what that migration must preserve
 // or deliberately change.
 
-describe('Scenario: legacy single-domain (GA4 + Google Ads, no cross-domain, no sGTM)', () => {
+describe('Scenario: single-domain baseline (GA4 + Google Ads, no cross-domain, no sGTM)', () => {
   const session = makeSession('lead_gen', ['ga4', 'google_ads']);
   const recs: PlanningRecommendation[] = [
     makeRec('r1', 'p1', 'page_view', 'page_view', [], [], ['ga4']),
@@ -140,17 +149,18 @@ describe('Scenario: legacy single-domain (GA4 + Google Ads, no cross-domain, no 
     expect(result.errors).toEqual([]);
   });
 
-  it('GA4 Config tag is type "gaawc" with no server-container or cross-domain params', () => {
+  it('GA4 Config tag is type "googtag" (Sprint 4 migration) with no server-container or cross-domain params', () => {
     const tag = findTagByName(container, 'GA4 - Config');
-    expect(tag.type).toBe('gaawc');
+    expect(tag.type).toBe('googtag');
     const params = flattenParams(tag.parameter);
     expect(params).toEqual({
-      measurementId: '{{CONST - GA4 Measurement ID}}',
+      tagId: '{{CONST - GA4 Measurement ID}}',
       sendPageView: 'true',
       enableSendToServerContainer: 'false',
     });
     expect(params).not.toHaveProperty('serverContainerUrl');
     expect(params).not.toHaveProperty('linked_domains');
+    expect(params).not.toHaveProperty('measurementId');
   });
 
   it('GA4 Config fires on a PAGEVIEW-type "All Pages" trigger', () => {
@@ -161,16 +171,15 @@ describe('Scenario: legacy single-domain (GA4 + Google Ads, no cross-domain, no 
     expect(triggers[0].name).toBe('All Pages');
   });
 
-  it('Conversion Linker tag is type "gclidw" with cross-domain flags off', () => {
-    const tag = findTagByName(container, 'Google Ads - Conversion Linker');
-    expect(tag.type).toBe('gclidw');
-    const params = flattenParams(tag.parameter);
-    expect(params).toEqual({
-      enableCrossDomainLinking: 'false',
-      autoLinkDomains: 'false',
-      decorateFormsOption: 'false',
-    });
-    expect(params).not.toHaveProperty('domains');
+  it('Sprint 5 (C4): no standalone Conversion Linker tag — the sitewide googtag already covers single-domain click-ID capture', () => {
+    const names = container.containerVersion.tag.map((t) => t.name);
+    expect(names).not.toContain('Google Ads - Conversion Linker');
+    expect(container.containerVersion.tag.some((t) => t.type === 'gclidw')).toBe(false);
+  });
+
+  it('CONST - Google Ads Conversion ID variable still exists even with no Conversion Linker tag (awct tags depend on it)', () => {
+    const variable = container.containerVersion.variable.find((v) => v.name === 'CONST - Google Ads Conversion ID');
+    expect(variable).toBeDefined();
   });
 
   it('Google Ads conversion tag ("awct") always carries enhanced-conversions params', () => {
@@ -228,12 +237,40 @@ describe('Scenario: sGTM-enabled (platformIds.server_container_url set)', () => 
     expect(params.enableSendToServerContainer).toBe('true');
     expect(params.serverContainerUrl).toBe('https://sgtm.example.com');
   });
+
+  it('Sprint 5 (C4): still emits the Conversion Linker despite a single-domain googtag being present — sGTM routing needs its own client-side linker', () => {
+    const tag = findTagByName(container, 'Google Ads - Conversion Linker');
+    expect(tag.type).toBe('gclidw');
+    expect(tag.notes).toContain('Server-side GTM routing');
+  });
+});
+
+// ── Scenario C2: no sitewide Google tag (Google Ads only, no GA4) ────────────
+// Sprint 5 (C4): decision-engine case #2 — with no googtag on the page to
+// auto-capture click IDs, the Conversion Linker must still be emitted.
+
+describe('Scenario: no sitewide Google tag (Google Ads selected, GA4 not selected)', () => {
+  const session = makeSession('lead_gen', ['google_ads']);
+  const recs: PlanningRecommendation[] = [
+    makeRec('r1', 'p1', 'generate_lead', 'generate_lead', ['form_id'], [], ['google_ads']),
+  ];
+  const container = generateGTMContainer(recs, session);
+
+  it('emits the Conversion Linker since there is no sitewide googtag to cover click-ID capture', () => {
+    expect(container.containerVersion.tag.some((t) => t.name === 'GA4 - Config')).toBe(false);
+    const tag = findTagByName(container, 'Google Ads - Conversion Linker');
+    expect(tag.type).toBe('gclidw');
+    expect(tag.notes).toContain('No sitewide Google tag is present');
+  });
 });
 
 // ── Scenario D: enhanced conversions with full identity params ───────────────
-// Sprint 6 (C6) moves enhanced-conversions data to User-Provided Data at the
-// Google tag level — this fixture is what the per-tag `awct` shape looks like
-// BEFORE that migration, so Sprint 6 has a concrete before state.
+// Sprint 6 (C6/C7): the per-tag `awct` Enhanced Conversions params now cover
+// email/phone/first_name/last_name/postal_code/country (the conservative,
+// already-proven per-tag pattern — not the site-level "User-Provided Data"
+// architecture the sprint plan's literal wording describes; see
+// gtm.renderer.ts's header comment for why), and the unhashed CJS - SHA256
+// Hash stub is gone entirely.
 
 describe('Scenario: enhanced conversions (ecommerce purchase, email+phone captured)', () => {
   const session = makeSession('ecommerce', ['ga4', 'google_ads']);
@@ -253,15 +290,18 @@ describe('Scenario: enhanced conversions (ecommerce purchase, email+phone captur
     expect(params.userDataPhoneNumber).toBe('{{DLV - user_data.phone_number}}');
   });
 
-  it('still ships the unhashed CJS - SHA256 Hash stub (C7 target for removal)', () => {
+  it('Sprint 6 (C6): also maps first_name/last_name/postal_code/country beyond email/phone', () => {
+    const tag = findTagByName(container, 'Google Ads - purchase Conversion');
+    const params = flattenParams(tag.parameter);
+    expect(params.userDataFirstName).toBe('{{DLV - user_data.first_name}}');
+    expect(params.userDataLastName).toBe('{{DLV - user_data.last_name}}');
+    expect(params.userDataPostalCode).toBe('{{DLV - user_data.postal_code}}');
+    expect(params.userDataCountry).toBe('{{DLV - user_data.country}}');
+  });
+
+  it('Sprint 6 (C7): the unhashed CJS - SHA256 Hash stub no longer ships', () => {
     const variable = container.containerVersion.variable.find((v) => v.name === 'CJS - SHA256 Hash');
-    expect(variable).toBeDefined();
-    const jsParam = variable!.parameter.find((p) => p.key === 'javascript');
-    // Locks in the exact bug Sprint 6/C7 must fix: this returns the input
-    // UNHASHED. If this ever starts returning a real hash without a
-    // corresponding sprint plan update, this assertion should change
-    // deliberately — not silently pass.
-    expect(jsParam?.value).toContain('return input; // TODO: implement SHA-256 hashing');
+    expect(variable).toBeUndefined();
   });
 });
 

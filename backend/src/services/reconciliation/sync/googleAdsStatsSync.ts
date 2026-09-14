@@ -1,3 +1,9 @@
+/**
+ * Reconciliation stats sync — Google Ads REST API (account/config/read
+ * operations: conversion volume via GAQL search). Not the Data Manager
+ * API — see googleAdsSync.ts's header comment for the full responsibility
+ * split and adsApiVersion.ts for version history.
+ */
 import { supabaseAdmin } from '@/services/database/supabase';
 import { resolveTokens } from '@/services/connections/tokenManager';
 import { env } from '@/config/env';

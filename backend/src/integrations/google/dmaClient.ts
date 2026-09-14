@@ -1,3 +1,19 @@
+/**
+ * Google Data Manager API (DMA) HTTP client — the audience-member side
+ * (audienceMembers:ingest/remove, consumed by enricherService.ts's Customer
+ * Match push and customerMatch.ts's refund-driven audience removal). The
+ * events:ingest side of the same API has its own inline HTTP calls in
+ * googleDelivery.ts/googleOfflineUpload.ts rather than routing through here
+ * — not consolidated in this pass, noted as a possible follow-up rather
+ * than a same-sprint refactor.
+ *
+ * DMA is a distinct API from Google Ads REST (account/config/read
+ * operations, GAQL) with its own version lifecycle — see dmaTypes.ts's
+ * header for the schema-verification history and
+ * connectionTester.ts's header for the full responsibility split. There is
+ * no DMA equivalent of adsApiVersion.ts to import here; DMA's version is
+ * fixed in DMA_BASE_URL below.
+ */
 import { supabaseAdmin } from '@/services/database/supabase';
 import { resolveTokens, refreshGoogleToken } from '@/services/connections/tokenManager';
 import { env } from '@/config/env';

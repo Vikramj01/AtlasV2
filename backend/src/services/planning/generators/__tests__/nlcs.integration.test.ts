@@ -138,7 +138,7 @@ describe('Lead gen pipeline — end-to-end validation', () => {
   });
 
   it('GTM container contains a GA4 configuration tag', () => {
-    const ga4Config = gtmContainer.containerVersion.tag.find(t => t.type === 'gaawc');
+    const ga4Config = gtmContainer.containerVersion.tag.find(t => t.type === 'googtag');
     expect(ga4Config).toBeDefined();
   });
 
@@ -596,7 +596,7 @@ describe('Platform-conditional tag generation', () => {
 
 describe('GA4 Config tag sGTM routing', () => {
   function ga4ConfigTag(container: ReturnType<typeof generateGTMContainer>) {
-    return container.containerVersion.tag.find(t => t.type === 'gaawc')!;
+    return container.containerVersion.tag.find(t => t.type === 'googtag')!;
   }
   function paramValue(tag: ReturnType<typeof ga4ConfigTag>, key: string) {
     return tag.parameter.find(p => p.key === key)?.value;

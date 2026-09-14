@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { evaluateGTGAlert, evaluateDMAAlert, evaluateSgtmAlert } from '../dqmAlertEvaluator';
+import { evaluateGTGAlert, evaluateDMAAlert, evaluateSgtmAlert, evaluateGoogleDeliveryAlert } from '../dqmAlertEvaluator';
 
 // ── evaluateGTGAlert ──────────────────────────────────────────────────────────
 
@@ -241,5 +241,65 @@ describe('evaluateDMAAlert', () => {
       const r = evaluateDMAAlert({ ...BASE_DMA, existingAlertActive: true });
       expect(r.decision).toBe('resolve');
     });
+  });
+});
+
+// ── evaluateGoogleDeliveryAlert ────────────────────────────────────────────────
+
+describe('evaluateGoogleDeliveryAlert', () => {
+  it('confirmed_failed, no existing alert → open critical', () => {
+    const r = evaluateGoogleDeliveryAlert({
+      outcome: 'confirmed_failed',
+      reasons: ['PROCESSING_ERROR_REASON_INVALID_GCLID'],
+      existingAlertActive: false,
+    });
+    expect(r.decision).toBe('open');
+    expect(r.severity).toBe('critical');
+    expect(r.message).toContain('PROCESSING_ERROR_REASON_INVALID_GCLID');
+  });
+
+  it('confirmed_failed, existing alert → update critical', () => {
+    const r = evaluateGoogleDeliveryAlert({
+      outcome: 'confirmed_failed',
+      reasons: [],
+      existingAlertActive: true,
+    });
+    expect(r.decision).toBe('update');
+    expect(r.severity).toBe('critical');
+  });
+
+  it('confirmed_partial, no existing alert → open warning', () => {
+    const r = evaluateGoogleDeliveryAlert({
+      outcome: 'confirmed_partial',
+      reasons: ['PROCESSING_WARNING_REASON_INTERNAL_ERROR'],
+      existingAlertActive: false,
+    });
+    expect(r.decision).toBe('open');
+    expect(r.severity).toBe('warning');
+  });
+
+  it('confirmed_success, no existing alert → none', () => {
+    const r = evaluateGoogleDeliveryAlert({
+      outcome: 'confirmed_success',
+      reasons: [],
+      existingAlertActive: false,
+    });
+    expect(r.decision).toBe('none');
+  });
+
+  it('confirmed_success, existing alert → resolve', () => {
+    const r = evaluateGoogleDeliveryAlert({
+      outcome: 'confirmed_success',
+      reasons: [],
+      existingAlertActive: true,
+    });
+    expect(r.decision).toBe('resolve');
+  });
+
+  it('poll_exhausted → none, regardless of existing alert state (ambiguity is never evidence of failure)', () => {
+    const r1 = evaluateGoogleDeliveryAlert({ outcome: 'poll_exhausted', reasons: [], existingAlertActive: false });
+    const r2 = evaluateGoogleDeliveryAlert({ outcome: 'poll_exhausted', reasons: [], existingAlertActive: true });
+    expect(r1.decision).toBe('none');
+    expect(r2.decision).toBe('none');
   });
 });
