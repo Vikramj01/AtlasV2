@@ -838,6 +838,20 @@ export interface AuditData {
   // (e.g. an org-level GTM connection not linked to a specific client).
   sgtmVerified?: boolean;
   /**
+   * The client's recorded secondary domains (clients.secondary_domains),
+   * resolved by the caller before rules run — same "resolve outside, read
+   * inside" pattern as sgtmVerified above. Used by
+   * GA4_CROSS_DOMAIN_LINKING_MISSING (tag_configuration layer) to flag a
+   * genuine mismatch between the domains the client has told Atlas about and
+   * what the scanned GTM container's GA4 tag actually lists in
+   * linked_domains — independent of whether a Google Ads Conversion Linker
+   * tag is present, since GA4-level cross-domain measurement and Google
+   * Ads' own linker are separate mechanisms (Google Stack Alignment sprint
+   * plan, Sprint 4/C5). Undefined when the connection has no associated
+   * client_id, same as sgtmVerified.
+   */
+  client_secondary_domains?: string[];
+  /**
    * The org's Naming Conventions config (services/signals/namingConvention.ts),
    * resolved by the caller before rules run — same "resolve outside, read
    * inside" pattern as sgtmVerified/connected_gtm_container_id above. Used

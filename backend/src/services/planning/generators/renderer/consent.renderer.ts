@@ -3,7 +3,7 @@
  *
  * Rules:
  *   - Platform measurement tags must NEVER have consentStatus: 'notSet'
- *   - GA4 tags (gaawc, gaawe) → 'needed', analytics_storage
+ *   - GA4 tags (googtag, gaawc legacy, gaawe) → 'needed', analytics_storage
  *   - Ads tags (awct, gclidw, Meta/TikTok/LinkedIn HTML) → 'needed', ad_storage + ad_user_data + ad_personalization
  *   - Infrastructure tags (html consent, click ID, UTM) → 'notNeeded'
  */
@@ -14,8 +14,10 @@ export interface ConsentSettings {
   consentStatus: 'needed' | 'notNeeded';
 }
 
-/** GTM tag types that require analytics_storage consent. */
-const ANALYTICS_TAG_TYPES = new Set(['gaawc', 'gaawe']);
+/** GTM tag types that require analytics_storage consent. 'gaawc' is legacy —
+ *  Atlas generates 'googtag' now, but still classifies gaawc correctly when
+ *  auditing/reading an existing client's older container. */
+const ANALYTICS_TAG_TYPES = new Set(['googtag', 'gaawc', 'gaawe']);
 
 /** GTM tag types that require ad_storage consent. */
 const ADS_TAG_TYPES = new Set(['awct', 'gclidw']);

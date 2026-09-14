@@ -42,6 +42,7 @@ const TAG_TYPE_TO_SIGNAL_TYPES: Partial<Record<string, string[]>> = {
   ga4_event: ['ga4_event'],
   gaawe:     ['ga4_event'],
   gaawc:     ['ga4_base'],
+  googtag:   ['ga4_base'],
   fbt:       ['meta_pixel'],
   lia:       ['linkedin_insight'],
   tktk:      ['tiktok_pixel'],

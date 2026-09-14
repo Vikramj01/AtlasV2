@@ -933,6 +933,10 @@ ihcRulesQueue.process(2, async (job) => {
     .eq('id', (snap as { connection_id: string }).connection_id)
     .single();
 
+  // Resolve the client's own declared secondary domains — GA4_CROSS_DOMAIN_
+  // LINKING_MISSING needs this precomputed for the same reason (rules stay
+  // synchronous).
+  let clientSecondaryDomains: string[] | undefined;
   const connectionClientId = (connection as { client_id: string | null } | null)?.client_id;
   if (connectionClientId) {
     const { data: sgtmPlatform } = await supabaseAdmin
@@ -942,6 +946,13 @@ ihcRulesQueue.process(2, async (job) => {
       .eq('platform', 'sgtm')
       .maybeSingle();
     sgtmVerified = (sgtmPlatform as { is_verified: boolean } | null)?.is_verified ?? false;
+
+    const { data: client } = await supabaseAdmin
+      .from('clients')
+      .select('secondary_domains')
+      .eq('id', connectionClientId)
+      .maybeSingle();
+    clientSecondaryDomains = (client as { secondary_domains: string[] | null } | null)?.secondary_domains ?? undefined;
   }
 
   // Dynamically import tag_configuration rules (registered in Sprint A2)
@@ -973,6 +984,7 @@ ihcRulesQueue.process(2, async (job) => {
     injected: { gclid: '', fbclid: '' },
     gtmContainer: containerSnapshot,
     sgtmVerified,
+    client_secondary_domains: clientSecondaryDomains,
   };
   const passingRuleIds: string[] = [];
   const failingFindings: import('@/services/ihc/findingsWriter').FindingInput[] = [];

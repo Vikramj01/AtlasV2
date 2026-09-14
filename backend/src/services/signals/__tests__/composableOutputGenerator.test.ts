@@ -160,12 +160,11 @@ describe('buildGTMContainer — sitewide Google tag architecture parity with Pla
     expect(result.errors).toEqual([]);
   });
 
-  it('emits the real gaawc/gclidw tag types, not the previous flc/googtag mislabels', () => {
+  it('emits the real googtag/gclidw tag types (Sprint 4 migration), not the previous flc mislabel', () => {
     const types = container.containerVersion.tag.map((t) => t.type);
-    expect(types).toContain('gaawc');
+    expect(types).toContain('googtag');
     expect(types).toContain('gclidw');
     expect(types).not.toContain('flc');
-    expect(types).not.toContain('googtag');
   });
 
   it('GA4 Config and Conversion Linker are structurally IDENTICAL to what Planning produces for the same destinations', () => {

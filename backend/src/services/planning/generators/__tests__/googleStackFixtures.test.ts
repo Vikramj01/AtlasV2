@@ -3,10 +3,17 @@
  *
  * Safety net for Sprints 3-6 (canonical Google tag architecture, gaawc→googtag
  * migration, linker decision engine, User-Provided Data/SHA-256 removal). Per
- * docs/atlas-sprint-plan-google-stack-alignment.md, these fixtures are captured
- * against CURRENT (pre-migration) generator output — the generator emits
- * legacy `gaawc`/`gclidw` today, not `googtag` — so a later sprint has a real
- * before/after diff instead of discovering drift after the fact.
+ * docs/atlas-sprint-plan-google-stack-alignment.md, these fixtures were
+ * originally captured against PRE-Sprint-4 generator output (the generator
+ * emitted legacy `gaawc`/`gclidw`, not `googtag`) so Sprint 4 would have a
+ * real before/after diff instead of discovering drift after the fact.
+ *
+ * Sprint 4 has since landed: the assertions below were updated in the same
+ * change that migrated the generator (see `googleTagArchitecture.ts`) — that
+ * diff itself IS the documented before/after record this suite exists to
+ * enable. `gaawc` is preserved as a legacy READ-side type (every audit/
+ * consent/validator path that recognises tags still accepts it) — see
+ * Scenario F below and `tagConfiguration.crossDomain.test.ts` for that.
  *
  * Deliberately structural, not raw snapshots (that's the gap the sprint plan
  * calls out in C9): each scenario asserts exact tag TYPE, exact parameter
@@ -17,18 +24,20 @@
  * assertions loudly.
  *
  * One fixture (see `realGtmExport.fixture.json`) is a hand-built container
- * shaped like a genuine GTM Admin API export — used for the `googtag` and
- * "mid-migration" (gaawc + googtag coexisting) architectural scenarios the
- * CURRENT generator cannot itself produce, since Atlas has never emitted
- * `googtag` before Sprint 4. Its schema (exportFormatVersion, containerVersion,
- * tag/trigger/variable field names and the specific tag `type` codes used) is
- * built from this codebase's own established knowledge of the GTM export
- * format (see gtmContainerGenerator.ts's GTMContainerJSON type and the real
- * `gaawc`/`gclidw`/`awct`/`flc` type codes already load-bearing elsewhere in
- * this repo), not a fresh live pull — developers.google.com/support.google.com
+ * shaped like a genuine GTM Admin API export — used for the `googtag` +
+ * legacy-`gaawc`-coexisting "mid-migration" architectural scenario a real
+ * client's own container can be in even after Atlas's generator has moved
+ * on. Its schema (exportFormatVersion, containerVersion, tag/trigger/
+ * variable field names and the specific tag `type` codes used) is built from
+ * this codebase's own established knowledge of the GTM export format (see
+ * gtmContainerGenerator.ts's GTMContainerJSON type and the real `gaawc`/
+ * `gclidw`/`awct`/`flc` type codes already load-bearing elsewhere in this
+ * repo), not a fresh live pull — developers.google.com/support.google.com
  * are network-blocked in this sandbox (same caveat as the sprint plan's own
- * verification note). Re-verify against an actual exported container before
- * treating its exact field shape as ground truth for Sprint 3/4 work.
+ * verification note, and as `googleTagArchitecture.ts`'s own header comment
+ * on the `googtag` schema specifically). Re-verify against an actual
+ * exported container before treating its exact field shape as ground truth
+ * for Sprint 5/6 work.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
@@ -126,7 +135,7 @@ function resolveFiringTriggers(container: GTMContainerJSON, tag: GTMTagDef) {
 // Sprint 4 ships googtag. This scenario is what that migration must preserve
 // or deliberately change.
 
-describe('Scenario: legacy single-domain (GA4 + Google Ads, no cross-domain, no sGTM)', () => {
+describe('Scenario: single-domain baseline (GA4 + Google Ads, no cross-domain, no sGTM)', () => {
   const session = makeSession('lead_gen', ['ga4', 'google_ads']);
   const recs: PlanningRecommendation[] = [
     makeRec('r1', 'p1', 'page_view', 'page_view', [], [], ['ga4']),
@@ -140,17 +149,18 @@ describe('Scenario: legacy single-domain (GA4 + Google Ads, no cross-domain, no 
     expect(result.errors).toEqual([]);
   });
 
-  it('GA4 Config tag is type "gaawc" with no server-container or cross-domain params', () => {
+  it('GA4 Config tag is type "googtag" (Sprint 4 migration) with no server-container or cross-domain params', () => {
     const tag = findTagByName(container, 'GA4 - Config');
-    expect(tag.type).toBe('gaawc');
+    expect(tag.type).toBe('googtag');
     const params = flattenParams(tag.parameter);
     expect(params).toEqual({
-      measurementId: '{{CONST - GA4 Measurement ID}}',
+      tagId: '{{CONST - GA4 Measurement ID}}',
       sendPageView: 'true',
       enableSendToServerContainer: 'false',
     });
     expect(params).not.toHaveProperty('serverContainerUrl');
     expect(params).not.toHaveProperty('linked_domains');
+    expect(params).not.toHaveProperty('measurementId');
   });
 
   it('GA4 Config fires on a PAGEVIEW-type "All Pages" trigger', () => {
