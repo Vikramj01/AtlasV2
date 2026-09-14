@@ -29,6 +29,7 @@ import type {
   DMAIngestEventsRequest,
   DMAIngestEventsResponse,
 } from '@/integrations/google/dmaTypes';
+import { GOOGLE_ADS_API_VERSION } from '@/integrations/google/adsApiVersion';
 import logger from '@/utils/logger';
 
 // Row-level PII → DMA UserIdentifier[]. Offline rows only ever carry
@@ -46,12 +47,10 @@ function buildRowUserIdentifiers(hashedEmail: string | null, hashedPhone: string
 
 const DMA_BASE_URL = 'https://datamanager.googleapis.com/v1';
 // GAQL search stays on the Google Ads REST API (metadata lookup, not ingestion).
-// Google Ads API versions deprecate on a rolling ~annual cadence, same as
-// LinkedIn's (see LINKEDIN_VERSION in linkedinDelivery.ts). Not urgent today —
-// this is a read-only conversion-action lookup, not the ingestion path — but
-// track it on the same recurring version-currency check (M1/M3 in
-// ATLAS_CONVERSION_SIGNAL_LAYER_SPRINT_PLAN.md) rather than letting it drift.
-export const GOOGLE_ADS_API_VERSION = 'v17';
+// Version lives in adsApiVersion.ts (single source of truth for every Google
+// Ads call site) — re-exported here since refundDelivery.ts already imports
+// it across this module boundary alongside GOOGLE_ADS_API_BASE.
+export { GOOGLE_ADS_API_VERSION };
 export const GOOGLE_ADS_API_BASE = 'https://googleads.googleapis.com';
 const BATCH_SIZE = 2_000;
 const RETRY_DELAYS_MS = [30_000, 60_000, 120_000]; // PRD spec: 30s, 60s, 120s
@@ -79,6 +78,12 @@ export function cleanCustomerId(id: string): string {
   return id.replace(/-/g, '');
 }
 
+// As of Google's 2026 access-model change, access level attaches to the
+// Cloud project behind the OAuth client, not this header — the header is now
+// optional and ignored (Google has flagged it for removal in an unnamed
+// future major version, not yet). Decision: keep sending it. Removing it is
+// a separate change with its own risk and no current benefit, so it stays
+// until Google actually stops accepting it.
 export function buildGoogleAdsHeaders(creds: GoogleCredentials, accessToken: string): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',

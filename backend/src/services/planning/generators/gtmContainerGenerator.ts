@@ -31,6 +31,7 @@ import {
   renderStandardEventAliasTag,
   dlvPathForParam,
 } from './renderer/gtm.renderer';
+import { buildGoogleTagInfrastructure, buildAllPagesTrigger } from './renderer/googleTagArchitecture';
 import { buildMetaCrossDomainDecoratorScript } from '../../../utils/metaCrossDomainLinker';
 
 // ── GTM type interfaces ──────────────────────────────────────────────────────
@@ -508,13 +509,7 @@ export function generateGTMContainer(
 
   // ── All Pages trigger ─────────────────────────────────────────────────────
   const allPagesTrigId = trigIds.next();
-  triggers.push({
-    ...stub(),
-    triggerId: allPagesTrigId,
-    name: 'All Pages',
-    type: 'PAGEVIEW',
-    folderId: FOLDER.TRIGGERS,
-  });
+  triggers.push(buildAllPagesTrigger(allPagesTrigId, FOLDER.TRIGGERS));
 
   // ── Consent Mode v2 init tag ──────────────────────────────────────────────
   const consentTagId = tagIds.next();
@@ -911,89 +906,33 @@ export function generateGTMContainer(
     notes: 'Estimate only — prefer pushing an authoritative new_customer value from your own order history into the dataLayer when available.',
   });
 
-  // ── GA4 Config tag ─────────────────────────────────────────────────────────
-  // When platformIds.server_container_url is set (a verified sGTM endpoint on
-  // file — see GTMPlatformIds), routes traffic through it via
-  // enableSendToServerContainer + serverContainerUrl, the same two-parameter
-  // shape SGTM_ROUTING_NOT_CONFIGURED (tagConfiguration.ts) already checks
-  // for on a live container. Field names verified via secondary sources
+  // ── Sitewide Google tag architecture (GA4 Config + Conversion Linker) ────────
+  // Delegated to the canonical, shared renderer (googleTagArchitecture.ts) so
+  // this path and Composable Signals' buildGTMContainer() can never
+  // structurally diverge the way Correction 6 of the Google Stack Alignment
+  // sprint plan found them to (see that module's own header comment). Field
+  // names for sGTM routing verified via secondary sources
   // (developers.google.com/support.google.com are network-blocked in this
   // sandbox, matching the DMA/refund-CSV precedent elsewhere in this
   // codebase) — re-confirm against a live GTM export before relying on this
   // for a client with an unusual server-container setup.
-  if (hasGA4) {
-    const ga4ConfigId = tagIds.next();
-    tags.push({
-      ...stub(),
-      tagId: ga4ConfigId,
-      name: 'GA4 - Config',
-      type: 'gaawc',
-      parameter: [
-        tmpl('measurementId', '{{CONST - GA4 Measurement ID}}'),
-        bool('sendPageView', 'true'),
-        bool('enableSendToServerContainer', platformIds?.server_container_url ? 'true' : 'false'),
-        ...(platformIds?.server_container_url
-          ? [tmpl('serverContainerUrl', platformIds.server_container_url)]
-          : []),
-        ...(secondaryDomains.length > 0
-          ? [list('linked_domains', secondaryDomains)]
-          : []),
-      ],
-      firingTriggerId: [allPagesTrigId],
-      tagFiringOption: 'oncePerEvent',
+  const googleTagInfra = buildGoogleTagInfrastructure(
+    {
+      ga4: hasGA4 ? { measurementId: platformIds?.ga4 ?? 'G-XXXXXXXXXX' } : undefined,
+      googleAds: hasGoogleAds ? { conversionId: platformIds?.google_ads ?? 'AW-XXXXXXXXX' } : undefined,
+    },
+    {
+      allPagesTriggerId: allPagesTrigId,
+      secondaryDomains,
+      serverContainerUrl: platformIds?.server_container_url,
       folderId: FOLDER.CONFIG,
-      consentSettings: consentSettingsForTag('gaawc', ''),
-      fingerprint: '0',
-      tagManagerUrl: 'https://tagmanager.google.com/',
-    });
-
-    // GA4_MEASUREMENT_ID constant variable
-    const ga4VarId = varIds.next();
-    variables.push({
-      ...stub(),
-      variableId: ga4VarId,
-      name: 'CONST - GA4 Measurement ID',
-      type: 'c',
-      parameter: [tmpl('value', platformIds?.ga4 ?? 'G-XXXXXXXXXX')],
-      folderId: FOLDER.VARIABLES,
-    });
-  }
-
-  // ── Google Ads Conversion Linker ──────────────────────────────────────────
-  if (hasGoogleAds) {
-    const linkerTagId = tagIds.next();
-    tags.push({
-      ...stub(),
-      tagId: linkerTagId,
-      name: 'Google Ads - Conversion Linker',
-      type: 'gclidw',
-      parameter: [
-        bool('enableCrossDomainLinking', secondaryDomains.length > 0 ? 'true' : 'false'),
-        bool('autoLinkDomains', secondaryDomains.length > 0 ? 'true' : 'false'),
-        bool('decorateFormsOption', 'false'),
-        ...(secondaryDomains.length > 0
-          ? [list('domains', secondaryDomains)]
-          : []),
-      ],
-      firingTriggerId: [allPagesTrigId],
-      tagFiringOption: 'oncePerEvent',
-      folderId: FOLDER.CONFIG,
-      consentSettings: consentSettingsForTag('gclidw', ''),
-      fingerprint: '0',
-      tagManagerUrl: 'https://tagmanager.google.com/',
-    });
-
-    // Google Ads variables
-    const gadsVarId = varIds.next();
-    variables.push({
-      ...stub(),
-      variableId: gadsVarId,
-      name: 'CONST - Google Ads Conversion ID',
-      type: 'c',
-      parameter: [tmpl('value', platformIds?.google_ads ?? 'AW-XXXXXXXXX')],
-      folderId: FOLDER.VARIABLES,
-    });
-  }
+      variableFolderId: FOLDER.VARIABLES,
+      nextTagId: () => tagIds.next(),
+      nextVarId: () => varIds.next(),
+    },
+  );
+  tags.push(...googleTagInfra.tags);
+  variables.push(...googleTagInfra.variables);
 
   // ── Meta Base Pixel ──────────────────────────────────────────────────────
   if (hasMeta) {

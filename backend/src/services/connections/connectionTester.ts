@@ -2,8 +2,8 @@ import { env } from '@/config/env';
 import { resolveTokens } from './tokenManager';
 import { getConnectionById } from '@/services/database/connectionQueries';
 import type { Platform } from '@/types/connections';
+import { GOOGLE_ADS_API_VERSION as ADS_API_VERSION } from '@/integrations/google/adsApiVersion';
 
-const ADS_API_VERSION = 'v18';
 const GRAPH_BASE = 'https://graph.facebook.com/v19.0';
 const ADMIN_BASE = 'https://analyticsadmin.googleapis.com/v1beta';
 

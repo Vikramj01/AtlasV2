@@ -1,8 +1,9 @@
 import { supabaseAdmin } from '@/services/database/supabase';
 import { resolveTokens } from '@/services/connections/tokenManager';
 import { env } from '@/config/env';
+import { GOOGLE_ADS_API_VERSION } from '@/integrations/google/adsApiVersion';
 
-const GADS_BASE = 'https://googleads.googleapis.com/v18';
+const GADS_BASE = `https://googleads.googleapis.com/${GOOGLE_ADS_API_VERSION}`;
 
 interface ConversionRow {
   date: string;

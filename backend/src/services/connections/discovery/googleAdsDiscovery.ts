@@ -1,8 +1,8 @@
 import { env } from '@/config/env';
 import type { OAuthTokens, DiscoveredAccount, PlatformConnectionPublic } from '@/types/connections';
+import { GOOGLE_ADS_API_VERSION } from '@/integrations/google/adsApiVersion';
 
-const ADS_API_VERSION = 'v18';
-const ADS_BASE = `https://googleads.googleapis.com/${ADS_API_VERSION}`;
+const ADS_BASE = `https://googleads.googleapis.com/${GOOGLE_ADS_API_VERSION}`;
 
 // Runs the customer_client GAQL query against a Manager Account to enumerate
 // every directly-accessible child account (level <= 1 = immediate children only).

@@ -1,0 +1,177 @@
+{
+  "exportFormatVersion": 2,
+  "exportTime": "2026-06-01T00:00:00Z",
+  "containerVersion": {
+    "path": "accounts/1234567/containers/7654321/versions/12",
+    "accountId": "1234567",
+    "containerId": "7654321",
+    "containerVersionId": "12",
+    "name": "Live",
+    "description": "Fixture: a real client's container mid-way through Google's gtag.js/googtag migration guidance — carries both a legacy 'gaawc' GA4 config tag (not yet removed) and a new 'googtag' Google tag, plus a pre-existing 'flc' Floodlight Counter tag mislabeled by the client as their \"conversion linker\" (the real Google Ads conversion linker type is 'gclidw', which this export does not have). Hand-built for Sprint 2 of docs/atlas-sprint-plan-google-stack-alignment.md from this codebase's established GTM export schema knowledge — re-verify field names against a freshly pulled live export before relying on this for Sprint 3/4 generator work; developers.google.com is network-blocked in this sandbox.",
+    "container": {
+      "path": "accounts/1234567/containers/7654321",
+      "accountId": "1234567",
+      "containerId": "7654321",
+      "name": "example.com",
+      "publicId": "GTM-XXXXXXX",
+      "usageContext": ["WEB"],
+      "fingerprint": "1700000000000",
+      "tagManagerUrl": "https://tagmanager.google.com/#/container/accounts/1234567/containers/7654321/workspaces?apiLink=container"
+    },
+    "tag": [
+      {
+        "accountId": "1234567",
+        "containerId": "7654321",
+        "tagId": "1",
+        "name": "Google Tag - Config",
+        "type": "googtag",
+        "parameter": [
+          { "type": "TEMPLATE", "key": "tagId", "value": "G-ABC123XYZ" }
+        ],
+        "firingTriggerId": ["1"],
+        "tagFiringOption": "oncePerEvent",
+        "fingerprint": "1700000000001",
+        "tagManagerUrl": "https://tagmanager.google.com/"
+      },
+      {
+        "accountId": "1234567",
+        "containerId": "7654321",
+        "tagId": "2",
+        "name": "GA4 Configuration (Legacy - pending removal)",
+        "type": "gaawc",
+        "parameter": [
+          { "type": "TEMPLATE", "key": "measurementId", "value": "G-ABC123XYZ" },
+          { "type": "BOOLEAN", "key": "sendPageView", "value": "true" }
+        ],
+        "firingTriggerId": ["1"],
+        "tagFiringOption": "oncePerEvent",
+        "fingerprint": "1700000000002",
+        "tagManagerUrl": "https://tagmanager.google.com/"
+      },
+      {
+        "accountId": "1234567",
+        "containerId": "7654321",
+        "tagId": "3",
+        "name": "Floodlight - Homepage View Counter",
+        "type": "flc",
+        "parameter": [
+          { "type": "TEMPLATE", "key": "advertiserId", "value": "DC-1234567" },
+          { "type": "TEMPLATE", "key": "groupTag", "value": "homepage" },
+          { "type": "TEMPLATE", "key": "activityTag", "value": "view" },
+          { "type": "BOOLEAN", "key": "useImageTag", "value": "false" }
+        ],
+        "firingTriggerId": ["1"],
+        "tagFiringOption": "oncePerEvent",
+        "fingerprint": "1700000000003",
+        "tagManagerUrl": "https://tagmanager.google.com/"
+      },
+      {
+        "accountId": "1234567",
+        "containerId": "7654321",
+        "tagId": "4",
+        "name": "Google Ads - Purchase Conversion",
+        "type": "awct",
+        "parameter": [
+          { "type": "TEMPLATE", "key": "conversionId", "value": "{{CONST - Google Ads Conversion ID}}" },
+          { "type": "TEMPLATE", "key": "conversionLabel", "value": "{{CONST - GAds Conversion Label - purchase}}" },
+          { "type": "BOOLEAN", "key": "enhancedConversionsEnabled", "value": "true" },
+          { "type": "TEMPLATE", "key": "userDataEmail", "value": "{{DLV - user_data.email}}" },
+          { "type": "TEMPLATE", "key": "userDataPhoneNumber", "value": "{{DLV - user_data.phone_number}}" }
+        ],
+        "firingTriggerId": ["2"],
+        "tagFiringOption": "oncePerEvent",
+        "fingerprint": "1700000000004",
+        "tagManagerUrl": "https://tagmanager.google.com/"
+      }
+    ],
+    "trigger": [
+      {
+        "accountId": "1234567",
+        "containerId": "7654321",
+        "triggerId": "1",
+        "name": "All Pages",
+        "type": "PAGEVIEW",
+        "fingerprint": "1700000000010",
+        "tagManagerUrl": "https://tagmanager.google.com/"
+      },
+      {
+        "accountId": "1234567",
+        "containerId": "7654321",
+        "triggerId": "2",
+        "name": "CE - purchase",
+        "type": "CUSTOM_EVENT",
+        "customEventFilter": [
+          {
+            "type": "equals",
+            "parameter": [
+              { "type": "TEMPLATE", "key": "arg0", "value": "{{Event}}" },
+              { "type": "TEMPLATE", "key": "arg1", "value": "purchase" }
+            ]
+          }
+        ],
+        "fingerprint": "1700000000011",
+        "tagManagerUrl": "https://tagmanager.google.com/"
+      }
+    ],
+    "variable": [
+      {
+        "accountId": "1234567",
+        "containerId": "7654321",
+        "variableId": "1",
+        "name": "CONST - Google Ads Conversion ID",
+        "type": "c",
+        "parameter": [
+          { "type": "TEMPLATE", "key": "value", "value": "AW-111111111" }
+        ],
+        "fingerprint": "1700000000020",
+        "tagManagerUrl": "https://tagmanager.google.com/"
+      },
+      {
+        "accountId": "1234567",
+        "containerId": "7654321",
+        "variableId": "2",
+        "name": "CONST - GAds Conversion Label - purchase",
+        "type": "c",
+        "parameter": [
+          { "type": "TEMPLATE", "key": "value", "value": "AbC-D_efGhIjKlmn" }
+        ],
+        "fingerprint": "1700000000021",
+        "tagManagerUrl": "https://tagmanager.google.com/"
+      },
+      {
+        "accountId": "1234567",
+        "containerId": "7654321",
+        "variableId": "3",
+        "name": "DLV - user_data.email",
+        "type": "v",
+        "parameter": [
+          { "type": "INTEGER", "key": "dataLayerVersion", "value": "2" },
+          { "type": "BOOLEAN", "key": "setDefaultValue", "value": "false" },
+          { "type": "TEMPLATE", "key": "name", "value": "user_data.email" }
+        ],
+        "fingerprint": "1700000000022",
+        "tagManagerUrl": "https://tagmanager.google.com/"
+      },
+      {
+        "accountId": "1234567",
+        "containerId": "7654321",
+        "variableId": "4",
+        "name": "DLV - user_data.phone_number",
+        "type": "v",
+        "parameter": [
+          { "type": "INTEGER", "key": "dataLayerVersion", "value": "2" },
+          { "type": "BOOLEAN", "key": "setDefaultValue", "value": "false" },
+          { "type": "TEMPLATE", "key": "name", "value": "user_data.phone_number" }
+        ],
+        "fingerprint": "1700000000023",
+        "tagManagerUrl": "https://tagmanager.google.com/"
+      }
+    ],
+    "folder": [],
+    "builtInVariable": [
+      { "accountId": "1234567", "containerId": "7654321", "type": "EVENT", "name": "Event" }
+    ],
+    "fingerprint": "1700000000099",
+    "tagManagerUrl": "https://tagmanager.google.com/"
+  }
+}
