@@ -171,16 +171,15 @@ describe('Scenario: single-domain baseline (GA4 + Google Ads, no cross-domain, n
     expect(triggers[0].name).toBe('All Pages');
   });
 
-  it('Conversion Linker tag is type "gclidw" with cross-domain flags off', () => {
-    const tag = findTagByName(container, 'Google Ads - Conversion Linker');
-    expect(tag.type).toBe('gclidw');
-    const params = flattenParams(tag.parameter);
-    expect(params).toEqual({
-      enableCrossDomainLinking: 'false',
-      autoLinkDomains: 'false',
-      decorateFormsOption: 'false',
-    });
-    expect(params).not.toHaveProperty('domains');
+  it('Sprint 5 (C4): no standalone Conversion Linker tag — the sitewide googtag already covers single-domain click-ID capture', () => {
+    const names = container.containerVersion.tag.map((t) => t.name);
+    expect(names).not.toContain('Google Ads - Conversion Linker');
+    expect(container.containerVersion.tag.some((t) => t.type === 'gclidw')).toBe(false);
+  });
+
+  it('CONST - Google Ads Conversion ID variable still exists even with no Conversion Linker tag (awct tags depend on it)', () => {
+    const variable = container.containerVersion.variable.find((v) => v.name === 'CONST - Google Ads Conversion ID');
+    expect(variable).toBeDefined();
   });
 
   it('Google Ads conversion tag ("awct") always carries enhanced-conversions params', () => {
@@ -237,6 +236,31 @@ describe('Scenario: sGTM-enabled (platformIds.server_container_url set)', () => 
     const params = flattenParams(tag.parameter);
     expect(params.enableSendToServerContainer).toBe('true');
     expect(params.serverContainerUrl).toBe('https://sgtm.example.com');
+  });
+
+  it('Sprint 5 (C4): still emits the Conversion Linker despite a single-domain googtag being present — sGTM routing needs its own client-side linker', () => {
+    const tag = findTagByName(container, 'Google Ads - Conversion Linker');
+    expect(tag.type).toBe('gclidw');
+    expect(tag.notes).toContain('Server-side GTM routing');
+  });
+});
+
+// ── Scenario C2: no sitewide Google tag (Google Ads only, no GA4) ────────────
+// Sprint 5 (C4): decision-engine case #2 — with no googtag on the page to
+// auto-capture click IDs, the Conversion Linker must still be emitted.
+
+describe('Scenario: no sitewide Google tag (Google Ads selected, GA4 not selected)', () => {
+  const session = makeSession('lead_gen', ['google_ads']);
+  const recs: PlanningRecommendation[] = [
+    makeRec('r1', 'p1', 'generate_lead', 'generate_lead', ['form_id'], [], ['google_ads']),
+  ];
+  const container = generateGTMContainer(recs, session);
+
+  it('emits the Conversion Linker since there is no sitewide googtag to cover click-ID capture', () => {
+    expect(container.containerVersion.tag.some((t) => t.name === 'GA4 - Config')).toBe(false);
+    const tag = findTagByName(container, 'Google Ads - Conversion Linker');
+    expect(tag.type).toBe('gclidw');
+    expect(tag.notes).toContain('No sitewide Google tag is present');
   });
 });
 

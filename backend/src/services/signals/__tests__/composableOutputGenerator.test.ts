@@ -194,6 +194,20 @@ describe('buildGTMContainer — sitewide Google tag architecture parity with Pla
   });
 });
 
+describe('buildGTMContainer — Sprint 5 (C4) linker decision engine parity with Planning', () => {
+  it('suppresses the Conversion Linker for a single-domain client, same as Planning', () => {
+    const client = makeClient({
+      secondary_domains: [],
+      platforms: [makePlatform('ga4', 'G-ACME12345'), makePlatform('google_ads', 'AW-999888777')],
+    });
+    const container = buildGTMContainer(client, [], null);
+    expect(container.containerVersion.tag.some((t) => t.type === 'gclidw')).toBe(false);
+    // The CONST variable is created unconditionally by buildGoogleTagInfrastructure()
+    // regardless of the linker decision (Planning's per-event awct tags depend on it).
+    expect(container.containerVersion.variable.some((v) => v.name === 'CONST - Google Ads Conversion ID')).toBe(true);
+  });
+});
+
 describe('buildGTMContainer — Meta Pixel uses a real GTM tag type', () => {
   const client = makeClient({ platforms: [makePlatform('meta', '123456789012345')] });
   const container = buildGTMContainer(client, [], null);

@@ -61,6 +61,8 @@ export interface GTMTagDef {
   consentSettings?: GTMConsentSettings;
   fingerprint: string;
   tagManagerUrl: string;
+  /** Human-readable notes shown in the GTM UI (visible in tag settings). */
+  notes?: string;
 }
 
 export interface GTMTriggerDef {
