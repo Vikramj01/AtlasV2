@@ -15,124 +15,182 @@ import { resolveDeploymentsForClient } from '@/services/database/signalQueries';
 import { listDeployments, saveClientOutput, markDeploymentGenerated } from '@/services/database/clientQueries';
 import { getClientIdentityConfig } from '@/services/database/enrichmentQueries';
 import type { ClientIdentityConfig } from '@/types/enrichment';
+import type { GTMContainerJSON, GTMTagDef, GTMTriggerDef, GTMVariableDef, GTMParameter } from '@/services/planning/generators/gtmContainerGenerator';
+import { buildDlvVariable } from '@/services/planning/generators/renderer/gtm.renderer';
+import { renderGTMTrigger } from '@/services/planning/generators/renderer/trigger.renderer';
+import { buildGoogleTagInfrastructure, buildAllPagesTrigger } from '@/services/planning/generators/renderer/googleTagArchitecture';
 import logger from '@/utils/logger';
 
 // ── GTM container generation from resolved signals ────────────────────────────
+//
+// Google Stack Alignment sprint plan, Sprint 3 (Correction 6 / C3): this used
+// to be a bespoke, independently-hand-rolled GTM builder that diverged from
+// gtmContainerGenerator.ts's Planning path and got real GTM field names
+// wrong — a 'flc' (Floodlight Counter, a DoubleClick/Campaign Manager tag
+// type) mislabeled as "Conversion Linker", 'googtag' used for what was
+// actually a plain GA4-config shape, lowercase parameter/trigger type codes
+// that match no real GTM field ('template'/'list'/'customEvent'/'pageview'
+// instead of 'TEMPLATE'/'LIST'/'CUSTOM_EVENT'/'PAGEVIEW'), 'firingRuleId'
+// (not a real GTM field — the field is 'firingTriggerId' and takes trigger
+// IDs, never `{{Name}}`-interpolated strings), and Google Ads parameter keys
+// that don't exist on the real `awct` tag (`value`/`currency` instead of
+// `conversionValue`/`currencyCode`). None of that would have imported into
+// GTM without error. This now reuses the same typed GTMTagDef/GTMTriggerDef/
+// GTMVariableDef shapes and the same shared renderer helpers Planning uses,
+// so the two paths can no longer structurally diverge.
 
-function buildIdentityVariables(identityConfig: ClientIdentityConfig): unknown[] {
-  const vars: unknown[] = [];
-  const fields: Array<{ fieldPath: string | null; varName: string }> = [
-    { fieldPath: identityConfig.email_field, varName: 'identity - email' },
-    { fieldPath: identityConfig.phone_field, varName: 'identity - phone' },
-    { fieldPath: identityConfig.first_name_field, varName: 'identity - first_name' },
-    { fieldPath: identityConfig.last_name_field, varName: 'identity - last_name' },
-    { fieldPath: identityConfig.postal_code_field, varName: 'identity - postal_code' },
-    { fieldPath: identityConfig.country_field, varName: 'identity - country' },
-    { fieldPath: identityConfig.external_id_field, varName: 'identity - external_id' },
-    { fieldPath: identityConfig.fbc_field, varName: 'identity - fbc' },
-    { fieldPath: identityConfig.fbp_field, varName: 'identity - fbp' },
-    { fieldPath: identityConfig.gclid_field, varName: 'identity - gclid' },
+let idCounter = 0;
+function nextId(): string {
+  return String(++idCounter);
+}
+
+function buildIdentityVariables(identityConfig: ClientIdentityConfig): GTMVariableDef[] {
+  const fields: Array<{ fieldPath: string | null; label: string }> = [
+    { fieldPath: identityConfig.email_field, label: 'email' },
+    { fieldPath: identityConfig.phone_field, label: 'phone' },
+    { fieldPath: identityConfig.first_name_field, label: 'first_name' },
+    { fieldPath: identityConfig.last_name_field, label: 'last_name' },
+    { fieldPath: identityConfig.postal_code_field, label: 'postal_code' },
+    { fieldPath: identityConfig.country_field, label: 'country' },
+    { fieldPath: identityConfig.external_id_field, label: 'external_id' },
+    { fieldPath: identityConfig.fbc_field, label: 'fbc' },
+    { fieldPath: identityConfig.fbp_field, label: 'fbp' },
+    { fieldPath: identityConfig.gclid_field, label: 'gclid' },
   ];
-  for (const { fieldPath, varName } of fields) {
+  const vars: GTMVariableDef[] = [];
+  for (const { fieldPath, label } of fields) {
+    // buildDlvVariable reads the dataLayer at the client's own field name and
+    // names the resulting variable "DLV - {fieldPath}" — the real DLV
+    // variable shape (dataLayerVersion/setDefaultValue/name), matching what
+    // Planning's own identity DLV vars already use.
     if (fieldPath) {
-      vars.push({
-        name: `dlv - ${varName}`,
-        type: 'dlv',
-        parameter: [{ type: 'template', key: 'name', value: fieldPath }],
-      });
+      vars.push(buildDlvVariable(fieldPath, nextId(), '', `Identity — ${label}`));
     }
   }
   return vars;
 }
 
-function buildGTMContainer(
+function tmpl(key: string, value: string): GTMParameter {
+  return { type: 'TEMPLATE', key, value };
+}
+
+function metaPixelHtml(pixelId: string, event: 'PageView' | string, custom = false): string {
+  const call = custom
+    ? `fbq('trackCustom', '${event}');`
+    : `fbq('track', '${event}');`;
+  return `<script>
+!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
+n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
+document,'script','https://connect.facebook.net/en_US/fbevents.js');
+fbq('init', '${pixelId}');
+${call}
+</script>`;
+}
+
+export function buildGTMContainer(
   client: ClientWithDetails,
   allSignals: SignalWithOverrides[],
   identityConfig: ClientIdentityConfig | null,
-): Record<string, unknown> {
-  const tags: unknown[] = [];
-  const triggers: unknown[] = [];
-  const variables: unknown[] = [];
+): GTMContainerJSON {
+  const tags: GTMTagDef[] = [];
+  const triggers: GTMTriggerDef[] = [];
+  const variables: GTMVariableDef[] = [];
 
   // Identity variables from client enrichment config
   if (identityConfig) {
     variables.push(...buildIdentityVariables(identityConfig));
   }
 
-  // GA4 Configuration tag
+  // ── All Pages trigger ──────────────────────────────────────────────────────
+  const allPagesTriggerId = nextId();
+  triggers.push(buildAllPagesTrigger(allPagesTriggerId));
+
   const ga4Platform = client.platforms.find((p) => p.platform === 'ga4' && p.is_active);
-  if (ga4Platform) {
-    const measurementId = ga4Platform.measurement_id ?? 'G-XXXXXXXXXX';
-    tags.push({
-      name: `Atlas — GA4 Configuration`,
-      type: 'googtag',
-      parameter: [
-        { type: 'template', key: 'tagId', value: measurementId },
-      ],
-      firingRuleId: ['{{All Pages}}'],
-    });
-  }
-
-  // Conversion Linker for Google Ads click ID capture
   const googleAdsPlatform = client.platforms.find((p) => p.platform === 'google_ads' && p.is_active);
-  if (googleAdsPlatform) {
-    tags.push({
-      name: 'Atlas — Conversion Linker',
-      type: 'flc',
-      firingRuleId: ['{{All Pages}}'],
-    });
-  }
-
-  // Meta Pixel base code
   const metaPlatform = client.platforms.find((p) => p.platform === 'meta' && p.is_active);
+
+  // ── Sitewide Google tag architecture (GA4 Config + Conversion Linker) ────────
+  // Shared with Planning's gtmContainerGenerator.ts — see googleTagArchitecture.ts.
+  // This replaces what used to be a bespoke, broken inline implementation here
+  // ('flc' mislabeled as "Conversion Linker", 'googtag' misused for a plain
+  // GA4-config shape — see Correction 6 of the Google Stack Alignment sprint
+  // plan). google_ads' conversion_id is historically stored on this table as
+  // a single "AW-XXXXXXXXXX/YYYYYY" string (conversionId/label combined) —
+  // the Conversion Linker tag itself only ever needs the AW- prefix.
+  const googleTagInfra = buildGoogleTagInfrastructure(
+    {
+      ga4: ga4Platform ? { measurementId: ga4Platform.measurement_id ?? 'G-XXXXXXXXXX' } : undefined,
+      googleAds: googleAdsPlatform
+        ? { conversionId: (googleAdsPlatform.measurement_id ?? 'AW-XXXXXXXXXX').split('/')[0] }
+        : undefined,
+    },
+    {
+      allPagesTriggerId,
+      secondaryDomains: client.secondary_domains,
+      nextTagId: nextId,
+      nextVarId: nextId,
+    },
+  );
+  tags.push(...googleTagInfra.tags);
+  variables.push(...googleTagInfra.variables);
+
+  // ── Meta Pixel base code ───────────────────────────────────────────────────
+  // Real GTM has no built-in Meta Pixel tag type — Custom HTML ('html') is
+  // the correct real-world approach, matching gtmContainerGenerator.ts's own
+  // Meta base pixel tag (the previous 'sp' type code here matched no real
+  // GTM tag type at all).
   if (metaPlatform) {
     const pixelId = metaPlatform.measurement_id ?? '0000000000';
+    const metaVarId = nextId();
+    variables.push({
+      accountId: '0', containerId: '0', fingerprint: '0', tagManagerUrl: 'https://tagmanager.google.com/',
+      variableId: metaVarId,
+      name: 'CONST - Meta Pixel ID',
+      type: 'c',
+      parameter: [tmpl('value', pixelId)],
+    });
     tags.push({
+      accountId: '0', containerId: '0', fingerprint: '0', tagManagerUrl: 'https://tagmanager.google.com/',
+      tagId: nextId(),
       name: 'Atlas — Meta Pixel Base',
-      type: 'sp',
+      type: 'html',
       parameter: [
-        { type: 'template', key: 'pixelId', value: pixelId },
-        { type: 'template', key: 'trackType', value: 'PageView' },
+        tmpl('html', metaPixelHtml('{{CONST - Meta Pixel ID}}', 'PageView')),
+        { type: 'BOOLEAN', key: 'supportDocumentWrite', value: 'false' },
       ],
-      firingRuleId: ['{{All Pages}}'],
+      firingTriggerId: [allPagesTriggerId],
+      tagFiringOption: 'oncePerEvent',
     });
   }
-
-  // Page view trigger
-  triggers.push({ name: 'All Pages', type: 'pageview' });
 
   // One tag + trigger per signal per active platform
   for (const { signal, stage_assignment } of allSignals) {
-    const triggerName = `Atlas — dataLayer: ${signal.key}`;
-    triggers.push({
-      name: triggerName,
-      type: 'customEvent',
-      filter: [
-        {
-          type: 'equals',
-          parameter: [
-            { type: 'template', key: 'arg0', value: '{{Event}}' },
-            { type: 'template', key: 'arg1', value: signal.key },
-          ],
-        },
-      ],
-    });
+    const signalTriggerId = nextId();
+    triggers.push(renderGTMTrigger({ trigger_type: 'custom_event' }, signal.key, signalTriggerId, ''));
 
     // GA4 event tag
     if (ga4Platform) {
       const ga4Mapping = signal.platform_mappings?.['ga4'];
       if (ga4Mapping) {
-        const paramsList = Object.entries(ga4Mapping.param_mapping ?? {}).map(
-          ([key, val]) => ({ type: 'template', key, value: `{{dlv - ${val}}}` }),
+        const paramsList: GTMParameter[] = Object.entries(ga4Mapping.param_mapping ?? {}).map(
+          ([key, val]) => ({
+            type: 'MAP',
+            map: [tmpl('key', key), tmpl('value', `{{DLV - ${val}}}`)],
+          }),
         );
         tags.push({
+          accountId: '0', containerId: '0', fingerprint: '0', tagManagerUrl: 'https://tagmanager.google.com/',
+          tagId: nextId(),
           name: `Atlas — GA4: ${signal.name}${stage_assignment ? ` (${stage_assignment})` : ''}`,
           type: 'gaawe',
           parameter: [
-            { type: 'template', key: 'eventName', value: ga4Mapping.event_name },
-            { type: 'list', key: 'eventParameters', list: paramsList },
+            tmpl('eventName', ga4Mapping.event_name),
+            { type: 'LIST', key: 'eventParameters', list: paramsList },
           ],
-          firingRuleId: [triggerName],
+          firingTriggerId: [signalTriggerId],
+          tagFiringOption: 'oncePerEvent',
         });
       }
     }
@@ -143,15 +201,18 @@ function buildGTMContainer(
       if (adsMappings) {
         const conversionId = googleAdsPlatform.measurement_id ?? 'AW-XXXXXXXXXX/YYYYYY';
         tags.push({
+          accountId: '0', containerId: '0', fingerprint: '0', tagManagerUrl: 'https://tagmanager.google.com/',
+          tagId: nextId(),
           name: `Atlas — Google Ads: ${signal.name}`,
           type: 'awct',
           parameter: [
-            { type: 'template', key: 'conversionId', value: conversionId.split('/')[0] },
-            { type: 'template', key: 'conversionLabel', value: conversionId.split('/')[1] ?? '' },
-            { type: 'template', key: 'value', value: `{{dlv - ${adsMappings.param_mapping?.['value'] ?? 'value'}}}` },
-            { type: 'template', key: 'currency', value: `{{dlv - ${adsMappings.param_mapping?.['currency'] ?? 'currency'}}}` },
+            tmpl('conversionId', conversionId.split('/')[0]),
+            tmpl('conversionLabel', conversionId.split('/')[1] ?? ''),
+            tmpl('conversionValue', `{{DLV - ${adsMappings.param_mapping?.['value'] ?? 'value'}}}`),
+            tmpl('currencyCode', `{{DLV - ${adsMappings.param_mapping?.['currency'] ?? 'currency'}}}`),
           ],
-          firingRuleId: [triggerName],
+          firingTriggerId: [signalTriggerId],
+          tagFiringOption: 'oncePerEvent',
         });
       }
     }
@@ -161,25 +222,23 @@ function buildGTMContainer(
       const metaMapping = signal.platform_mappings?.['meta'];
       if (metaMapping) {
         tags.push({
+          accountId: '0', containerId: '0', fingerprint: '0', tagManagerUrl: 'https://tagmanager.google.com/',
+          tagId: nextId(),
           name: `Atlas — Meta: ${signal.name}`,
-          type: 'sp',
+          type: 'html',
           parameter: [
-            { type: 'template', key: 'pixelId', value: metaPlatform.measurement_id ?? '0000000000' },
-            { type: 'template', key: 'trackType', value: 'trackCustom' },
-            { type: 'template', key: 'standardEventType', value: metaMapping.event_name },
+            tmpl('html', metaPixelHtml('{{CONST - Meta Pixel ID}}', metaMapping.event_name, true)),
+            { type: 'BOOLEAN', key: 'supportDocumentWrite', value: 'false' },
           ],
-          firingRuleId: [triggerName],
+          firingTriggerId: [signalTriggerId],
+          tagFiringOption: 'oncePerEvent',
         });
       }
     }
 
     // Add dataLayer variables for required params
     for (const param of signal.required_params) {
-      variables.push({
-        name: `dlv - ${param.key}`,
-        type: 'dlv',
-        parameter: [{ type: 'template', key: 'name', value: param.key }],
-      });
+      variables.push(buildDlvVariable(param.key, nextId(), ''));
     }
   }
 
@@ -187,9 +246,18 @@ function buildGTMContainer(
     exportFormatVersion: 2,
     exportTime: new Date().toISOString(),
     containerVersion: {
+      path: '', accountId: '0', containerId: '0', containerVersionId: '0', name: '', description: '',
+      container: {
+        path: '', accountId: '0', containerId: '0', name: client.name, publicId: '',
+        usageContext: ['WEB'], fingerprint: '0', tagManagerUrl: 'https://tagmanager.google.com/',
+      },
       tag: tags,
       trigger: triggers,
       variable: variables,
+      folder: [],
+      builtInVariable: [{ accountId: '0', containerId: '0', type: 'EVENT', name: 'Event' }],
+      fingerprint: '0',
+      tagManagerUrl: 'https://tagmanager.google.com/',
     },
   };
 }
@@ -274,7 +342,7 @@ export async function generateComposableOutputs(
   // 1. GTM container
   const identityConfig = await getClientIdentityConfig(clientId).catch(() => null);
   const gtmData = buildGTMContainer(client, allSignals, identityConfig);
-  const gtmOutput = await saveClientOutput(clientId, 'gtm_container', gtmData, sourceDeployments);
+  const gtmOutput = await saveClientOutput(clientId, 'gtm_container', gtmData as unknown as Record<string, unknown>, sourceDeployments);
   outputs.push(gtmOutput);
 
   // 2. dataLayer spec
