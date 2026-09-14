@@ -264,6 +264,54 @@ describe('buildGTMContainer — per-signal tags use real GTM parameter names', (
   });
 });
 
+describe('buildGTMContainer — Sprint 6 (C6): per-signal Enhanced Conversions from real client identity config', () => {
+  const client = makeClient({
+    platforms: [makePlatform('ga4', 'G-ACME12345'), makePlatform('google_ads', 'AW-999888777/LaBeL1')],
+  });
+  const signal = makeSignal({
+    key: 'purchase',
+    category: 'conversion',
+    platform_mappings: {
+      google_ads: { event_name: 'conversion', param_mapping: { value: 'ecommerce.value', currency: 'ecommerce.currency' } },
+    },
+  });
+
+  it('adds enhancedConversionsEnabled + userData params only for fields this client actually has configured', () => {
+    const identityConfig = makeIdentityConfig({
+      email_field: 'user.email',
+      phone_field: null,
+      first_name_field: 'user.firstName',
+      last_name_field: null,
+      postal_code_field: null,
+      country_field: null,
+    });
+    const container = buildGTMContainer(client, [makeSignalWithOverrides(signal)], identityConfig);
+    const tag = findTag(container.containerVersion.tag, 'Atlas — Google Ads: Purchase');
+    const params = flattenParams(tag.parameter);
+    expect(params.enhancedConversionsEnabled).toBe('true');
+    expect(params.userDataEmail).toBe('{{DLV - user.email}}');
+    expect(params.userDataFirstName).toBe('{{DLV - user.firstName}}');
+    expect(params).not.toHaveProperty('userDataPhoneNumber');
+    expect(params).not.toHaveProperty('userDataLastName');
+    expect(params).not.toHaveProperty('userDataPostalCode');
+    expect(params).not.toHaveProperty('userDataCountry');
+  });
+
+  it('never requires a field this client does not have — no identity config at all means no Enhanced Conversions params', () => {
+    const container = buildGTMContainer(client, [makeSignalWithOverrides(signal)], null);
+    const tag = findTag(container.containerVersion.tag, 'Atlas — Google Ads: Purchase');
+    const params = flattenParams(tag.parameter);
+    expect(params).not.toHaveProperty('enhancedConversionsEnabled');
+    expect(params).not.toHaveProperty('userDataEmail');
+  });
+
+  it('still passes the schema validator with Enhanced Conversions params present', () => {
+    const identityConfig = makeIdentityConfig({ email_field: 'user.email' });
+    const container = buildGTMContainer(client, [makeSignalWithOverrides(signal)], identityConfig);
+    expect(validateGTMContainer(container).errors).toEqual([]);
+  });
+});
+
 describe('buildGTMContainer — identity variables use the real DLV shape', () => {
   const client = makeClient({ platforms: [] });
   const identityConfig = makeIdentityConfig({ email_field: 'user.email', phone_field: 'user.phone' });

@@ -265,9 +265,12 @@ describe('Scenario: no sitewide Google tag (Google Ads selected, GA4 not selecte
 });
 
 // ── Scenario D: enhanced conversions with full identity params ───────────────
-// Sprint 6 (C6) moves enhanced-conversions data to User-Provided Data at the
-// Google tag level — this fixture is what the per-tag `awct` shape looks like
-// BEFORE that migration, so Sprint 6 has a concrete before state.
+// Sprint 6 (C6/C7): the per-tag `awct` Enhanced Conversions params now cover
+// email/phone/first_name/last_name/postal_code/country (the conservative,
+// already-proven per-tag pattern — not the site-level "User-Provided Data"
+// architecture the sprint plan's literal wording describes; see
+// gtm.renderer.ts's header comment for why), and the unhashed CJS - SHA256
+// Hash stub is gone entirely.
 
 describe('Scenario: enhanced conversions (ecommerce purchase, email+phone captured)', () => {
   const session = makeSession('ecommerce', ['ga4', 'google_ads']);
@@ -287,15 +290,18 @@ describe('Scenario: enhanced conversions (ecommerce purchase, email+phone captur
     expect(params.userDataPhoneNumber).toBe('{{DLV - user_data.phone_number}}');
   });
 
-  it('still ships the unhashed CJS - SHA256 Hash stub (C7 target for removal)', () => {
+  it('Sprint 6 (C6): also maps first_name/last_name/postal_code/country beyond email/phone', () => {
+    const tag = findTagByName(container, 'Google Ads - purchase Conversion');
+    const params = flattenParams(tag.parameter);
+    expect(params.userDataFirstName).toBe('{{DLV - user_data.first_name}}');
+    expect(params.userDataLastName).toBe('{{DLV - user_data.last_name}}');
+    expect(params.userDataPostalCode).toBe('{{DLV - user_data.postal_code}}');
+    expect(params.userDataCountry).toBe('{{DLV - user_data.country}}');
+  });
+
+  it('Sprint 6 (C7): the unhashed CJS - SHA256 Hash stub no longer ships', () => {
     const variable = container.containerVersion.variable.find((v) => v.name === 'CJS - SHA256 Hash');
-    expect(variable).toBeDefined();
-    const jsParam = variable!.parameter.find((p) => p.key === 'javascript');
-    // Locks in the exact bug Sprint 6/C7 must fix: this returns the input
-    // UNHASHED. If this ever starts returning a real hash without a
-    // corresponding sprint plan update, this assertion should change
-    // deliberately — not silently pass.
-    expect(jsParam?.value).toContain('return input; // TODO: implement SHA-256 hashing');
+    expect(variable).toBeUndefined();
   });
 });
 

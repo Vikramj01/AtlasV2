@@ -173,6 +173,22 @@ export interface GoogleAdsConversionResult {
  * - Tags reference that variable — never the shared {{CONVERSION_LABEL}}
  * - enhancedConversionsEnabled: true always present
  * - DLV - user_data.email and DLV - user_data.phone_number added when not yet in the container
+ *
+ * Google Stack Alignment sprint plan, Sprint 6 (C6): also maps the identity/
+ * address fields client_identity_configs already carries beyond email/phone
+ * (first_name, last_name, postal_code, country) — the same conservative
+ * per-tag pattern email/phone already use, not the site-level "User-
+ * Provided Data" architecture the sprint plan's literal wording describes.
+ * That fuller move needs a live GTM export to verify the real config-block
+ * shape and was deliberately deferred (see CLAUDE.md) rather than guessed.
+ * All fields are optional passthroughs — an unpopulated dataLayer path
+ * resolves to an empty value, so this never requires data a given site
+ * doesn't actually capture. Every reference here (like email/phone before
+ * it) is a `userData<Field>` parameter key on the real `awct` tag type —
+ * confirm the exact key spelling for the 4 new fields against a live GTM
+ * export before this reaches a client whose account doesn't already prove
+ * them out; email/phone are treated as already-trusted since they predate
+ * this sprint's changes.
  */
 export function renderGoogleAdsConversionTag(
   event: IREvent,
@@ -206,10 +222,16 @@ export function renderGoogleAdsConversionTag(
   const tagParams: GTMParameter[] = [
     tmpl('conversionId', constRef(conversionIdVarName)),
     tmpl('conversionLabel', constRef(labelVarName)),
-    // Enhanced conversions
+    // Enhanced conversions — email/phone plus the identity/address fields
+    // client_identity_configs already carries (Sprint 6/C6). Optional
+    // passthroughs: an unpopulated dataLayer path just resolves empty.
     bool('enhancedConversionsEnabled', 'true'),
     tmpl('userDataEmail', dlvRef('user_data.email')),
     tmpl('userDataPhoneNumber', dlvRef('user_data.phone_number')),
+    tmpl('userDataFirstName', dlvRef('user_data.first_name')),
+    tmpl('userDataLastName', dlvRef('user_data.last_name')),
+    tmpl('userDataPostalCode', dlvRef('user_data.postal_code')),
+    tmpl('userDataCountry', dlvRef('user_data.country')),
   ];
 
   if (isEcommercePurchase) {
