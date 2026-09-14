@@ -12,10 +12,11 @@ import { resolveTokens } from '@/services/connections/tokenManager';
 import { env } from '@/config/env';
 import logger from '@/utils/logger';
 import { AirMetricRow, yesterday, writeMetricRows } from '@/services/air/ingestion/airIngestionUtils';
+import { GOOGLE_ADS_API_VERSION } from '@/integrations/google/adsApiVersion';
 
 export type { AirMetricRow };
 
-const GADS_BASE = 'https://googleads.googleapis.com/v18';
+const GADS_BASE = `https://googleads.googleapis.com/${GOOGLE_ADS_API_VERSION}`;
 
 interface CampaignPerfRow {
   campaignId: string;

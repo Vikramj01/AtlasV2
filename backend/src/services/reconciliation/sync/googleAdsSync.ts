@@ -1,9 +1,10 @@
 import { supabaseAdmin } from '@/services/database/supabase';
 import { resolveTokens } from '@/services/connections/tokenManager';
 import { env } from '@/config/env';
+import { GOOGLE_ADS_API_VERSION } from '@/integrations/google/adsApiVersion';
 import logger from '@/utils/logger';
 
-const ADS_API_BASE = 'https://googleads.googleapis.com/v18';
+const ADS_API_BASE = `https://googleads.googleapis.com/${GOOGLE_ADS_API_VERSION}`;
 
 async function adsPost(
   path: string,
@@ -57,8 +58,7 @@ export async function syncConversionActions(connectionId: string, orgId: string)
       conversion_action.view_through_lookback_window_days,
       conversion_action.value_settings.default_value,
       conversion_action.value_settings.default_currency_code,
-      conversion_action.value_settings.always_use_default_value,
-      conversion_action.include_in_conversions_metric
+      conversion_action.value_settings.always_use_default_value
     FROM conversion_action
     WHERE conversion_action.status != 'REMOVED'
   `;
@@ -96,7 +96,6 @@ export async function syncConversionActions(connectionId: string, orgId: string)
         default_currency: vs.default_currency_code,
         always_use_default: vs.always_use_default_value,
       } : null,
-      include_in_conversions: Boolean(ca.include_in_conversions_metric),
       raw: ca,
       observed_at: new Date().toISOString(),
     };
