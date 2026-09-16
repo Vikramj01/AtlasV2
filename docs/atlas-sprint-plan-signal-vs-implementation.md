@@ -2,7 +2,7 @@
 
 **Source** · PRD "Atlas Signal Health Platform — Signal vs implementation separation" (draft 0.1, 16 Sept 2026), triggered by audit `49448510-d968-4178-98e2-8e7c70998276` (pureborn.com/en-uae). Not yet issued to the client — P0 fixes are a re-run, not a retraction.
 
-**Status** · P0 (Sprints 1-5) shipped 2026-09-16 on `claude/optimistic-turing-embehd`. P1 (provenance architecture, Sprints 6-12) is scoped but not started. The "One product decision" flagged below was resolved by the user: keep the existing broad `conversion_surface` definition — see the resolved section.
+**Status** · P0 (Sprints 1-5) shipped 2026-09-16 on `claude/optimistic-turing-embehd`. P1 (provenance architecture): Sprints 6-9 shipped, Sprint 10 (spike) completed, Sprints 11-12 scoped but not started. The "One product decision" flagged below was resolved by the user: keep the existing broad `conversion_surface` definition — see the resolved section.
 
 **Related, already-shipped prior work** (read before touching the register or reporting layer) · `docs/ATLAS_REPORT_CORRECTNESS_PROGRAMME_PRD.md`, `docs/ATLAS_CLICKID_CONTENTION_CONTRADICTION_GUARD_PRD.md`, `docs/atlas-sprint-plan-pre-connection-confidence-tiering.md` (evidence_class / verdict lattice / severity ceilings — P0-03 and P0-04 build directly on this). **Not the same work as** `docs/ATLAS_REPORT_EVIDENCE_INTEGRITY_PRD.md` — that's a separate, earlier PRD about PDF-rendering truncation on a different reference audit (openart.ai, 5 Sept); its defects (evidence truncated to 3 items, remediation cut at 117 chars, page numbering) are unrelated to this one and already largely shipped. Do not conflate the two.
 
@@ -153,13 +153,21 @@ Wired into `journeySimulator.ts` at the landing step, alongside the existing ref
 
 Tests: `commercePlatformDetector.test.ts` (13 new — classic Shopify via global+CDN, CDN-only medium-confidence Shopify, headless-proxying-Shopify, headless-proxying-SFCC, non-headless SFCC, WooCommerce via marker and via asset URL, generic SPA fallback, custom fallback with/without generator meta, `shopify_plus` never emitted, Shopify prioritized over SFCC/WooCommerce when multiple evidence types coexist). `siteSetupDetector.test.ts` gained 2 new cases (passthrough when present, `undefined` when absent — never fabricated). `pipeline.test.ts` gained a new `simulateJourney — commerce_platform` describe block (4 tests: end-to-end classic-Shopify detection, end-to-end headless-Shopify detection, fails-open-on-throw, and the no-signal-found `custom` fallback) — same mock-browser pattern as the existing `request_provenance`/outbound-link end-to-end tests, discriminating the mock's shared `evaluate()` implementation by selector where present and by function source otherwise.
 
-### Sprint 10 · P1-04a · Shopify web pixels manager spike (widened)
+### Sprint 10 · P1-04a · Shopify web pixels manager spike (widened) — completed
 
 One day, before committing to P1-04. Per the open-questions research above, widen beyond the PRD's original framing: establish whether the Web Pixels Manager bootstrap is reachable at all from pureborn.com/en-uae's actual architecture (Next.js frontend + Shopify backend, checkout domain unconfirmed) — not just "does the payload enumerate installed pixels." If checkout genuinely lives on a separate Shopify-hosted domain unreachable from this crawl's declared `product_domain`, that's a Scan Inputs/config gap (a missing `checkout_domain` declaration) as much as a detection gap, and should be flagged back rather than solved by P1-04 alone.
 
+**Completed — a research spike, no code shipped.** Answer: **not reachable, for two independent reasons, both grounded in this trigger audit's own real captured data** (queried directly, same method as the resolved open questions above) plus current external documentation.
+
+**1. The crawl itself never reached a Shopify-native surface.** Re-pulled `audit_reports.report_json` for audit `49448510`: all 21 captured network requests across all 4 steps are GA4 (`analytics.google.com`, `stats.g.doubleclick.net`) or Meta (`connect.facebook.net`, `facebook.com/tr`) — zero requests to `myshopify.com`, `checkout.shopify.com`, `shopifycdn.com`, or any Web Pixels Manager sandbox origin, anywhere in the whole stored report. The only "shopify" string in the entire report is `cdn.shopify.com`, appearing exactly once as an **image-proxy target** inside a `/_next/image?url=...` param on the confirmation step — never as a script/pixel origin. The "checkout" step's `stepUrlResolver.ts` heuristic guessed `https://www.pureborn.com/cart`, but its `final_url` settled at `https://www.pureborn.com/en-uae/products` — the same products-listing page the "product" step already visited. The crawl never left pureborn.com's own domain at any step; `checkout_domain` is `NULL` on this audit row. There is no cross-origin sandboxed frame anywhere in this run's `RequestInitiator` data for P1-04 to have found even in principle.
+
+**2. Even with a corrected `checkout_domain`, Shopify's own architecture likely wouldn't surface pixels on PureBorn's own pages anyway.** External research (Shopify's own docs/community, current as of this sprint): Shopify's checkout is sandboxed by design — "you can't inject arbitrary scripts into checkout pages," and every store now routes tracking through the Web Pixels API sandbox rather than direct `checkout.liquid` injection. Critically for a headless architecture like PureBorn's: **"Customer events are not currently supported in headless stores"** — Shopify's own guidance directs a headless implementation to fire purchase/order-success events via the **Order Status Page** (a Shopify-hosted page) instead, not the custom frontend's own pages. A headless storefront commonly hands off to a *separate* checkout domain (Shopify's own `<store>.myshopify.com`, `checkout.shopify.com`, or a configured subdomain like `checkout.hydrogen.shop`) — exactly the domain Atlas's `checkout_domain` Scan Input exists to declare, and exactly what's missing here.
+
+**Net conclusion for Sprint 11:** the gap is real, but it's **primarily a Scan Inputs/config gap** (flagged back, not silently patched — `checkout_domain` is client-provided data this sprint has no authority to invent for a real client's stored audit), and **secondarily an architectural ceiling** — Web Pixels Manager, if it exists at all for PureBorn, only ever fires on a genuine Shopify-hosted surface (most likely the Order Status Page), never on pureborn.com's own Next.js pages. This directly resolves the PRD's own fork in Sprint 11's favor: **path-only, not named attribution.** Shopify's sandbox is origin-isolated by design specifically so nothing outside it can introspect which pixel (theme/app/custom) is installed — there is no safe, non-fragile way to name the specific `ImplementationPath` sub-type (`SHOPIFY_APP_PIXEL`/`SHOPIFY_CUSTOM_PIXEL`/`SHOPIFY_THEME`) from outside the sandbox. The only honest signal is "a cross-origin sandboxed frame was observed on a page P1-03 has identified as Shopify or Shopify-backed" — which is exactly what `L2.ts`'s existing `UNKNOWN`-with-evidence handling already does while pointing at this dependency (Sprint 7's docstring, `duplicateImplementationDetector.ts`'s docstring). Sprint 11 narrows accordingly: activate the single `SHOPIFY_WEB_PIXEL` path value in `implementationPathClassifier.ts`, gated on both (a) a genuinely cross-origin `frame_url` and (b) `commerce_platform.platform`/`detected_backend` being Shopify-flavored (P1-03's output) — no name-the-specific-pixel ambition, and no attempt to reach further into PureBorn's own real checkout without a real `checkout_domain` declaration.
+
 ### Sprint 11 · P1-04 · Shopify web pixel detection
 
-After the spike, scoped by its result (named attribution vs. path-only, per the PRD's own fork).
+After the spike, scoped by its result: **path-only** cross-origin sandboxed-frame detection (see Sprint 10), not named per-pixel attribution.
 
 ### Sprint 12 · P1-05 · Implementation Architecture report section
 
@@ -189,8 +197,8 @@ After Sprint 7 (needs P1-01/P1-02's data). Presentation-only — per platform, p
 | 7 | P1-02 implementation path classification | M | After 6 |
 | 8 | P1-06 duplicate implementation detection | S | After 7 |
 | 9 | P1-03 platform detection | M | Parallel |
-| 10 | P1-04a Shopify web pixels spike (widened) | S | Informs 11 |
-| 11 | P1-04 Shopify web pixel detection | M | After 10 |
+| 10 | P1-04a Shopify web pixels spike (widened) — completed, not reachable this audit | S | Informs 11 |
+| 11 | P1-04 Shopify web pixel detection (narrowed to path-only) | S | After 10 |
 | 12 | P1-05 Implementation Architecture section | S | After 7 |
 
 ---
