@@ -9,6 +9,8 @@ function makeSignals(overrides: Partial<CommercePlatformSignals> = {}): Commerce
   return {
     scriptSrcs: [],
     linkHrefs: [],
+    imageSrcs: [],
+    socialImageMeta: null,
     hasShopifyGlobal: false,
     hasWooCommerceMarker: false,
     hasHeadlessFrameworkMarker: false,
@@ -52,7 +54,7 @@ describe('detectCommercePlatform', () => {
     expect(result.indicators).toEqual(
       expect.arrayContaining([
         'Decoupled frontend framework detected (no server-rendered theme markup)',
-        'cdn.shopify.com asset references found with no Shopify theme JS running',
+        'cdn.shopify.com asset reference found with no Shopify theme JS running',
       ]),
     );
   });
@@ -152,5 +154,56 @@ describe('detectCommercePlatform', () => {
       }),
     );
     expect(result.platform).toBe('shopify');
+  });
+
+  // Widened after a real PureBorn re-run (post-Sprint-12) came back with no
+  // commerce_platform at all — its cdn.shopify.com evidence lives in an
+  // og:image meta value proxied through Next.js's image optimizer, not a
+  // script or link tag, and window.__NEXT_DATA__ never fired (a modern
+  // Next.js App Router deployment doesn't reliably set it).
+  describe('widened signal sources (real PureBorn evidence pattern)', () => {
+    it('finds cdn.shopify.com evidence in an <img src> value, not just script/link tags', () => {
+      const result = detectCommercePlatform(
+        makeSignals({ hasHeadlessFrameworkMarker: true, imageSrcs: ['https://shop.example.com/_next/image?url=https%3A%2F%2Fcdn.shopify.com%2Fs%2Ffiles%2F1%2Fproduct.jpg'] }),
+      );
+      expect(result.platform).toBe('headless');
+      expect(result.detected_backend).toBe('shopify');
+    });
+
+    it('finds cdn.shopify.com evidence in the og:image/twitter:image social meta value', () => {
+      const result = detectCommercePlatform(
+        makeSignals({ hasHeadlessFrameworkMarker: true, socialImageMeta: 'https://shop.example.com/_next/image?url=https%3A%2F%2Fcdn.shopify.com%2Fs%2Ffiles%2F1%2Farticles%2Fphoto.webp' }),
+      );
+      expect(result.platform).toBe('headless');
+      expect(result.detected_backend).toBe('shopify');
+    });
+
+    it('infers headless from a /_next/static/ asset path alone, with no window.__NEXT_DATA__ marker — the real PureBorn case (App Router doesn\'t set that global)', () => {
+      const result = detectCommercePlatform(
+        makeSignals({
+          hasHeadlessFrameworkMarker: false,
+          scriptSrcs: ['https://shop.example.com/_next/static/chunks/main.js'],
+          socialImageMeta: 'https://shop.example.com/_next/image?url=https%3A%2F%2Fcdn.shopify.com%2Fs%2Ffiles%2F1%2Fphoto.webp',
+        }),
+      );
+      expect(result.platform).toBe('headless');
+      expect(result.detected_backend).toBe('shopify');
+      expect(result.indicators).toContain('Next.js asset path (/_next/...) observed');
+    });
+
+    it('infers headless from a /_next/image path alone, independent of /_next/static/', () => {
+      const result = detectCommercePlatform(
+        makeSignals({ hasHeadlessFrameworkMarker: false, imageSrcs: ['https://shop.example.com/_next/image?url=%2Flocal-asset.png'] }),
+      );
+      expect(result.platform).toBe('spa');
+      expect(result.indicators).toContain('Next.js asset path (/_next/...) observed');
+    });
+
+    it('does not infer headless from an unrelated asset path with no /_next/ or window marker', () => {
+      const result = detectCommercePlatform(
+        makeSignals({ scriptSrcs: ['https://shop.example.com/static/app.js'] }),
+      );
+      expect(result.platform).toBe('custom');
+    });
   });
 });

@@ -351,6 +351,22 @@ describe('simulateJourney — AuditData assembly', () => {
       expect(mockCdpSession.send).toHaveBeenCalledWith('Network.disable');
       expect(mockCdpSession.detach).toHaveBeenCalledTimes(1);
     });
+
+    it('logs a diagnosable warning (not a silent failure) when CDP session creation itself throws', async () => {
+      const { mockBrowser, mockContext } = makeMockBrowser();
+      (mockContext as unknown as { newCDPSession: () => Promise<unknown> }).newCDPSession = vi.fn().mockRejectedValue(new Error('Target closed'));
+      const loggerModule = await import('@/utils/logger');
+      const warnSpy = vi.spyOn(loggerModule.default, 'warn');
+
+      const auditData = await simulateJourney(mockBrowser as never, BASE_OPTS);
+
+      expect(auditData.request_provenance).toBeUndefined();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ audit_id: BASE_OPTS.audit_id, err: 'Target closed' }),
+        'CDP session setup failed — request_provenance will be omitted',
+      );
+      warnSpy.mockRestore();
+    });
   });
 });
 
@@ -982,6 +998,7 @@ describe('simulateJourney — commerce_platform', () => {
     hasWooCommerceMarker: boolean;
     hasHeadlessFrameworkMarker: boolean;
     generatorMeta: string | null;
+    socialImageMeta?: string | null;
   } | 'throw') {
     return async (fn: unknown, arg?: { selector?: string }) => {
       if (arg?.selector) return []; // script[src]/link[href]/a[href] — overridden per-test where needed
@@ -1054,5 +1071,79 @@ describe('simulateJourney — commerce_platform', () => {
     const auditData = await simulateJourney(mockBrowser as never, BASE_OPTS);
 
     expect(auditData.commerce_platform).toEqual({ platform: 'custom', confidence: 'low', indicators: [] });
+  });
+
+  // Widened after a real PureBorn re-run (post-Sprint-12) came back with no
+  // commerce_platform at all — see commercePlatformDetector.ts's header for
+  // the full incident. These three exercise the fix end to end through
+  // simulateJourney, not just the pure detector.
+  it('finds cdn.shopify.com evidence in an <img src> value end to end, not just script/link tags', async () => {
+    const { mockBrowser, mockPage } = makeMockBrowser();
+    mockPage.evaluate.mockImplementation(async (fn: unknown, arg?: { selector?: string }) => {
+      if (arg?.selector === 'img[src]') return ['https://shop.example.com/_next/image?url=https%3A%2F%2Fcdn.shopify.com%2Fs%2Ffiles%2F1%2Fproduct.jpg'];
+      if (arg?.selector) return [];
+      const src = typeof fn === 'function' ? fn.toString() : '';
+      if (src.includes('hasShopifyGlobal')) {
+        return { hasShopifyGlobal: false, hasWooCommerceMarker: false, hasHeadlessFrameworkMarker: true, generatorMeta: null, socialImageMeta: null };
+      }
+      if (src.includes('document.referrer')) return '';
+      return [];
+    });
+
+    const auditData = await simulateJourney(mockBrowser as never, BASE_OPTS);
+
+    expect(auditData.commerce_platform?.platform).toBe('headless');
+    expect(auditData.commerce_platform?.detected_backend).toBe('shopify');
+  });
+
+  it('finds cdn.shopify.com evidence in the og:image/twitter:image social meta value end to end', async () => {
+    const { mockBrowser, mockPage } = makeMockBrowser();
+    mockPage.evaluate.mockImplementation(markersEvaluateMock({
+      hasShopifyGlobal: false, hasWooCommerceMarker: false, hasHeadlessFrameworkMarker: true, generatorMeta: null,
+      socialImageMeta: 'https://shop.example.com/_next/image?url=https%3A%2F%2Fcdn.shopify.com%2Fs%2Ffiles%2F1%2Farticles%2Fphoto.webp',
+    }));
+
+    const auditData = await simulateJourney(mockBrowser as never, BASE_OPTS);
+
+    expect(auditData.commerce_platform?.platform).toBe('headless');
+    expect(auditData.commerce_platform?.detected_backend).toBe('shopify');
+  });
+
+  it("infers headless from a /_next/static/ asset path alone end to end, with no window.__NEXT_DATA__ marker — the real PureBorn case", async () => {
+    const { mockBrowser, mockPage } = makeMockBrowser();
+    mockPage.evaluate.mockImplementation(async (fn: unknown, arg?: { selector?: string }) => {
+      if (arg?.selector === 'script[src]') return ['https://shop.example.com/_next/static/chunks/main.js'];
+      if (arg?.selector) return [];
+      const src = typeof fn === 'function' ? fn.toString() : '';
+      if (src.includes('hasShopifyGlobal')) {
+        return {
+          hasShopifyGlobal: false, hasWooCommerceMarker: false, hasHeadlessFrameworkMarker: false, generatorMeta: null,
+          socialImageMeta: 'https://shop.example.com/_next/image?url=https%3A%2F%2Fcdn.shopify.com%2Fs%2Ffiles%2F1%2Fphoto.webp',
+        };
+      }
+      if (src.includes('document.referrer')) return '';
+      return [];
+    });
+
+    const auditData = await simulateJourney(mockBrowser as never, BASE_OPTS);
+
+    expect(auditData.commerce_platform?.platform).toBe('headless');
+    expect(auditData.commerce_platform?.detected_backend).toBe('shopify');
+    expect(auditData.commerce_platform?.indicators).toContain('Next.js asset path (/_next/...) observed');
+  });
+
+  it('logs a diagnosable warning (not a silent failure) when the commerce-marker evaluate() throws', async () => {
+    const { mockBrowser, mockPage } = makeMockBrowser();
+    mockPage.evaluate.mockImplementation(markersEvaluateMock('throw'));
+    const loggerModule = await import('@/utils/logger');
+    const warnSpy = vi.spyOn(loggerModule.default, 'warn');
+
+    await simulateJourney(mockBrowser as never, BASE_OPTS);
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ audit_id: BASE_OPTS.audit_id, err: 'evaluate failed' }),
+      'Commerce platform marker capture failed — commerce_platform will be omitted',
+    );
+    warnSpy.mockRestore();
   });
 });
