@@ -7,8 +7,9 @@
  * with content instead of being a fixed 5 (see real page numbering below).
  */
 import PDFDocument from 'pdfkit';
-import type { ReportJSON, ValidationResult, ReportIssue, StepCoverage, StepUrlSource, ScoreCoverage } from '@/types/audit';
+import type { ReportJSON, ValidationResult, ReportIssue, StepCoverage, StepUrlSource, ScoreCoverage, ImplementationPath } from '@/types/audit';
 import { ALL_V2_LAYERS, LAYER_LABELS } from '@/services/validation/register/layers';
+import { PLATFORM_LABELS as DECLARED_PLATFORM_LABELS } from '@/services/validation/register/platformDetection';
 
 /** Per-step provenance label for the Scan Coverage section — see StepUrlSource's docstring in types/audit.ts. */
 const STEP_SOURCE_LABELS: Record<StepUrlSource, string> = {
@@ -186,6 +187,18 @@ const COMMERCE_PLATFORM_LABELS: Record<string, string> = {
   headless:                    'Headless / composable storefront',
   spa:                         'Single-page application (unidentified backend)',
   custom:                      'Custom / unidentified platform',
+};
+
+/** Signal vs Implementation PRD P1-05 — display labels for ImplementationPathRow.path/DuplicateImplementationFinding.paths. */
+const IMPLEMENTATION_PATH_LABELS: Partial<Record<ImplementationPath, string>> = {
+  GTM: 'Google Tag Manager',
+  DIRECT_SCRIPT: "Platform's own script (direct)",
+  SHOPIFY_WEB_PIXEL: 'Shopify Web Pixels Manager sandbox',
+  SHOPIFY_APP_PIXEL: 'Shopify app pixel',
+  SHOPIFY_CUSTOM_PIXEL: 'Shopify custom pixel',
+  SHOPIFY_THEME: 'Shopify theme pixel',
+  SERVER_SIDE: 'Server-side',
+  HYBRID: 'Multiple mechanisms (ambiguous)',
 };
 
 /** WithAccessEntry.requires_connection labels (PRD §12.2's literal 5-platform union). */
@@ -1259,6 +1272,129 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
             .text(paramLine, LEFT + 10, entryY + 20, { width: CONTENT_W - 20 });
         }
         doc.y = entryY + entryH + 8;
+      }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // PAGE — Implementation Architecture (Signal vs Implementation PRD
+    // P1-05) — how each declared platform's signal actually reaches the
+    // network (GTM, a directly-loaded script, or a Shopify Web Pixels
+    // Manager sandbox), plus P1-06's duplicate-implementation findings.
+    // Informational, non-scored; omitted entirely (no page added) when the
+    // scan captured no request_provenance at all, per CLAUDE.md rule 12.
+    // ══════════════════════════════════════════════════════════════════════
+
+    if (report.implementation_architecture) {
+      const { paths, unattributed, duplicates } = report.implementation_architecture;
+      doc.addPage();
+      pageHeader('Implementation Architecture');
+      sectionHeading('Implementation Architecture');
+      doc.fillColor(C.midText).fontSize(9).font('Helvetica')
+        .text(
+          'How each platform\'s signal actually reaches the network on this site — Google Tag Manager, a directly-loaded script, or (on a Shopify-backed site) a Shopify Web Pixels Manager sandbox.',
+          LEFT, doc.y, { width: CONTENT_W },
+        );
+      doc.moveDown(0.5);
+
+      // Duplicate implementations — highest-commercial-value P1 output,
+      // shown first: a client can verify this against their own platform
+      // numbers immediately, no ad-account access needed.
+      if (duplicates.length > 0) {
+        sectionHeading(`Duplicate Implementations Found (${duplicates.length})`);
+        doc.fillColor(C.mutedText).fontSize(8).font('Helvetica')
+          .text('More than one delivery mechanism was observed reaching the same page for the same platform — worth checking for duplicate event delivery.', LEFT, doc.y, { width: CONTENT_W });
+        doc.moveDown(0.35);
+        for (const dup of duplicates) {
+          const pathLabels = dup.paths.map((p) => IMPLEMENTATION_PATH_LABELS[p] ?? formatLabel(p)).join(' + ');
+          const rowH = 22 + doc.font('Helvetica').fontSize(7.5).heightOfString(pathLabels, { width: CONTENT_W - 20 }) + 4;
+          if (needsNewPage(rowH + 8)) {
+            doc.addPage();
+            pageHeader('Implementation Architecture');
+            sectionHeading('Duplicate Implementations Found (continued)');
+          }
+          const rowY = doc.y;
+          doc.fillColor(C.bgLight).rect(LEFT, rowY, CONTENT_W, rowH).fill();
+          doc.fillColor(C.darkText).fontSize(9).font('Helvetica-Bold')
+            .text(`${DECLARED_PLATFORM_LABELS[dup.platform] ?? formatLabel(dup.platform)} — ${dup.page.replace(/_/g, ' ')}`, LEFT + 10, rowY + 6);
+          pill('Duplicate', C.atRisk, LEFT + CONTENT_W - 90, rowY + 4);
+          doc.fillColor(C.lightText).fontSize(7.5).font('Helvetica')
+            .text(pathLabels, LEFT + 10, rowY + 20, { width: CONTENT_W - 20 });
+          doc.y = rowY + rowH + 8;
+        }
+        doc.moveDown(0.4);
+      }
+
+      // Implementation paths — confidently-attributed rows only; a fabricated
+      // confidence for an UNKNOWN row is never shown here (see below).
+      if (needsNewPage(60)) {
+        doc.addPage();
+        pageHeader('Implementation Architecture');
+      }
+      sectionHeading('Implementation Paths');
+      if (paths.length === 0) {
+        doc.fillColor(C.lightText).fontSize(9).font('Helvetica')
+          .text('No platform signal could be confidently attributed to a specific delivery mechanism during this scan.', LEFT, doc.y, { width: CONTENT_W });
+        doc.moveDown(0.5);
+      }
+      for (const row of paths) {
+        const evidenceLine = row.evidence.join('  ·  ');
+        const evidenceH = evidenceLine
+          ? doc.font('Helvetica').fontSize(7.5).heightOfString(evidenceLine, { width: CONTENT_W - 20 }) + 4
+          : 0;
+        const rowH = 22 + evidenceH + 4;
+        if (needsNewPage(rowH + 8)) {
+          doc.addPage();
+          pageHeader('Implementation Architecture');
+          sectionHeading('Implementation Paths (continued)');
+        }
+        const rowY = doc.y;
+        doc.strokeColor(C.bgLight).lineWidth(1).rect(LEFT, rowY, CONTENT_W, rowH).stroke();
+        doc.fillColor(C.darkText).fontSize(9).font('Helvetica-Bold')
+          .text(`${DECLARED_PLATFORM_LABELS[row.platform] ?? formatLabel(row.platform)} — ${row.page.replace(/_/g, ' ')}`, LEFT + 10, rowY + 6);
+        doc.fillColor(C.mutedText).fontSize(7.5).font('Helvetica')
+          .text(
+            `${IMPLEMENTATION_PATH_LABELS[row.path] ?? formatLabel(row.path)}  ·  ${row.confidence === 'high' ? 'High confidence' : 'Medium confidence'}`,
+            LEFT + 10, rowY + 6, { align: 'right', width: CONTENT_W - 20 },
+          );
+        if (evidenceLine) {
+          doc.fillColor(C.lightText).fontSize(7.5).font('Helvetica')
+            .text(evidenceLine, LEFT + 10, rowY + 20, { width: CONTENT_W - 20 });
+        }
+        doc.y = rowY + rowH + 8;
+      }
+
+      // Not attributed — a platform's signal fired but couldn't be traced
+      // to a known mechanism. Deliberately never given a confidence label.
+      if (unattributed.length > 0) {
+        doc.moveDown(0.3);
+        if (needsNewPage(60)) {
+          doc.addPage();
+          pageHeader('Implementation Architecture');
+        }
+        sectionHeading('Not Attributed');
+        doc.fillColor(C.mutedText).fontSize(8).font('Helvetica')
+          .text('Signal was observed, but the delivery mechanism could not be confidently determined from this scan.', LEFT, doc.y, { width: CONTENT_W });
+        doc.moveDown(0.35);
+        for (const row of unattributed) {
+          const evidenceLine = row.evidence.join('  ·  ');
+          const evidenceH = evidenceLine
+            ? doc.font('Helvetica').fontSize(7.5).heightOfString(evidenceLine, { width: CONTENT_W - 20 }) + 4
+            : 0;
+          const rowH = 20 + evidenceH + 4;
+          if (needsNewPage(rowH + 8)) {
+            doc.addPage();
+            pageHeader('Implementation Architecture');
+            sectionHeading('Not Attributed (continued)');
+          }
+          const rowY = doc.y;
+          doc.fillColor(C.darkText).fontSize(9).font('Helvetica-Bold')
+            .text(`${DECLARED_PLATFORM_LABELS[row.platform] ?? formatLabel(row.platform)} — ${row.page.replace(/_/g, ' ')}`, LEFT, rowY);
+          if (evidenceLine) {
+            doc.fillColor(C.lightText).fontSize(7.5).font('Helvetica')
+              .text(evidenceLine, LEFT, rowY + 14, { width: CONTENT_W });
+          }
+          doc.y = rowY + rowH + 4;
+        }
       }
     }
 

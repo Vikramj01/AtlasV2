@@ -11,6 +11,7 @@ import { NotAssessed } from '@/components/audit/ReportPages/NotAssessed';
 import { WithAccess } from '@/components/audit/ReportPages/WithAccess';
 import { ContentQualityWarningBanner } from '@/components/audit/ContentQualityWarningBanner';
 import { SiteSetup } from '@/components/audit/ReportPages/SiteSetup';
+import { ImplementationArchitecture } from '@/components/audit/ReportPages/ImplementationArchitecture';
 import { HowToReadThisReport } from '@/components/audit/ReportPages/HowToReadThisReport';
 import { TechnicalAppendix } from '@/components/audit/ReportPages/TechnicalAppendix';
 
@@ -40,6 +41,7 @@ export function ReportTabs({ report }: { report: ReportJSON }) {
     { label: 'Not Assessed', show: (report.could_not_be_assessed?.length ?? 0) > 0, render: () => <NotAssessed report={report} /> },
     { label: 'With Access', show: (report.with_access?.length ?? 0) > 0, render: () => <WithAccess report={report} /> },
     { label: 'Site Setup', show: true, render: () => <SiteSetup report={report} /> },
+    { label: 'Implementation Architecture', show: !!report.implementation_architecture, render: () => <ImplementationArchitecture report={report} /> },
     { label: 'How to Read This Report', show: true, render: () => <HowToReadThisReport /> },
     { label: 'Technical Appendix', show: true, render: () => <TechnicalAppendix report={report} /> },
   ];

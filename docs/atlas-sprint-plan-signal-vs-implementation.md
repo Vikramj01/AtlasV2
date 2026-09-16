@@ -2,7 +2,7 @@
 
 **Source** · PRD "Atlas Signal Health Platform — Signal vs implementation separation" (draft 0.1, 16 Sept 2026), triggered by audit `49448510-d968-4178-98e2-8e7c70998276` (pureborn.com/en-uae). Not yet issued to the client — P0 fixes are a re-run, not a retraction.
 
-**Status** · P0 (Sprints 1-5) shipped 2026-09-16 on `claude/optimistic-turing-embehd`. P1 (provenance architecture): Sprints 6-9 and 11 shipped, Sprint 10 (spike) completed, Sprint 12 scoped but not started. The "One product decision" flagged below was resolved by the user: keep the existing broad `conversion_surface` definition — see the resolved section.
+**Status** · P0 (Sprints 1-5) and P1 (Sprints 6-12, provenance architecture) both complete, shipped 2026-09-16 on `claude/optimistic-turing-embehd` (Sprint 10 was a research spike, not a code shipment). The "One product decision" flagged below was resolved by the user: keep the existing broad `conversion_surface` definition — see the resolved section.
 
 **Related, already-shipped prior work** (read before touching the register or reporting layer) · `docs/ATLAS_REPORT_CORRECTNESS_PROGRAMME_PRD.md`, `docs/ATLAS_CLICKID_CONTENTION_CONTRADICTION_GUARD_PRD.md`, `docs/atlas-sprint-plan-pre-connection-confidence-tiering.md` (evidence_class / verdict lattice / severity ceilings — P0-03 and P0-04 build directly on this). **Not the same work as** `docs/ATLAS_REPORT_EVIDENCE_INTEGRITY_PRD.md` — that's a separate, earlier PRD about PDF-rendering truncation on a different reference audit (openart.ai, 5 Sept); its defects (evidence truncated to 3 items, remediation cut at 117 chars, page numbering) are unrelated to this one and already largely shipped. Do not conflate the two.
 
@@ -177,9 +177,25 @@ Not wired into a live report yet — same as Sprints 7/8, that's P1-05's job (Sp
 
 Tests: 8 new `implementationPathClassifier.test.ts` cases (activates for classic Shopify, Shopify Plus, and headless-proxying-Shopify; never emits a named sub-type; stays `UNKNOWN` with no commerce-platform data, with a non-Shopify platform, and with a headless storefront proxying a non-Shopify backend; doesn't activate for a non-sandboxed request even when Shopify is confirmed). 1 new `duplicateImplementationDetector.test.ts` end-to-end composition test — a GTM tag plus a genuine Shopify Web Pixels Manager sandbox both firing the same platform's signal on one page, the exact "close to free" P1-06 case this classifier's activation was meant to unlock.
 
-### Sprint 12 · P1-05 · Implementation Architecture report section
+### Sprint 12 · P1-05 · Implementation Architecture report section — shipped
 
 After Sprint 7 (needs P1-01/P1-02's data). Presentation-only — per platform, path, evidence, confidence, per the PRD's §92 table shape.
+
+**Shipped.** New `services/provenance/implementationArchitectureSummary.ts` — `buildImplementationArchitectureSummary()`, the presentation layer over Sprints 7/9/11's classifier output plus Sprint 8's duplicate detector. No new detection logic: it calls `classifyImplementationPaths(auditData.request_provenance, auditData.commerce_platform)` then `detectDuplicateImplementations()` on the result, and assembles the shape the report renders. Returns `undefined` (not an empty-array shell) when `request_provenance` is absent entirely — a pre-P1-01 audit, or a run with no CDP session access — so the section is omitted rather than rendering a false "no implementation paths found" state, matching every other optional-section convention in this codebase (`site_setup`, `with_access`, `could_not_be_assessed`).
+
+**Confidence, derived, not carried through.** `ImplementationPathClassification` never had a confidence field, so `confidenceForPath()` derives one purely from `path` itself: `'high'` for `GTM`/`DIRECT_SCRIPT` (a concrete loader/script URL directly matched in the initiator chain), `'medium'` for everything requiring corroborating-but-indirect evidence (`SHOPIFY_WEB_PIXEL` — a sandboxed frame plus independent commerce-platform detection — and the reserved `HYBRID`/`SERVER_SIDE`/Shopify sub-types, if ever activated). Exhaustive over every non-`UNKNOWN` `ImplementationPath` value, so a future classifier addition can't ship without a considered tier. `UNKNOWN` rows never get a confidence label at all — they route to a separate `unattributed` list (`UnattributedImplementationRow`, no `confidence` field in the type), per CLAUDE.md rule 12: a fabricated confidence for "we don't know how this fired" would be exactly the category error this whole PRD exists to fix.
+
+**Duplicate findings included, not deferred** — `duplicateImplementationDetector.ts`'s own header already named this section as its intended destination ("Not wired into a live report yet... that's P1-05's job"), so `ImplementationArchitectureSummary.duplicates` surfaces P1-06's output as its own highlighted callout, shown first (highest-commercial-value P1 output per the PRD — a client can verify it against their own platform numbers immediately). Individual path rows still appear in the main table too; the duplicate callout is a highlight, not a replacement.
+
+Wired into `generator.ts`'s `generateReport()` by calling the builder directly off `auditData` (unlike `siteSetup`, which is passed in as a param because it needs external data — `connectedGtmContainerId` — this function doesn't have) — no orchestrator.ts changes needed, and no new positional parameter on an already-9-parameter function.
+
+Rendered in both the PDF (`services/export/pdfGenerator.ts`, new page between Site Setup and Technical Appendix: Duplicate Implementations → Implementation Paths → Not Attributed) and the web report (new `ImplementationArchitecture.tsx`, wired into `ReportTabs.tsx` with a tab shown only when `report.implementation_architecture` is present, matching Signals in Conflict/Not Assessed/With Access's convention). PDF layout verified by generating a real sample PDF with all three sub-sections populated and reading it back — no truncation/overlap, matches the established Site Setup visual style (row cards, right-aligned metadata, `pill()` badges).
+
+Checked, not extended: the "UNKNOWN provenance rendered as absence" risk flagged above — this section's evidence copy (reused verbatim from Sprints 7/11's classifier) contains no `outputLint.ts` banned tokens today, and the section isn't in that gate's scanned-field list at all (same as `site_setup`/`commerce_platform` before it). Left as-is rather than widening the lint gate speculatively — a presentation-only sprint isn't the place to extend validation infrastructure nobody asked to extend.
+
+Tests: 9 new `implementationArchitectureSummary.test.ts` cases (`confidenceForPath` exhaustive over every path; `undefined` on no/empty `request_provenance`; attributed rows get a derived confidence and thread `commerce_platform` through; `UNKNOWN` routes to `unattributed` with no confidence; `SHOPIFY_WEB_PIXEL` activates correctly; a duplicate finding surfaces alongside its individual path rows; a non-declared-platform request contributes nothing). 2 new `generator.test.ts` cases (field omitted with no `request_provenance`; populated and `commerce_platform`-threaded end to end through `generateReport()`). Full backend suite: 2513/2519 passing, the same 6 pre-existing/unrelated failures as baseline.
+
+**All 12 sprints in this plan now shipped or completed** (Sprint 10 was a research spike, not a code shipment). P0 (report-integrity fixes) and P1 (provenance architecture — request initiator capture, implementation-path classification, commerce-platform detection, duplicate-implementation detection, Shopify Web Pixel path-only detection, and this Implementation Architecture section) are both complete.
 
 ---
 
@@ -207,7 +223,7 @@ After Sprint 7 (needs P1-01/P1-02's data). Presentation-only — per platform, p
 | 9 | P1-03 platform detection | M | Parallel |
 | 10 | P1-04a Shopify web pixels spike (widened) — completed, not reachable this audit | S | Informs 11 |
 | 11 | P1-04 Shopify web pixel detection (narrowed to path-only) — shipped | S | After 10 |
-| 12 | P1-05 Implementation Architecture section | S | After 7 |
+| 12 | P1-05 Implementation Architecture section — shipped | S | After 7 |
 
 ---
 

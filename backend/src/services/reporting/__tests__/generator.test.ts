@@ -433,6 +433,34 @@ describe('generateReport — with_access', () => {
   });
 });
 
+// Signal vs Implementation PRD P1-05 — built directly from auditData
+// (request_provenance/commerce_platform), unlike siteSetup which is passed
+// in as a param; these tests exercise that internal wiring end to end.
+describe('generateReport — implementation_architecture', () => {
+  it('omits the field when the audit captured no request_provenance at all', () => {
+    const report = generateReport(makeAuditData(), makeScores(), [], [], makeSiteSetup());
+    expect(report.implementation_architecture).toBeUndefined();
+  });
+
+  it('populates implementation_architecture from auditData.request_provenance, threading commerce_platform through', () => {
+    const auditData = makeAuditData({
+      request_provenance: [
+        {
+          url: 'https://www.facebook.com/tr/', step: 'landing', page_url: 'https://shop.example.com/',
+          initiator_type: 'script', initiator_script_url: 'https://connect.facebook.net/en_US/fbevents.js', timestamp: Date.now(),
+        },
+      ],
+      commerce_platform: { platform: 'shopify', confidence: 'high', indicators: ['window.Shopify global present'] },
+    });
+    const report = generateReport(auditData, makeScores(), [], [], makeSiteSetup());
+    expect(report.implementation_architecture).toBeDefined();
+    expect(report.implementation_architecture?.commerce_platform?.platform).toBe('shopify');
+    expect(report.implementation_architecture?.paths).toEqual([
+      expect.objectContaining({ platform: 'meta', path: 'DIRECT_SCRIPT', confidence: 'high' }),
+    ]);
+  });
+});
+
 // W2.2 (Click-ID Contention, Contradiction Guard & Settle Enforcement PRD)
 // — an audit-time assertion so a fired contradiction guard can never reach
 // the report renderer: signalConsistency.ts's CONF_05 (formerly

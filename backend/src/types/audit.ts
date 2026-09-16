@@ -472,6 +472,64 @@ export interface DuplicateImplementationFinding {
 }
 
 /**
+ * One confidently-attributed implementation path row for the Implementation
+ * Architecture report section (Signal vs Implementation PRD P1-05) —
+ * ImplementationPathClassification plus a derived `confidence`, excluding
+ * `UNKNOWN` (see UnattributedImplementationRow — a confidence label doesn't
+ * mean anything for a mechanism this register couldn't attribute at all).
+ * `confidence` is derived purely from `path` itself: `'high'` for GTM/
+ * DIRECT_SCRIPT (a concrete loader/script URL was directly matched in the
+ * initiator chain), `'medium'` for every path requiring corroborating
+ * evidence beyond a direct script match (SHOPIFY_WEB_PIXEL — a sandboxed
+ * frame plus independent commerce-platform detection — and the reserved
+ * HYBRID/SERVER_SIDE/other Shopify sub-types, if ever activated).
+ */
+export interface ImplementationPathRow {
+  platform: DeclaredPlatform;
+  page: string;
+  path: Exclude<ImplementationPath, 'UNKNOWN'>;
+  confidence: 'high' | 'medium';
+  request_urls: string[];
+  evidence: string[];
+}
+
+/**
+ * A platform's signal was observed on a page but couldn't be attributed to
+ * a known implementation path (ImplementationPathClassification.path ===
+ * 'UNKNOWN') — shown separately from ImplementationPathRow rather than
+ * given a fabricated confidence label, per CLAUDE.md rule 12.
+ */
+export interface UnattributedImplementationRow {
+  platform: DeclaredPlatform;
+  page: string;
+  request_urls: string[];
+  evidence: string[];
+}
+
+/**
+ * Implementation Architecture report section (Signal vs Implementation PRD
+ * P1-05) — the presentation layer over P1-01/P1-02's request-provenance
+ * classification (implementationPathClassifier.ts), P1-03's commerce-
+ * platform detection, and P1-06's duplicate-implementation detection
+ * (duplicateImplementationDetector.ts). Built by
+ * provenance/implementationArchitectureSummary.ts's
+ * buildImplementationArchitectureSummary(), which returns undefined (not an
+ * empty-array shell) when the scan captured no request_provenance at all —
+ * e.g. a pre-P1-01 audit, or a run with no CDP session access — so the
+ * report section is omitted entirely rather than rendering a false "no
+ * implementation paths found" state.
+ */
+export interface ImplementationArchitectureSummary {
+  generated_at: string;
+  /** P1-03's own output for this scan, threaded through for context (e.g. "this page is Shopify-backed") — omitted when no commerce-platform signal was captured. */
+  commerce_platform?: CommercePlatformDetection;
+  paths: ImplementationPathRow[];
+  unattributed: UnattributedImplementationRow[];
+  /** P1-06's duplicate-implementation findings — the highest-commercial-value P1 output per the PRD. */
+  duplicates: DuplicateImplementationFinding[];
+}
+
+/**
  * Commerce platform / rendering model (Signal vs Implementation PRD P1-03)
  * — Atlas previously reported no statement of this at all, which matters
  * for interpreting every finding about checkout and confirmation (the
@@ -1446,6 +1504,15 @@ export interface ReportJSON {
    * resolve here. Omitted (not an empty array) when nothing applies.
    */
   with_access?: WithAccessEntry[];
+  /**
+   * Signal vs Implementation PRD P1-05 — how each declared platform's
+   * signal actually reaches the network (GTM/direct script/Shopify Web
+   * Pixel), plus P1-06's duplicate-implementation findings. Built by
+   * provenance/implementationArchitectureSummary.ts's
+   * buildImplementationArchitectureSummary(). Omitted (not an empty-array
+   * shell) when the scan captured no request_provenance at all.
+   */
+  implementation_architecture?: ImplementationArchitectureSummary;
   /**
    * Set by the pre-render placeholder guard (PRD "Signal Health Report"
    * Issue 4) when a narrative field contains literal placeholder-shaped

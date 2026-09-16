@@ -317,6 +317,54 @@ export interface SiteSetupSummary {
   commerce_platform?: CommercePlatformDetection;
 }
 
+/** Signal vs Implementation PRD P1-02/P1-04 — how a platform's signal actually reached the network on a page. */
+export type ImplementationPath =
+  | 'GTM'
+  | 'DIRECT_SCRIPT'
+  | 'SHOPIFY_WEB_PIXEL'
+  | 'SHOPIFY_APP_PIXEL'
+  | 'SHOPIFY_CUSTOM_PIXEL'
+  | 'SHOPIFY_THEME'
+  | 'SERVER_SIDE'
+  | 'HYBRID'
+  | 'UNKNOWN';
+
+/** Signal vs Implementation PRD P1-05 — a confidently-attributed implementation path row (path !== 'UNKNOWN'). */
+export interface ImplementationPathRow {
+  platform: DeclaredPlatform;
+  page: string;
+  path: Exclude<ImplementationPath, 'UNKNOWN'>;
+  confidence: 'high' | 'medium';
+  request_urls: string[];
+  evidence: string[];
+}
+
+/** A platform's signal was observed on a page but couldn't be attributed to a known implementation path — never given a fabricated confidence. */
+export interface UnattributedImplementationRow {
+  platform: DeclaredPlatform;
+  page: string;
+  request_urls: string[];
+  evidence: string[];
+}
+
+/** Signal vs Implementation PRD P1-06 — a platform observed reaching the same page through more than one distinct implementation path. */
+export interface DuplicateImplementationFinding {
+  platform: DeclaredPlatform;
+  page: string;
+  paths: ImplementationPath[];
+  request_urls: string[];
+  evidence: string[];
+}
+
+/** Signal vs Implementation PRD P1-05 — the Implementation Architecture report section. Omitted entirely when the scan captured no request_provenance at all. */
+export interface ImplementationArchitectureSummary {
+  generated_at: string;
+  commerce_platform?: CommercePlatformDetection;
+  paths: ImplementationPathRow[];
+  unattributed: UnattributedImplementationRow[];
+  duplicates: DuplicateImplementationFinding[];
+}
+
 /** A rule result excluded from every client-facing finding, count, and score because the crawl couldn't confidently assess it — see backend types/audit.ts's UnassessableFinding for the full model. */
 export interface UnassessableFinding {
   rule_id: string;
@@ -385,6 +433,8 @@ export interface ReportJSON {
   signal_conflicts?: SignalConflict[];
   /** Pre-Connection Scan Confidence Tiering PRD §12 — connected-tier checks that would resolve something raised in this run. Omitted when nothing applies. */
   with_access?: WithAccessEntry[];
+  /** Signal vs Implementation PRD P1-05 — how each declared platform's signal actually reaches the network, plus P1-06's duplicate-implementation findings. Omitted when the scan captured no request_provenance at all. */
+  implementation_architecture?: ImplementationArchitectureSummary;
 }
 
 // API response shapes
