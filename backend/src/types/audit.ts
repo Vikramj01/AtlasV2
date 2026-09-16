@@ -394,6 +394,51 @@ export interface RequestInitiator {
 }
 
 /**
+ * Signal vs Implementation PRD P1-02's implementation-path enum, in full —
+ * but `implementationPathClassifier.ts` (services/provenance/) only ever
+ * emits `GTM`/`DIRECT_SCRIPT`/`HYBRID`/`UNKNOWN` today. The four
+ * `SHOPIFY_*`/`SERVER_SIDE` values are reserved for P1-03 (commerce-platform
+ * detection) and P1-04 (the Shopify Web Pixels Manager spike) to activate —
+ * a cross-origin sandboxed frame is real, observable evidence of *something*
+ * isolated, but asserting it's specifically a Shopify Web Pixel without
+ * confirming the site is even Shopify would be exactly the category error
+ * (a confident claim the evidence doesn't support) this whole PRD exists to
+ * fix. Keep the full type now so P1-04 only has to change classifier logic,
+ * not every downstream consumer's type.
+ */
+export type ImplementationPath =
+  | 'GTM'
+  | 'DIRECT_SCRIPT'
+  | 'SHOPIFY_WEB_PIXEL'
+  | 'SHOPIFY_APP_PIXEL'
+  | 'SHOPIFY_CUSTOM_PIXEL'
+  | 'SHOPIFY_THEME'
+  | 'SERVER_SIDE'
+  | 'HYBRID'
+  | 'UNKNOWN';
+
+/**
+ * One observed implementation path for one platform on one page (Signal vs
+ * Implementation PRD P1-02) — a platform can have more than one of these
+ * for the same (platform, page) pair (e.g. a genuine `GTM` row and a
+ * genuine `DIRECT_SCRIPT` row both present), which is itself the signal
+ * P1-06's duplicate-implementation detection reads; this type doesn't
+ * collapse that multiplicity, `HYBRID` is reserved for a single request
+ * whose own initiator chain is genuinely ambiguous between two paths, not
+ * for the platform-level aggregate.
+ */
+export interface ImplementationPathClassification {
+  platform: DeclaredPlatform;
+  /** The step/page this classification applies to — matches RequestInitiator.step. */
+  page: string;
+  path: ImplementationPath;
+  /** Every request URL this classification was derived from. */
+  request_urls: string[];
+  /** Human-readable reasoning, for the report/appendix — e.g. which script URL in the initiator chain drove the classification. */
+  evidence: string[];
+}
+
+/**
  * A cookie's full attribute set, as Playwright's context.cookies() reports
  * it — the flat name→value map on CookieSnapshot/AuditData.cookies can't
  * answer "how long does this live" or "is it scoped to the parent domain",
