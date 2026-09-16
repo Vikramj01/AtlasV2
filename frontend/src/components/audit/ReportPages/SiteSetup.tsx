@@ -1,7 +1,17 @@
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import type { ReportJSON, DetectedTagSignal, DetectedTagPlatform } from '@/types/audit';
+import type { ReportJSON, DetectedTagSignal, DetectedTagPlatform, CommercePlatform } from '@/types/audit';
+
+const COMMERCE_PLATFORM_LABELS: Record<CommercePlatform, string> = {
+  shopify: 'Shopify',
+  shopify_plus: 'Shopify Plus',
+  woocommerce: 'WooCommerce',
+  salesforce_commerce_cloud: 'Salesforce Commerce Cloud',
+  headless: 'Headless / composable storefront',
+  spa: 'Single-page application (unidentified backend)',
+  custom: 'Custom / unidentified platform',
+};
 
 const TAG_PLATFORM_LABELS: Record<DetectedTagPlatform, string> = {
   ga4: 'Google Analytics 4',
@@ -71,7 +81,7 @@ export function SiteSetup({ report }: Props) {
     );
   }
 
-  const { gtm_container, tags, possible_server_side_gtm, datalayer_inventory } = site_setup;
+  const { gtm_container, tags, possible_server_side_gtm, datalayer_inventory, commerce_platform } = site_setup;
 
   return (
     <div className="space-y-5">
@@ -81,6 +91,39 @@ export function SiteSetup({ report }: Props) {
           What tracking infrastructure we detected on your site during this scan.
         </p>
       </div>
+
+      {/* Commerce Platform — shown first so a reader has this context before
+          any checkout/confirmation-surface finding further down the report.
+          Omitted entirely when the scan captured no commerce-platform signal
+          (older audit, or the landing step never settled). */}
+      {commerce_platform && (
+        <Card>
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base">Commerce Platform</CardTitle>
+              <Badge className="bg-muted text-muted-foreground hover:bg-muted">
+                {COMMERCE_PLATFORM_LABELS[commerce_platform.platform] ?? commerce_platform.platform}
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {commerce_platform.detected_backend && (
+              <p className="text-sm">
+                Detected backend:{' '}
+                <span className="font-medium">
+                  {COMMERCE_PLATFORM_LABELS[commerce_platform.detected_backend] ?? commerce_platform.detected_backend}
+                </span>
+              </p>
+            )}
+            {commerce_platform.indicators.length > 0 && (
+              <p className="text-xs text-muted-foreground">{commerce_platform.indicators.join(' · ')}</p>
+            )}
+            <p className="text-xs italic text-muted-foreground">
+              Confidence: <span className="capitalize">{commerce_platform.confidence}</span>
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* GTM Container */}
       <Card>

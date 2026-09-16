@@ -6,6 +6,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   flushDataLayer,
   interceptNetworkRequests,
+  interceptRequestInitiators,
   interceptConsoleErrors,
   captureCookies,
   captureLocalStorage,
@@ -19,9 +20,10 @@ import {
   gotoAndSettle,
   gotoAndSettleWithRetries,
   type StepRef,
+  type CDPSession,
 } from '../dataCapture';
 import { ALL_DECLARED_PLATFORMS, PLATFORM_MATCHER_HOSTS, PLATFORM_LABELS } from '@/services/validation/register/platformDetection';
-import type { NetworkRequest, ConsoleError } from '@/types/audit';
+import type { NetworkRequest, ConsoleError, RequestInitiator } from '@/types/audit';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -74,6 +76,36 @@ function makeResponse(url: string, timingMs?: number, status = 200) {
 
 function makeFailedRequest(url: string) {
   return { url: () => url };
+}
+
+/** A mock CDP session that records send() calls and lets tests emit fake protocol events via emit(). */
+function makeMockCDPSession(opts: { sendImpl?: (method: string) => Promise<unknown> } = {}) {
+  const handlers: Record<string, ((arg: unknown) => void)[]> = {};
+  const sendCalls: string[] = [];
+  const session: CDPSession = {
+    send: vi.fn().mockImplementation(async (method: string) => {
+      sendCalls.push(method);
+      return opts.sendImpl ? opts.sendImpl(method) : undefined;
+    }),
+    on(event: string, handler: (arg: unknown) => void) {
+      handlers[event] = handlers[event] ?? [];
+      handlers[event].push(handler);
+    },
+    detach: vi.fn().mockResolvedValue(undefined),
+  };
+  return {
+    session,
+    sendCalls,
+    emit(event: string, arg: unknown) {
+      (handlers[event] ?? []).forEach((h) => h(arg));
+    },
+  };
+}
+
+function makeMockContext(session: CDPSession | undefined) {
+  return {
+    newCDPSession: session ? vi.fn().mockResolvedValue(session) : undefined,
+  };
 }
 
 // ─── flushDataLayer ───────────────────────────────────────────────────────────
@@ -238,6 +270,198 @@ describe('interceptNetworkRequests — StepRef (mutable step)', () => {
     emit('response', makeResponse(url, 420));
 
     expect(sink[0].loadTime).toBe(420);
+  });
+});
+
+// ─── interceptRequestInitiators (Signal vs Implementation PRD P1-01) ──────────
+
+describe('interceptRequestInitiators', () => {
+  function makeCdpRequestWillBeSent(overrides: {
+    url: string;
+    initiatorType?: string;
+    callFrameUrls?: string[];
+    documentURL?: string;
+  }) {
+    return {
+      request: { url: overrides.url },
+      documentURL: overrides.documentURL,
+      initiator: {
+        type: overrides.initiatorType,
+        stack: overrides.callFrameUrls
+          ? { callFrames: overrides.callFrameUrls.map((url) => ({ url })) }
+          : undefined,
+      },
+    };
+  }
+
+  it('records a tracked request with its initiator type and script URL', async () => {
+    const { session, emit } = makeMockCDPSession();
+    const context = makeMockContext(session);
+    const page = { url: () => 'https://example.com/landing' };
+    const sink: RequestInitiator[] = [];
+
+    await interceptRequestInitiators(context, page, sink, 'landing');
+    emit('Network.requestWillBeSent', makeCdpRequestWillBeSent({
+      url: 'https://www.facebook.com/tr/?id=123',
+      initiatorType: 'script',
+      callFrameUrls: ['https://www.googletagmanager.com/gtm.js?id=GTM-ABC', 'https://connect.facebook.net/en_US/fbevents.js'],
+      documentURL: 'https://example.com/landing',
+    }));
+
+    expect(sink).toHaveLength(1);
+    expect(sink[0].url).toBe('https://www.facebook.com/tr/?id=123');
+    expect(sink[0].step).toBe('landing');
+    expect(sink[0].page_url).toBe('https://example.com/landing');
+    expect(sink[0].initiator_type).toBe('script');
+    expect(sink[0].initiator_script_url).toBe('https://www.googletagmanager.com/gtm.js?id=GTM-ABC');
+    expect(sink[0].initiator_stack).toEqual([
+      'https://www.googletagmanager.com/gtm.js?id=GTM-ABC',
+      'https://connect.facebook.net/en_US/fbevents.js',
+    ]);
+  });
+
+  it('ignores an untracked URL, same filter interceptNetworkRequests uses', async () => {
+    const { session, emit } = makeMockCDPSession();
+    const context = makeMockContext(session);
+    const sink: RequestInitiator[] = [];
+
+    await interceptRequestInitiators(context, {}, sink, 'landing');
+    emit('Network.requestWillBeSent', makeCdpRequestWillBeSent({ url: 'https://example.com/some-page.html' }));
+
+    expect(sink).toHaveLength(0);
+  });
+
+  it("normalizes CDP's SignedExchange type to signed_exchange", async () => {
+    const { session, emit } = makeMockCDPSession();
+    const context = makeMockContext(session);
+    const sink: RequestInitiator[] = [];
+
+    await interceptRequestInitiators(context, {}, sink, 'landing');
+    emit('Network.requestWillBeSent', makeCdpRequestWillBeSent({
+      url: 'https://www.googletagmanager.com/gtm.js',
+      initiatorType: 'SignedExchange',
+    }));
+
+    expect(sink[0].initiator_type).toBe('signed_exchange');
+  });
+
+  // CLAUDE.md §18 — UNKNOWN must never be treated as (or silently coerced
+  // to) absence; it's the explicit bucket for a request CDP itself didn't
+  // attribute (a preload, sendBeacon, or worker-originated request — see
+  // this module's docstring).
+  it('falls back to UNKNOWN when CDP reports no initiator type at all', async () => {
+    const { session, emit } = makeMockCDPSession();
+    const context = makeMockContext(session);
+    const sink: RequestInitiator[] = [];
+
+    await interceptRequestInitiators(context, {}, sink, 'landing');
+    emit('Network.requestWillBeSent', makeCdpRequestWillBeSent({ url: 'https://www.facebook.com/tr/' }));
+
+    expect(sink[0].initiator_type).toBe('UNKNOWN');
+    expect(sink[0].initiator_script_url).toBeUndefined();
+  });
+
+  it('falls back to UNKNOWN for an initiator type CDP added that this repo does not yet recognize', async () => {
+    const { session, emit } = makeMockCDPSession();
+    const context = makeMockContext(session);
+    const sink: RequestInitiator[] = [];
+
+    await interceptRequestInitiators(context, {}, sink, 'landing');
+    emit('Network.requestWillBeSent', makeCdpRequestWillBeSent({ url: 'https://www.facebook.com/tr/', initiatorType: 'some_future_cdp_type' }));
+
+    expect(sink[0].initiator_type).toBe('UNKNOWN');
+  });
+
+  it('reads the current step at event time via a StepRef, not registration time', async () => {
+    const { session, emit } = makeMockCDPSession();
+    const context = makeMockContext(session);
+    const sink: RequestInitiator[] = [];
+    const stepRef: StepRef = { current: 'landing' };
+
+    await interceptRequestInitiators(context, {}, sink, stepRef);
+    emit('Network.requestWillBeSent', makeCdpRequestWillBeSent({ url: 'https://analytics.google.com/g/collect' }));
+    stepRef.current = 'confirmation';
+    emit('Network.requestWillBeSent', makeCdpRequestWillBeSent({ url: 'https://www.facebook.com/tr/' }));
+
+    expect(sink[0].step).toBe('landing');
+    expect(sink[1].step).toBe('confirmation');
+  });
+
+  it('dedupes repeated call-frame URLs in the stack', async () => {
+    const { session, emit } = makeMockCDPSession();
+    const context = makeMockContext(session);
+    const sink: RequestInitiator[] = [];
+
+    await interceptRequestInitiators(context, {}, sink, 'landing');
+    emit('Network.requestWillBeSent', makeCdpRequestWillBeSent({
+      url: 'https://www.facebook.com/tr/',
+      initiatorType: 'script',
+      callFrameUrls: ['https://www.googletagmanager.com/gtm.js', 'https://www.googletagmanager.com/gtm.js'],
+    }));
+
+    expect(sink[0].initiator_stack).toEqual(['https://www.googletagmanager.com/gtm.js']);
+  });
+
+  it('enables the Network domain on the CDP session before returning', async () => {
+    const { session, sendCalls } = makeMockCDPSession();
+    const context = makeMockContext(session);
+    await interceptRequestInitiators(context, {}, [], 'landing');
+    expect(sendCalls).toContain('Network.enable');
+  });
+
+  // Fails open, never closed — context.newCDPSession is absent for every
+  // pre-existing test double and any browser connection that doesn't
+  // expose CDP; request_provenance on AuditData is optional for exactly
+  // this reason.
+  it('fails open (returns a no-op detach, sink stays empty) when context.newCDPSession is absent', async () => {
+    const context = makeMockContext(undefined);
+    const sink: RequestInitiator[] = [];
+    const { detach } = await interceptRequestInitiators(context, {}, sink, 'landing');
+    expect(sink).toHaveLength(0);
+    await expect(detach()).resolves.toBeUndefined();
+  });
+
+  it('fails open when newCDPSession rejects', async () => {
+    const context = { newCDPSession: vi.fn().mockRejectedValue(new Error('CDP unavailable')) };
+    const sink: RequestInitiator[] = [];
+    const { detach } = await interceptRequestInitiators(context, {}, sink, 'landing');
+    expect(sink).toHaveLength(0);
+    await expect(detach()).resolves.toBeUndefined();
+  });
+
+  it('fails open when Network.enable rejects', async () => {
+    const { session } = makeMockCDPSession({
+      sendImpl: async (method) => {
+        if (method === 'Network.enable') throw new Error('boom');
+      },
+    });
+    const context = makeMockContext(session);
+    const sink: RequestInitiator[] = [];
+    const { detach } = await interceptRequestInitiators(context, {}, sink, 'landing');
+    expect(sink).toHaveLength(0);
+    await expect(detach()).resolves.toBeUndefined();
+  });
+
+  it('detach() sends Network.disable and calls session.detach() without throwing', async () => {
+    const { session, sendCalls } = makeMockCDPSession();
+    const context = makeMockContext(session);
+    const { detach } = await interceptRequestInitiators(context, {}, [], 'landing');
+    await detach();
+    expect(sendCalls).toContain('Network.disable');
+    expect(session.detach).toHaveBeenCalledTimes(1);
+  });
+
+  it('detach() never throws even when the underlying session calls reject (context already closed)', async () => {
+    const session: CDPSession = {
+      send: vi.fn()
+        .mockResolvedValueOnce(undefined) // Network.enable
+        .mockRejectedValueOnce(new Error('session closed')), // Network.disable
+      on: vi.fn(),
+      detach: vi.fn().mockRejectedValue(new Error('already detached')),
+    };
+    const context = makeMockContext(session);
+    const { detach } = await interceptRequestInitiators(context, {}, [], 'landing');
+    await expect(detach()).resolves.toBeUndefined();
   });
 });
 

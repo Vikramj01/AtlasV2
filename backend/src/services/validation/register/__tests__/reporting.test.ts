@@ -72,6 +72,31 @@ describe('buildV2LayerStages', () => {
     const [stage] = buildV2LayerStages(results);
     expect(stage.status).toBe('not_run');
   });
+
+  // Signal vs Implementation PRD P0-03 — found via the real PureBorn
+  // re-run's PDF: a layer whose only 'fail' is a demoted (verdict
+  // NOT_OBSERVED) result must not read 'fail' or list that result as an
+  // issue, the same guarantee generateBusinessSummary/determineOverallStatus
+  // already got in Sprint 1.
+  it('a layer whose only fail has a demoted (non-FAIL) verdict reports pass and lists no issue', () => {
+    const results = [
+      makeResult({ rule_id: 'A', validation_layer: 'event_firing', status: 'pass' }),
+      makeResult({ rule_id: 'B', validation_layer: 'event_firing', status: 'fail', verdict: 'NOT_OBSERVED', technical_details: { found: 'gated on unverified surface', expected: '', evidence: [] } }),
+    ];
+    const [stage] = buildV2LayerStages(results);
+    expect(stage.status).toBe('pass');
+    expect(stage.issues).toEqual([]);
+  });
+
+  it('a layer with one demoted fail and one genuine fail still reports fail and lists only the genuine one', () => {
+    const results = [
+      makeResult({ rule_id: 'A', validation_layer: 'event_firing', status: 'fail', verdict: 'NOT_OBSERVED', technical_details: { found: 'demoted', expected: '', evidence: [] } }),
+      makeResult({ rule_id: 'B', validation_layer: 'event_firing', status: 'fail', verdict: 'FAIL', technical_details: { found: 'genuine', expected: '', evidence: [] } }),
+    ];
+    const [stage] = buildV2LayerStages(results);
+    expect(stage.status).toBe('fail');
+    expect(stage.issues).toEqual([{ rule_id: 'B', label: 'genuine' }]);
+  });
 });
 
 // ── buildV2PlatformBreakdown ────────────────────────────────────────────────────
@@ -102,6 +127,45 @@ describe('buildV2PlatformBreakdown', () => {
     const meta = breakdown.find((p) => p.platform === 'Meta');
     expect(meta?.status).toBe('healthy');
     expect(meta?.failed_rules).toEqual([]);
+  });
+
+  // Signal vs Implementation PRD P0-03 — found via the real PureBorn
+  // re-run's PDF: Meta's Platform Health card read "Partial signal
+  // observed / 1 of 5 checks failed" purely because
+  // META_CONVERSION_EVENT_FIRES was gated on an unverified conversion
+  // surface, even though Meta's own Pixel/base-tag/click-ID checks all
+  // genuinely passed. The PRD's own P0-03 acceptance criterion names this
+  // exact section ("Platform Health for Meta no longer reports a failed
+  // check that rests on an unverified page").
+  it('a demoted (NOT_OBSERVED-verdict) fail does not count against a platform\'s health, even though every other check genuinely passed', () => {
+    const register = [
+      makeRule({ id: 'L1.7', rule_id: 'META_PIXEL_PRESENT', platform_scope: ['meta'] }),
+      makeRule({ id: 'L5.2', rule_id: 'META_CONVERSION_EVENT_FIRES', platform_scope: ['meta'] }),
+    ];
+    const results = [
+      makeResult({ rule_id: 'META_PIXEL_PRESENT', status: 'pass' }),
+      makeResult({ rule_id: 'META_CONVERSION_EVENT_FIRES', status: 'fail', verdict: 'NOT_OBSERVED', severity: 'high' }),
+    ];
+    const breakdown = buildV2PlatformBreakdown(results, ['meta'], register);
+    const meta = breakdown.find((p) => p.platform === 'Meta');
+    expect(meta?.status).toBe('healthy');
+    expect(meta?.failed_rules).toEqual([]);
+    expect(meta?.risk_explanation).toBe('All 2 checks passed.');
+  });
+
+  it('a genuine fail alongside a demoted one still counts the genuine one only', () => {
+    const register = [
+      makeRule({ id: 'L1.18', rule_id: 'GOOGLE_ADS_AW_ID_PRESENT', platform_scope: ['google_ads'] }),
+      makeRule({ id: 'L5.1', rule_id: 'GOOGLE_ADS_CONVERSION_EVENT_FIRES', platform_scope: ['google_ads'] }),
+    ];
+    const results = [
+      makeResult({ rule_id: 'GOOGLE_ADS_AW_ID_PRESENT', status: 'fail', verdict: 'FAIL' }),
+      makeResult({ rule_id: 'GOOGLE_ADS_CONVERSION_EVENT_FIRES', status: 'fail', verdict: 'NOT_OBSERVED' }),
+    ];
+    const breakdown = buildV2PlatformBreakdown(results, ['google_ads'], register);
+    const googleAds = breakdown.find((p) => p.platform === 'Google Ads');
+    expect(googleAds?.failed_rules).toEqual(['GOOGLE_ADS_AW_ID_PRESENT']);
+    expect(googleAds?.risk_explanation).toContain('1 of 2 checks failed');
   });
 
   it('marks a declared platform broken when most of its rules fail', () => {

@@ -356,6 +356,203 @@ export interface NetworkRequest {
 }
 
 /**
+ * CDP `Network.requestWillBeSent`'s `initiator.type` (Signal vs
+ * Implementation PRD P1-01), normalised to this repo's naming convention
+ * (`SignedExchange` → `signed_exchange`), plus an explicit `UNKNOWN`
+ * bucket for when the CDP session itself never reports one — preloads,
+ * `sendBeacon` calls, and requests originating inside a worker are all
+ * known-uninformative cases (see dataCapture.ts's interceptRequestInitiators
+ * docstring). Per CLAUDE.md §18, `UNKNOWN` must never be rendered as
+ * absence — it means "we don't know how this fired," not "nothing fired
+ * it."
+ */
+export type RequestInitiatorType = 'parser' | 'script' | 'preload' | 'signed_exchange' | 'preflight' | 'other' | 'UNKNOWN';
+
+/**
+ * Per-vendor-request provenance captured via a direct CDP session (Signal
+ * vs Implementation PRD P1-01) — materially deeper than NetworkRequest's
+ * Playwright-level `page.on('request')` listener, which can observe *that*
+ * a request fired but not *what caused* it. A separate, parallel capture
+ * over the same underlying traffic (not a replacement for NetworkRequest,
+ * and not correlated to it by a shared id — CDP's Network domain and
+ * Playwright's own request/response events are two independent event
+ * streams), joined downstream by url+step when needed.
+ */
+export interface RequestInitiator {
+  url: string;
+  step: string;
+  /** The top-level page URL at the moment this request fired (Playwright's page.url()). */
+  page_url: string;
+  /** The frame's own document URL, when it differs from page_url — e.g. a same-origin iframe or a sandboxed pixel-execution frame (P1-04's Shopify Web Pixels case). */
+  frame_url?: string;
+  initiator_type: RequestInitiatorType;
+  /** The deepest (innermost, closest-to-the-request) script URL in the initiator's call stack — set only when initiator_type is 'script'. */
+  initiator_script_url?: string;
+  /** Every distinct script URL in the initiator's call stack, outermost first — lets a future classifier (P1-02) distinguish e.g. a GTM-templated tag from a directly-loaded vendor script by the full call chain, not just the innermost frame. */
+  initiator_stack?: string[];
+  timestamp: number;
+}
+
+/**
+ * Signal vs Implementation PRD P1-02's implementation-path enum, in full —
+ * `implementationPathClassifier.ts` (services/provenance/) emits
+ * `GTM`/`DIRECT_SCRIPT`/`HYBRID`/`UNKNOWN` always, and `SHOPIFY_WEB_PIXEL`
+ * (since Sprint 11/P1-04) when a cross-origin sandboxed frame fires on a
+ * page P1-03's commerce-platform detection has confirmed is Shopify or
+ * Shopify-backed — real, independent evidence, not a guess from the
+ * sandboxed-frame shape alone. The remaining three `SHOPIFY_*` values
+ * (`SHOPIFY_APP_PIXEL`/`SHOPIFY_CUSTOM_PIXEL`/`SHOPIFY_THEME`) plus
+ * `SERVER_SIDE` stay unactivated by design, not by staging: Shopify's Web
+ * Pixels Manager sandbox is origin-isolated specifically so nothing outside
+ * it can introspect which pixel is installed (confirmed via the Sprint 10
+ * spike's research), so naming the more specific sub-type is never
+ * attempted from outside the sandbox. Keep the full type anyway so a future
+ * mechanism (e.g. parsing a Shopify-exposed manifest, were one to exist)
+ * only has to change classifier logic, not every downstream consumer's type.
+ */
+export type ImplementationPath =
+  | 'GTM'
+  | 'DIRECT_SCRIPT'
+  | 'SHOPIFY_WEB_PIXEL'
+  | 'SHOPIFY_APP_PIXEL'
+  | 'SHOPIFY_CUSTOM_PIXEL'
+  | 'SHOPIFY_THEME'
+  | 'SERVER_SIDE'
+  | 'HYBRID'
+  | 'UNKNOWN';
+
+/**
+ * One observed implementation path for one platform on one page (Signal vs
+ * Implementation PRD P1-02) — a platform can have more than one of these
+ * for the same (platform, page) pair (e.g. a genuine `GTM` row and a
+ * genuine `DIRECT_SCRIPT` row both present), which is itself the signal
+ * P1-06's duplicate-implementation detection reads; this type doesn't
+ * collapse that multiplicity, `HYBRID` is reserved for a single request
+ * whose own initiator chain is genuinely ambiguous between two paths, not
+ * for the platform-level aggregate.
+ */
+export interface ImplementationPathClassification {
+  platform: DeclaredPlatform;
+  /** The step/page this classification applies to — matches RequestInitiator.step. */
+  page: string;
+  path: ImplementationPath;
+  /** Every request URL this classification was derived from. */
+  request_urls: string[];
+  /** Human-readable reasoning, for the report/appendix — e.g. which script URL in the initiator chain drove the classification. */
+  evidence: string[];
+}
+
+/**
+ * A platform observed reaching the same page through more than one distinct
+ * implementation path (Signal vs Implementation PRD P1-06) — the highest-
+ * commercial-value P1 output per the PRD: a theme pixel plus an app pixel
+ * plus a GTM tag all firing the same platform's signal on one page is one
+ * of the most common and most expensive faults on Shopify, and unlike most
+ * findings in this register, a client can verify it against their own
+ * platform's numbers immediately.
+ *
+ * Deliberately conservative about what's actually confirmed: this flags
+ * "more than one delivery mechanism reaches this page," which is real,
+ * directly observed evidence — not "the identical event fires twice,"
+ * which would need parsing event identity out of each request (a Meta
+ * `ev=` param, a TikTok event body, ...) this detector doesn't do. The
+ * finding's own wording (duplicateImplementationDetector.ts) says exactly
+ * that: multiple paths observed, worth checking for duplicate delivery,
+ * not duplicate delivery confirmed.
+ */
+export interface DuplicateImplementationFinding {
+  platform: DeclaredPlatform;
+  page: string;
+  /** The distinct implementation paths observed for this platform on this page — always 2 or more. */
+  paths: ImplementationPath[];
+  /** Union of every request URL across all paths this finding covers. */
+  request_urls: string[];
+  /** Union of every path's own evidence. */
+  evidence: string[];
+}
+
+/**
+ * One confidently-attributed implementation path row for the Implementation
+ * Architecture report section (Signal vs Implementation PRD P1-05) —
+ * ImplementationPathClassification plus a derived `confidence`, excluding
+ * `UNKNOWN` (see UnattributedImplementationRow — a confidence label doesn't
+ * mean anything for a mechanism this register couldn't attribute at all).
+ * `confidence` is derived purely from `path` itself: `'high'` for GTM/
+ * DIRECT_SCRIPT (a concrete loader/script URL was directly matched in the
+ * initiator chain), `'medium'` for every path requiring corroborating
+ * evidence beyond a direct script match (SHOPIFY_WEB_PIXEL — a sandboxed
+ * frame plus independent commerce-platform detection — and the reserved
+ * HYBRID/SERVER_SIDE/other Shopify sub-types, if ever activated).
+ */
+export interface ImplementationPathRow {
+  platform: DeclaredPlatform;
+  page: string;
+  path: Exclude<ImplementationPath, 'UNKNOWN'>;
+  confidence: 'high' | 'medium';
+  request_urls: string[];
+  evidence: string[];
+}
+
+/**
+ * A platform's signal was observed on a page but couldn't be attributed to
+ * a known implementation path (ImplementationPathClassification.path ===
+ * 'UNKNOWN') — shown separately from ImplementationPathRow rather than
+ * given a fabricated confidence label, per CLAUDE.md rule 12.
+ */
+export interface UnattributedImplementationRow {
+  platform: DeclaredPlatform;
+  page: string;
+  request_urls: string[];
+  evidence: string[];
+}
+
+/**
+ * Implementation Architecture report section (Signal vs Implementation PRD
+ * P1-05) — the presentation layer over P1-01/P1-02's request-provenance
+ * classification (implementationPathClassifier.ts), P1-03's commerce-
+ * platform detection, and P1-06's duplicate-implementation detection
+ * (duplicateImplementationDetector.ts). Built by
+ * provenance/implementationArchitectureSummary.ts's
+ * buildImplementationArchitectureSummary(), which returns undefined (not an
+ * empty-array shell) when the scan captured no request_provenance at all —
+ * e.g. a pre-P1-01 audit, or a run with no CDP session access — so the
+ * report section is omitted entirely rather than rendering a false "no
+ * implementation paths found" state.
+ */
+export interface ImplementationArchitectureSummary {
+  generated_at: string;
+  /** P1-03's own output for this scan, threaded through for context (e.g. "this page is Shopify-backed") — omitted when no commerce-platform signal was captured. */
+  commerce_platform?: CommercePlatformDetection;
+  paths: ImplementationPathRow[];
+  unattributed: UnattributedImplementationRow[];
+  /** P1-06's duplicate-implementation findings — the highest-commercial-value P1 output per the PRD. */
+  duplicates: DuplicateImplementationFinding[];
+}
+
+/**
+ * Commerce platform / rendering model (Signal vs Implementation PRD P1-03)
+ * — Atlas previously reported no statement of this at all, which matters
+ * for interpreting every finding about checkout and confirmation (the
+ * PRD's own PureBorn example: a report calling out an unreachable
+ * checkout page reads very differently once a reader knows the site is
+ * Shopify). `shopify_plus` is reserved, not yet emitted — distinguishing
+ * it from standard Shopify needs a signal this detector doesn't have and
+ * guessing would be exactly the overclaiming this PRD exists to fix.
+ * `headless` means a decoupled frontend framework (Next.js, Nuxt, Gatsby)
+ * serving assets from a detected commerce backend without that backend's
+ * own theme JS running — see CommercePlatformDetection.detected_backend.
+ */
+export type CommercePlatform = 'shopify' | 'shopify_plus' | 'woocommerce' | 'salesforce_commerce_cloud' | 'headless' | 'spa' | 'custom';
+
+export interface CommercePlatformDetection {
+  platform: CommercePlatform;
+  confidence: 'high' | 'medium' | 'low';
+  indicators: string[];
+  /** Which commerce backend's assets were detected behind a 'headless' frontend — undefined when platform isn't 'headless', or no specific backend could be identified. */
+  detected_backend?: CommercePlatform;
+}
+
+/**
  * A cookie's full attribute set, as Playwright's context.cookies() reports
  * it — the flat name→value map on CookieSnapshot/AuditData.cookies can't
  * answer "how long does this live" or "is it scoped to the parent domain",
@@ -535,6 +732,8 @@ export interface SiteSetupSummary {
   tags: DetectedTagSignal[];
   gtm_container: DetectedGtmContainer;
   possible_server_side_gtm: PossibleServerSideGtm;
+  /** Signal vs Implementation PRD P1-03 — omitted (not a fabricated 'custom' verdict) when the scan captured no commerce-platform signal at all (e.g. a pre-Sprint-9 audit, or a run whose landing step failed before capture). */
+  commerce_platform?: CommercePlatformDetection;
 }
 
 // ─── Step coverage (Site Evaluation Coverage & Honesty PRD, Phase 1) ─────────
@@ -760,6 +959,14 @@ export interface AuditData {
   declared_conversions?: DeclaredConversion[];
   dataLayer: DataLayerEvent[];
   networkRequests: NetworkRequest[];
+  /**
+   * CDP-captured initiator provenance for tracked requests (Signal vs
+   * Implementation PRD P1-01) — undefined for an AuditData assembled
+   * without CDP access (a hand-built fixture, or a browser connection that
+   * doesn't expose newCDPSession), never fabricated as an empty array in
+   * that case. See RequestInitiator's own docstring.
+   */
+  request_provenance?: RequestInitiator[];
   cookieSnapshots: CookieSnapshot[];
   localStorageSnapshots: LocalStorageSnapshot[];
   /**
@@ -827,6 +1034,8 @@ export interface AuditData {
   checkoutDomainSessionStartDetected?: boolean;
   outboundCrossDomainLinks?: { total: number; withGl: number };
   pageMetadata?: Record<string, unknown>;  // Misc page metadata
+  /** Commerce platform / rendering model detected on the landing page (Signal vs Implementation PRD P1-03) — undefined when detection wasn't run (e.g. a hand-built fixture predating this field), never fabricated as 'custom'. */
+  commerce_platform?: CommercePlatformDetection;
   // IHC extensions — absent when the respective data source is not connected
   gtmContainer?: GTMContainerSnapshot;     // tag_configuration layer input
   crawlSignals?: CrawlSignalSnapshot[];    // implementation_drift layer input (current run)
@@ -1295,6 +1504,15 @@ export interface ReportJSON {
    * resolve here. Omitted (not an empty array) when nothing applies.
    */
   with_access?: WithAccessEntry[];
+  /**
+   * Signal vs Implementation PRD P1-05 — how each declared platform's
+   * signal actually reaches the network (GTM/direct script/Shopify Web
+   * Pixel), plus P1-06's duplicate-implementation findings. Built by
+   * provenance/implementationArchitectureSummary.ts's
+   * buildImplementationArchitectureSummary(). Omitted (not an empty-array
+   * shell) when the scan captured no request_provenance at all.
+   */
+  implementation_architecture?: ImplementationArchitectureSummary;
   /**
    * Set by the pre-render placeholder guard (PRD "Signal Health Report"
    * Issue 4) when a narrative field contains literal placeholder-shaped

@@ -22,6 +22,7 @@ import { buildWithAccessSection } from './withAccessRegistry';
 import { scanReportForPlaceholders } from './placeholderGuard';
 import { assertReportOutputClean } from './outputLint';
 import { REGISTER_VERSION } from '@/services/validation/register/layers';
+import { buildImplementationArchitectureSummary } from '@/services/provenance/implementationArchitectureSummary';
 
 // ─── Journey stage mapping ─────────────────────────────────────────────────────
 
@@ -222,6 +223,15 @@ export function generateReport(
   const withAccess = buildWithAccessSection(report);
   if (withAccess && withAccess.length > 0) {
     report.with_access = withAccess;
+  }
+
+  // Signal vs Implementation PRD P1-05 — Implementation Architecture
+  // section. Built directly from auditData (request_provenance +
+  // commerce_platform), not threaded in as a param like siteSetup, since it
+  // needs nothing this function doesn't already have.
+  const implementationArchitecture = buildImplementationArchitectureSummary(auditData);
+  if (implementationArchitecture) {
+    report.implementation_architecture = implementationArchitecture;
   }
 
   // Pre-render placeholder guard (PRD "Signal Health Report" Issue 4) —

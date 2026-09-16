@@ -25,6 +25,7 @@
 import { describe, it, expect } from 'vitest';
 import { REGISTER, runRegister } from '@/services/validation/register/engine';
 import { buildCoverageSummary } from '@/services/reporting/coverage';
+import { buildV2PlatformBreakdown } from '@/services/validation/register/reporting';
 import { generateBusinessSummary, determineOverallStatus } from '@/services/interpretation/engine';
 import type { AuditData, NetworkRequest, StepCoverage } from '@/types/audit';
 
@@ -105,6 +106,11 @@ const AUDIT_DATA: AuditData = {
     ...Array.from({ length: 12 }, () => req({ url: 'https://www.facebook.com/tr?id=1510713965738073&ev=PageView' })),
     // TikTok and GTM: genuinely zero requests — nothing to add.
   ],
+  // Real trigger scan: GCL_AW_COOKIE_PRESENT and FBP_COOKIE_PRESENT both
+  // passed ("GCL AW COOKIE PRESENT"/"FBP COOKIE PRESENT" — storage_durability
+  // PASS); CONVERSION_LINKER_ENABLED's own _gcl_au check genuinely failed
+  // ("_gcl_au present: false") — a real, distinct absence from _gcl_aw.
+  cookies: { _gcl_aw: 'GCL.123.abc', _fbp: 'fb.1.1.1' },
   cookieSnapshots: [],
   localStorageSnapshots: [],
   injected: { gclid: 'test_gclid', fbclid: 'test_fbclid' },
@@ -184,6 +190,27 @@ describe('PureBorn trigger scan (49448510) — P0 acceptance replay against the 
     expect(summary).not.toContain('No GTM container script');
     // Genuinely critical and unaffected by P0: AW- ID, TikTok pixel, conversion linker.
     expect(summary).toMatch(/AW- conversion ID|analytics\.tiktok\.com|_gcl_au/);
+  });
+
+  it("Meta's Platform Health card reads healthy, not partial — its own Pixel/base-tag genuinely passed and its only 'failure' is the demoted conversion-fires result (P0-03)", () => {
+    // Found via the real PureBorn re-run's PDF, after the first P0 push:
+    // Platform Health still said "Meta · Partial signal observed / 1 of 5
+    // checks failed" purely from META_CONVERSION_EVENT_FIRES's demoted
+    // verdict — buildV2PlatformBreakdown() had its own, separate raw-status
+    // filter that Sprint 1.4's fix never touched.
+    const breakdown = buildV2PlatformBreakdown(results, AUDIT_DATA.declared_platforms, REGISTER);
+    const meta = breakdown.find((p) => p.platform === 'Meta');
+    expect(meta?.status).toBe('healthy');
+    expect(meta?.failed_rules).not.toContain('META_CONVERSION_EVENT_FIRES');
+  });
+
+  it("Google Ads' Platform Health card lists only its genuine failures, not the demoted conversion-fires result (P0-03)", () => {
+    const breakdown = buildV2PlatformBreakdown(results, AUDIT_DATA.declared_platforms, REGISTER);
+    const googleAds = breakdown.find((p) => p.platform === 'Google Ads');
+    expect(googleAds?.failed_rules).not.toContain('GOOGLE_ADS_CONVERSION_EVENT_FIRES');
+    expect(googleAds?.failed_rules).toEqual(
+      expect.arrayContaining(['DECLARED_PLATFORM_HAS_TAG', 'GOOGLE_ADS_AW_ID_PRESENT', 'CONVERSION_LINKER_ENABLED']),
+    );
   });
 
   it('overall status is not driven to critical by GTM (now informational) or by the demoted conversion-fires findings', () => {

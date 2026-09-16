@@ -27,6 +27,8 @@ function makeMockBrowser(opts: {
   networkRequests?: Array<{ url: string; method?: string; body?: string | null }>;
   cookies?: Array<{ name: string; value: string }>;
   localStorage?: Record<string, string>;
+  /** Signal vs Implementation PRD P1-01 — opt in to a mocked CDP session so request_provenance populates end-to-end. */
+  cdpEnabled?: boolean;
 } = {}) {
   const {
     dataLayerEvents = [],
@@ -85,17 +87,50 @@ function makeMockBrowser(opts: {
     }),
   };
 
+  // CDP session (Signal vs Implementation PRD P1-01) — absent by default,
+  // same as a real browser connection with no CDP access; every existing
+  // test above stays on the "request_provenance omitted entirely" path.
+  // Opt in via cdpEnabled to also emit a matching Network.requestWillBeSent
+  // for each fakeRequest, mirroring how the two event streams (Playwright's
+  // page.on('request') and CDP's Network domain) both fire for the same
+  // real request in production.
+  const cdpHandlers: Record<string, ((arg: unknown) => void)[]> = {};
+  const mockCdpSession = {
+    send: vi.fn().mockResolvedValue(undefined),
+    on(event: string, handler: (arg: unknown) => void) {
+      cdpHandlers[event] = cdpHandlers[event] ?? [];
+      cdpHandlers[event].push(handler);
+    },
+    detach: vi.fn().mockResolvedValue(undefined),
+  };
+
   const mockContext = {
     newPage: vi.fn().mockResolvedValue(mockPage),
     cookies: vi.fn().mockResolvedValue(fakeCookies),
     close: vi.fn().mockResolvedValue(undefined),
+    ...(opts.cdpEnabled ? { newCDPSession: vi.fn().mockResolvedValue(mockCdpSession) } : {}),
   };
 
   const mockBrowser = {
     newContext: vi.fn().mockResolvedValue(mockContext),
   };
 
-  return { mockBrowser, mockPage, mockContext };
+  if (opts.cdpEnabled) {
+    const originalGoto = mockPage.goto;
+    mockPage.goto = vi.fn().mockImplementation(async (...args: unknown[]) => {
+      const result = await originalGoto(...args);
+      for (const req of fakeRequests) {
+        (cdpHandlers['Network.requestWillBeSent'] ?? []).forEach((h) => h({
+          request: { url: req.url },
+          documentURL: req.url,
+          initiator: { type: 'script', stack: { callFrames: [{ url: 'https://www.googletagmanager.com/gtm.js?id=GTM-TEST' }] } },
+        }));
+      }
+      return result;
+    });
+  }
+
+  return { mockBrowser, mockPage, mockContext, mockCdpSession };
 }
 
 // ─── Test fixtures ────────────────────────────────────────────────────────────
@@ -284,6 +319,38 @@ describe('simulateJourney — AuditData assembly', () => {
       },
     });
     expect(mockPage.goto).toHaveBeenCalledTimes(2);
+  });
+
+  // Signal vs Implementation PRD P1-01
+  describe('request_provenance (CDP initiator capture)', () => {
+    it('omits request_provenance entirely when the browser connection has no CDP access — never fabricated', async () => {
+      const { mockBrowser } = makeMockBrowser({
+        networkRequests: [{ url: 'https://www.facebook.com/tr/?id=123' }],
+      });
+      const auditData = await simulateJourney(mockBrowser as never, BASE_OPTS);
+      expect(auditData.request_provenance).toBeUndefined();
+    });
+
+    it('populates request_provenance end to end when CDP is available', async () => {
+      const { mockBrowser } = makeMockBrowser({
+        cdpEnabled: true,
+        networkRequests: [{ url: 'https://www.facebook.com/tr/?id=123' }],
+      });
+      const auditData = await simulateJourney(mockBrowser as never, BASE_OPTS);
+      expect(auditData.request_provenance).toBeDefined();
+      expect(auditData.request_provenance?.length).toBeGreaterThan(0);
+      const meta = auditData.request_provenance?.find((r) => r.url.includes('facebook.com/tr'));
+      expect(meta?.initiator_type).toBe('script');
+      expect(meta?.initiator_script_url).toBe('https://www.googletagmanager.com/gtm.js?id=GTM-TEST');
+      expect(meta?.step).toBe('landing');
+    });
+
+    it('detaches the CDP session when the journey completes', async () => {
+      const { mockBrowser, mockCdpSession } = makeMockBrowser({ cdpEnabled: true });
+      await simulateJourney(mockBrowser as never, BASE_OPTS);
+      expect(mockCdpSession.send).toHaveBeenCalledWith('Network.disable');
+      expect(mockCdpSession.detach).toHaveBeenCalledTimes(1);
+    });
   });
 });
 
@@ -900,5 +967,92 @@ describe('Full v2 pipeline — step_coverage → runRegister precondition gating
     const results = runRegister(auditData);
     expect(results.find((r) => r.rule_id === 'CONVERSION_SURFACE_IDENTIFIED')?.status).toBe('pass');
     expect(skippedForConversionSurface(results)).toHaveLength(0);
+  });
+});
+
+// ─── commerce_platform (Signal vs Implementation PRD P1-03) — landing-step
+// commerce platform / rendering-model detection, wired alongside the
+// referrer capture and outbound-link scan. Discriminates evaluate() calls
+// by selector (script[src]/link[href]/a[href]) where present, and by
+// function source otherwise, since the mock's generic evaluate() can't
+// tell two different zero-arg closures apart on its own.
+describe('simulateJourney — commerce_platform', () => {
+  function markersEvaluateMock(markers: {
+    hasShopifyGlobal: boolean;
+    hasWooCommerceMarker: boolean;
+    hasHeadlessFrameworkMarker: boolean;
+    generatorMeta: string | null;
+  } | 'throw') {
+    return async (fn: unknown, arg?: { selector?: string }) => {
+      if (arg?.selector) return []; // script[src]/link[href]/a[href] — overridden per-test where needed
+      const src = typeof fn === 'function' ? fn.toString() : '';
+      if (src.includes('hasShopifyGlobal')) {
+        if (markers === 'throw') throw new Error('evaluate failed');
+        return markers;
+      }
+      if (src.includes('document.referrer')) return '';
+      return []; // flushDataLayer's sink read
+    };
+  }
+
+  it('detects classic Shopify from window.Shopify plus cdn.shopify.com script evidence', async () => {
+    const { mockBrowser, mockPage } = makeMockBrowser();
+    mockPage.evaluate.mockImplementation(async (fn: unknown, arg?: { selector?: string }) => {
+      if (arg?.selector === 'script[src]') return ['https://cdn.shopify.com/s/files/1/theme.js'];
+      if (arg?.selector) return [];
+      const src = typeof fn === 'function' ? fn.toString() : '';
+      if (src.includes('hasShopifyGlobal')) {
+        return { hasShopifyGlobal: true, hasWooCommerceMarker: false, hasHeadlessFrameworkMarker: false, generatorMeta: null };
+      }
+      if (src.includes('document.referrer')) return '';
+      return [];
+    });
+
+    const auditData = await simulateJourney(mockBrowser as never, BASE_OPTS);
+
+    expect(auditData.commerce_platform).toEqual({
+      platform: 'shopify',
+      confidence: 'high',
+      indicators: ['window.Shopify global present', 'cdn.shopify.com asset reference found'],
+    });
+  });
+
+  it('detects a headless storefront proxying a Shopify backend when no theme JS is running', async () => {
+    const { mockBrowser, mockPage } = makeMockBrowser();
+    mockPage.evaluate.mockImplementation(async (fn: unknown, arg?: { selector?: string }) => {
+      if (arg?.selector === 'script[src]') return ['https://cdn.shopify.com/s/files/1/product-image.jpg'];
+      if (arg?.selector) return [];
+      const src = typeof fn === 'function' ? fn.toString() : '';
+      if (src.includes('hasShopifyGlobal')) {
+        return { hasShopifyGlobal: false, hasWooCommerceMarker: false, hasHeadlessFrameworkMarker: true, generatorMeta: null };
+      }
+      if (src.includes('document.referrer')) return '';
+      return [];
+    });
+
+    const auditData = await simulateJourney(mockBrowser as never, BASE_OPTS);
+
+    expect(auditData.commerce_platform?.platform).toBe('headless');
+    expect(auditData.commerce_platform?.detected_backend).toBe('shopify');
+  });
+
+  it('leaves commerce_platform undefined when the page-level marker evaluate() throws — fails open, never a fabricated verdict', async () => {
+    const { mockBrowser, mockPage } = makeMockBrowser();
+    mockPage.evaluate.mockImplementation(markersEvaluateMock('throw'));
+
+    const auditData = await simulateJourney(mockBrowser as never, BASE_OPTS);
+
+    expect(auditData.commerce_platform).toBeUndefined();
+  });
+
+  it('falls back to custom with no indicators when no commerce-platform signal is found at all', async () => {
+    const { mockBrowser, mockPage } = makeMockBrowser();
+    mockPage.evaluate.mockImplementation(markersEvaluateMock({
+      hasShopifyGlobal: false, hasWooCommerceMarker: false, hasHeadlessFrameworkMarker: false, generatorMeta: null,
+    }));
+
+    const auditData = await simulateJourney(mockBrowser as never, BASE_OPTS);
+
+    expect(auditData.commerce_platform).toEqual({ platform: 'custom', confidence: 'low', indicators: [] });
   });
 });

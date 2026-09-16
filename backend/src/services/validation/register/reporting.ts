@@ -17,6 +17,7 @@ import type { DeclaredPlatform, JourneyStage, PlatformBreakdown, RuleStatus, Val
 import { REGISTER } from './engine';
 import { PLATFORM_LABELS } from './platformDetection';
 import { ALL_V2_LAYERS as LAYER_ORDER, LAYER_LABELS } from './layers';
+import { isConfidentFinding } from '@/services/interpretation/engine';
 
 function worstStatus(statuses: RuleStatus[]): RuleStatus {
   if (statuses.includes('fail')) return 'fail';
@@ -44,9 +45,18 @@ export function buildV2LayerStages(results: ValidationResult[]): JourneyStage[] 
     .filter((layer) => byLayer.has(layer))
     .map((layer) => {
       const layerResults = byLayer.get(layer) as ValidationResult[];
-      const status = worstStatus(layerResults.map((r) => r.status));
+      // Signal vs Implementation PRD P0-03 — a demoted fail/warning
+      // (verdict NOT_OBSERVED/INCONCLUSIVE/CONFLICT) reads as 'pass' for
+      // this layer-status rollup, same as everywhere else this fix
+      // landed — it never drags a layer's badge to 'fail'/'warning' on
+      // its own. Every other status ('pass'/'skipped'/a confident fail)
+      // passes through unchanged, so an all-skipped layer still reports
+      // 'not_run' via worstStatus() below.
+      const status = worstStatus(
+        layerResults.map((r) => ((r.status === 'fail' || r.status === 'warning') && !isConfidentFinding(r) ? 'pass' : r.status)),
+      );
       const issues = layerResults
-        .filter((r) => r.status === 'fail' || r.status === 'warning')
+        .filter((r) => (r.status === 'fail' || r.status === 'warning') && isConfidentFinding(r))
         .map((r) => ({ rule_id: r.rule_id, label: r.technical_details.found }));
       return { stage: LAYER_LABELS[layer], status, issues };
     });
@@ -124,7 +134,17 @@ export function buildV2PlatformBreakdown(
     // scope, which has nothing to disaggregate) — unchanged behaviour.
     const outcomeFor = (r: ValidationResult): RuleStatus => r.platform_outcomes?.[platform] ?? r.status;
 
-    const failedRules = platformResults.filter((r) => outcomeFor(r) === 'fail').map((r) => r.rule_id);
+    // Signal vs Implementation PRD P0-03 — a result whose verdict was
+    // demoted (NOT_OBSERVED/INCONCLUSIVE/CONFLICT — e.g. a conversion-
+    // event-fires rule gated on an unverified conversion surface) must not
+    // count as a platform failure here either. Before this, Meta's own
+    // Platform Health card could read "Partial signal observed" purely
+    // from an unverified-page finding even though its own Pixel/tag were
+    // both genuinely present — the exact defect the PRD's P0-03 acceptance
+    // criterion names for this section specifically. Reuses the same
+    // isConfidentFinding() interpretResults()/generateBusinessSummary()
+    // already apply, rather than a third reimplementation of the check.
+    const failedRules = platformResults.filter((r) => outcomeFor(r) === 'fail' && isConfidentFinding(r)).map((r) => r.rule_id);
     const failCount = failedRules.length;
     const platformStatus = failCount === 0 ? 'healthy' : failCount <= totalCount / 2 ? 'at_risk' : 'broken';
     const riskExplanation = failCount === 0

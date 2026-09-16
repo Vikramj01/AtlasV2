@@ -198,11 +198,11 @@ function buildGtmContainerSignal(gtmIds: string[], connectedContainerId: string 
  * has one connected — pass null when there's nothing to compare against.
  */
 export function buildSiteSetupSummary(
-  auditData: Pick<AuditData, 'dataLayer' | 'networkRequests' | 'website_url'>,
+  auditData: Pick<AuditData, 'dataLayer' | 'networkRequests' | 'website_url' | 'commerce_platform'>,
   gtmScriptSrcs: string[],
   connectedContainerId: string | null = null,
 ): SiteSetupSummary {
-  const { dataLayer, networkRequests, website_url } = auditData;
+  const { dataLayer, networkRequests, website_url, commerce_platform } = auditData;
   const hostname = safeHostname(website_url);
   const gtmIds = trackingSignals.extractGtmContainerIdsFromScriptSrcs(gtmScriptSrcs);
 
@@ -222,5 +222,6 @@ export function buildSiteSetupSummary(
     ],
     gtm_container: buildGtmContainerSignal(gtmIds, connectedContainerId),
     possible_server_side_gtm: detectPossibleServerSideGtm(networkRequests, hostname),
+    commerce_platform,
   };
 }
