@@ -66,8 +66,55 @@ describe('GTM_CONTAINER_LOADED (L1.1)', () => {
     expect(GTM_CONTAINER_LOADED.test(auditData).status).toBe('pass');
   });
 
-  it('fails when no gtm.js script is present', () => {
-    expect(GTM_CONTAINER_LOADED.test(makeAuditData()).status).toBe('fail');
+  // Signal vs Implementation PRD P0-04 — a missing GTM container never
+  // emits this rule's nominal 'critical' severity on its own; the actual
+  // severity always lives elsewhere (an independent path, or the
+  // platform-specific findings this rule points at).
+  describe('when no gtm.js script is present (P0-04 conditional severity)', () => {
+    it('never returns fail/critical — always warning/low', () => {
+      const result = GTM_CONTAINER_LOADED.test(makeAuditData());
+      expect(result.status).toBe('warning');
+      expect(result.severity).toBe('low');
+    });
+
+    it('names the gtag loader as an independent path when one is present', () => {
+      const auditData = makeAuditData({
+        networkRequests: [makeRequest({ url: 'https://www.googletagmanager.com/gtag/js?id=G-ABC123' })],
+      });
+      const result = GTM_CONTAINER_LOADED.test(auditData);
+      expect(result.status).toBe('warning');
+      expect(result.severity).toBe('low');
+      expect(result.technical_details.found).toContain('gtag.js loader');
+      expect(result.technical_details.found).toContain('not in use on this site');
+    });
+
+    it("names a declared platform's own pixel as an independent path when observed firing outside GTM", () => {
+      const auditData = makeAuditData({
+        declared_platforms: ['meta'],
+        networkRequests: [makeRequest({ url: 'https://www.facebook.com/tr?id=123' })],
+      });
+      const result = GTM_CONTAINER_LOADED.test(auditData);
+      expect(result.status).toBe('warning');
+      expect(result.severity).toBe('low');
+      expect(result.technical_details.found).toContain('Meta');
+    });
+
+    it('points at the declared platforms with no observed signal at all when no independent path exists either', () => {
+      const auditData = makeAuditData({ declared_platforms: ['google_ads', 'meta'], networkRequests: [] });
+      const result = GTM_CONTAINER_LOADED.test(auditData);
+      expect(result.status).toBe('warning');
+      expect(result.severity).toBe('low');
+      expect(result.technical_details.found).toContain('Google Ads');
+      expect(result.technical_details.found).toContain('Meta');
+      expect(result.technical_details.found).not.toContain('not in use on this site'); // no independent path was found — different copy branch
+    });
+
+    it('falls back to the plain no-path message when no platforms are declared at all', () => {
+      const result = GTM_CONTAINER_LOADED.test(makeAuditData({ declared_platforms: [] }));
+      expect(result.status).toBe('warning');
+      expect(result.severity).toBe('low');
+      expect(result.technical_details.found).toBe('No GTM container script (gtm.js) detected loading, and no independent implementation path was observed either.');
+    });
   });
 });
 

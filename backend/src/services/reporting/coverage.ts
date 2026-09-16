@@ -95,6 +95,39 @@ function applicableRuleCountByLayer(auditData: AuditData): Map<ValidationLayerV2
 }
 
 /**
+ * The real, evidence-based reason(s) a layer's rules all self-skipped, read
+ * off their own `technical_details.found` (Signal vs Implementation PRD
+ * P0-01) — every ValidationRule already writes a specific skip reason
+ * there (e.g. L8.1's "No CMP declared and no EEA/UK/Switzerland traffic
+ * declared — a consent banner is not expected"), evidence that a runtime
+ * signal (like an observed `consent(default)` push, or a banner genuinely
+ * not being present) fed the decision. Discarding that in favour of a
+ * canned generic string is the defect this function fixes: it made every
+ * such exclusion look declaration-only, even when the underlying rules
+ * looked at real crawl evidence and found nothing requiring them. Joins
+ * every *distinct* reason rather than requiring all rules to agree on one —
+ * a layer's several rules can each skip for their own genuine, different
+ * reason (L8.1 on the CMP/region declaration, L8.2/L8.3 on the banner
+ * itself not being present), and per the PRD's own acceptance criterion
+ * ("every remaining exclusion names the evidence check that produced it"),
+ * naming all of them beats collapsing to a generic fallback. Returns
+ * undefined only when no skipped result in the layer carried any reason at
+ * all (shouldn't happen in practice — every rule's test() always writes
+ * `found` — kept as a defensive fallback to the generic string).
+ */
+function evidenceBasedSkipReason(layerResults: ValidationResult[]): string | undefined {
+  const reasons = [
+    ...new Set(
+      layerResults
+        .filter((r) => r.status === 'skipped' && !isCoverageSkip(r))
+        .map((r) => r.technical_details.found)
+        .filter((found): found is string => !!found),
+    ),
+  ];
+  return reasons.length > 0 ? reasons.join(' ') : undefined;
+}
+
+/**
  * Classifies every one of the register's 13 layers (Report Correctness
  * Programme PRD Part D1/D2) — not just the ones that happen to appear in
  * `results` — into 'not_applicable' (this site/scan's own declared
@@ -132,16 +165,50 @@ function classifyUntestedLayers(auditData: AuditData, results: ValidationResult[
     }
 
     const anyCoverageSkip = layerResults.some(isCoverageSkip);
+    const evidenceReason = anyCoverageSkip ? undefined : evidenceBasedSkipReason(layerResults);
     notTested.push({
       layer,
       label: LAYER_LABELS[layer] ?? layer,
       reason: anyCoverageSkip
         ? 'The crawl never reached a page distinct from the landing page'
-        : "Not applicable — nothing to check under this scan's current configuration (e.g. no domain declared, or nothing connected for this layer)",
+        : evidenceReason
+          ?? "Not applicable — nothing to check under this scan's current configuration (e.g. no domain declared, or nothing connected for this layer)",
       state: anyCoverageSkip ? 'not_scanned' : 'not_applicable',
     });
   }
+  assertLayersReconcile(notTested);
   return notTested;
+}
+
+/**
+ * Signal vs Implementation PRD P0-02 — every layer in `ALL_V2_LAYERS` must
+ * land in exactly one bucket: "assessed" (excluded from `notTested`, by
+ * `classifyUntestedLayers`'s own `continue`) or `notTested` (not_applicable/
+ * not_scanned), never both and never neither. Guaranteed by construction
+ * today (the loop above iterates `ALL_V2_LAYERS` once and either continues
+ * or pushes exactly once per layer) — this assertion exists so a future
+ * change to that loop (or to `ALL_V2_LAYERS` itself) that breaks the
+ * invariant fails loudly in tests/report generation, rather than silently
+ * reproducing the PRD's "assessed + not applicable + not assessed don't
+ * visibly sum to thirteen" defect.
+ */
+function assertLayersReconcile(notTested: CoverageLayerNotTested[]): void {
+  const seen = new Set<ValidationLayerV2>();
+  for (const { layer } of notTested) {
+    if (seen.has(layer)) {
+      throw new Error(`Coverage arithmetic broken: layer "${layer}" appears more than once in layers_not_tested`);
+    }
+    if (!ALL_V2_LAYERS.includes(layer)) {
+      throw new Error(`Coverage arithmetic broken: layer "${layer}" is not one of the register's ${ALL_V2_LAYERS.length} declared layers`);
+    }
+    seen.add(layer);
+  }
+  const assessedCount = ALL_V2_LAYERS.length - seen.size;
+  if (assessedCount + seen.size !== ALL_V2_LAYERS.length) {
+    throw new Error(
+      `Coverage arithmetic broken: assessed (${assessedCount}) + not-tested (${seen.size}) does not sum to the fixed ${ALL_V2_LAYERS.length}-layer denominator`,
+    );
+  }
 }
 
 /** Step names whose navigation degraded (StepCoverage.degraded) — Platform Attribution & Determinism PRD B-W3. */

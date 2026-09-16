@@ -339,6 +339,70 @@ describe('generateBusinessSummary', () => {
       expect(summary).toContain('warning');
     });
   });
+
+  // Signal vs Implementation PRD P0-03 — a raw fail/warning whose verdict
+  // was demoted by the confidence lattice (e.g. gated on an unverified
+  // conversion surface) must not count toward the critical total or the
+  // "most urgent" slot — reproduces the PureBorn trigger scan's defect,
+  // where three Needs-confirmation conversion-fires findings still drove
+  // "5 critical issues" here even though scoring.ts and the Action Items
+  // list already excluded them.
+  describe('excludes demoted (non-FAIL-verdict) results from the summary — PRD P0-03', () => {
+    it('reports "operating normally" when the only failures have a NOT_OBSERVED verdict', () => {
+      const demoted = { ...makeResult('GOOGLE_ADS_CONVERSION_EVENT_FIRES'), verdict: 'NOT_OBSERVED' as const };
+      expect(generateBusinessSummary([demoted])).toBe('All conversion signals are operating normally.');
+    });
+
+    it('excludes a demoted result from the critical count even when a genuine critical failure is also present', () => {
+      const demoted = { ...makeResult('GOOGLE_ADS_CONVERSION_EVENT_FIRES'), verdict: 'NOT_OBSERVED' as const };
+      const genuine = { ...makeResult('GTM_CONTAINER_LOADED', 'fail', 'critical'), verdict: 'FAIL' as const };
+      const summary = generateBusinessSummary([demoted, genuine]);
+      expect(summary).toContain('1 critical issue');
+    });
+
+    it('still counts a fail result with no verdict field at all (pre-lattice fixture) — unchanged legacy behavior', () => {
+      const legacy = makeResult('SOME_V2_RULE', 'fail', 'critical');
+      expect(legacy.verdict).toBeUndefined();
+      expect(generateBusinessSummary([legacy])).toContain('1 critical issue');
+    });
+  });
+
+  // Signal vs Implementation PRD P0-05 — reproduces the PureBorn trigger
+  // scan's Business Summary shape end to end: a downgraded implementation-
+  // mechanism finding (GTM, now 'warning'/'low' per P0-04), three demoted
+  // Needs-confirmation conversion-fires findings (P0-03), and two genuine
+  // critical signal failures (Google Ads, TikTok). Business Summary ranking
+  // is untouched code (still severity-first via rankIssuesForSummary) —
+  // this asserts the fix composes correctly with P0-03/P0-04 rather than
+  // needing its own separate implementation-layer exclusion list.
+  it('leads with the genuine signal failures, not the downgraded GTM finding or the demoted conversion-fires findings (P0-05)', () => {
+    const withFound = (result: ValidationResult, found: string): ValidationResult => ({
+      ...result,
+      technical_details: { ...result.technical_details, found },
+    });
+    const gtmDowngraded = withFound(
+      { ...makeResult('GTM_CONTAINER_LOADED', 'warning', 'low'), verdict: 'FAIL' as const },
+      'No GTM container script (gtm.js) detected loading — GTM is not in use on this site.',
+    );
+    const demotedGoogleAdsFires = { ...makeResult('GOOGLE_ADS_CONVERSION_EVENT_FIRES'), verdict: 'NOT_OBSERVED' as const };
+    const genuineGoogleAdsId = withFound(
+      { ...makeResult('GOOGLE_ADS_AW_ID_PRESENT', 'fail', 'critical'), verdict: 'FAIL' as const },
+      'No gtag.js loader detected, so no AW- conversion ID either',
+    );
+    const genuineTiktokPixel = withFound(
+      { ...makeResult('TIKTOK_PIXEL_PRESENT', 'fail', 'critical'), verdict: 'FAIL' as const },
+      'No TikTok pixel detected on any sampled page',
+    );
+
+    const summary = generateBusinessSummary([gtmDowngraded, demotedGoogleAdsFires, genuineGoogleAdsId, genuineTiktokPixel]);
+
+    // Exactly the two genuine critical failures count — GTM (warning) and
+    // the demoted conversion-fires result (NOT_OBSERVED) are both excluded.
+    expect(summary).toContain('2 critical issue');
+    // The "most urgent" slot names a real signal failure, never GTM's copy.
+    expect(summary).not.toContain('GTM is not in use on this site');
+    expect(summary).toMatch(/AW- conversion ID|TikTok pixel/);
+  });
 });
 
 // ── getIssueHeadline ───────────────────────────────────────────────────────────
@@ -379,6 +443,21 @@ describe('determineOverallStatus', () => {
         makeResult('GA4_PURCHASE_EVENT_FIRED'),
       ]),
     ).toBe('critical');
+  });
+
+  // Signal vs Implementation PRD P0-03 — a raw 'fail' status whose verdict
+  // was demoted (conversion-event-fires rule gated on an unverified
+  // conversion surface, per the verdict lattice) must not drive this to
+  // 'critical' — previously the only place in the report that still did.
+  it('is healthy, not critical, when the only failure has a NOT_OBSERVED verdict (unverified conversion surface)', () => {
+    const result = { ...makeResult('GOOGLE_ADS_CONVERSION_EVENT_FIRES'), verdict: 'NOT_OBSERVED' as const };
+    expect(determineOverallStatus([result])).toBe('healthy');
+  });
+
+  it('is still critical when a genuine, confidently-failed critical result exists alongside a demoted one', () => {
+    const demoted = { ...makeResult('GOOGLE_ADS_CONVERSION_EVENT_FIRES'), verdict: 'NOT_OBSERVED' as const };
+    const genuine = { ...makeResult('SOME_V2_RULE', 'fail', 'critical'), verdict: 'FAIL' as const };
+    expect(determineOverallStatus([demoted, genuine])).toBe('critical');
   });
 });
 

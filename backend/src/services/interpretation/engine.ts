@@ -761,16 +761,25 @@ function renderSummary(rankedRules: SummaryInput[], counts: SeverityCounts, warn
  * synthesizes its summary input from the result's own severity and
  * technical_details.found — the actual observed state, not the rule's
  * ideal/passing-state .expected text (see toSummaryInput's docstring).
+ *
+ * Signal vs Implementation PRD P0-03/P0-05 — filters on `isConfidentFinding`
+ * (same verdict-lattice check `interpretResults()` above already applies to
+ * the Issues/Action Items list), not raw `status`, so a result whose
+ * verdict was demoted to NOT_OBSERVED/INCONCLUSIVE/CONFLICT (e.g. a
+ * conversion-event-fires rule gated on an unverified conversion surface)
+ * stops counting toward the critical total and the "most urgent" slot here
+ * too — previously this was the one place in the report that still counted
+ * it, even though scoring.ts and the Action Items list already excluded it.
  */
 export function generateBusinessSummary(results: ValidationResult[]): string {
-  const rules = results.filter((r) => r.status === 'fail').map(toSummaryInput);
+  const rules = results.filter((r) => r.status === 'fail' && isConfidentFinding(r)).map(toSummaryInput);
   const counts: SeverityCounts = {
     critical: rules.filter((r) => r.severity === 'critical').length,
     high: rules.filter((r) => r.severity === 'high').length,
     medium: rules.filter((r) => r.severity === 'medium').length,
     low: rules.filter((r) => r.severity === 'low').length,
   };
-  const warningCount = results.filter((r) => r.status === 'warning').length;
+  const warningCount = results.filter((r) => r.status === 'warning' && isConfidentFinding(r)).length;
   return renderSummary(rankIssuesForSummary(rules), counts, warningCount);
 }
 
@@ -780,11 +789,15 @@ export function generateBusinessSummary(results: ValidationResult[]): string {
  * regardless of rule set — a v2-only audit with critical failures no
  * longer reports 'healthy' just because none of its rule_ids have a v1
  * interpretation entry.
+ *
+ * Signal vs Implementation PRD P0-03 — same `isConfidentFinding` filter as
+ * generateBusinessSummary above, so a NOT_OBSERVED/INCONCLUSIVE/CONFLICT
+ * verdict can't drive the report's overall status to 'critical' either.
  */
 export function determineOverallStatus(
   results: ValidationResult[],
 ): 'healthy' | 'partially_broken' | 'critical' {
-  const failed = results.filter((r) => r.status === 'fail');
+  const failed = results.filter((r) => r.status === 'fail' && isConfidentFinding(r));
   if (failed.some((r) => r.severity === 'critical')) return 'critical';
   if (failed.some((r) => r.severity === 'high')) return 'partially_broken';
   return 'healthy';

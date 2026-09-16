@@ -201,6 +201,71 @@ describe('ExecutiveSummary — coverage banner', () => {
   });
 });
 
+// Signal vs Implementation PRD P0-02 — "a reader can reconstruct the
+// coverage percentage from the report itself without inference." Before
+// this, the page showed only a count plus two comma-joined name lists.
+describe('ExecutiveSummary — Signal layer coverage table (P0-02)', () => {
+  it('renders all 13 layers, with a real skip reason shown for each not-tested one', () => {
+    const coverage: ReportCoverage = {
+      pages_requested: 4,
+      pages_distinct: 4,
+      steps: [],
+      layers_not_tested: [
+        { layer: 'consent', label: 'L8 · Consent', reason: 'No CMP declared and no EEA/UK/Switzerland traffic declared — a consent banner is not expected', state: 'not_applicable' },
+        { layer: 'event_firing', label: 'L5 · Event Firing', reason: 'The crawl never reached a page distinct from the landing page', state: 'not_scanned' },
+        { layer: 'reconciliation', label: 'L11 · Reconciliation', reason: 'Not yet built into the Check Register', state: 'not_applicable' },
+      ],
+      rules_tested: 60,
+      rules_not_tested: 10,
+      partial: false,
+      degraded_steps: [],
+      run_quality: 'COMPLETE',
+    };
+    render(<ExecutiveSummary report={makeReport(coverage)} />);
+
+    expect(screen.getByText('Signal layer coverage')).not.toBeNull();
+    expect(screen.getByText('10 of 13 signal layers assessed.')).not.toBeNull();
+
+    // Every one of the 13 layers gets its own row.
+    expect(screen.getByText('L0 · Scope & Configuration')).not.toBeNull();
+    expect(screen.getByText('L12 · Hygiene & Integrity')).not.toBeNull();
+
+    // A not-tested layer shows its real, specific reason.
+    expect(screen.getByText(/No CMP declared and no EEA\/UK\/Switzerland traffic declared/)).not.toBeNull();
+    expect(screen.getByText('The crawl never reached a page distinct from the landing page')).not.toBeNull();
+    expect(screen.getByText('Not yet built into the Check Register')).not.toBeNull();
+
+    // Status labels distinguish assessed from not_applicable from not_scanned.
+    expect(screen.getAllByText('Assessed').length).toBe(10);
+    expect(screen.getAllByText('Not applicable').length).toBe(2);
+    expect(screen.getAllByText('Not scanned').length).toBe(1);
+  });
+
+  it('renders "13 of 13 signal layers assessed" and no not-tested rows when every layer ran', () => {
+    const coverage: ReportCoverage = {
+      pages_requested: 4,
+      pages_distinct: 4,
+      steps: [],
+      layers_not_tested: [],
+      rules_tested: 90,
+      rules_not_tested: 0,
+      partial: false,
+      degraded_steps: [],
+      run_quality: 'COMPLETE',
+    };
+    render(<ExecutiveSummary report={makeReport(coverage)} />);
+    expect(screen.getByText('13 of 13 signal layers assessed.')).not.toBeNull();
+    expect(screen.getAllByText('Assessed').length).toBe(13);
+    expect(screen.queryByText('Not applicable')).toBeNull();
+    expect(screen.queryByText('Not scanned')).toBeNull();
+  });
+
+  it('renders nothing when coverage is undefined — never fabricates a coverage table', () => {
+    render(<ExecutiveSummary report={makeReport(undefined)} />);
+    expect(screen.queryByText('Signal layer coverage')).toBeNull();
+  });
+});
+
 // Scoring & Coverage Gate PRD §9.1.5/§9.2 — a withheld overall score
 // renders as a dedicated panel, and each withheld sub-score renders "Not
 // assessed" rather than a fabricated default label.

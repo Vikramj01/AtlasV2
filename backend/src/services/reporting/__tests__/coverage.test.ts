@@ -4,6 +4,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { buildCoverageSummary, computeCoverageFingerprint, computeRunQuality } from '../coverage';
+import { ALL_V2_LAYERS } from '@/services/validation/register/layers';
 import type { AuditData, StepCoverage, ValidationResult } from '@/types/audit';
 
 function makeStep(overrides: Partial<StepCoverage> = {}): StepCoverage {
@@ -198,6 +199,74 @@ describe('buildCoverageSummary', () => {
       expect(l4?.state).toBe('not_applicable');
       expect(l5?.state).not.toBe(l4?.state);
     });
+
+    // Signal vs Implementation PRD P0-01 — a layer whose rules ARE applicable
+    // (unlike cross_domain_continuity/reconciliation above) but all
+    // self-skipped for a genuine, evidence-based reason must surface that
+    // reason, not the generic "nothing to check" fallback. Consent's rules
+    // all declare applies_to: 'all', so they're always applicable — any
+    // skip here is a runtime evidence decision, not a declared-config one.
+    it("surfaces a layer's real evidence-based skip reason instead of the generic fallback, when every skipped rule agrees on it", () => {
+      const auditData = makeAuditData({
+        rule_set_version: 'v2', site_type: 'ecommerce', declared_platforms: ['google_ads'],
+        step_coverage: [makeStep()],
+      });
+      const skipReason = 'No CMP declared and no EEA/UK/Switzerland traffic declared — a consent banner is not expected';
+      const results: ValidationResult[] = [
+        makeResult({
+          rule_id: 'CONSENT_BANNER_PRESENT_WHEN_REQUIRED', layer: 'consent', validation_layer: 'consent', status: 'skipped',
+          technical_details: { found: skipReason, expected: 'whatever', evidence: [] },
+        }),
+      ];
+      const layersNotTested = buildCoverageSummary(auditData, results)?.layers_not_tested ?? [];
+      const consent = layersNotTested.find((l) => l.layer === 'consent');
+      expect(consent?.state).toBe('not_applicable');
+      expect(consent?.reason).toBe(skipReason);
+      expect(consent?.reason).not.toContain('nothing to check under this scan');
+    });
+
+    it("joins each distinct real reason when a layer's skipped rules disagree on why, rather than falling back to the generic string", () => {
+      const auditData = makeAuditData({
+        rule_set_version: 'v2', site_type: 'ecommerce', declared_platforms: ['google_ads'],
+        step_coverage: [makeStep()],
+      });
+      const results: ValidationResult[] = [
+        makeResult({
+          rule_id: 'CONSENT_BANNER_PRESENT_WHEN_REQUIRED', layer: 'consent', validation_layer: 'consent', status: 'skipped',
+          technical_details: { found: 'Reason A', expected: 'whatever', evidence: [] },
+        }),
+        makeResult({
+          rule_id: 'DECLARED_CMP_MATCHES_DETECTED_VENDOR', layer: 'consent', validation_layer: 'consent', status: 'skipped',
+          technical_details: { found: 'Reason B', expected: 'whatever', evidence: [] },
+        }),
+      ];
+      const layersNotTested = buildCoverageSummary(auditData, results)?.layers_not_tested ?? [];
+      const consent = layersNotTested.find((l) => l.layer === 'consent');
+      expect(consent?.reason).toContain('Reason A');
+      expect(consent?.reason).toContain('Reason B');
+      expect(consent?.reason).not.toContain('nothing to check under this scan');
+    });
+
+    it('deduplicates when several rules in a layer share the exact same real reason', () => {
+      const auditData = makeAuditData({
+        rule_set_version: 'v2', site_type: 'ecommerce', declared_platforms: ['google_ads'],
+        step_coverage: [makeStep()],
+      });
+      const sameReason = 'No consent banner was detected — nothing to compare against';
+      const results: ValidationResult[] = [
+        makeResult({
+          rule_id: 'DECLARED_CMP_MATCHES_DETECTED_VENDOR', layer: 'consent', validation_layer: 'consent', status: 'skipped',
+          technical_details: { found: sameReason, expected: 'whatever', evidence: [] },
+        }),
+        makeResult({
+          rule_id: 'NO_DECLARED_PLATFORM_TAGS_FIRE_BEFORE_CONSENT', layer: 'consent', validation_layer: 'consent', status: 'skipped',
+          technical_details: { found: sameReason, expected: 'whatever', evidence: [] },
+        }),
+      ];
+      const layersNotTested = buildCoverageSummary(auditData, results)?.layers_not_tested ?? [];
+      const consent = layersNotTested.find((l) => l.layer === 'consent');
+      expect(consent?.reason).toBe(sameReason); // not duplicated
+    });
   });
 
   // ── partial / degraded_steps (Platform Attribution & Determinism PRD B-W3) ──
@@ -347,5 +416,62 @@ describe('computeCoverageFingerprint', () => {
     const auditData = makeAuditData({ step_coverage: [makeStep()] });
     const fingerprint = computeCoverageFingerprint(auditData);
     expect(fingerprint).toMatch(/^[0-9a-f]+$/);
+  });
+});
+
+// Signal vs Implementation PRD P0-02 — "a reader can reconstruct the
+// coverage percentage from the report itself without inference." Asserts
+// the reconciliation the PRD's own defect claimed didn't visibly hold:
+// every one of the register's 13 layers lands in exactly one bucket.
+describe('layers_not_tested reconciles against the fixed 13-layer denominator (P0-02)', () => {
+  it('assessed-layer count plus layers_not_tested.length always equals ALL_V2_LAYERS.length', () => {
+    // A mixed scenario touching most layers with a mix of pass/fail/skip,
+    // deliberately leaving several layers with zero results (declared-
+    // config-inapplicable) and one coverage-skipped.
+    const auditData = makeAuditData({
+      rule_set_version: 'v2', site_type: 'ecommerce', declared_platforms: ['google_ads'],
+      step_coverage: [makeStep()],
+    });
+    const results: ValidationResult[] = [
+      makeResult({ rule_id: 'L0_RULE', validation_layer: 'scope_configuration', status: 'pass' }),
+      makeResult({ rule_id: 'L1_RULE', validation_layer: 'foundation_tags', status: 'fail', severity: 'critical' }),
+      makeResult({ rule_id: 'L2_RULE', validation_layer: 'click_id_capture', status: 'pass' }),
+      COVERAGE_SKIPPED('L5_RULE', 'event_firing'),
+      makeResult({
+        rule_id: 'CONSENT_BANNER_PRESENT_WHEN_REQUIRED', layer: 'consent', validation_layer: 'consent', status: 'skipped',
+        technical_details: { found: 'No CMP declared and no EEA/UK/Switzerland traffic declared', expected: 'whatever', evidence: [] },
+      }),
+    ];
+    const coverage = buildCoverageSummary(auditData, results)!;
+    const notTestedLayers = new Set(coverage.layers_not_tested.map((l) => l.layer));
+    const assessedCount = ALL_V2_LAYERS.length - notTestedLayers.size;
+
+    expect(assessedCount + notTestedLayers.size).toBe(ALL_V2_LAYERS.length);
+    expect(notTestedLayers.size).toBe(coverage.layers_not_tested.length); // no layer listed twice
+    // The three layers with a real (non-skipped) result are assessed, excluded from layers_not_tested.
+    expect(notTestedLayers.has('scope_configuration')).toBe(false);
+    expect(notTestedLayers.has('foundation_tags')).toBe(false);
+    expect(notTestedLayers.has('click_id_capture')).toBe(false);
+    // Every other one of the 13 layers is accounted for in layers_not_tested.
+    for (const layer of ALL_V2_LAYERS) {
+      const assessed = !notTestedLayers.has(layer);
+      const inNotTested = notTestedLayers.has(layer);
+      expect(assessed || inNotTested).toBe(true);
+    }
+  });
+
+  it('reconciles at both extremes — every layer assessed, and every layer unassessed', () => {
+    const auditData = makeAuditData({
+      rule_set_version: 'v2', site_type: 'ecommerce', declared_platforms: ['google_ads'],
+      step_coverage: [makeStep()],
+    });
+
+    const allAssessed = ALL_V2_LAYERS.map((layer, i) => makeResult({ rule_id: `RULE_${i}`, validation_layer: layer, status: 'pass' }));
+    const fullCoverage = buildCoverageSummary(auditData, allAssessed)!;
+    expect(fullCoverage.layers_not_tested).toHaveLength(0);
+
+    const noneAssessed = buildCoverageSummary(auditData, [])!;
+    expect(noneAssessed.layers_not_tested).toHaveLength(ALL_V2_LAYERS.length);
+    expect(new Set(noneAssessed.layers_not_tested.map((l) => l.layer)).size).toBe(ALL_V2_LAYERS.length);
   });
 });
