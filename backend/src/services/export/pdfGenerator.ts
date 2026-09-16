@@ -177,6 +177,17 @@ const TAG_PLATFORM_LABELS: Record<string, string> = {
   microsoft_uet:    'Microsoft UET',
 };
 
+/** Signal vs Implementation PRD P1-03 — display labels for CommercePlatformDetection.platform/detected_backend. */
+const COMMERCE_PLATFORM_LABELS: Record<string, string> = {
+  shopify:                     'Shopify',
+  shopify_plus:                'Shopify Plus',
+  woocommerce:                 'WooCommerce',
+  salesforce_commerce_cloud:   'Salesforce Commerce Cloud',
+  headless:                    'Headless / composable storefront',
+  spa:                         'Single-page application (unidentified backend)',
+  custom:                      'Custom / unidentified platform',
+};
+
 /** WithAccessEntry.requires_connection labels (PRD §12.2's literal 5-platform union). */
 const CONNECTION_PLATFORM_LABELS: Record<string, string> = {
   google_ads: 'Google Ads',
@@ -1096,9 +1107,38 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
         );
       doc.moveDown(0.5);
 
-      const { gtm_container, tags, possible_server_side_gtm, datalayer_inventory } = report.site_setup;
+      const { gtm_container, tags, possible_server_side_gtm, datalayer_inventory, commerce_platform } = report.site_setup;
+
+      // Commerce Platform (Signal vs Implementation PRD P1-03) — shown first,
+      // so a reader hits it before any checkout/confirmation-surface finding
+      // further down the report. Omitted entirely when the scan captured no
+      // commerce-platform signal (older audit, or the landing step never
+      // settled), not rendered as a fabricated "custom/unknown" verdict.
+      if (commerce_platform) {
+        sectionHeading('Commerce Platform');
+        const cpBadgeY = doc.y;
+        pill(COMMERCE_PLATFORM_LABELS[commerce_platform.platform] ?? formatLabel(commerce_platform.platform), C.mutedText, LEFT, cpBadgeY);
+        doc.y = cpBadgeY + 22;
+        if (commerce_platform.detected_backend) {
+          doc.fillColor(C.darkText).fontSize(9).font('Helvetica')
+            .text(`Detected backend: ${COMMERCE_PLATFORM_LABELS[commerce_platform.detected_backend] ?? formatLabel(commerce_platform.detected_backend)}`, LEFT, doc.y, { width: CONTENT_W });
+          doc.moveDown(0.25);
+        }
+        if (commerce_platform.indicators.length > 0) {
+          doc.fillColor(C.lightText).fontSize(8)
+            .text(commerce_platform.indicators.join('  ·  '), LEFT, doc.y, { width: CONTENT_W });
+          doc.moveDown(0.25);
+        }
+        doc.fillColor(C.mutedText).fontSize(7.5).font('Helvetica-Oblique')
+          .text(`Confidence: ${commerce_platform.confidence}`, LEFT, doc.y);
+        doc.moveDown(0.8);
+      }
 
       // GTM Container
+      if (needsNewPage(60)) {
+        doc.addPage();
+        pageHeader('Site Setup');
+      }
       sectionHeading('Google Tag Manager Container');
       const gtmBadgeY = doc.y;
       pill(gtm_container.detected ? 'Detected' : 'Not observed', gtm_container.detected ? C.healthy : C.mutedText, LEFT, gtmBadgeY);

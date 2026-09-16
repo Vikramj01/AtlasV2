@@ -290,12 +290,31 @@ export interface PossibleServerSideGtm {
   caveat: string;
 }
 
+/** Signal vs Implementation PRD P1-03 — commerce platform / rendering-model detection. */
+export type CommercePlatform =
+  | 'shopify'
+  | 'shopify_plus'
+  | 'woocommerce'
+  | 'salesforce_commerce_cloud'
+  | 'headless'
+  | 'spa'
+  | 'custom';
+
+export interface CommercePlatformDetection {
+  platform: CommercePlatform;
+  confidence: 'high' | 'medium' | 'low';
+  indicators: string[];
+  /** The commerce backend a headless/decoupled frontend is proxying, when identifiable — only ever set when platform is 'headless'. */
+  detected_backend?: CommercePlatform;
+}
+
 export interface SiteSetupSummary {
   generated_at: string;
   datalayer_inventory: DataLayerEventInventoryEntry[];
   tags: DetectedTagSignal[];
   gtm_container: DetectedGtmContainer;
   possible_server_side_gtm: PossibleServerSideGtm;
+  commerce_platform?: CommercePlatformDetection;
 }
 
 /** A rule result excluded from every client-facing finding, count, and score because the crawl couldn't confidently assess it — see backend types/audit.ts's UnassessableFinding for the full model. */

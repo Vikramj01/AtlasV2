@@ -6,7 +6,7 @@
 import type {
   AuditData, FunnelType, Region, DataLayerEvent, NetworkRequest, CookieSnapshot, LocalStorageSnapshot, ConsoleError,
   RuleSetVersion, SiteType, SecondaryMotion, DeclaredPlatform, DeclarationSource, TrafficRegion, CMP, DeclaredConversion,
-  StepCoverage, StepUrlSource, ConsentCapture, SettleOutcome, WaitForOutcome, RequestInitiator,
+  StepCoverage, StepUrlSource, ConsentCapture, SettleOutcome, WaitForOutcome, RequestInitiator, CommercePlatformDetection,
 } from '@/types/audit';
 import type { NamingConvention } from '@/types/taxonomy';
 import { JOURNEY_CONFIGS } from '@/services/browserbase/journeyConfigs';
@@ -35,6 +35,7 @@ import {
 } from './dataCapture';
 import { extractGa4ClientId, ga4SessionStartDetected } from '@/services/detection/trackingSignals';
 import { detectConsentBanner, dismissConsentBanner, type EvaluatePage } from '@/services/detection/consentBanner';
+import { detectCommercePlatform, type CommercePlatformSignals } from '@/services/detection/commercePlatformDetector';
 import { ALL_DECLARED_PLATFORMS, platformTagDetected } from '@/services/validation/register/platformDetection';
 import logger from '@/utils/logger';
 
@@ -314,6 +315,7 @@ export async function simulateJourney(
   let landingFinalUrl: string | undefined;
   let landingReferrerCaptured: string | undefined;
   let outboundCrossDomainLinks: { total: number; withGl: number } | undefined;
+  let commercePlatform: CommercePlatformDetection | undefined;
   let productDomainReachable: boolean | undefined;
   let marketingGa4ClientId: string | undefined;
   let productDomainGa4ClientId: string | undefined;
@@ -508,6 +510,48 @@ export async function simulateJourney(
         if (step.name === 'landing') {
           landingReferrerCaptured = await page.evaluate(() => document.referrer).catch(() => '') as string;
           outboundCrossDomainLinks = await scanOutboundCrossDomainLinks(page as unknown as DeepScanPage, crossDomainTargets);
+
+          // Commerce platform / rendering-model detection (Signal vs
+          // Implementation PRD P1-03) — landing-only, same as the referrer
+          // and outbound-link scans above. Reuses gtmScriptSrcs (already
+          // populated for this step by the push above) rather than a second
+          // script[src] capture; adds one new evaluateAcrossFrames pass for
+          // link[href] plus a single page.evaluate() for the page-level
+          // globals/markers siteDetectionService.ts's HTTP-fetch detector
+          // can't see live (window.Shopify, headless framework markers).
+          // Fails open: a thrown evaluate() leaves commercePlatform
+          // undefined rather than fabricating a 'custom' verdict from no
+          // real signal.
+          const commerceMarkers = await page.evaluate(() => {
+            const w = window as unknown as { Shopify?: unknown; __NEXT_DATA__?: unknown; __NUXT__?: unknown; ___gatsby?: unknown };
+            return {
+              hasShopifyGlobal: typeof w.Shopify !== 'undefined',
+              hasWooCommerceMarker: !!document.querySelector('[class*="woocommerce"]'),
+              hasHeadlessFrameworkMarker:
+                typeof w.__NEXT_DATA__ !== 'undefined' || typeof w.__NUXT__ !== 'undefined' || typeof w.___gatsby !== 'undefined',
+              generatorMeta: document.querySelector('meta[name="generator"]')?.getAttribute('content')?.trim() || null,
+            };
+          }).catch(() => null) as {
+            hasShopifyGlobal: boolean;
+            hasWooCommerceMarker: boolean;
+            hasHeadlessFrameworkMarker: boolean;
+            generatorMeta: string | null;
+          } | null;
+
+          if (commerceMarkers) {
+            const linkHrefs = await evaluateAcrossFrames(
+              page as unknown as DeepScanPage,
+              collectDeep,
+              { selector: 'link[href]', mode: 'attr', attr: 'href' },
+            ).catch(() => []);
+
+            const commerceSignals: CommercePlatformSignals = {
+              scriptSrcs: gtmScriptSrcs,
+              linkHrefs,
+              ...commerceMarkers,
+            };
+            commercePlatform = detectCommercePlatform(commerceSignals);
+          }
         }
 
         // Snapshot cookies, localStorage, and sessionStorage
@@ -666,6 +710,7 @@ export async function simulateJourney(
     landing_final_url: landingFinalUrl,
     landing_referrer_captured: landingReferrerCaptured,
     outboundCrossDomainLinks,
+    commerce_platform: commercePlatform,
     marketingGa4ClientId,
     productDomainGa4ClientId,
     productDomainSessionStartDetected,

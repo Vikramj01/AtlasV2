@@ -266,4 +266,25 @@ describe('buildSiteSetupSummary', () => {
     );
     expect(summary.gtm_container.ids_match).toBeNull();
   });
+
+  it('passes commerce_platform through unchanged when the audit captured a detection (Signal vs Implementation PRD P1-03)', () => {
+    const summary = buildSiteSetupSummary(
+      {
+        website_url: 'https://example.com',
+        dataLayer: [],
+        networkRequests: [],
+        commerce_platform: { platform: 'shopify', confidence: 'high', indicators: ['window.Shopify global present'] },
+      },
+      [],
+    );
+    expect(summary.commerce_platform).toEqual({ platform: 'shopify', confidence: 'high', indicators: ['window.Shopify global present'] });
+  });
+
+  it('leaves commerce_platform undefined, not a fabricated verdict, when the audit captured no detection', () => {
+    const summary = buildSiteSetupSummary(
+      { website_url: 'https://example.com', dataLayer: [], networkRequests: [] },
+      [],
+    );
+    expect(summary.commerce_platform).toBeUndefined();
+  });
 });

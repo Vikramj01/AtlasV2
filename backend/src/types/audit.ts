@@ -468,6 +468,29 @@ export interface DuplicateImplementationFinding {
 }
 
 /**
+ * Commerce platform / rendering model (Signal vs Implementation PRD P1-03)
+ * — Atlas previously reported no statement of this at all, which matters
+ * for interpreting every finding about checkout and confirmation (the
+ * PRD's own PureBorn example: a report calling out an unreachable
+ * checkout page reads very differently once a reader knows the site is
+ * Shopify). `shopify_plus` is reserved, not yet emitted — distinguishing
+ * it from standard Shopify needs a signal this detector doesn't have and
+ * guessing would be exactly the overclaiming this PRD exists to fix.
+ * `headless` means a decoupled frontend framework (Next.js, Nuxt, Gatsby)
+ * serving assets from a detected commerce backend without that backend's
+ * own theme JS running — see CommercePlatformDetection.detected_backend.
+ */
+export type CommercePlatform = 'shopify' | 'shopify_plus' | 'woocommerce' | 'salesforce_commerce_cloud' | 'headless' | 'spa' | 'custom';
+
+export interface CommercePlatformDetection {
+  platform: CommercePlatform;
+  confidence: 'high' | 'medium' | 'low';
+  indicators: string[];
+  /** Which commerce backend's assets were detected behind a 'headless' frontend — undefined when platform isn't 'headless', or no specific backend could be identified. */
+  detected_backend?: CommercePlatform;
+}
+
+/**
  * A cookie's full attribute set, as Playwright's context.cookies() reports
  * it — the flat name→value map on CookieSnapshot/AuditData.cookies can't
  * answer "how long does this live" or "is it scoped to the parent domain",
@@ -647,6 +670,8 @@ export interface SiteSetupSummary {
   tags: DetectedTagSignal[];
   gtm_container: DetectedGtmContainer;
   possible_server_side_gtm: PossibleServerSideGtm;
+  /** Signal vs Implementation PRD P1-03 — omitted (not a fabricated 'custom' verdict) when the scan captured no commerce-platform signal at all (e.g. a pre-Sprint-9 audit, or a run whose landing step failed before capture). */
+  commerce_platform?: CommercePlatformDetection;
 }
 
 // ─── Step coverage (Site Evaluation Coverage & Honesty PRD, Phase 1) ─────────
@@ -947,6 +972,8 @@ export interface AuditData {
   checkoutDomainSessionStartDetected?: boolean;
   outboundCrossDomainLinks?: { total: number; withGl: number };
   pageMetadata?: Record<string, unknown>;  // Misc page metadata
+  /** Commerce platform / rendering model detected on the landing page (Signal vs Implementation PRD P1-03) — undefined when detection wasn't run (e.g. a hand-built fixture predating this field), never fabricated as 'custom'. */
+  commerce_platform?: CommercePlatformDetection;
   // IHC extensions — absent when the respective data source is not connected
   gtmContainer?: GTMContainerSnapshot;     // tag_configuration layer input
   crawlSignals?: CrawlSignalSnapshot[];    // implementation_drift layer input (current run)

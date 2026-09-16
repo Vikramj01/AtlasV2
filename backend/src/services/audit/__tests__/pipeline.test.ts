@@ -969,3 +969,90 @@ describe('Full v2 pipeline — step_coverage → runRegister precondition gating
     expect(skippedForConversionSurface(results)).toHaveLength(0);
   });
 });
+
+// ─── commerce_platform (Signal vs Implementation PRD P1-03) — landing-step
+// commerce platform / rendering-model detection, wired alongside the
+// referrer capture and outbound-link scan. Discriminates evaluate() calls
+// by selector (script[src]/link[href]/a[href]) where present, and by
+// function source otherwise, since the mock's generic evaluate() can't
+// tell two different zero-arg closures apart on its own.
+describe('simulateJourney — commerce_platform', () => {
+  function markersEvaluateMock(markers: {
+    hasShopifyGlobal: boolean;
+    hasWooCommerceMarker: boolean;
+    hasHeadlessFrameworkMarker: boolean;
+    generatorMeta: string | null;
+  } | 'throw') {
+    return async (fn: unknown, arg?: { selector?: string }) => {
+      if (arg?.selector) return []; // script[src]/link[href]/a[href] — overridden per-test where needed
+      const src = typeof fn === 'function' ? fn.toString() : '';
+      if (src.includes('hasShopifyGlobal')) {
+        if (markers === 'throw') throw new Error('evaluate failed');
+        return markers;
+      }
+      if (src.includes('document.referrer')) return '';
+      return []; // flushDataLayer's sink read
+    };
+  }
+
+  it('detects classic Shopify from window.Shopify plus cdn.shopify.com script evidence', async () => {
+    const { mockBrowser, mockPage } = makeMockBrowser();
+    mockPage.evaluate.mockImplementation(async (fn: unknown, arg?: { selector?: string }) => {
+      if (arg?.selector === 'script[src]') return ['https://cdn.shopify.com/s/files/1/theme.js'];
+      if (arg?.selector) return [];
+      const src = typeof fn === 'function' ? fn.toString() : '';
+      if (src.includes('hasShopifyGlobal')) {
+        return { hasShopifyGlobal: true, hasWooCommerceMarker: false, hasHeadlessFrameworkMarker: false, generatorMeta: null };
+      }
+      if (src.includes('document.referrer')) return '';
+      return [];
+    });
+
+    const auditData = await simulateJourney(mockBrowser as never, BASE_OPTS);
+
+    expect(auditData.commerce_platform).toEqual({
+      platform: 'shopify',
+      confidence: 'high',
+      indicators: ['window.Shopify global present', 'cdn.shopify.com asset reference found'],
+    });
+  });
+
+  it('detects a headless storefront proxying a Shopify backend when no theme JS is running', async () => {
+    const { mockBrowser, mockPage } = makeMockBrowser();
+    mockPage.evaluate.mockImplementation(async (fn: unknown, arg?: { selector?: string }) => {
+      if (arg?.selector === 'script[src]') return ['https://cdn.shopify.com/s/files/1/product-image.jpg'];
+      if (arg?.selector) return [];
+      const src = typeof fn === 'function' ? fn.toString() : '';
+      if (src.includes('hasShopifyGlobal')) {
+        return { hasShopifyGlobal: false, hasWooCommerceMarker: false, hasHeadlessFrameworkMarker: true, generatorMeta: null };
+      }
+      if (src.includes('document.referrer')) return '';
+      return [];
+    });
+
+    const auditData = await simulateJourney(mockBrowser as never, BASE_OPTS);
+
+    expect(auditData.commerce_platform?.platform).toBe('headless');
+    expect(auditData.commerce_platform?.detected_backend).toBe('shopify');
+  });
+
+  it('leaves commerce_platform undefined when the page-level marker evaluate() throws — fails open, never a fabricated verdict', async () => {
+    const { mockBrowser, mockPage } = makeMockBrowser();
+    mockPage.evaluate.mockImplementation(markersEvaluateMock('throw'));
+
+    const auditData = await simulateJourney(mockBrowser as never, BASE_OPTS);
+
+    expect(auditData.commerce_platform).toBeUndefined();
+  });
+
+  it('falls back to custom with no indicators when no commerce-platform signal is found at all', async () => {
+    const { mockBrowser, mockPage } = makeMockBrowser();
+    mockPage.evaluate.mockImplementation(markersEvaluateMock({
+      hasShopifyGlobal: false, hasWooCommerceMarker: false, hasHeadlessFrameworkMarker: false, generatorMeta: null,
+    }));
+
+    const auditData = await simulateJourney(mockBrowser as never, BASE_OPTS);
+
+    expect(auditData.commerce_platform).toEqual({ platform: 'custom', confidence: 'low', indicators: [] });
+  });
+});
