@@ -8,7 +8,7 @@
  */
 import PDFDocument from 'pdfkit';
 import type { ReportJSON, ValidationResult, ReportIssue, StepCoverage, StepUrlSource, ScoreCoverage } from '@/types/audit';
-import { ALL_V2_LAYERS } from '@/services/validation/register/layers';
+import { ALL_V2_LAYERS, LAYER_LABELS } from '@/services/validation/register/layers';
 
 /** Per-step provenance label for the Scan Coverage section — see StepUrlSource's docstring in types/audit.ts. */
 const STEP_SOURCE_LABELS: Record<StepUrlSource, string> = {
@@ -234,6 +234,22 @@ export function isPartialCoverage(coverage: ScoreCoverage | undefined): boolean 
 function coverageSuffix(coverage: ScoreCoverage | undefined): string {
   if (!coverage || coverage.layers_total <= 1) return '';
   return ` (${coverage.layers_tested} of ${coverage.layers_total} layers scanned)`;
+}
+
+/**
+ * The status/reason text for one row of the Signal layer coverage table
+ * (Signal vs Implementation PRD P0-02). Several of coverage.ts's own
+ * reason strings (e.g. "Not applicable — nothing in this layer applies...")
+ * already open with the state label, so a naive `${statusLabel} —
+ * ${reason}` prefix would double it up into "Not applicable — Not
+ * applicable — ...". Exported for direct unit testing — PDFKit compresses
+ * page content streams by default, so this string isn't findable via a
+ * raw-buffer search on the generated PDF itself.
+ */
+export function layerCoverageStatusLine(notTested: { reason: string; state: 'not_applicable' | 'not_scanned' }): string {
+  const statusLabel = notTested.state === 'not_scanned' ? 'Not scanned' : 'Not applicable';
+  const reasonAlreadyLabeled = notTested.reason.toLowerCase().startsWith(statusLabel.toLowerCase());
+  return reasonAlreadyLabeled ? notTested.reason : `${statusLabel} — ${notTested.reason}`;
 }
 
 // ── Main generator ─────────────────────────────────────────────────────────────
@@ -611,6 +627,31 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
       for (const step of coverage.steps) {
         doc.fillColor(C.lightText).fontSize(8.5).font('Helvetica')
           .text(`• ${stepCoverageLine(step)}`, LEFT + 4, doc.y, { width: CONTENT_W - 8 });
+      }
+
+      // Signal vs Implementation PRD P0-02 — the notScannedLayers/
+      // notApplicableLayers lines above are a count plus a comma-joined
+      // name list; a reader can't reconstruct the coverage percentage
+      // from that alone, and (P0-01) can't see *why* any one layer was
+      // excluded. This renders all 13 layers individually — assessed or
+      // not, with its real reason when not — mirroring ExecutiveSummary.
+      // tsx's LayerCoverageTable so the web and PDF reports agree.
+      const notTestedByLayer = new Map(coverage.layers_not_tested.map((l) => [l.layer, l]));
+      const assessedCount = ALL_V2_LAYERS.length - coverage.layers_not_tested.length;
+      doc.moveDown(0.5);
+      doc.fillColor(C.darkText).fontSize(9.5).font('Helvetica-Bold')
+        .text(`Signal layer coverage — ${assessedCount} of ${ALL_V2_LAYERS.length} assessed`, LEFT, doc.y, { width: CONTENT_W });
+      doc.moveDown(0.2);
+      for (const layer of ALL_V2_LAYERS) {
+        const notTested = notTestedByLayer.get(layer);
+        const label = LAYER_LABELS[layer];
+        if (!notTested) {
+          doc.fillColor(C.lightText).fontSize(8.5).font('Helvetica')
+            .text(`• ${label} — Assessed`, LEFT + 4, doc.y, { width: CONTENT_W - 8 });
+          continue;
+        }
+        doc.fillColor(C.lightText).fontSize(8.5).font('Helvetica')
+          .text(`• ${label} — ${layerCoverageStatusLine(notTested)}`, LEFT + 4, doc.y, { width: CONTENT_W - 8 });
       }
     }
 

@@ -13,6 +13,7 @@ import {
   selectDisplayedEvidence,
   smartTruncateEvidence,
   isPartialCoverage,
+  layerCoverageStatusLine,
   EVIDENCE_CAP,
 } from '../pdfGenerator';
 import type { ReportJSON, ValidationResult, ReportIssue, UnassessableFinding } from '@/types/audit';
@@ -390,6 +391,61 @@ describe('generatePDF — edge cases', () => {
       makeMinimalReport({ issues: Array.from({ length: 5 }, () => makeIssue()) }),
     );
     expect(withIssues.byteLength).toBeGreaterThan(noIssues.byteLength);
+  });
+});
+
+// Signal vs Implementation PRD P0-02 — the PDF-specific extension of the
+// per-layer coverage table (ExecutiveSummary.tsx's LayerCoverageTable has
+// its own equivalent test coverage for the web report). Found via a real
+// re-run's PDF: the coverage section previously showed only a count plus
+// two comma-joined name lists, so a reader couldn't reconstruct the
+// coverage percentage or see each exclusion's real reason without opening
+// the underlying JSON.
+describe('generatePDF — signal layer coverage table (P0-02)', () => {
+  // PDFKit compresses page content streams by default (confirmed: no
+  // `compress: false` anywhere in pdfGenerator.ts), so the rendered layer
+  // text itself isn't findable via a raw buffer string search — only
+  // document-metadata text (e.g. the title, set via doc.info) is. Same
+  // buffer-size-comparison technique the existing "partial-run caveat" and
+  // "could not be assessed" tests below already use for this reason.
+  it('produces a larger buffer with the 13-layer table present than an otherwise-identical report with no coverage data', async () => {
+    const withoutCoverage = await generatePDF(makeMinimalReport());
+    const report = makeMinimalReport();
+    report.executive_summary.coverage = {
+      pages_requested: 4,
+      pages_distinct: 4,
+      steps: [{ step: 'landing', requested_url: 'https://example.com', source: 'user_supplied', distinct_from_landing: false, navigation_success: true }],
+      layers_not_tested: [
+        { layer: 'consent', label: 'L8 · Consent', reason: 'No CMP declared and no EEA/UK/Switzerland traffic declared — a consent banner is not expected.', state: 'not_applicable' },
+        { layer: 'reconciliation', label: 'L11 · Reconciliation', reason: 'Not yet built into the Check Register', state: 'not_applicable' },
+      ],
+      rules_tested: 60,
+      rules_not_tested: 0,
+      partial: false,
+      degraded_steps: [],
+    };
+    const withCoverage = await generatePDF(report);
+    expect(isPdfBuffer(withCoverage)).toBe(true);
+    expect(withCoverage.byteLength).toBeGreaterThan(withoutCoverage.byteLength);
+  });
+
+  it("never doubles up the state label when a layer's own reason already opens with it", () => {
+    // Unit-tests the real exported function directly rather than
+    // searching compressed PDF bytes.
+    const reason = "Not applicable — nothing in this layer applies to this site's declared configuration";
+    const line = layerCoverageStatusLine({ reason, state: 'not_applicable' });
+    expect(line).toBe(reason);
+    expect(line.match(/Not applicable/g)).toHaveLength(1);
+  });
+
+  it('prepends the state label when the reason does not already carry it', () => {
+    const line = layerCoverageStatusLine({ reason: 'No CMP declared and no EEA/UK/Switzerland traffic declared — a consent banner is not expected.', state: 'not_applicable' });
+    expect(line).toBe('Not applicable — No CMP declared and no EEA/UK/Switzerland traffic declared — a consent banner is not expected.');
+  });
+
+  it('uses the "Not scanned" label for a not_scanned layer', () => {
+    const line = layerCoverageStatusLine({ reason: 'The crawl never reached a page distinct from the landing page', state: 'not_scanned' });
+    expect(line).toBe('Not scanned — The crawl never reached a page distinct from the landing page');
   });
 });
 

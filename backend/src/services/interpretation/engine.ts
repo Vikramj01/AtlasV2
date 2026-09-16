@@ -568,7 +568,7 @@ export function getIssueImpact(ruleId: string): string {
  * a fixture predating register/engine.ts's runRegister()) — unchanged
  * behaviour for anything that never went through the verdict lattice.
  */
-function isConfidentFinding(r: ValidationResult): boolean {
+export function isConfidentFinding(r: ValidationResult): boolean {
   if (r.verdict !== undefined) return r.verdict === 'FAIL';
   return r.status === 'fail' || r.status === 'warning';
 }
