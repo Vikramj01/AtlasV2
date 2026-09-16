@@ -127,9 +127,17 @@ After Sprint 6. Classify each observed vendor request into `GTM | DIRECT_SCRIPT 
 
 Tests: `implementationPathClassifier.test.ts` (16 new — GTM/DIRECT_SCRIPT/UNKNOWN classification per platform, cross-origin-frame vs same-origin-iframe distinction, multi-path-per-page non-collapsing, merge/dedup of repeated hits, empty input).
 
-### Sprint 8 · P1-06 · Duplicate implementation detection
+### Sprint 8 · P1-06 · Duplicate implementation detection — shipped
 
 After Sprint 7 ("close to free" once initiator capture exists, per the PRD). Flag the same platform event delivered from more than one distinct initiator on the same page; report paths, event, affected pages. Highest-commercial-value P1 output per the PRD — ship as soon as Sprint 7 lands, don't defer behind the rest of P1.
+
+**Shipped, and genuinely close to free as predicted** — `detectDuplicateImplementations()` (new `duplicateImplementationDetector.ts`) is ~25 lines: group `classifyImplementationPaths()`'s own output by (platform, page), flag any group with 2+ distinct known paths. `UNKNOWN` paths never count toward a duplicate — two `UNKNOWN` rows mean "we don't know how this fired, twice," not "two confirmed different mechanisms."
+
+**One deliberate scope narrowing from "report... the event":** the finding reports *that* a platform's signal reaches a page through multiple mechanisms (`paths`, `request_urls`, `evidence`) — real, directly observed evidence — but not the *specific* event name each path fired (e.g. "Purchase via GTM, PageView via direct script" vs "Purchase via both"). `RequestInitiator` doesn't carry parsed event identity (a Meta `ev=` param, a TikTok event body, ...), and guessing at it inconsistently across 8 platforms without verification would risk exactly the overclaiming this PRD exists to fix. The finding's own docstring (`types/audit.ts`) says this explicitly: flags "worth checking for duplicate delivery," not "duplicate delivery confirmed." Event-level precision is a natural future refinement, not built here.
+
+Not wired into a live report yet — same as Sprint 7, that's P1-05's job (Implementation Architecture section, next).
+
+Tests: `duplicateImplementationDetector.test.ts` (10 new — flags 2+ known paths, ignores UNKNOWN entirely and UNKNOWN-plus-one-known, keeps findings separate per page/platform, dedupes merged evidence/URLs, and one end-to-end test composing directly with `classifyImplementationPaths()`).
 
 ### Sprint 9 · P1-03 · Commerce platform + rendering-model detection, surfaced in the report
 

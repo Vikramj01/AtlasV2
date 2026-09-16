@@ -439,6 +439,35 @@ export interface ImplementationPathClassification {
 }
 
 /**
+ * A platform observed reaching the same page through more than one distinct
+ * implementation path (Signal vs Implementation PRD P1-06) — the highest-
+ * commercial-value P1 output per the PRD: a theme pixel plus an app pixel
+ * plus a GTM tag all firing the same platform's signal on one page is one
+ * of the most common and most expensive faults on Shopify, and unlike most
+ * findings in this register, a client can verify it against their own
+ * platform's numbers immediately.
+ *
+ * Deliberately conservative about what's actually confirmed: this flags
+ * "more than one delivery mechanism reaches this page," which is real,
+ * directly observed evidence — not "the identical event fires twice,"
+ * which would need parsing event identity out of each request (a Meta
+ * `ev=` param, a TikTok event body, ...) this detector doesn't do. The
+ * finding's own wording (duplicateImplementationDetector.ts) says exactly
+ * that: multiple paths observed, worth checking for duplicate delivery,
+ * not duplicate delivery confirmed.
+ */
+export interface DuplicateImplementationFinding {
+  platform: DeclaredPlatform;
+  page: string;
+  /** The distinct implementation paths observed for this platform on this page — always 2 or more. */
+  paths: ImplementationPath[];
+  /** Union of every request URL across all paths this finding covers. */
+  request_urls: string[];
+  /** Union of every path's own evidence. */
+  evidence: string[];
+}
+
+/**
  * A cookie's full attribute set, as Playwright's context.cookies() reports
  * it — the flat name→value map on CookieSnapshot/AuditData.cookies can't
  * answer "how long does this live" or "is it scoped to the parent domain",
