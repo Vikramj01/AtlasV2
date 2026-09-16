@@ -23,6 +23,19 @@
  * storefront that siteDetectionService.ts's Shopify check alone would
  * have mis-detected as 'custom' (no `window.Shopify`) or, worse, quietly
  * missed the Shopify backend entirely.
+ *
+ * Widened after a real production re-run of that exact PureBorn audit
+ * (post-Sprint-12) came back with no commerce_platform at all: the
+ * original scriptSrcs/linkHrefs-only capture never had a chance to see
+ * this site's real cdn.shopify.com evidence, which surfaces through
+ * Meta Pixel's own automatic page-metadata scrape (`pmd[image_url]`) —
+ * almost certainly an `<img>` tag or an `og:image`/`twitter:image` meta
+ * tag, neither of which was captured. Also widened the headless-framework
+ * signal beyond `window.__NEXT_DATA__`/`__NUXT__`/`___gatsby` — those
+ * globals are Pages-Router-era constructs a modern Next.js App Router
+ * deployment doesn't reliably set, where a `/_next/static/` or
+ * `/_next/image` asset path is a far more universal, version-independent
+ * signal the frontend is genuinely Next.js.
  */
 import type { CommercePlatform, CommercePlatformDetection } from '@/types/audit';
 
@@ -31,11 +44,15 @@ export type CommercePlatformSignals = {
   scriptSrcs: string[];
   /** Every <link href> observed on the landing page. */
   linkHrefs: string[];
+  /** Every <img src> observed on the landing page — a CDN/backend asset reference often lives here, not in a script or link tag. */
+  imageSrcs: string[];
+  /** <meta property="og:image"> or <meta name="twitter:image"> content, when present — commonly the only place a CDN asset URL appears when a page's imagery is otherwise client-rendered. */
+  socialImageMeta: string | null;
   /** window.Shopify defined — only true when the site's own Shopify theme JS is actually running (not just backend evidence via CDN assets). */
   hasShopifyGlobal: boolean;
   /** A `[class*="woocommerce"]` element found on the page. */
   hasWooCommerceMarker: boolean;
-  /** A decoupled-frontend-framework marker (Next.js `__NEXT_DATA__`, Nuxt `__NUXT__`, Gatsby `___gatsby`) — evidence the frontend is a headless SPA, independent of any commerce backend. */
+  /** A decoupled-frontend-framework marker (Next.js `__NEXT_DATA__`, Nuxt `__NUXT__`, Gatsby `___gatsby`) — evidence the frontend is a headless SPA, independent of any commerce backend. Supplemented internally by a `/_next/` asset-path check, since these window globals alone under-detect a modern Next.js App Router deployment. */
   hasHeadlessFrameworkMarker: boolean;
   /** <meta name="generator"> content, when present. */
   generatorMeta: string | null;
@@ -45,20 +62,30 @@ function includesAny(haystack: string[], needle: string): boolean {
   return haystack.some((s) => s.includes(needle));
 }
 
+/** Every asset-shaped URL/string this detector has to work with — script/link/image srcs plus the social-image meta value, when present. */
+function allAssetUrls(signals: CommercePlatformSignals): string[] {
+  return [...signals.scriptSrcs, ...signals.linkHrefs, ...signals.imageSrcs, ...(signals.socialImageMeta ? [signals.socialImageMeta] : [])];
+}
+
 /** Shopify backend evidence from asset URLs alone — true whether or not the site's own theme JS (window.Shopify) is running. */
 function hasShopifyBackendEvidence(signals: CommercePlatformSignals): boolean {
-  return includesAny(signals.scriptSrcs, 'cdn.shopify.com') || includesAny(signals.linkHrefs, 'cdn.shopify.com');
+  return includesAny(allAssetUrls(signals), 'cdn.shopify.com');
 }
 
 function hasSalesforceCommerceCloudEvidence(signals: CommercePlatformSignals): { found: boolean; indicator?: string } {
-  const dwScript = [...signals.scriptSrcs, ...signals.linkHrefs].find((url) => url.includes('demandware') || url.includes('/on/demandware.store/'));
+  const dwScript = allAssetUrls(signals).find((url) => url.includes('demandware') || url.includes('/on/demandware.store/'));
   return dwScript ? { found: true, indicator: dwScript } : { found: false };
 }
 
 function hasWooCommerceEvidence(signals: CommercePlatformSignals): { found: boolean; indicator?: string } {
   if (signals.hasWooCommerceMarker) return { found: true, indicator: 'WooCommerce class marker found on the page' };
-  const asset = [...signals.scriptSrcs, ...signals.linkHrefs].find((url) => url.includes('woocommerce'));
+  const asset = allAssetUrls(signals).find((url) => url.includes('woocommerce'));
   return asset ? { found: true, indicator: `WooCommerce asset detected: ${asset}` } : { found: false };
+}
+
+/** A `/_next/static/` or `/_next/image` asset path — present on essentially every real Next.js deployment (Pages or App Router alike), unlike the window globals which a modern App Router build doesn't reliably set. */
+function hasNextJsAssetEvidence(signals: CommercePlatformSignals): boolean {
+  return includesAny(allAssetUrls(signals), '/_next/static/') || includesAny(allAssetUrls(signals), '/_next/image');
 }
 
 /**
@@ -72,15 +99,20 @@ export function detectCommercePlatform(signals: CommercePlatformSignals): Commer
   const shopifyBackend = hasShopifyBackendEvidence(signals);
   const sfcc = hasSalesforceCommerceCloudEvidence(signals);
   const woo = hasWooCommerceEvidence(signals);
+  const nextJsAssetEvidence = hasNextJsAssetEvidence(signals);
+  const isHeadless = signals.hasHeadlessFrameworkMarker || nextJsAssetEvidence;
+  const headlessIndicator = signals.hasHeadlessFrameworkMarker
+    ? 'Decoupled frontend framework detected (no server-rendered theme markup)'
+    : 'Next.js asset path (/_next/...) observed';
 
   // A backend was detected, but the frontend is a decoupled SPA framework
   // with no matching platform theme JS running — the storefront is headless.
-  if (signals.hasHeadlessFrameworkMarker && !signals.hasShopifyGlobal) {
+  if (isHeadless && !signals.hasShopifyGlobal) {
     if (shopifyBackend) {
       return {
         platform: 'headless',
         confidence: 'medium',
-        indicators: ['Decoupled frontend framework detected (no server-rendered theme markup)', 'cdn.shopify.com asset references found with no Shopify theme JS running'],
+        indicators: [headlessIndicator, 'cdn.shopify.com asset reference found with no Shopify theme JS running'],
         detected_backend: 'shopify',
       };
     }
@@ -88,14 +120,14 @@ export function detectCommercePlatform(signals: CommercePlatformSignals): Commer
       return {
         platform: 'headless',
         confidence: 'medium',
-        indicators: ['Decoupled frontend framework detected (no server-rendered theme markup)', `Salesforce Commerce Cloud asset reference found: ${sfcc.indicator}`],
+        indicators: [headlessIndicator, `Salesforce Commerce Cloud asset reference found: ${sfcc.indicator}`],
         detected_backend: 'salesforce_commerce_cloud',
       };
     }
     return {
       platform: 'spa',
       confidence: 'medium',
-      indicators: ['Decoupled frontend framework detected (no server-rendered theme markup)', 'No known commerce-backend asset pattern found'],
+      indicators: [headlessIndicator, 'No known commerce-backend asset pattern found'],
     };
   }
 
@@ -120,11 +152,11 @@ export function detectCommercePlatform(signals: CommercePlatformSignals): Commer
     return { platform: 'woocommerce', confidence: 'high', indicators: [woo.indicator as string] };
   }
 
-  if (signals.hasHeadlessFrameworkMarker) {
+  if (isHeadless) {
     return {
       platform: 'spa',
       confidence: 'medium',
-      indicators: ['Decoupled frontend framework detected (no server-rendered theme markup)', 'No known commerce-backend asset pattern found'],
+      indicators: [headlessIndicator, 'No known commerce-backend asset pattern found'],
     };
   }
 

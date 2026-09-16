@@ -310,7 +310,7 @@ export async function simulateJourney(
   // requestProvenance stays empty, request_provenance is omitted from the
   // returned AuditData entirely (never fabricated as []).
   const requestProvenance: RequestInitiator[] = [];
-  const { detach: detachRequestInitiators } = await interceptRequestInitiators(context, page, requestProvenance, stepRef);
+  const { detach: detachRequestInitiators } = await interceptRequestInitiators(context, page, requestProvenance, stepRef, opts.audit_id);
 
   let landingFinalUrl: string | undefined;
   let landingReferrerCaptured: string | undefined;
@@ -515,27 +515,41 @@ export async function simulateJourney(
           // Implementation PRD P1-03) — landing-only, same as the referrer
           // and outbound-link scans above. Reuses gtmScriptSrcs (already
           // populated for this step by the push above) rather than a second
-          // script[src] capture; adds one new evaluateAcrossFrames pass for
-          // link[href] plus a single page.evaluate() for the page-level
-          // globals/markers siteDetectionService.ts's HTTP-fetch detector
-          // can't see live (window.Shopify, headless framework markers).
+          // script[src] capture; adds evaluateAcrossFrames passes for
+          // link[href] and img[src], plus a single page.evaluate() for the
+          // page-level globals/markers/meta siteDetectionService.ts's
+          // HTTP-fetch detector can't see live (window.Shopify, headless
+          // framework markers, og:image/twitter:image meta content). img[src]
+          // and the social-image meta tag were added after a real PureBorn
+          // re-run (post-Sprint-12) came back with no commerce_platform at
+          // all — its cdn.shopify.com evidence surfaces through Meta
+          // Pixel's own page-metadata scrape (an image URL), which the
+          // original script/link-only capture had no way to see.
           // Fails open: a thrown evaluate() leaves commercePlatform
           // undefined rather than fabricating a 'custom' verdict from no
-          // real signal.
+          // real signal — logged (not silently swallowed) so a production
+          // failure like that one is diagnosable from logs next time,
+          // rather than only visible as an absent report field.
           const commerceMarkers = await page.evaluate(() => {
             const w = window as unknown as { Shopify?: unknown; __NEXT_DATA__?: unknown; __NUXT__?: unknown; ___gatsby?: unknown };
+            const socialImage = document.querySelector('meta[property="og:image"]') ?? document.querySelector('meta[name="twitter:image"]');
             return {
               hasShopifyGlobal: typeof w.Shopify !== 'undefined',
               hasWooCommerceMarker: !!document.querySelector('[class*="woocommerce"]'),
               hasHeadlessFrameworkMarker:
                 typeof w.__NEXT_DATA__ !== 'undefined' || typeof w.__NUXT__ !== 'undefined' || typeof w.___gatsby !== 'undefined',
               generatorMeta: document.querySelector('meta[name="generator"]')?.getAttribute('content')?.trim() || null,
+              socialImageMeta: socialImage?.getAttribute('content')?.trim() || null,
             };
-          }).catch(() => null) as {
+          }).catch((err) => {
+            logger.warn({ audit_id: opts.audit_id, err: err instanceof Error ? err.message : String(err) }, 'Commerce platform marker capture failed — commerce_platform will be omitted');
+            return null;
+          }) as {
             hasShopifyGlobal: boolean;
             hasWooCommerceMarker: boolean;
             hasHeadlessFrameworkMarker: boolean;
             generatorMeta: string | null;
+            socialImageMeta: string | null;
           } | null;
 
           if (commerceMarkers) {
@@ -544,10 +558,16 @@ export async function simulateJourney(
               collectDeep,
               { selector: 'link[href]', mode: 'attr', attr: 'href' },
             ).catch(() => []);
+            const imageSrcs = await evaluateAcrossFrames(
+              page as unknown as DeepScanPage,
+              collectDeep,
+              { selector: 'img[src]', mode: 'attr', attr: 'src' },
+            ).catch(() => []);
 
             const commerceSignals: CommercePlatformSignals = {
               scriptSrcs: gtmScriptSrcs,
               linkHrefs,
+              imageSrcs,
               ...commerceMarkers,
             };
             commercePlatform = detectCommercePlatform(commerceSignals);

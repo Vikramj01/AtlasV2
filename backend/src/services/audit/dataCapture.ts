@@ -6,6 +6,7 @@
  */
 import type { DataLayerEvent, NetworkRequest, CookieSnapshot, LocalStorageSnapshot, DetailedCookie, ConsoleError, RequestInitiator, RequestInitiatorType } from '@/types/audit';
 import { PLATFORM_MATCHER_HOSTS } from '@/services/validation/register/platformDetection';
+import logger from '@/utils/logger';
 
 // URLs we want to capture (ad/analytics platforms). Built as a superset of
 // PLATFORM_MATCHER_HOSTS (every host any declared-platform matcher looks
@@ -259,13 +260,18 @@ function normalizeInitiatorType(raw: string | undefined): RequestInitiatorType {
  * Fails open, not closed: a browser connection that doesn't expose
  * newCDPSession (a test double, or a future non-Chromium target) leaves
  * `sink` empty rather than throwing — request_provenance on AuditData is
- * already optional for exactly this reason (never fabricated).
+ * already optional for exactly this reason (never fabricated). A real
+ * session-creation/enable failure is logged (not silently swallowed) —
+ * this path was flagged as unverified against live Browserbase when
+ * shipped, so the first production failure needs to be diagnosable from
+ * logs, not just visible as an absent implementation_architecture section.
  */
 export async function interceptRequestInitiators(
   context: { newCDPSession?: (page: unknown) => Promise<CDPSession> },
   page: { url?: () => string },
   sink: RequestInitiator[],
   stepNameOrRef: string | StepRef,
+  auditId?: string,
 ): Promise<{ detach: () => Promise<void> }> {
   const getStep = (): string =>
     typeof stepNameOrRef === 'string' ? stepNameOrRef : stepNameOrRef.current;
@@ -277,7 +283,8 @@ export async function interceptRequestInitiators(
   try {
     session = await context.newCDPSession(page);
     await session.send('Network.enable');
-  } catch {
+  } catch (err) {
+    logger.warn({ audit_id: auditId, err: err instanceof Error ? err.message : String(err) }, 'CDP session setup failed — request_provenance will be omitted');
     return noopDetach;
   }
 
