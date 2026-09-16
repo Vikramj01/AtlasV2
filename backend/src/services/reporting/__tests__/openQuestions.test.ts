@@ -56,13 +56,28 @@ describe('buildOpenQuestions', () => {
     expect(questions?.[0]).toContain('Microsoft UET');
   });
 
-  it("emits the bespoke unverified-conversion-surface question when the reached step's provenance is 'heuristic'", () => {
+  it("emits the bespoke unverified-conversion-surface question when the reached step's provenance is 'heuristic', naming that step specifically", () => {
     const auditData = makeAuditData({
-      step_coverage: [makeStep({ step: 'landing', distinct_from_landing: false }), makeStep({ source: 'heuristic' })],
+      step_coverage: [makeStep({ step: 'landing', distinct_from_landing: false }), makeStep({ step: 'checkout', source: 'heuristic' })],
     });
     const questions = buildOpenQuestions(auditData, []);
     expect(questions).toHaveLength(1);
-    expect(questions?.[0]).toMatch(/could not confirm your order confirmation page/i);
+    expect(questions?.[0]).toContain('checkout');
+    expect(questions?.[0]).not.toMatch(/order confirmation page/i);
+  });
+
+  it('names only the heuristic-sourced step when a verified step was also reached — does not overclaim about the verified one', () => {
+    const auditData = makeAuditData({
+      step_coverage: [
+        makeStep({ step: 'landing', distinct_from_landing: false }),
+        makeStep({ step: 'product', source: 'sitemap' }),
+        makeStep({ step: 'checkout', source: 'heuristic' }),
+      ],
+    });
+    const questions = buildOpenQuestions(auditData, []);
+    expect(questions).toHaveLength(1);
+    expect(questions?.[0]).toContain('checkout');
+    expect(questions?.[0]).not.toContain('product');
   });
 
   it('does not emit the unverified-conversion-surface question for a user-supplied or sitemap-found step', () => {
@@ -99,7 +114,7 @@ describe('buildOpenQuestions', () => {
     });
     const questions = buildOpenQuestions(auditData, results);
     expect(questions).toHaveLength(2);
-    expect(questions?.[1]).toMatch(/could not confirm your order confirmation page/i);
+    expect(questions?.[1]).toContain('checkout');
   });
 });
 

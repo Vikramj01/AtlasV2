@@ -14,13 +14,14 @@
  *     declaration_source) surfaces: its status is already 'fail', so it
  *     reaches this path; its own client_question opts out (`''`) unless
  *     `severity_capped_from` is actually set.
- *  2. The bespoke unverified-conversion-surface question (PRD §B2/W5) —
- *     "that one is the upsell disguised as a caveat" — emitted whenever the
- *     step CONVERSION_SURFACE_IDENTIFIED (L0.3) credits as the conversion
- *     surface was only found via a path guess (StepUrlSource 'heuristic'),
- *     not a user-supplied URL or a link the crawl actually discovered. This
- *     needs auditData directly (step_coverage), not just results, so it's
- *     built here rather than folded into collectClientQuestions().
+ *  2. The bespoke unverified-conversion-surface question (PRD §B2/W5,
+ *     reworded by the Signal vs Implementation PRD's P0-03 — see below) —
+ *     "that one is the upsell disguised as a caveat" — emitted whenever any
+ *     step distinct from landing was only found via a path guess
+ *     (StepUrlSource 'heuristic'), not a user-supplied URL or a link the
+ *     crawl actually discovered. This needs auditData directly
+ *     (step_coverage), not just results, so it's built here rather than
+ *     folded into collectClientQuestions().
  *  3. One question per CONFLICT-kind could_not_be_assessed entry (PRD
  *     §11.3's "CONFLICT verdicts") — two independent detectors disagreeing
  *     about the same entity is, by construction, something only the
@@ -61,16 +62,32 @@
 import type { AuditData, UnassessableFinding, ValidationResult } from '@/types/audit';
 import { collectClientQuestions } from '@/services/interpretation/engine';
 
-const UNVERIFIED_CONVERSION_SURFACE_QUESTION =
-  'We could not confirm your order confirmation page, so checks that depend on it are inconclusive. Can you supply its URL, or a test-order route we can use?';
-
-/** Whether the conversion surface this run reached was only found via a path guess — see the module docstring's W5. */
-function conversionSurfaceIsUnverified(auditData: AuditData): boolean {
+/**
+ * Names of steps this run reached beyond landing but only via a path guess
+ * (StepUrlSource 'heuristic'), not a user-supplied URL or a discovered link
+ * — empty when every reached step was verified. Signal vs Implementation
+ * PRD P0-03: named explicitly (rather than a blanket "your order
+ * confirmation page") because the unverified step is not always the
+ * confirmation step — on a real trigger scan, "checkout" was the heuristic
+ * guess while "confirmation" resolved via sitemap, so a generic claim about
+ * "your order confirmation page" read as contradicting L0.3
+ * (CONVERSION_SURFACE_IDENTIFIED) passing on a different, verified step.
+ * Identification ("some page beyond landing was reached") and verification
+ * ("this specific page is confirmed correct") are separate claims; this
+ * question is about the latter only, and says so.
+ */
+function unverifiedSurfaceSteps(auditData: AuditData): string[] {
   const stepCoverage = auditData.step_coverage;
-  if (!stepCoverage || stepCoverage.length === 0) return false;
+  if (!stepCoverage || stepCoverage.length === 0) return [];
 
-  const qualifying = stepCoverage.filter((s) => s.distinct_from_landing && s.navigation_success);
-  return qualifying.some((s) => s.source === 'heuristic');
+  return stepCoverage
+    .filter((s) => s.distinct_from_landing && s.navigation_success && s.source === 'heuristic')
+    .map((s) => s.step);
+}
+
+function unverifiedConversionSurfaceQuestion(steps: string[]): string {
+  const named = steps.join(', ');
+  return `We reached your site beyond the landing page, but the ${steps.length === 1 ? 'page' : 'pages'} we identified for ${named} ${steps.length === 1 ? 'was' : 'were'} only a best-effort URL guess, not a link we confirmed or a URL you supplied — so checks that depend on ${steps.length === 1 ? 'it' : 'them'} are inconclusive. Can you supply the exact URL for ${named}, or a test-order route we can use?`;
 }
 
 /** One question per CONFLICT-kind finding — see the module docstring's item 3. */
@@ -87,8 +104,9 @@ export function buildOpenQuestions(
 ): string[] | undefined {
   const questions = collectClientQuestions(results);
 
-  if (conversionSurfaceIsUnverified(auditData)) {
-    questions.push(UNVERIFIED_CONVERSION_SURFACE_QUESTION);
+  const unverifiedSteps = unverifiedSurfaceSteps(auditData);
+  if (unverifiedSteps.length > 0) {
+    questions.push(unverifiedConversionSurfaceQuestion(unverifiedSteps));
   }
 
   questions.push(...conflictQuestions(unassessable));

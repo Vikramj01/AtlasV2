@@ -1,7 +1,32 @@
 import { StatusBanner } from '@/components/common/StatusBanner';
 import { ScoreCard } from '@/components/common/ScoreCard';
 import { TOOLTIPS } from '@/lib/ui-copy';
-import type { ReportJSON, AuditScores } from '@/types/audit';
+import type { ReportJSON, AuditScores, ValidationLayerFilter } from '@/types/audit';
+
+// Fixed 13-layer order + labels, mirroring backend/src/services/validation/
+// register/layers.ts's ALL_V2_LAYERS/LAYER_LABELS exactly — the single
+// source of truth for "how many layers does this rule set define" lives
+// backend-side, but the report needs the same fixed list to render every
+// layer, not just the ones ReportCoverage.layers_not_tested happens to
+// name. Signal vs Implementation PRD P0-02 — previously this page showed a
+// count plus two comma-joined name lists, so a reader couldn't reconstruct
+// the coverage percentage without inference; this table makes all 13 rows
+// visible, assessed or not, so the arithmetic is on the page itself.
+const V2_LAYER_ORDER: { layer: ValidationLayerFilter; label: string }[] = [
+  { layer: 'scope_configuration', label: 'L0 · Scope & Configuration' },
+  { layer: 'foundation_tags', label: 'L1 · Foundation & Tags' },
+  { layer: 'click_id_capture', label: 'L2 · Click ID Capture' },
+  { layer: 'storage_durability', label: 'L3 · Storage Durability' },
+  { layer: 'cross_domain_continuity', label: 'L4 · Cross-Domain Continuity' },
+  { layer: 'event_firing', label: 'L5 · Event Firing' },
+  { layer: 'parameter_completeness', label: 'L6 · Parameter Completeness' },
+  { layer: 'identity_match_quality', label: 'L7 · Identity & Match Quality' },
+  { layer: 'consent', label: 'L8 · Consent' },
+  { layer: 'server_side_delivery', label: 'L9 · Server-Side Delivery' },
+  { layer: 'deduplication', label: 'L10 · Deduplication' },
+  { layer: 'reconciliation', label: 'L11 · Reconciliation' },
+  { layer: 'hygiene_integrity', label: 'L12 · Hygiene & Integrity' },
+];
 
 function scoreColor(score: number): 'green' | 'yellow' | 'red' {
   if (score >= 80) return 'green';
@@ -112,6 +137,8 @@ export function ExecutiveSummary({ report }: Props) {
         </p>
       )}
 
+      {coverage && <LayerCoverageTable coverage={coverage} />}
+
       <StatusBanner
         status={executive_summary.overall_status}
         summary={executive_summary.business_summary}
@@ -194,6 +221,50 @@ export function ExecutiveSummary({ report }: Props) {
           <p className="mt-1 text-sm text-green-700">You can scale paid campaigns with confidence.</p>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Full 13-layer coverage breakdown (Signal vs Implementation PRD P0-02) —
+ * every layer, assessed or not, with a one-line status and reason. A layer
+ * not present in `coverage.layers_not_tested` was assessed (at least one
+ * non-skipped result); everything else pulls its state/reason straight
+ * from the backend's already-correct classifyUntestedLayers() output —
+ * this component adds no new computation, only visibility.
+ */
+function LayerCoverageTable({ coverage }: { coverage: NonNullable<ReportJSON['executive_summary']['coverage']> }) {
+  const notTestedByLayer = new Map(coverage.layers_not_tested.map((l) => [l.layer, l]));
+  const assessedCount = V2_LAYER_ORDER.length - coverage.layers_not_tested.length;
+
+  return (
+    <div className="rounded-xl border border-slate-200">
+      <div className="border-b border-slate-200 px-4 py-3">
+        <p className="text-sm font-semibold text-slate-900">Signal layer coverage</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          {assessedCount} of {V2_LAYER_ORDER.length} signal layers assessed.
+        </p>
+      </div>
+      <div className="divide-y divide-slate-100">
+        {V2_LAYER_ORDER.map(({ layer, label }) => {
+          const notTested = notTestedByLayer.get(layer);
+          const statusLabel = notTested
+            ? notTested.state === 'not_scanned' ? 'Not scanned' : 'Not applicable'
+            : 'Assessed';
+          const statusClass = notTested
+            ? notTested.state === 'not_scanned' ? 'text-amber-700 bg-amber-50' : 'text-slate-600 bg-slate-100'
+            : 'text-green-700 bg-green-50';
+          return (
+            <div key={layer} className="flex items-start justify-between gap-4 px-4 py-2.5">
+              <div className="min-w-0">
+                <p className="text-sm text-slate-900">{label}</p>
+                {notTested && <p className="mt-0.5 text-xs text-muted-foreground">{notTested.reason}</p>}
+              </div>
+              <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${statusClass}`}>{statusLabel}</span>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

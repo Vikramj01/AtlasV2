@@ -25,12 +25,23 @@
  * L1.4). Modeled here as platform_scope: 'any' rather than a scope value
  * that doesn't type-check.
  */
-import type { AuditData, ValidationRule, ValidationResult, RuleStatus, NetworkRequest } from '@/types/audit';
+import type { AuditData, ValidationRule, ValidationResult, RuleStatus, NetworkRequest, DeclaredPlatform } from '@/types/audit';
 import * as trackingSignals from '@/services/detection/trackingSignals';
 import { detectPossibleServerSideGtm } from '../../audit/siteSetupDetector';
+import { PLATFORM_LABELS, platformTagDetected } from './platformDetection';
 
 function gtmScriptSrcs(auditData: AuditData): string[] {
   return (auditData.pageMetadata?.gtm_script_srcs as string[] | undefined) ?? [];
+}
+
+/** Same check GTAG_LOADER_PRESENT (L1.5) uses — reused here rather than duplicated, see GTM_CONTAINER_LOADED's P0-04 conditional-severity logic below. */
+function gtagLoaderPresent(auditData: AuditData): boolean {
+  return auditData.networkRequests.some((r) => r.url.includes('googletagmanager.com/gtag/js'));
+}
+
+/** Declared platforms with zero observed tag/pixel evidence anywhere in the crawl — independent of whether GTM specifically carries them. */
+function declaredPlatformsWithNoObservedSignal(auditData: AuditData): DeclaredPlatform[] {
+  return (auditData.declared_platforms ?? []).filter((p) => !platformTagDetected(p, auditData));
 }
 
 function safeHostname(url: string): string {
@@ -61,19 +72,73 @@ export const GTM_CONTAINER_LOADED: ValidationRule = {
   evidence_class: 'PRESENCE', // PRD §10.2 exact
   remediation: 'Ensure the GTM snippet (gtm.js) is installed in the <head>, loads before other scripts, and isn\'t blocked by a Content Security Policy, ad blocker, or consent gate. Confirm it connects with GTM Preview mode.',
 
+  /**
+   * Signal vs Implementation PRD P0-04 — a missing GTM container is an
+   * implementation-mechanism-absence claim, not a signal-absence claim, so
+   * it must never surface as this rule's nominal 'critical' severity on
+   * its own (the type system here has no separate 'info' status/severity
+   * — see the PRD's sprint plan doc for why 'warning'/'low' is used
+   * instead of introducing one). Two cases when the container isn't found:
+   *  - An independent path (a direct gtag.js loader, or a declared
+   *    platform's own pixel/tag observed firing outside GTM) means
+   *    tracking works some other way — GTM is simply not in use here.
+   *  - No independent path either — the real gap is whichever declared
+   *    platform has no observed signal at all, already reported (at its
+   *    own, correct severity) by DECLARED_PLATFORM_HAS_TAG (L0.1) and the
+   *    platform-specific rules below; this rule doesn't duplicate that
+   *    severity onto itself, it just points at what's actually missing.
+   */
   test(auditData: AuditData): ValidationResult {
     const ids = trackingSignals.extractGtmContainerIdsFromScriptSrcs(gtmScriptSrcs(auditData));
     const found = ids.length > 0;
 
+    if (found) {
+      return {
+        rule_id: this.rule_id,
+        validation_layer: this.layer,
+        status: 'pass',
+        severity: this.severity,
+        technical_details: {
+          found: `GTM container${ids.length !== 1 ? 's' : ''} loaded: ${ids.join(', ')}`,
+          expected: 'gtm.js loads and a container ID (GTM-XXXXXXX) resolves',
+          evidence: [`Container IDs observed: ${ids.join(', ')}`],
+        },
+      };
+    }
+
+    const gtagPresent = gtagLoaderPresent(auditData);
+    const declaredPlatformsWithSignal = (auditData.declared_platforms ?? []).filter((p) => platformTagDetected(p, auditData));
+    const independentPaths = [
+      ...(gtagPresent ? ['a direct gtag.js loader'] : []),
+      ...declaredPlatformsWithSignal.map((p) => `${PLATFORM_LABELS[p]}'s own pixel/tag, observed firing independently of GTM`),
+    ];
+
+    if (independentPaths.length > 0) {
+      return {
+        rule_id: this.rule_id,
+        validation_layer: this.layer,
+        status: 'warning',
+        severity: 'low',
+        technical_details: {
+          found: `No GTM container script (gtm.js) detected loading — GTM is not in use on this site. Tracking reaches its platforms through other paths instead: ${independentPaths.join(', ')}.`,
+          expected: 'gtm.js loads and a container ID (GTM-XXXXXXX) resolves, OR at least one independent implementation path carries the same signals',
+          evidence: ['No googletagmanager.com/gtm.js script tag found on any sampled page', ...independentPaths.map((p) => `Independent path observed: ${p}`)],
+        },
+      };
+    }
+
+    const missingSignalPlatforms = declaredPlatformsWithNoObservedSignal(auditData);
     return {
       rule_id: this.rule_id,
       validation_layer: this.layer,
-      status: found ? 'pass' : 'fail',
-      severity: this.severity,
+      status: 'warning',
+      severity: 'low',
       technical_details: {
-        found: found ? `GTM container${ids.length !== 1 ? 's' : ''} loaded: ${ids.join(', ')}` : 'No GTM container script (gtm.js) detected loading',
-        expected: 'gtm.js loads and a container ID (GTM-XXXXXXX) resolves',
-        evidence: found ? [`Container IDs observed: ${ids.join(', ')}`] : ['No googletagmanager.com/gtm.js script tag found on any sampled page'],
+        found: missingSignalPlatforms.length > 0
+          ? `No GTM container script (gtm.js) detected loading, and no independent implementation path was observed either. The actionable gap is signal-level, not GTM specifically — see the finding${missingSignalPlatforms.length !== 1 ? 's' : ''} for ${missingSignalPlatforms.map((p) => PLATFORM_LABELS[p]).join(', ')} below.`
+          : 'No GTM container script (gtm.js) detected loading, and no independent implementation path was observed either.',
+        expected: 'gtm.js loads and a container ID (GTM-XXXXXXX) resolves, OR at least one independent implementation path carries the same signals',
+        evidence: ['No googletagmanager.com/gtm.js script tag found on any sampled page'],
       },
     };
   },
@@ -285,11 +350,18 @@ export const GOOGLE_ADS_AW_ID_PRESENT: ValidationRule = {
   remediation: 'Add the Google Ads conversion ID (id=AW-XXXXXXXXX) to the gtag loader via GTM\'s Google Tag or a direct gtag.js snippet, firing on every page — without it, no Google Ads conversion or remarketing tag downstream of this one can work.',
   client_question: 'We found no Google Ads (AW-) conversion ID on the site. Does Google Ads run through a different property, a server-side container we could not see from a client-side crawl, or is it not yet implemented?',
 
+  // Signal vs Implementation PRD P0-06 — the failure copy used to say "No
+  // gtag.js loader with an AW- conversion ID detected" unconditionally,
+  // which reads as "no gtag loader" even on a site where GTAG_LOADER_PRESENT
+  // (L1.5) passed two rows away — two true statements about different
+  // components that, worded identically, look like a contradiction. Names
+  // which of the two is actually missing.
   test(auditData: AuditData): ValidationResult {
     const hits = auditData.networkRequests.filter(
       (r) => r.url.includes('googletagmanager.com/gtag/js') && r.url.includes('AW-'),
     );
     const found = hits.length > 0;
+    const gtagPresent = gtagLoaderPresent(auditData);
 
     return {
       rule_id: this.rule_id,
@@ -297,7 +369,11 @@ export const GOOGLE_ADS_AW_ID_PRESENT: ValidationRule = {
       status: found ? 'pass' : 'fail',
       severity: this.severity,
       technical_details: {
-        found: found ? `gtag.js loaded with an Ads conversion ID (${hits.length} request(s))` : 'No gtag.js loader with an AW- conversion ID detected',
+        found: found
+          ? `gtag.js loaded with an Ads conversion ID (${hits.length} request(s))`
+          : gtagPresent
+            ? 'A gtag loader is present but carries no AW- conversion ID'
+            : 'No gtag.js loader detected, so no AW- conversion ID either',
         expected: 'gtag.js loads with an Ads conversion ID (id=AW-XXXXXXXXX)',
         evidence: found ? hits.map((r) => r.url) : ['No googletagmanager.com/gtag/js?id=AW-... request found'],
       },
