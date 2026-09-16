@@ -2,7 +2,7 @@
 
 **Source** · PRD "Atlas Signal Health Platform — Signal vs implementation separation" (draft 0.1, 16 Sept 2026), triggered by audit `49448510-d968-4178-98e2-8e7c70998276` (pureborn.com/en-uae). Not yet issued to the client — P0 fixes are a re-run, not a retraction.
 
-**Status** · P0 (Sprints 1-5) shipped 2026-09-16 on `claude/optimistic-turing-embehd`. P1 (provenance architecture): Sprints 6-9 shipped, Sprint 10 (spike) completed, Sprints 11-12 scoped but not started. The "One product decision" flagged below was resolved by the user: keep the existing broad `conversion_surface` definition — see the resolved section.
+**Status** · P0 (Sprints 1-5) shipped 2026-09-16 on `claude/optimistic-turing-embehd`. P1 (provenance architecture): Sprints 6-9 and 11 shipped, Sprint 10 (spike) completed, Sprint 12 scoped but not started. The "One product decision" flagged below was resolved by the user: keep the existing broad `conversion_surface` definition — see the resolved section.
 
 **Related, already-shipped prior work** (read before touching the register or reporting layer) · `docs/ATLAS_REPORT_CORRECTNESS_PROGRAMME_PRD.md`, `docs/ATLAS_CLICKID_CONTENTION_CONTRADICTION_GUARD_PRD.md`, `docs/atlas-sprint-plan-pre-connection-confidence-tiering.md` (evidence_class / verdict lattice / severity ceilings — P0-03 and P0-04 build directly on this). **Not the same work as** `docs/ATLAS_REPORT_EVIDENCE_INTEGRITY_PRD.md` — that's a separate, earlier PRD about PDF-rendering truncation on a different reference audit (openart.ai, 5 Sept); its defects (evidence truncated to 3 items, remediation cut at 117 chars, page numbering) are unrelated to this one and already largely shipped. Do not conflate the two.
 
@@ -165,9 +165,17 @@ One day, before committing to P1-04. Per the open-questions research above, wide
 
 **Net conclusion for Sprint 11:** the gap is real, but it's **primarily a Scan Inputs/config gap** (flagged back, not silently patched — `checkout_domain` is client-provided data this sprint has no authority to invent for a real client's stored audit), and **secondarily an architectural ceiling** — Web Pixels Manager, if it exists at all for PureBorn, only ever fires on a genuine Shopify-hosted surface (most likely the Order Status Page), never on pureborn.com's own Next.js pages. This directly resolves the PRD's own fork in Sprint 11's favor: **path-only, not named attribution.** Shopify's sandbox is origin-isolated by design specifically so nothing outside it can introspect which pixel (theme/app/custom) is installed — there is no safe, non-fragile way to name the specific `ImplementationPath` sub-type (`SHOPIFY_APP_PIXEL`/`SHOPIFY_CUSTOM_PIXEL`/`SHOPIFY_THEME`) from outside the sandbox. The only honest signal is "a cross-origin sandboxed frame was observed on a page P1-03 has identified as Shopify or Shopify-backed" — which is exactly what `L2.ts`'s existing `UNKNOWN`-with-evidence handling already does while pointing at this dependency (Sprint 7's docstring, `duplicateImplementationDetector.ts`'s docstring). Sprint 11 narrows accordingly: activate the single `SHOPIFY_WEB_PIXEL` path value in `implementationPathClassifier.ts`, gated on both (a) a genuinely cross-origin `frame_url` and (b) `commerce_platform.platform`/`detected_backend` being Shopify-flavored (P1-03's output) — no name-the-specific-pixel ambition, and no attempt to reach further into PureBorn's own real checkout without a real `checkout_domain` declaration.
 
-### Sprint 11 · P1-04 · Shopify web pixel detection
+### Sprint 11 · P1-04 · Shopify web pixel detection — shipped
 
 After the spike, scoped by its result: **path-only** cross-origin sandboxed-frame detection (see Sprint 10), not named per-pixel attribution.
+
+**Shipped.** Activated the single `SHOPIFY_WEB_PIXEL` value in `implementationPathClassifier.ts`: a cross-origin sandboxed frame (the existing `firedFromSandboxedFrame()` check from Sprint 7) now classifies as `SHOPIFY_WEB_PIXEL` instead of `UNKNOWN` when — and only when — P1-03's `commerce_platform` independently confirms the page is Shopify-flavored (`platform === 'shopify'`/`'shopify_plus'`, or `detected_backend === 'shopify'` for a headless storefront proxying a Shopify backend, P1-03's own PureBorn case). `classifyImplementationPaths()` gained an optional second `commercePlatform` parameter (`AuditData.commerce_platform`, threaded by whatever eventually calls it — no caller exists yet; that's Sprint 12/P1-05's job). Absent that parameter, or when commerce-platform detection found a non-Shopify platform, a sandboxed frame still classifies `UNKNOWN` with evidence exactly as Sprint 7 left it — never guessed from the sandboxed-frame shape alone, per the spike's own conclusion.
+
+**Deliberately still not activated: `SHOPIFY_APP_PIXEL`/`SHOPIFY_CUSTOM_PIXEL`/`SHOPIFY_THEME`.** Per the spike's research finding, Shopify's Web Pixels Manager sandbox is origin-isolated by design specifically so nothing outside it can introspect which pixel is installed — there is no available signal (not from `RequestInitiator`, not from commerce-platform detection) to name the more specific sub-type without either violating that isolation or guessing. `SERVER_SIDE` also stays unactivated — no evidence source for it exists in this classifier's inputs; per its own type docstring, that's a different data source entirely (cross-referencing `SERVER_CONTAINER_ENDPOINT_CONFIGURED`'s heuristic), deferred to whichever future sprint first actually needs it.
+
+Not wired into a live report yet — same as Sprints 7/8, that's P1-05's job (Sprint 12, next).
+
+Tests: 8 new `implementationPathClassifier.test.ts` cases (activates for classic Shopify, Shopify Plus, and headless-proxying-Shopify; never emits a named sub-type; stays `UNKNOWN` with no commerce-platform data, with a non-Shopify platform, and with a headless storefront proxying a non-Shopify backend; doesn't activate for a non-sandboxed request even when Shopify is confirmed). 1 new `duplicateImplementationDetector.test.ts` end-to-end composition test — a GTM tag plus a genuine Shopify Web Pixels Manager sandbox both firing the same platform's signal on one page, the exact "close to free" P1-06 case this classifier's activation was meant to unlock.
 
 ### Sprint 12 · P1-05 · Implementation Architecture report section
 
@@ -198,7 +206,7 @@ After Sprint 7 (needs P1-01/P1-02's data). Presentation-only — per platform, p
 | 8 | P1-06 duplicate implementation detection | S | After 7 |
 | 9 | P1-03 platform detection | M | Parallel |
 | 10 | P1-04a Shopify web pixels spike (widened) — completed, not reachable this audit | S | Informs 11 |
-| 11 | P1-04 Shopify web pixel detection (narrowed to path-only) | S | After 10 |
+| 11 | P1-04 Shopify web pixel detection (narrowed to path-only) — shipped | S | After 10 |
 | 12 | P1-05 Implementation Architecture section | S | After 7 |
 
 ---

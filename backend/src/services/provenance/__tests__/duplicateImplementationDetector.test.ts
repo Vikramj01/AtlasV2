@@ -115,4 +115,30 @@ describe('detectDuplicateImplementations', () => {
     expect(findings[0].platform).toBe('meta');
     expect(findings[0].paths.sort()).toEqual(['DIRECT_SCRIPT', 'GTM']);
   });
+
+  // P1-04's own "close to free" case: a GTM tag plus a genuine Shopify Web
+  // Pixels Manager sandbox both firing the same platform's signal on one
+  // page — the highest-commercial-value shape this whole detector exists
+  // for on a Shopify site, per duplicateImplementationDetector.ts's header.
+  it('composes with classifyImplementationPaths end to end for a GTM-plus-Shopify-Web-Pixel duplicate', async () => {
+    const { classifyImplementationPaths } = await import('../implementationPathClassifier');
+    const classifications = classifyImplementationPaths(
+      [
+        {
+          url: 'https://www.facebook.com/tr/?a=1', step: 'landing', page_url: 'https://shop.example.com/',
+          initiator_type: 'UNKNOWN', frame_url: 'https://web-pixel-sandbox.shopifysvc.com/abc123', timestamp: Date.now(),
+        },
+        {
+          url: 'https://www.facebook.com/tr/?a=2', step: 'landing', page_url: 'https://shop.example.com/',
+          initiator_type: 'script', initiator_script_url: 'https://www.googletagmanager.com/gtm.js?id=GTM-ABC',
+          initiator_stack: ['https://www.googletagmanager.com/gtm.js?id=GTM-ABC'], timestamp: Date.now(),
+        },
+      ],
+      { platform: 'shopify', confidence: 'high', indicators: ['window.Shopify global present'] },
+    );
+    const findings = detectDuplicateImplementations(classifications);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].platform).toBe('meta');
+    expect(findings[0].paths.sort()).toEqual(['GTM', 'SHOPIFY_WEB_PIXEL']);
+  });
 });

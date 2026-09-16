@@ -1,9 +1,9 @@
 /**
- * Unit tests for classifyImplementationPaths (Signal vs Implementation PRD P1-02).
+ * Unit tests for classifyImplementationPaths (Signal vs Implementation PRD P1-02, P1-04).
  */
 import { describe, it, expect } from 'vitest';
 import { classifyImplementationPaths } from '../implementationPathClassifier';
-import type { RequestInitiator } from '@/types/audit';
+import type { RequestInitiator, CommercePlatformDetection } from '@/types/audit';
 
 function makeInitiator(overrides: Partial<RequestInitiator> & { url: string }): RequestInitiator {
   return {
@@ -179,5 +179,74 @@ describe('classifyImplementationPaths', () => {
     expect(result).toHaveLength(2);
     expect(result.find((r) => r.platform === 'meta')?.path).toBe('DIRECT_SCRIPT');
     expect(result.find((r) => r.platform === 'tiktok')?.path).toBe('DIRECT_SCRIPT');
+  });
+});
+
+// ─── SHOPIFY_WEB_PIXEL (Signal vs Implementation PRD P1-04, path-only per the
+// Sprint 10 spike) — activates only when a cross-origin sandboxed-frame
+// finding coincides with P1-03's own commerce-platform evidence, never from
+// the sandboxed-frame shape alone. ─────────────────────────────────────────
+describe('classifyImplementationPaths — SHOPIFY_WEB_PIXEL (P1-04)', () => {
+  const SANDBOXED_INITIATOR = makeInitiator({
+    url: 'https://www.facebook.com/tr/',
+    page_url: 'https://shop.example.com/',
+    frame_url: 'https://web-pixel-sandbox.shopifysvc.com/abc123',
+    initiator_type: 'UNKNOWN',
+  });
+
+  it('classifies SHOPIFY_WEB_PIXEL when commerce-platform detection confirms classic Shopify', () => {
+    const shopify: CommercePlatformDetection = { platform: 'shopify', confidence: 'high', indicators: ['window.Shopify global present'] };
+    const result = classifyImplementationPaths([SANDBOXED_INITIATOR], shopify);
+    expect(result[0].path).toBe('SHOPIFY_WEB_PIXEL');
+    expect(result[0].evidence[0]).toContain('Web Pixels Manager sandbox');
+    expect(result[0].evidence[0]).toContain('Path-only');
+  });
+
+  it('classifies SHOPIFY_WEB_PIXEL when commerce-platform detection confirms Shopify Plus', () => {
+    const shopifyPlus: CommercePlatformDetection = { platform: 'shopify_plus', confidence: 'high', indicators: [] };
+    const result = classifyImplementationPaths([SANDBOXED_INITIATOR], shopifyPlus);
+    expect(result[0].path).toBe('SHOPIFY_WEB_PIXEL');
+  });
+
+  it('classifies SHOPIFY_WEB_PIXEL for a headless storefront proxying a Shopify backend (the PureBorn case)', () => {
+    const headlessShopify: CommercePlatformDetection = {
+      platform: 'headless', confidence: 'medium', indicators: ['cdn.shopify.com asset references found'], detected_backend: 'shopify',
+    };
+    const result = classifyImplementationPaths([SANDBOXED_INITIATOR], headlessShopify);
+    expect(result[0].path).toBe('SHOPIFY_WEB_PIXEL');
+  });
+
+  it('never names the specific pixel sub-type (theme/app/custom) — path-only stays UNKNOWN-adjacent, not a guessed sub-type', () => {
+    const shopify: CommercePlatformDetection = { platform: 'shopify', confidence: 'high', indicators: [] };
+    const result = classifyImplementationPaths([SANDBOXED_INITIATOR], shopify);
+    expect(['SHOPIFY_APP_PIXEL', 'SHOPIFY_CUSTOM_PIXEL', 'SHOPIFY_THEME']).not.toContain(result[0].path);
+  });
+
+  it('stays UNKNOWN when commerce-platform detection is absent entirely — never guessed from the sandboxed frame alone', () => {
+    const result = classifyImplementationPaths([SANDBOXED_INITIATOR]);
+    expect(result[0].path).toBe('UNKNOWN');
+  });
+
+  it('stays UNKNOWN when commerce-platform detection found a non-Shopify platform', () => {
+    const woocommerce: CommercePlatformDetection = { platform: 'woocommerce', confidence: 'high', indicators: ['WooCommerce class marker found on the page'] };
+    const result = classifyImplementationPaths([SANDBOXED_INITIATOR], woocommerce);
+    expect(result[0].path).toBe('UNKNOWN');
+  });
+
+  it('stays UNKNOWN for a headless storefront whose detected backend is not Shopify', () => {
+    const headlessSfcc: CommercePlatformDetection = {
+      platform: 'headless', confidence: 'medium', indicators: [], detected_backend: 'salesforce_commerce_cloud',
+    };
+    const result = classifyImplementationPaths([SANDBOXED_INITIATOR], headlessSfcc);
+    expect(result[0].path).toBe('UNKNOWN');
+  });
+
+  it('does not activate SHOPIFY_WEB_PIXEL for a non-sandboxed request even with Shopify confirmed — commerce-platform evidence alone is not enough', () => {
+    const shopify: CommercePlatformDetection = { platform: 'shopify', confidence: 'high', indicators: [] };
+    const result = classifyImplementationPaths(
+      [makeInitiator({ url: 'https://www.facebook.com/tr/', initiator_script_url: 'https://connect.facebook.net/en_US/fbevents.js' })],
+      shopify,
+    );
+    expect(result[0].path).toBe('DIRECT_SCRIPT');
   });
 });

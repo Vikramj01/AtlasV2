@@ -17,8 +17,13 @@
  * `UNKNOWN` paths never count toward a duplicate — two `UNKNOWN` rows for
  * the same (platform, page) mean "we don't know how this fired, twice,"
  * not "two confirmed different mechanisms." Only genuinely distinct known
- * paths (GTM, DIRECT_SCRIPT, and — once P1-03/P1-04 activate them — the
- * Shopify-specific values) count.
+ * paths count: GTM, DIRECT_SCRIPT, and (since Sprint 11/P1-04, path-only)
+ * SHOPIFY_WEB_PIXEL — a GTM tag plus a genuine Shopify Web Pixels Manager
+ * sandbox both firing the same platform's signal on one page is exactly
+ * the class of finding this detector exists for. The three more specific
+ * Shopify sub-types (SHOPIFY_APP_PIXEL/SHOPIFY_CUSTOM_PIXEL/SHOPIFY_THEME)
+ * stay unactivated — Shopify's sandbox isolation means they can't be told
+ * apart from outside it (see implementationPathClassifier.ts).
  */
 import type { ImplementationPathClassification, DuplicateImplementationFinding } from '@/types/audit';
 

@@ -395,16 +395,20 @@ export interface RequestInitiator {
 
 /**
  * Signal vs Implementation PRD P1-02's implementation-path enum, in full —
- * but `implementationPathClassifier.ts` (services/provenance/) only ever
- * emits `GTM`/`DIRECT_SCRIPT`/`HYBRID`/`UNKNOWN` today. The four
- * `SHOPIFY_*`/`SERVER_SIDE` values are reserved for P1-03 (commerce-platform
- * detection) and P1-04 (the Shopify Web Pixels Manager spike) to activate —
- * a cross-origin sandboxed frame is real, observable evidence of *something*
- * isolated, but asserting it's specifically a Shopify Web Pixel without
- * confirming the site is even Shopify would be exactly the category error
- * (a confident claim the evidence doesn't support) this whole PRD exists to
- * fix. Keep the full type now so P1-04 only has to change classifier logic,
- * not every downstream consumer's type.
+ * `implementationPathClassifier.ts` (services/provenance/) emits
+ * `GTM`/`DIRECT_SCRIPT`/`HYBRID`/`UNKNOWN` always, and `SHOPIFY_WEB_PIXEL`
+ * (since Sprint 11/P1-04) when a cross-origin sandboxed frame fires on a
+ * page P1-03's commerce-platform detection has confirmed is Shopify or
+ * Shopify-backed — real, independent evidence, not a guess from the
+ * sandboxed-frame shape alone. The remaining three `SHOPIFY_*` values
+ * (`SHOPIFY_APP_PIXEL`/`SHOPIFY_CUSTOM_PIXEL`/`SHOPIFY_THEME`) plus
+ * `SERVER_SIDE` stay unactivated by design, not by staging: Shopify's Web
+ * Pixels Manager sandbox is origin-isolated specifically so nothing outside
+ * it can introspect which pixel is installed (confirmed via the Sprint 10
+ * spike's research), so naming the more specific sub-type is never
+ * attempted from outside the sandbox. Keep the full type anyway so a future
+ * mechanism (e.g. parsing a Shopify-exposed manifest, were one to exist)
+ * only has to change classifier logic, not every downstream consumer's type.
  */
 export type ImplementationPath =
   | 'GTM'

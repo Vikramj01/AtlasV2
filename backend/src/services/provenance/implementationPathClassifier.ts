@@ -4,10 +4,11 @@
  * Turns P1-01's raw per-request CDP initiator capture (dataCapture.ts's
  * interceptRequestInitiators, AuditData.request_provenance) into "how did
  * this platform's signal actually reach the network for this page" — GTM,
- * a directly-loaded vendor script, or (once P1-03/P1-04 ship) a Shopify-
- * specific path. A pure function over already-captured data: no crawl
- * access, no async resolution, callable by both the report generator and
- * a future rule (per the PRD's own acceptance criterion).
+ * a directly-loaded vendor script, or (given P1-03's commerce-platform
+ * detection) a Shopify Web Pixels Manager sandbox. A pure function over
+ * already-captured data: no crawl access, no async resolution, callable by
+ * both the report generator and a future rule (per the PRD's own
+ * acceptance criterion).
  *
  * A platform can genuinely carry more than one path on the same page at
  * once (a theme pixel plus a GTM tag, say) — this is not collapsed into a
@@ -15,15 +16,24 @@
  * its own ImplementationPathClassification row, which is exactly the
  * multiplicity P1-06's duplicate-implementation detection needs to read.
  *
- * Deliberately conservative about the four Shopify-specific enum values
- * and SERVER_SIDE — see ImplementationPath's own docstring (types/audit.ts)
- * for why a cross-origin sandboxed frame is reported as UNKNOWN with
- * descriptive evidence rather than guessed as SHOPIFY_WEB_PIXEL. Asserting
- * a specific mechanism this register can't yet confirm would be the exact
- * category error (a confident claim the evidence doesn't support) this PRD
- * exists to fix, one layer down.
+ * Deliberately conservative about three of the four Shopify-specific enum
+ * values (SHOPIFY_APP_PIXEL/SHOPIFY_CUSTOM_PIXEL/SHOPIFY_THEME) and
+ * SERVER_SIDE — see ImplementationPath's own docstring (types/audit.ts).
+ * SHOPIFY_WEB_PIXEL itself activates once P1-03's commerce-platform
+ * detection confirms the page is Shopify/Shopify-backed (Signal vs
+ * Implementation PRD P1-04, path-only per the Sprint 10 spike): Shopify's
+ * Web Pixels Manager sandbox is origin-isolated by design specifically so
+ * nothing outside it can introspect which pixel (theme/app/custom) is
+ * installed, so naming the more specific sub-type is never attempted —
+ * only "a Shopify Web Pixels Manager sandbox fired here" is asserted, and
+ * only when commerce-platform evidence actually supports it. Absent that
+ * evidence, a cross-origin sandboxed frame still reports as UNKNOWN with
+ * descriptive evidence rather than guessed at — asserting a mechanism this
+ * register can't confirm would be the exact category error (a confident
+ * claim the evidence doesn't support) this PRD exists to fix, one layer
+ * down.
  */
-import type { RequestInitiator, ImplementationPath, ImplementationPathClassification, DeclaredPlatform, NetworkRequest } from '@/types/audit';
+import type { RequestInitiator, ImplementationPath, ImplementationPathClassification, DeclaredPlatform, NetworkRequest, CommercePlatformDetection } from '@/types/audit';
 import { PLATFORM_MATCHER_HOSTS, ALL_DECLARED_PLATFORMS } from '@/services/validation/register/platformDetection';
 import * as trackingSignals from '@/services/detection/trackingSignals';
 
@@ -106,7 +116,23 @@ function firedFromSandboxedFrame(initiator: RequestInitiator): boolean {
   return !!frameOrigin && !!pageOrigin && frameOrigin !== pageOrigin;
 }
 
-function classifyOne(initiator: RequestInitiator, platform: DeclaredPlatform): ImplementationPathClassification {
+/**
+ * Whether P1-03's commerce-platform detection actually supports asserting
+ * "this is Shopify's sandbox" for a cross-origin frame finding — the one
+ * piece of independent evidence Sprint 10's spike found this classifier was
+ * missing. `shopify`/`shopify_plus` cover a classic theme; `detected_backend
+ * === 'shopify'` covers a headless/composable storefront proxying a Shopify
+ * backend (P1-03's own PureBorn case) — either way, a real signal the page
+ * belongs to Shopify, not a guess.
+ */
+function isShopifyFlavored(commercePlatform: CommercePlatformDetection | undefined): boolean {
+  if (!commercePlatform) return false;
+  return commercePlatform.platform === 'shopify'
+    || commercePlatform.platform === 'shopify_plus'
+    || commercePlatform.detected_backend === 'shopify';
+}
+
+function classifyOne(initiator: RequestInitiator, platform: DeclaredPlatform, shopifyFlavored: boolean): ImplementationPathClassification {
   const base = { platform, page: initiator.step, request_urls: [initiator.url] };
   const chain = initiatorChain(initiator);
 
@@ -121,12 +147,22 @@ function classifyOne(initiator: RequestInitiator, platform: DeclaredPlatform): I
   }
 
   if (firedFromSandboxedFrame(initiator)) {
+    if (shopifyFlavored) {
+      return {
+        ...base,
+        path: 'SHOPIFY_WEB_PIXEL',
+        evidence: [
+          `Fired from a frame (${initiator.frame_url}) cross-origin to the page (${initiator.page_url}) — Shopify's Web Pixels Manager sandbox, on a page commerce-platform detection identified as Shopify/Shopify-backed (Signal vs Implementation PRD P1-03). ` +
+          'Path-only, per the Sprint 10 spike: which specific pixel (theme/app/custom) is installed cannot be determined from outside Shopify\'s sandbox isolation.',
+        ],
+      };
+    }
     return {
       ...base,
       path: 'UNKNOWN',
       evidence: [
         `Fired from a frame (${initiator.frame_url}) cross-origin to the page (${initiator.page_url}) — a sandboxed execution context of some kind. ` +
-        'Attributing it to a specific mechanism (e.g. a Shopify Web Pixel) needs commerce-platform detection this classifier does not yet have (Signal vs Implementation PRD P1-03/P1-04).',
+        'Attributing it to a specific mechanism (e.g. a Shopify Web Pixel) needs commerce-platform detection confirming the page is Shopify/Shopify-backed (Signal vs Implementation PRD P1-03), which this scan did not establish.',
       ],
     };
   }
@@ -170,13 +206,24 @@ function mergeByPlatformPagePath(rows: ImplementationPathClassification[]): Impl
  * `initiators` not matching any declared-platform host (e.g. GA4's own
  * collect endpoint — GA4 isn't a DeclaredPlatform) contribute nothing;
  * this classifier is scoped to the platforms the register itself scores.
+ *
+ * `commercePlatform` is P1-03's output for this same scan (AuditData.
+ * commerce_platform) — optional, and when absent every cross-origin
+ * sandboxed-frame finding stays `UNKNOWN` rather than a guessed
+ * `SHOPIFY_WEB_PIXEL` (Signal vs Implementation PRD P1-04, per the
+ * Sprint 10 spike's finding: naming the mechanism needs independent
+ * commerce-platform evidence, not just a sandboxed frame's shape alone).
  */
-export function classifyImplementationPaths(initiators: RequestInitiator[]): ImplementationPathClassification[] {
+export function classifyImplementationPaths(
+  initiators: RequestInitiator[],
+  commercePlatform?: CommercePlatformDetection,
+): ImplementationPathClassification[] {
+  const shopifyFlavored = isShopifyFlavored(commercePlatform);
   const perRequest: ImplementationPathClassification[] = [];
   for (const initiator of initiators) {
     const platform = platformForRequestUrl(initiator.url);
     if (!platform) continue;
-    perRequest.push(classifyOne(initiator, platform));
+    perRequest.push(classifyOne(initiator, platform, shopifyFlavored));
   }
   return mergeByPlatformPagePath(perRequest);
 }
