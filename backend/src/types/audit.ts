@@ -356,6 +356,44 @@ export interface NetworkRequest {
 }
 
 /**
+ * CDP `Network.requestWillBeSent`'s `initiator.type` (Signal vs
+ * Implementation PRD P1-01), normalised to this repo's naming convention
+ * (`SignedExchange` → `signed_exchange`), plus an explicit `UNKNOWN`
+ * bucket for when the CDP session itself never reports one — preloads,
+ * `sendBeacon` calls, and requests originating inside a worker are all
+ * known-uninformative cases (see dataCapture.ts's interceptRequestInitiators
+ * docstring). Per CLAUDE.md §18, `UNKNOWN` must never be rendered as
+ * absence — it means "we don't know how this fired," not "nothing fired
+ * it."
+ */
+export type RequestInitiatorType = 'parser' | 'script' | 'preload' | 'signed_exchange' | 'preflight' | 'other' | 'UNKNOWN';
+
+/**
+ * Per-vendor-request provenance captured via a direct CDP session (Signal
+ * vs Implementation PRD P1-01) — materially deeper than NetworkRequest's
+ * Playwright-level `page.on('request')` listener, which can observe *that*
+ * a request fired but not *what caused* it. A separate, parallel capture
+ * over the same underlying traffic (not a replacement for NetworkRequest,
+ * and not correlated to it by a shared id — CDP's Network domain and
+ * Playwright's own request/response events are two independent event
+ * streams), joined downstream by url+step when needed.
+ */
+export interface RequestInitiator {
+  url: string;
+  step: string;
+  /** The top-level page URL at the moment this request fired (Playwright's page.url()). */
+  page_url: string;
+  /** The frame's own document URL, when it differs from page_url — e.g. a same-origin iframe or a sandboxed pixel-execution frame (P1-04's Shopify Web Pixels case). */
+  frame_url?: string;
+  initiator_type: RequestInitiatorType;
+  /** The deepest (innermost, closest-to-the-request) script URL in the initiator's call stack — set only when initiator_type is 'script'. */
+  initiator_script_url?: string;
+  /** Every distinct script URL in the initiator's call stack, outermost first — lets a future classifier (P1-02) distinguish e.g. a GTM-templated tag from a directly-loaded vendor script by the full call chain, not just the innermost frame. */
+  initiator_stack?: string[];
+  timestamp: number;
+}
+
+/**
  * A cookie's full attribute set, as Playwright's context.cookies() reports
  * it — the flat name→value map on CookieSnapshot/AuditData.cookies can't
  * answer "how long does this live" or "is it scoped to the parent domain",
@@ -760,6 +798,14 @@ export interface AuditData {
   declared_conversions?: DeclaredConversion[];
   dataLayer: DataLayerEvent[];
   networkRequests: NetworkRequest[];
+  /**
+   * CDP-captured initiator provenance for tracked requests (Signal vs
+   * Implementation PRD P1-01) — undefined for an AuditData assembled
+   * without CDP access (a hand-built fixture, or a browser connection that
+   * doesn't expose newCDPSession), never fabricated as an empty array in
+   * that case. See RequestInitiator's own docstring.
+   */
+  request_provenance?: RequestInitiator[];
   cookieSnapshots: CookieSnapshot[];
   localStorageSnapshots: LocalStorageSnapshot[];
   /**

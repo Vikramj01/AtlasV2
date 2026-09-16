@@ -4,7 +4,7 @@
  *   - Outbound network requests (GA4, Meta, Google Ads, GTM, sGTM, LinkedIn, TikTok, Microsoft UET)
  *   - Cookies and localStorage snapshots
  */
-import type { DataLayerEvent, NetworkRequest, CookieSnapshot, LocalStorageSnapshot, DetailedCookie, ConsoleError } from '@/types/audit';
+import type { DataLayerEvent, NetworkRequest, CookieSnapshot, LocalStorageSnapshot, DetailedCookie, ConsoleError, RequestInitiator, RequestInitiatorType } from '@/types/audit';
 import { PLATFORM_MATCHER_HOSTS } from '@/services/validation/register/platformDetection';
 
 // URLs we want to capture (ad/analytics platforms). Built as a superset of
@@ -213,6 +213,117 @@ export function interceptNetworkRequests(
   });
 
   return { getInFlightCount: () => inFlight };
+}
+
+// ── Request initiator capture (Signal vs Implementation PRD P1-01) ────────
+//
+// interceptNetworkRequests above (and Playwright's page.on('request') it's
+// built on) can observe *that* a tracked request fired, never *what caused
+// it* — no initiator, no call stack. Answering "was this Meta Pixel hit
+// fired by connect.facebook.net directly, a GTM container, or a Shopify
+// pixel sandbox" needs the Chrome DevTools Protocol's own Network domain,
+// reached via a direct CDP session (BrowserContext.newCDPSession), which is
+// a materially different capture path — not an extension of the existing
+// one, a second one over the same traffic.
+
+/** Duck-typed CDP session surface this file needs — real Playwright's CDPSession satisfies this; mocked directly in tests. */
+export interface CDPSession {
+  send: (method: string, params?: Record<string, unknown>) => Promise<unknown>;
+  on: (event: string, handler: (params: unknown) => void) => void;
+  detach?: () => Promise<void>;
+}
+
+const RAW_INITIATOR_TYPES = new Set<RequestInitiatorType>(['parser', 'script', 'preload', 'preflight', 'other']);
+
+/**
+ * Normalises CDP's `Initiator.type` to this repo's naming convention.
+ * `undefined`/an unrecognised value (or nothing at all, for a preload,
+ * sendBeacon, or worker-originated request CDP's Network domain doesn't
+ * attribute the same way — see this module's docstring above) becomes the
+ * explicit `UNKNOWN` bucket, never silently dropped or misrepresented as
+ * one of the known types.
+ */
+function normalizeInitiatorType(raw: string | undefined): RequestInitiatorType {
+  if (raw === 'SignedExchange') return 'signed_exchange';
+  if (raw && RAW_INITIATOR_TYPES.has(raw as RequestInitiatorType)) return raw as RequestInitiatorType;
+  return 'UNKNOWN';
+}
+
+/**
+ * Attaches a CDP session to `page` and records initiator provenance for
+ * every tracked (shouldCaptureUrl) request's `Network.requestWillBeSent`
+ * event — same URL filter interceptNetworkRequests uses, so this produces
+ * a provenance row for exactly the requests NetworkRequest already tracks,
+ * not a broader or narrower set.
+ *
+ * Fails open, not closed: a browser connection that doesn't expose
+ * newCDPSession (a test double, or a future non-Chromium target) leaves
+ * `sink` empty rather than throwing — request_provenance on AuditData is
+ * already optional for exactly this reason (never fabricated).
+ */
+export async function interceptRequestInitiators(
+  context: { newCDPSession?: (page: unknown) => Promise<CDPSession> },
+  page: { url?: () => string },
+  sink: RequestInitiator[],
+  stepNameOrRef: string | StepRef,
+): Promise<{ detach: () => Promise<void> }> {
+  const getStep = (): string =>
+    typeof stepNameOrRef === 'string' ? stepNameOrRef : stepNameOrRef.current;
+  const noopDetach = { detach: async () => {} };
+
+  if (!context.newCDPSession) return noopDetach;
+
+  let session: CDPSession;
+  try {
+    session = await context.newCDPSession(page);
+    await session.send('Network.enable');
+  } catch {
+    return noopDetach;
+  }
+
+  session.on('Network.requestWillBeSent', (rawParams: unknown) => {
+    const params = rawParams as {
+      request?: { url?: string };
+      initiator?: { type?: string; stack?: { callFrames?: Array<{ url?: string }> } };
+      documentURL?: string;
+    };
+    const url = params.request?.url;
+    if (!url || !shouldCaptureUrl(url)) return;
+
+    const callFrameUrls = [
+      ...new Set(
+        (params.initiator?.stack?.callFrames ?? [])
+          .map((f) => f.url)
+          .filter((u): u is string => !!u),
+      ),
+    ];
+
+    sink.push({
+      url,
+      step: getStep(),
+      page_url: page.url?.() ?? '',
+      frame_url: params.documentURL,
+      initiator_type: normalizeInitiatorType(params.initiator?.type),
+      initiator_script_url: callFrameUrls[0],
+      initiator_stack: callFrameUrls.length > 0 ? callFrameUrls : undefined,
+      timestamp: Date.now(),
+    });
+  });
+
+  return {
+    detach: async () => {
+      try {
+        await session.send('Network.disable');
+      } catch {
+        // Session may already be gone (page/context closed) — nothing to clean up.
+      }
+      try {
+        await session.detach?.();
+      } catch {
+        // Same as above.
+      }
+    },
+  };
 }
 
 // ── Deterministic settle sequence (Platform Attribution & Determinism PRD

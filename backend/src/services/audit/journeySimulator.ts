@@ -6,7 +6,7 @@
 import type {
   AuditData, FunnelType, Region, DataLayerEvent, NetworkRequest, CookieSnapshot, LocalStorageSnapshot, ConsoleError,
   RuleSetVersion, SiteType, SecondaryMotion, DeclaredPlatform, DeclarationSource, TrafficRegion, CMP, DeclaredConversion,
-  StepCoverage, StepUrlSource, ConsentCapture, SettleOutcome, WaitForOutcome,
+  StepCoverage, StepUrlSource, ConsentCapture, SettleOutcome, WaitForOutcome, RequestInitiator,
 } from '@/types/audit';
 import type { NamingConvention } from '@/types/taxonomy';
 import { JOURNEY_CONFIGS } from '@/services/browserbase/journeyConfigs';
@@ -14,6 +14,7 @@ import {
   instrumentDataLayer,
   flushDataLayer,
   interceptNetworkRequests,
+  interceptRequestInitiators,
   interceptConsoleErrors,
   captureCookies,
   captureLocalStorage,
@@ -30,6 +31,7 @@ import {
   type DeepQueryArgs,
   type SettleConfig,
   type SettleRetryConfig,
+  type CDPSession,
 } from './dataCapture';
 import { extractGa4ClientId, ga4SessionStartDetected } from '@/services/detection/trackingSignals';
 import { detectConsentBanner, dismissConsentBanner, type EvaluatePage } from '@/services/detection/consentBanner';
@@ -257,6 +259,14 @@ export async function simulateJourney(
       }>;
       cookies: (urls?: string[]) => Promise<Array<{ name: string; value: string }>>;
       close: () => Promise<void>;
+      /**
+       * CDP session access (Signal vs Implementation PRD P1-01) — real
+       * Playwright's BrowserContext.newCDPSession(page); optional (and
+       * unused by every pre-existing test double) so a connection that
+       * doesn't expose it stays backward-compatible. interceptRequestInitiators
+       * (dataCapture.ts) fails open, not closed, when it's absent.
+       */
+      newCDPSession?: (page: unknown) => Promise<CDPSession>;
     }>;
   },
   opts: SimulatorOptions,
@@ -291,6 +301,15 @@ export async function simulateJourney(
   interceptConsoleErrors(page, consoleErrors, stepRef);
   const settleConfig = opts.settleConfig ?? DEFAULT_SETTLE_CONFIG;
   const settleRetryConfig = opts.settleRetryConfig ?? DEFAULT_SETTLE_RETRY_CONFIG;
+
+  // Request initiator capture (Signal vs Implementation PRD P1-01) — a
+  // second, parallel capture over the same tracked traffic via a direct
+  // CDP session, not an extension of interceptNetworkRequests above. Fails
+  // open (context.newCDPSession absent, or the session itself errors):
+  // requestProvenance stays empty, request_provenance is omitted from the
+  // returned AuditData entirely (never fabricated as []).
+  const requestProvenance: RequestInitiator[] = [];
+  const { detach: detachRequestInitiators } = await interceptRequestInitiators(context, page, requestProvenance, stepRef);
 
   let landingFinalUrl: string | undefined;
   let landingReferrerCaptured: string | undefined;
@@ -599,6 +618,7 @@ export async function simulateJourney(
       }
     }
   } finally {
+    await detachRequestInitiators();
     await context.close();
   }
 
@@ -653,6 +673,7 @@ export async function simulateJourney(
     checkoutDomainSessionStartDetected,
     dataLayer,
     networkRequests,
+    request_provenance: requestProvenance.length > 0 ? requestProvenance : undefined,
     cookieSnapshots,
     localStorageSnapshots,
     injected,
