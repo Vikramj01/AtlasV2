@@ -1,6 +1,6 @@
 /**
  * crmSyncOrchestrator — the sync engine. docs/prd/crm-outcome-integration.md
- * §4.3's data flow, Sprints 4-5.
+ * §4.3's data flow, Sprints 4-6.
  *
  * `runSync(configId)` does one incremental pull: fetch records whose stage
  * changed since the last successful sync (with a 60-minute overlap so a
@@ -20,12 +20,15 @@
  * ignoreDuplicates stays on as a safety net for a race between two
  * concurrent runs, not as the primary guard.
  *
- * Deliberately NOT done here even in Sprint 5, per the PRD's own sprint
- * split:
- *   - Lost-deal retraction/adjustment (Sprint 6) — a closed-lost stage's
- *     own outcome (if the operator mapped one) delivers like any other
- *     stage; reversing an EARLIER stage's already-delivered value is a
- *     distinct mechanism this file doesn't implement.
+ * Lost-deal handling (Sprint 6, §7.4): a closed-lost stage's own outcome
+ * (above) delivers like any other stage; when its mapping is
+ * is_terminal_lost, this file ALSO reads back every earlier
+ * crm_outcome_events row for the same record (listDeliveredOutcomesForRecord)
+ * and hands them to outcomeDelivery.ts's handleLostDeal(), which retracts
+ * each earlier stage's already-delivered Google conversion and dispatches
+ * one Meta atlas_deal_lost signal. This naturally runs exactly once per
+ * record, gated by the same findExistingOutcomeKeys() pre-check that gates
+ * everything else — the lost stage's own row can only be inserted once.
  *
  * Known structural limitation, not a bug: fetchChangedRecords (§4.2)
  * reports each record's CURRENT stage at fetch time, not a change history.
@@ -44,13 +47,14 @@ import {
   upsertCrmOutcomeEvents,
   updateCrmSyncState,
   findExistingOutcomeKeys,
+  listDeliveredOutcomesForRecord,
 } from '@/services/database/crmQueries';
 import { getProvider } from './providerRegistry';
 import { resolveTokens } from '@/services/connections/tokenManager';
 import { resolveStageMapping } from './objectMapper';
 import { resolveIdentity, resolveIdentityPropertyMap } from './identityResolver';
 import { resolveValue } from './valueLadder';
-import { deliverOutcome } from './outcomeDelivery';
+import { deliverOutcome, handleLostDeal } from './outcomeDelivery';
 import type { ObservedCrmAmount } from './valueLadder';
 import type { CrmRecord } from './providers/types';
 import type { CrmStageMapping, NewCrmOutcomeEventInput } from '@/types/crm';
@@ -181,6 +185,23 @@ export async function runSync(configId: string, opts?: { recordCap?: number }): 
         deliveryStatus = delivery.status;
         deliveryDetail = delivery.detail;
         deliveredAt = delivery.delivered_at;
+      }
+
+      // §7.4 — a closed-lost stage's own outcome (above) delivers like any
+      // other stage; retracting/logging its EARLIER stages' now-wrong values
+      // is a separate concern, recorded alongside rather than folded into
+      // delivery_status (which stays governed only by this stage's own
+      // deliverOutcome() result). Runs regardless of whether THIS record's
+      // identity resolved, since a Google retraction matches by the earlier
+      // stage's own orderId, not current identity.
+      if (mapping.is_terminal_lost) {
+        const earlierOutcomes = await listDeliveredOutcomesForRecord(config!.id, record.id);
+        const lostDeal = await handleLostDeal(
+          { organization_id: config!.organization_id, identity },
+          earlierOutcomes,
+          stageMappings,
+        );
+        deliveryDetail = { ...deliveryDetail, lost_deal: lostDeal };
       }
 
       rows.push({

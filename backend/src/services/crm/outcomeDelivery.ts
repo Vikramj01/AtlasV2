@@ -58,18 +58,47 @@
  * click IDs) lives only in local variables for the duration of this call.
  * Never logged, never written to crm_outcome_events, never passed to a
  * queue.
+ *
+ * Lost-deal handling (Sprint 6, §7.4): when a record reaches an
+ * is_terminal_lost stage, the value already delivered for its EARLIER
+ * mapped stages is now known to be wrong. handleLostDeal() below reuses
+ * "the machinery already built for refunds" as the PRD directs — Google
+ * gets a real RETRACTION per earlier stage that was actually delivered
+ * (refundDelivery.ts's submitConversionAdjustment(), extracted in this same
+ * sprint so it can target each stage's OWN google_conversion_action_id and
+ * deterministic event_id rather than refund_events' single
+ * connection-level conversion_action_id + original_transaction_id); Meta
+ * has no reversal API, so it gets one forward-looking atlas_deal_lost
+ * custom event instead, mirroring sendMetaRefundSignal()'s precedent
+ * exactly — logged, never claimed as a reversal; LinkedIn and every other
+ * destination are logged only, since inventing a reversal mechanism a
+ * platform doesn't have would misrepresent what actually happened.
+ *
+ * This is why deliverGoogle() now sets the DMA row's order_id to the
+ * deterministic event_id instead of leaving it null: Google's
+ * uploadConversionAdjustments (the standard Google Ads API) matches an
+ * adjustment to an existing conversion by orderId, and the raw click-ID/
+ * PII values used at delivery time are never persisted (§5.4), so orderId
+ * is the only matching key that can still exist by the time a deal is
+ * later marked lost. This cross-API assumption (that a transactionId set
+ * via DMA's events:ingest is the same orderId uploadConversionAdjustments
+ * matches against) could not be independently re-verified live in this
+ * sandbox — see Key Technical Decision §14's standing note on this
+ * environment's network restrictions to Google's own docs.
  */
 
 import { listProviders, getProvider as getCapiProviderConfig, getCAPIEventByAtlasEventId } from '@/services/database/capiQueries';
 import { safeDecryptCredentials } from '@/services/capi/credentials';
 import { processServerSourcedEvent, isConsentGranted } from '@/services/capi/pipeline';
 import { uploadOfflineConversions } from '@/services/offline-conversions/googleOfflineUpload';
+import { submitConversionAdjustment } from '@/services/capi/refundDelivery';
 import { supabaseAdmin } from '@/services/database/supabase';
 import { GOOGLE_ADS_INGEST_WINDOW_DAYS, META_OFFLINE_INGEST_WINDOW_DAYS, LINKEDIN_INGEST_WINDOW_DAYS } from './ingestWindows';
+import { randomUUID } from 'crypto';
 import type { ResolvedIdentity } from './identityResolver';
 import type { AtlasEvent, GoogleCredentials } from '@/types/capi';
 import type { ConsentDecisions } from '@/types/consent';
-import type { CrmStageMapping, CrmDeliveryStatus } from '@/types/crm';
+import type { CrmStageMapping, CrmDeliveryStatus, EarlierDeliveredOutcome } from '@/types/crm';
 import type { OfflineConversionRow, OfflineConversionConfig } from '@/types/offline-conversions';
 import logger from '@/utils/logger';
 
@@ -216,7 +245,9 @@ async function deliverGoogle(
     conversion_time: input.stage_changed_at,
     conversion_value: input.conversion_value,
     currency: input.currency,
-    order_id: null,
+    // Sprint 6: the deterministic event_id doubles as the orderId a later
+    // lost-deal RETRACTION matches against — see the module header.
+    order_id: input.event_id,
     status: 'pending',
     validation_errors: null,
     validation_warnings: null,
@@ -270,6 +301,30 @@ async function deliverViaGenericPipeline(
   }
 }
 
+// Shared by deliverOutcome() and handleLostDeal() — each resolves its own
+// consent state rather than threading it through, since they run as
+// separate calls from the orchestrator and neither is on a hot path where
+// one extra capi_events lookup matters.
+async function resolveInheritedConsentState(
+  orgId: string,
+  identity: ResolvedIdentity,
+  eventIdForLogging: string,
+): Promise<ConsentDecisions | null> {
+  const atlasEventIdValue = identity.values.event_id;
+  if (!atlasEventIdValue) return null;
+
+  try {
+    const original = await getCAPIEventByAtlasEventId(orgId, atlasEventIdValue);
+    return original?.consent_state ? (original.consent_state as ConsentDecisions) : null;
+  } catch (err) {
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err), eventId: eventIdForLogging },
+      'CRM outcome delivery: failed to resolve original capi_events row for consent inheritance — proceeding as server-sourced',
+    );
+    return null;
+  }
+}
+
 function aggregateStatus(perDestination: Record<string, PerDestinationOutcome>): CrmDeliveryStatus {
   const statuses = Object.values(perDestination).map((d) => d.status);
   if (statuses.length === 0) return 'pending';
@@ -294,19 +349,7 @@ export async function deliverOutcome(
     return { status: 'pending', detail: {}, delivered_at: null };
   }
 
-  let consentState: ConsentDecisions | null = null;
-  const atlasEventIdValue = input.identity.values.event_id;
-  if (atlasEventIdValue) {
-    try {
-      const original = await getCAPIEventByAtlasEventId(input.organization_id, atlasEventIdValue);
-      if (original?.consent_state) consentState = original.consent_state as ConsentDecisions;
-    } catch (err) {
-      logger.warn(
-        { err: err instanceof Error ? err.message : String(err), eventId: input.event_id },
-        'CRM outcome delivery: failed to resolve original capi_events row for consent inheritance — proceeding as server-sourced',
-      );
-    }
-  }
+  const consentState = await resolveInheritedConsentState(input.organization_id, input.identity, input.event_id);
 
   const detail: Record<string, PerDestinationOutcome> = {};
 
@@ -326,4 +369,132 @@ export async function deliverOutcome(
     detail,
     delivered_at: status === 'delivered' || status === 'partial' ? new Date().toISOString() : null,
   };
+}
+
+// ── Lost-deal handling (Sprint 6, §7.4) ──────────────────────────────────────
+
+export interface LostDealInput {
+  organization_id: string;
+  identity: ResolvedIdentity;
+}
+
+export interface LostDealGoogleRetraction {
+  mapping_id: string;
+  event_id: string;
+  status: 'submitted' | 'failed';
+  error?: string;
+}
+
+export interface LostDealResult {
+  google_retractions: LostDealGoogleRetraction[];
+  meta_signal: { status: 'delivered' | 'dedup_skipped' | 'failed' | 'skipped'; reason?: string };
+  linkedin_and_others: 'logged_only';
+}
+
+function wasGoogleDelivered(detail: Record<string, unknown>): boolean {
+  const google = detail.google as { status?: string } | undefined;
+  return google?.status === 'delivered';
+}
+
+/**
+ * Retracts Google's per-stage conversions that were actually delivered for
+ * this record's EARLIER mapped stages, and dispatches Meta's one
+ * forward-looking atlas_deal_lost signal. Never invents a reversal for
+ * LinkedIn or any other destination — see the module header.
+ *
+ * Called once, only when a record's current stage is is_terminal_lost, from
+ * the same idempotency-gated pass as its own deliverOutcome() call — the
+ * caller's findExistingOutcomeKeys() pre-check already guarantees this runs
+ * exactly once per record reaching the lost stage.
+ */
+export async function handleLostDeal(
+  input: LostDealInput,
+  earlierOutcomes: EarlierDeliveredOutcome[],
+  stageMappings: CrmStageMapping[],
+): Promise<LostDealResult> {
+  const googleRetractions: LostDealGoogleRetraction[] = [];
+  const deliveredGoogleOutcomes = earlierOutcomes.filter((o) => wasGoogleDelivered(o.delivery_detail));
+
+  if (deliveredGoogleOutcomes.length > 0) {
+    const creds = await getActiveGoogleCredentials(input.organization_id);
+
+    for (const outcome of deliveredGoogleOutcomes) {
+      const mapping = stageMappings.find((m) => m.id === outcome.mapping_id);
+      if (!mapping?.google_conversion_action_id) continue; // ladder edited since delivery — nothing to retract against
+
+      if (!creds) {
+        googleRetractions.push({
+          mapping_id: mapping.id,
+          event_id: outcome.event_id,
+          status: 'failed',
+          error: 'no_active_google_connection',
+        });
+        continue;
+      }
+
+      const result = await submitConversionAdjustment(creds, {
+        conversionActionId: mapping.google_conversion_action_id,
+        customerId: creds.customer_id,
+        orderId: outcome.event_id,
+        adjustmentType: 'RETRACTION',
+      });
+      googleRetractions.push({
+        mapping_id: mapping.id,
+        event_id: outcome.event_id,
+        status: result.status,
+        ...(result.error ? { error: result.error } : {}),
+      });
+    }
+  }
+
+  const metaSignal = await dispatchMetaDealLostSignal(input.organization_id, input.identity);
+
+  return { google_retractions: googleRetractions, meta_signal: metaSignal, linkedin_and_others: 'logged_only' };
+}
+
+// Not a reversal — Meta has no conversion-adjustment/retraction verb at all
+// (same conclusion refundDelivery.ts's sendMetaRefundSignal() already
+// documents). Dispatches a NEW, forward-looking atlas_deal_lost custom
+// event carrying the record's current identity, purely for
+// audience-exclusion purposes; the original stage conversions stay
+// un-reversed on Meta's side. Goes through processServerSourcedEvent()
+// (this module's own established Meta/LinkedIn path) rather than
+// refundDelivery.ts's direct sendMetaEvents() call, since there is real raw
+// identity here to hash — unlike a refund, which only ever has an
+// already-hashed value at rest.
+async function dispatchMetaDealLostSignal(
+  orgId: string,
+  identity: ResolvedIdentity,
+): Promise<LostDealResult['meta_signal']> {
+  const consentState = await resolveInheritedConsentState(orgId, identity, 'lost-deal-signal');
+
+  const event: AtlasEvent = {
+    event_id: randomUUID(),
+    event_name: 'atlas_deal_lost',
+    event_time: Math.floor(Date.now() / 1000),
+    event_source_url: '',
+    action_source: 'system_generated',
+    user_data: buildUserData(identity),
+    custom_data: {},
+    consent_state: (consentState ?? {}) as ConsentDecisions,
+  };
+
+  if (consentState && !isConsentGranted(event, 'meta')) {
+    return { status: 'failed', reason: 'consent_blocked_at_capture' };
+  }
+
+  const providers = await listProviders(orgId);
+  const active = providers.find((p) => p.provider === 'meta' && p.status === 'active');
+  if (!active) return { status: 'skipped', reason: 'no_active_meta_connection' };
+  const fullConfig = await getCapiProviderConfig(active.id, orgId);
+  if (!fullConfig) return { status: 'skipped', reason: 'no_active_meta_connection' };
+
+  try {
+    const result = await processServerSourcedEvent(event, fullConfig);
+    if (result.status === 'delivered') return { status: 'delivered' };
+    if (result.status === 'dedup_skipped') return { status: 'dedup_skipped' };
+    return { status: 'failed', reason: result.error_message ?? result.status };
+  } catch (err) {
+    return { status: 'failed', reason: err instanceof Error ? err.message : String(err) };
+  }
 }

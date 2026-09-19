@@ -7,6 +7,7 @@ import type {
   StageMappingInput,
   NewCrmOutcomeEventInput,
   CrmSyncStatus,
+  EarlierDeliveredOutcome,
 } from '@/types/crm';
 
 export async function listCrmSyncConfigsForOrg(orgId: string): Promise<CrmSyncConfig[]> {
@@ -254,4 +255,25 @@ export async function findExistingOutcomeKeys(
     ((data ?? []) as { crm_record_id: string; crm_stage_id: string }[])
       .map((r) => `${r.crm_record_id}::${r.crm_stage_id}`),
   );
+}
+
+// Lost-deal handling (Sprint 6, §7.4). Called once, only when the current
+// record's stage is is_terminal_lost — outcomeDelivery.ts's handleLostDeal()
+// reads mapping_id + event_id + delivery_detail off these rows to decide
+// which earlier stages actually delivered a Google conversion worth
+// retracting. Includes the current stage's own row (if it already exists,
+// which it won't yet on first insert) — the caller filters by mapping, not
+// by excluding a specific stage_id, so this stays a plain unfiltered read.
+export async function listDeliveredOutcomesForRecord(
+  configId: string,
+  crmRecordId: string,
+): Promise<EarlierDeliveredOutcome[]> {
+  const { data, error } = await supabase
+    .from('crm_outcome_events')
+    .select('mapping_id, event_id, delivery_detail')
+    .eq('config_id', configId)
+    .eq('crm_record_id', crmRecordId);
+
+  if (error) throw new Error(`listDeliveredOutcomesForRecord: ${error.message}`);
+  return (data ?? []) as EarlierDeliveredOutcome[];
 }

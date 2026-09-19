@@ -46,6 +46,14 @@
  *
  * GA4 is out of scope — Atlas has no server-side GA4 delivery at all yet
  * (separate open item).
+ *
+ * `submitConversionAdjustment()` below is the low-level uploadConversionAdjustments
+ * call, extracted (CRM Outcome Integration Sprint 6) so
+ * crm/outcomeDelivery.ts's lost-deal handling can reuse the exact same REST
+ * mechanics per-ladder-stage instead of this module's single
+ * connection-level conversion_action_id. submitGoogleConversionAdjustment()
+ * below is now a thin wrapper over it that also owns the refund_events
+ * status write-back.
  */
 
 import { createHash, randomUUID } from 'crypto';
@@ -262,6 +270,74 @@ interface UploadConversionAdjustmentsResponse {
   partialFailureError?: { code?: number; message?: string };
 }
 
+export interface ConversionAdjustmentRequest {
+  conversionActionId: string;
+  customerId: string;
+  orderId: string;
+  adjustmentType: 'RESTATEMENT' | 'RETRACTION';
+  restatementValue?: { adjustedValue: number; currencyCode: string };
+}
+
+export interface ConversionAdjustmentOutcome {
+  status: 'submitted' | 'failed';
+  error?: string;
+}
+
+/**
+ * Low-level uploadConversionAdjustments call, extracted out of
+ * submitGoogleConversionAdjustment() below (CRM Outcome Integration Sprint
+ * 6, docs/prd/crm-outcome-integration.md §7.4) so CRM lost-deal retraction
+ * can reuse the exact same REST mechanics against a PER-STAGE conversion
+ * action + deterministic orderId, rather than refund_events' single
+ * connection-level conversion_action_id + original_transaction_id. Never
+ * throws; touches no DB row — callers own their own status persistence
+ * (updateGoogleAdjustmentStatus() here, crm_outcome_events.delivery_detail
+ * in outcomeDelivery.ts).
+ */
+export async function submitConversionAdjustment(
+  creds: GoogleCredentials,
+  request: ConversionAdjustmentRequest,
+): Promise<ConversionAdjustmentOutcome> {
+  try {
+    const customerId = cleanCustomerId(request.customerId);
+    const payload: ConversionAdjustmentPayload = {
+      conversionAction: `customers/${customerId}/conversionActions/${request.conversionActionId}`,
+      orderId: request.orderId,
+      adjustmentType: request.adjustmentType,
+      adjustmentDateTime: formatGoogleDateTime(new Date().toISOString()),
+      ...(request.restatementValue ? { restatementValue: request.restatementValue } : {}),
+    };
+
+    const url = `${GOOGLE_ADS_API_BASE}/${GOOGLE_ADS_API_VERSION}/customers/${customerId}:uploadConversionAdjustments`;
+    const body = JSON.stringify({ conversionAdjustments: [payload], partialFailure: true });
+
+    const makeRequest = async (token: string): Promise<Response> =>
+      fetch(url, { method: 'POST', headers: buildGoogleAdsHeaders(creds, token), body });
+
+    let accessToken = creds.oauth_access_token;
+    let res = await makeRequest(accessToken);
+
+    if (res.status === 401) {
+      accessToken = await refreshGoogleToken(creds);
+      res = await makeRequest(accessToken);
+    }
+
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({})) as { error?: { message?: string } };
+      return { status: 'failed', error: errBody.error?.message ?? `HTTP ${res.status}` };
+    }
+
+    const responseBody = await res.json() as UploadConversionAdjustmentsResponse;
+    if (responseBody.partialFailureError) {
+      return { status: 'failed', error: responseBody.partialFailureError.message ?? 'Partial failure' };
+    }
+
+    return { status: 'submitted' };
+  } catch (err) {
+    return { status: 'failed', error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 /**
  * Submits a single conversion adjustment (RESTATEMENT for partial refunds,
  * RETRACTION for full) via the standard Google Ads API. Never throws — a
@@ -285,44 +361,17 @@ export async function submitGoogleConversionAdjustment(orgId: string, refundId: 
       return;
     }
 
-    const customerId = cleanCustomerId(creds.customer_id);
-    const payload: ConversionAdjustmentPayload = {
-      conversionAction: `customers/${customerId}/conversionActions/${creds.conversion_action_id}`,
+    const result = await submitConversionAdjustment(creds, {
+      conversionActionId: creds.conversion_action_id,
+      customerId: creds.customer_id,
       orderId: refund.original_transaction_id,
       adjustmentType: refund.is_partial ? 'RESTATEMENT' : 'RETRACTION',
-      adjustmentDateTime: formatGoogleDateTime(new Date().toISOString()),
       ...(refund.is_partial
         ? { restatementValue: { adjustedValue: refund.new_conversion_value!, currencyCode: refund.currency } }
         : {}),
-    };
+    });
 
-    const url = `${GOOGLE_ADS_API_BASE}/${GOOGLE_ADS_API_VERSION}/customers/${customerId}:uploadConversionAdjustments`;
-    const body = JSON.stringify({ conversionAdjustments: [payload], partialFailure: true });
-
-    const makeRequest = async (token: string): Promise<Response> =>
-      fetch(url, { method: 'POST', headers: buildGoogleAdsHeaders(creds, token), body });
-
-    let accessToken = creds.oauth_access_token;
-    let res = await makeRequest(accessToken);
-
-    if (res.status === 401) {
-      accessToken = await refreshGoogleToken(creds);
-      res = await makeRequest(accessToken);
-    }
-
-    if (!res.ok) {
-      const errBody = await res.json().catch(() => ({})) as { error?: { message?: string } };
-      await updateGoogleAdjustmentStatus(refundId, 'failed', errBody.error?.message ?? `HTTP ${res.status}`);
-      return;
-    }
-
-    const responseBody = await res.json() as UploadConversionAdjustmentsResponse;
-    if (responseBody.partialFailureError) {
-      await updateGoogleAdjustmentStatus(refundId, 'failed', responseBody.partialFailureError.message ?? 'Partial failure');
-      return;
-    }
-
-    await updateGoogleAdjustmentStatus(refundId, 'submitted', null);
+    await updateGoogleAdjustmentStatus(refundId, result.status, result.error ?? null);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     logger.error({ err: message, orgId, refundId }, '[refundDelivery] Google conversion adjustment submission failed');

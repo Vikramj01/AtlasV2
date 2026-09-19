@@ -151,3 +151,13 @@ export interface NewCrmOutcomeEventInput {
   delivery_detail: Record<string, unknown>;
   delivered_at: string | null;
 }
+
+// Sprint 6 lost-deal handling (§7.4) — one earlier crm_outcome_events row for
+// the same record, as much as outcomeDelivery.ts's handleLostDeal() needs of
+// it. Read by a new crmQueries.ts query and passed through
+// crmSyncOrchestrator.ts; never a live re-delivery.
+export interface EarlierDeliveredOutcome {
+  mapping_id: string | null;
+  event_id: string;
+  delivery_detail: Record<string, unknown>;
+}

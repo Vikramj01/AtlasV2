@@ -15,6 +15,7 @@ vi.mock('@/services/database/crmQueries', () => ({
   upsertCrmOutcomeEvents: vi.fn(),
   updateCrmSyncState: vi.fn(),
   findExistingOutcomeKeys: vi.fn(),
+  listDeliveredOutcomesForRecord: vi.fn(),
 }));
 
 vi.mock('@/services/crm/providerRegistry', () => ({
@@ -30,6 +31,7 @@ vi.mock('@/services/connections/tokenManager', () => ({
 // logic can be tested without a live Google/Meta/LinkedIn call chain.
 vi.mock('@/services/crm/outcomeDelivery', () => ({
   deliverOutcome: vi.fn(),
+  handleLostDeal: vi.fn(),
 }));
 
 vi.mock('@/utils/logger', () => ({
@@ -42,10 +44,11 @@ import {
   upsertCrmOutcomeEvents,
   updateCrmSyncState,
   findExistingOutcomeKeys,
+  listDeliveredOutcomesForRecord,
 } from '@/services/database/crmQueries';
 import { getProvider } from '@/services/crm/providerRegistry';
 import { resolveTokens } from '@/services/connections/tokenManager';
-import { deliverOutcome } from '@/services/crm/outcomeDelivery';
+import { deliverOutcome, handleLostDeal } from '@/services/crm/outcomeDelivery';
 import { runSync } from '../crmSyncOrchestrator';
 import type { CrmSyncConfig, CrmStageMapping } from '@/types/crm';
 import type { CrmRecord, CrmProvider } from '../providers/types';
@@ -132,6 +135,14 @@ beforeEach(() => {
   // google/meta/linkedin fields all being null) — mirrors deliverOutcome's
   // own real "nothing to attempt" behavior.
   vi.mocked(deliverOutcome).mockResolvedValue({ status: 'pending', detail: {}, delivered_at: null });
+  // Default: no earlier delivered outcomes to retract — most tests aren't
+  // exercising a mapping.is_terminal_lost stage at all.
+  vi.mocked(listDeliveredOutcomesForRecord).mockResolvedValue([]);
+  vi.mocked(handleLostDeal).mockResolvedValue({
+    google_retractions: [],
+    meta_signal: { status: 'skipped', reason: 'no_active_meta_connection' },
+    linkedin_and_others: 'logged_only',
+  });
 });
 
 describe('runSync', () => {
@@ -368,5 +379,71 @@ describe('runSync', () => {
     expect(result.status).toBe('ok');
     expect(result.records_processed).toBe(1);
     expect(upsertCrmOutcomeEvents).not.toHaveBeenCalled();
+  });
+
+  describe('lost-deal handling (Sprint 6, §7.4)', () => {
+    it('calls handleLostDeal with the earlier delivered outcomes and full ladder when the current stage is is_terminal_lost', async () => {
+      const lostMapping = makeMapping({ crm_stage_id: 'closedlost', atlas_event_name: 'crm_closed_lost', is_terminal_lost: true });
+      vi.mocked(getCrmSyncConfigByIdInternal).mockResolvedValue(makeConfig());
+      vi.mocked(listCrmStageMappings).mockResolvedValue([lostMapping]);
+      vi.mocked(getProvider).mockReturnValue(makeProvider([makeRecord({ stage_id: 'closedlost' })]));
+      const earlierOutcomes = [{ mapping_id: 'mapping-1', event_id: 'evt-mql', delivery_detail: { google: { status: 'delivered' } } }];
+      vi.mocked(listDeliveredOutcomesForRecord).mockResolvedValue(earlierOutcomes);
+
+      await runSync('config-1');
+
+      expect(listDeliveredOutcomesForRecord).toHaveBeenCalledWith('config-1', 'deal-1');
+      expect(handleLostDeal).toHaveBeenCalledTimes(1);
+      const [input, outcomes, stageMappings] = vi.mocked(handleLostDeal).mock.calls[0];
+      expect(input.organization_id).toBe('org-1');
+      expect(outcomes).toBe(earlierOutcomes);
+      expect(stageMappings).toEqual([lostMapping]);
+    });
+
+    it('folds handleLostDeal\'s result into delivery_detail.lost_deal without changing the stage\'s own delivery_status', async () => {
+      const lostMapping = makeMapping({ crm_stage_id: 'closedlost', is_terminal_lost: true });
+      vi.mocked(getCrmSyncConfigByIdInternal).mockResolvedValue(makeConfig());
+      vi.mocked(listCrmStageMappings).mockResolvedValue([lostMapping]);
+      vi.mocked(getProvider).mockReturnValue(makeProvider([makeRecord({ stage_id: 'closedlost' })]));
+      vi.mocked(deliverOutcome).mockResolvedValue({ status: 'pending', detail: {}, delivered_at: null });
+      vi.mocked(handleLostDeal).mockResolvedValue({
+        google_retractions: [{ mapping_id: 'mapping-1', event_id: 'evt-mql', status: 'submitted' }],
+        meta_signal: { status: 'delivered' },
+        linkedin_and_others: 'logged_only',
+      });
+
+      await runSync('config-1');
+
+      const [, rows] = vi.mocked(upsertCrmOutcomeEvents).mock.calls[0];
+      expect(rows[0].delivery_status).toBe('pending');
+      expect(rows[0].delivery_detail.lost_deal).toEqual({
+        google_retractions: [{ mapping_id: 'mapping-1', event_id: 'evt-mql', status: 'submitted' }],
+        meta_signal: { status: 'delivered' },
+        linkedin_and_others: 'logged_only',
+      });
+    });
+
+    it('does not call handleLostDeal or listDeliveredOutcomesForRecord for a non-lost stage', async () => {
+      vi.mocked(getCrmSyncConfigByIdInternal).mockResolvedValue(makeConfig());
+      vi.mocked(listCrmStageMappings).mockResolvedValue([makeMapping({ is_terminal_lost: false })]);
+      vi.mocked(getProvider).mockReturnValue(makeProvider([makeRecord()]));
+
+      await runSync('config-1');
+
+      expect(handleLostDeal).not.toHaveBeenCalled();
+      expect(listDeliveredOutcomesForRecord).not.toHaveBeenCalled();
+    });
+
+    it('still runs lost-deal handling even when the current record\'s own identity is unresolved, since retraction matches by orderId not current identity', async () => {
+      const lostMapping = makeMapping({ crm_stage_id: 'closedlost', is_terminal_lost: true });
+      vi.mocked(getCrmSyncConfigByIdInternal).mockResolvedValue(makeConfig());
+      vi.mocked(listCrmStageMappings).mockResolvedValue([lostMapping]);
+      vi.mocked(getProvider).mockReturnValue(makeProvider([makeRecord({ stage_id: 'closedlost', properties: {} })]));
+
+      await runSync('config-1');
+
+      expect(deliverOutcome).not.toHaveBeenCalled(); // unresolved identity — §6.3 point 5
+      expect(handleLostDeal).toHaveBeenCalledTimes(1);
+    });
   });
 });

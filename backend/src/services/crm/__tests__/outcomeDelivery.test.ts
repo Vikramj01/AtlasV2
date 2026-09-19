@@ -29,6 +29,10 @@ vi.mock('@/services/offline-conversions/googleOfflineUpload', () => ({
   uploadOfflineConversions: vi.fn(),
 }));
 
+vi.mock('@/services/capi/refundDelivery', () => ({
+  submitConversionAdjustment: vi.fn(),
+}));
+
 function makeSupabaseChain(result: { data: unknown; error: unknown }) {
   const chain: Record<string, unknown> = {};
   chain.select = vi.fn(() => chain);
@@ -55,9 +59,10 @@ import {
 } from '@/services/database/capiQueries';
 import { processServerSourcedEvent, isConsentGranted } from '@/services/capi/pipeline';
 import { uploadOfflineConversions } from '@/services/offline-conversions/googleOfflineUpload';
+import { submitConversionAdjustment } from '@/services/capi/refundDelivery';
 import logger from '@/utils/logger';
-import { deliverOutcome, type OutcomeDeliveryInput } from '../outcomeDelivery';
-import type { CrmStageMapping } from '@/types/crm';
+import { deliverOutcome, handleLostDeal, type OutcomeDeliveryInput } from '../outcomeDelivery';
+import type { CrmStageMapping, EarlierDeliveredOutcome } from '@/types/crm';
 import type { ResolvedIdentity } from '../identityResolver';
 
 const RAW_EMAIL = 'lead-secret@example.com';
@@ -159,6 +164,20 @@ describe('deliverOutcome — Google (googleOfflineUpload path)', () => {
     expect(result.status).toBe('delivered');
     expect(result.detail.google).toEqual({ status: 'delivered' });
     expect(result.delivered_at).not.toBeNull();
+  });
+
+  it('sets the uploaded row\'s order_id to the deterministic event_id, since that is the only matching key a later lost-deal retraction can use (§7.4)', async () => {
+    vi.mocked(uploadOfflineConversions).mockResolvedValue({
+      partial_failure: false,
+      row_results: [{ status: 'uploaded' }],
+      requestIds: [],
+    } as never);
+
+    const mapping = makeMapping({ google_conversion_action_id: 'AW-1/abc' });
+    await deliverOutcome(mapping, makeInput({ event_id: 'deterministic-abc123' }));
+
+    const [rows] = vi.mocked(uploadOfflineConversions).mock.calls[0];
+    expect(rows[0].order_id).toBe('deterministic-abc123');
   });
 
   it('skips as skipped_window when a hashed-email-resolved outcome is older than the 63-day Enhanced Conversions for Leads window', async () => {
@@ -406,6 +425,152 @@ describe('deliverOutcome — PII handling (acceptance criterion #13)', () => {
     });
 
     await deliverOutcome(mapping, input);
+
+    const allLoggedText = JSON.stringify([
+      ...vi.mocked(logger.info).mock.calls,
+      ...vi.mocked(logger.warn).mock.calls,
+      ...vi.mocked(logger.error).mock.calls,
+    ]);
+    expect(allLoggedText).not.toContain(RAW_EMAIL);
+    expect(allLoggedText).not.toContain(RAW_PHONE);
+    expect(allLoggedText).not.toContain(RAW_GCLID);
+  });
+});
+
+describe('handleLostDeal (Sprint 6, §7.4)', () => {
+  function makeEarlierOutcome(overrides: Partial<EarlierDeliveredOutcome> = {}): EarlierDeliveredOutcome {
+    return {
+      mapping_id: 'mapping-mql',
+      event_id: 'evt-mql',
+      delivery_detail: { google: { status: 'delivered' } },
+      ...overrides,
+    };
+  }
+
+  const mqlMapping = makeMapping({ id: 'mapping-mql', crm_stage_id: 'mql', google_conversion_action_id: 'AW-1/mql' });
+  const sqlMapping = makeMapping({ id: 'mapping-sql', crm_stage_id: 'sql', google_conversion_action_id: 'AW-1/sql' });
+
+  it('retracts each earlier stage that actually delivered a Google conversion, using that stage\'s own conversion action + event_id as orderId', async () => {
+    vi.mocked(submitConversionAdjustment).mockResolvedValue({ status: 'submitted' });
+    vi.mocked(listProviders).mockResolvedValue([]);
+
+    const earlierOutcomes = [
+      makeEarlierOutcome({ mapping_id: 'mapping-mql', event_id: 'evt-mql', delivery_detail: { google: { status: 'delivered' } } }),
+      makeEarlierOutcome({ mapping_id: 'mapping-sql', event_id: 'evt-sql', delivery_detail: { google: { status: 'failed', reason: 'x' } } }),
+    ];
+
+    const result = await handleLostDeal(
+      { organization_id: 'org-1', identity: makeIdentity() },
+      earlierOutcomes,
+      [mqlMapping, sqlMapping],
+    );
+
+    expect(result.google_retractions).toEqual([
+      { mapping_id: 'mapping-mql', event_id: 'evt-mql', status: 'submitted' },
+    ]);
+    expect(submitConversionAdjustment).toHaveBeenCalledTimes(1);
+    const [creds, request] = vi.mocked(submitConversionAdjustment).mock.calls[0];
+    expect(creds.customer_id).toBe('123');
+    expect(request).toMatchObject({
+      conversionActionId: 'AW-1/mql',
+      orderId: 'evt-mql',
+      adjustmentType: 'RETRACTION',
+    });
+  });
+
+  it('records failed with no_active_google_connection per earlier delivered stage when Google is disconnected', async () => {
+    fromMock.mockReturnValue(makeSupabaseChain({ data: null, error: null }));
+    vi.mocked(listProviders).mockResolvedValue([]);
+
+    const result = await handleLostDeal(
+      { organization_id: 'org-1', identity: makeIdentity() },
+      [makeEarlierOutcome()],
+      [mqlMapping],
+    );
+
+    expect(result.google_retractions).toEqual([
+      { mapping_id: 'mapping-mql', event_id: 'evt-mql', status: 'failed', error: 'no_active_google_connection' },
+    ]);
+    expect(submitConversionAdjustment).not.toHaveBeenCalled();
+  });
+
+  it('skips an earlier delivered row whose mapping no longer carries a google_conversion_action_id (ladder edited since delivery)', async () => {
+    vi.mocked(listProviders).mockResolvedValue([]);
+    const editedMapping = makeMapping({ id: 'mapping-mql', google_conversion_action_id: null });
+
+    const result = await handleLostDeal(
+      { organization_id: 'org-1', identity: makeIdentity() },
+      [makeEarlierOutcome()],
+      [editedMapping],
+    );
+
+    expect(result.google_retractions).toEqual([]);
+    expect(submitConversionAdjustment).not.toHaveBeenCalled();
+  });
+
+  it('dispatches exactly one atlas_deal_lost Meta signal regardless of how many earlier stages are retracted', async () => {
+    vi.mocked(submitConversionAdjustment).mockResolvedValue({ status: 'submitted' });
+    vi.mocked(processServerSourcedEvent).mockResolvedValue({ event_id: 'x', status: 'delivered' });
+    vi.mocked(listProviders).mockResolvedValue([{ id: 'p1', provider: 'meta', status: 'active' } as never]);
+    vi.mocked(getCapiProviderConfig).mockResolvedValue({ id: 'p1', provider: 'meta' } as never);
+
+    const result = await handleLostDeal(
+      { organization_id: 'org-1', identity: makeIdentity() },
+      [
+        makeEarlierOutcome({ mapping_id: 'mapping-mql', event_id: 'evt-mql' }),
+        makeEarlierOutcome({ mapping_id: 'mapping-sql', event_id: 'evt-sql' }),
+      ],
+      [mqlMapping, sqlMapping],
+    );
+
+    expect(processServerSourcedEvent).toHaveBeenCalledTimes(1);
+    const [eventArg] = vi.mocked(processServerSourcedEvent).mock.calls[0];
+    expect(eventArg.event_name).toBe('atlas_deal_lost');
+    expect(result.meta_signal).toEqual({ status: 'delivered' });
+  });
+
+  it('never invents a reversal for LinkedIn or any other destination — always reports logged_only', async () => {
+    vi.mocked(listProviders).mockResolvedValue([]);
+
+    const result = await handleLostDeal(
+      { organization_id: 'org-1', identity: makeIdentity() },
+      [makeEarlierOutcome({ delivery_detail: { linkedin: { status: 'delivered' } } })],
+      [mqlMapping],
+    );
+
+    expect(result.linkedin_and_others).toBe('logged_only');
+  });
+
+  it('blocks the Meta atlas_deal_lost signal when inherited consent denies marketing', async () => {
+    vi.mocked(getCAPIEventByAtlasEventId).mockResolvedValue({ consent_state: { marketing: 'denied' } });
+    vi.mocked(isConsentGranted).mockReturnValue(false);
+    vi.mocked(listProviders).mockResolvedValue([]);
+
+    const result = await handleLostDeal(
+      { organization_id: 'org-1', identity: makeIdentity({ values: { email: RAW_EMAIL, event_id: 'orig-evt' } }) },
+      [],
+      [],
+    );
+
+    expect(result.meta_signal).toEqual({ status: 'failed', reason: 'consent_blocked_at_capture' });
+    expect(processServerSourcedEvent).not.toHaveBeenCalled();
+  });
+
+  it('never passes raw identity values to the logger while handling a lost deal', async () => {
+    vi.mocked(getCAPIEventByAtlasEventId).mockRejectedValue(new Error('db timeout'));
+    vi.mocked(listProviders).mockResolvedValue([]);
+
+    await handleLostDeal(
+      {
+        organization_id: 'org-1',
+        identity: makeIdentity({
+          keys_present: ['email', 'phone', 'gclid', 'event_id'],
+          values: { email: RAW_EMAIL, phone: RAW_PHONE, gclid: RAW_GCLID, event_id: 'evt-1' },
+        }),
+      },
+      [],
+      [],
+    );
 
     const allLoggedText = JSON.stringify([
       ...vi.mocked(logger.info).mock.calls,

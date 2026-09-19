@@ -36,8 +36,9 @@ import { supabaseAdmin } from '@/services/database/supabase';
 import { safeDecryptCredentials } from '../credentials';
 import { refreshGoogleToken } from '../googleDelivery';
 import { sendMetaEvents } from '../metaDelivery';
-import { submitGoogleConversionAdjustment, sendMetaRefundSignal } from '../refundDelivery';
+import { submitGoogleConversionAdjustment, sendMetaRefundSignal, submitConversionAdjustment } from '../refundDelivery';
 import type { RefundEvent } from '@/types/refunds';
+import type { GoogleCredentials } from '@/types/capi';
 
 function makeChain(singleData: unknown = null) {
   const chain: Record<string, unknown> = {};
@@ -226,6 +227,119 @@ describe('submitGoogleConversionAdjustment', () => {
     expect(chain.update).toHaveBeenCalledWith(
       expect.objectContaining({ google_adjustment_status: 'failed', google_adjustment_error: 'network down' }),
     );
+  });
+});
+
+describe('submitConversionAdjustment (low-level, extracted for CRM lost-deal retraction — Sprint 6)', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  function makeCreds(overrides: Partial<GoogleCredentials> = {}): GoogleCredentials {
+    return {
+      customer_id: '1234567890',
+      oauth_access_token: 'at',
+      oauth_refresh_token: 'rt',
+      conversion_action_id: 'unused-here',
+      ...overrides,
+    };
+  }
+
+  it('submits a RETRACTION against the given per-stage conversion action and orderId', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ results: [{}] }) });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await submitConversionAdjustment(makeCreds(), {
+      conversionActionId: 'AW-1/mql',
+      customerId: '123-456-7890',
+      orderId: 'crm-event-abc',
+      adjustmentType: 'RETRACTION',
+    });
+
+    expect(result).toEqual({ status: 'submitted' });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toContain('customers/1234567890');
+    const body = JSON.parse(init.body as string);
+    expect(body.conversionAdjustments[0]).toMatchObject({
+      conversionAction: 'customers/1234567890/conversionActions/AW-1/mql',
+      orderId: 'crm-event-abc',
+      adjustmentType: 'RETRACTION',
+    });
+    expect(body.conversionAdjustments[0].restatementValue).toBeUndefined();
+  });
+
+  it('includes restatementValue only when passed', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) }));
+
+    await submitConversionAdjustment(makeCreds(), {
+      conversionActionId: 'AW-1/sql',
+      customerId: '1234567890',
+      orderId: 'crm-event-xyz',
+      adjustmentType: 'RESTATEMENT',
+      restatementValue: { adjustedValue: 99.5, currencyCode: 'GBP' },
+    });
+
+    const fetchMock = vi.mocked(fetch);
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.conversionAdjustments[0].restatementValue).toEqual({ adjustedValue: 99.5, currencyCode: 'GBP' });
+  });
+
+  it('retries once on 401 via refreshGoogleToken and succeeds', async () => {
+    vi.mocked(refreshGoogleToken).mockResolvedValue('fresh-at');
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 401, json: async () => ({}) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await submitConversionAdjustment(makeCreds({ oauth_access_token: 'stale-at' }), {
+      conversionActionId: 'AW-1/mql',
+      customerId: '1234567890',
+      orderId: 'crm-event-abc',
+      adjustmentType: 'RETRACTION',
+    });
+
+    expect(refreshGoogleToken).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({ status: 'submitted' });
+  });
+
+  it('returns failed on a non-ok, non-401 response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false, status: 400, json: async () => ({ error: { message: 'INVALID_ARGUMENT' } }),
+    }));
+
+    const result = await submitConversionAdjustment(makeCreds(), {
+      conversionActionId: 'AW-1/mql',
+      customerId: '1234567890',
+      orderId: 'crm-event-abc',
+      adjustmentType: 'RETRACTION',
+    });
+
+    expect(result).toEqual({ status: 'failed', error: 'INVALID_ARGUMENT' });
+  });
+
+  it('returns failed when the response carries a partialFailureError', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true, json: async () => ({ partialFailureError: { message: 'Order ID not found' } }),
+    }));
+
+    const result = await submitConversionAdjustment(makeCreds(), {
+      conversionActionId: 'AW-1/mql',
+      customerId: '1234567890',
+      orderId: 'crm-event-abc',
+      adjustmentType: 'RETRACTION',
+    });
+
+    expect(result).toEqual({ status: 'failed', error: 'Order ID not found' });
+  });
+
+  it('never throws even when fetch itself rejects', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')));
+
+    await expect(submitConversionAdjustment(makeCreds(), {
+      conversionActionId: 'AW-1/mql',
+      customerId: '1234567890',
+      orderId: 'crm-event-abc',
+      adjustmentType: 'RETRACTION',
+    })).resolves.toEqual({ status: 'failed', error: 'network down' });
   });
 });
 
