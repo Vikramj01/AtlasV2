@@ -12,9 +12,14 @@
  * POST /api/crm/configs                          — create config for a client
  * PATCH /api/crm/configs/:id                     — update mapping, value mode, schedule —
  *                                                    setting sync_enabled: true re-runs the
- *                                                    §6.2 readiness check server-side and is
- *                                                    rejected unless it comes back READY
+ *                                                    §6.2 readiness check server-side, rejects
+ *                                                    unless it comes back READY, and on the
+ *                                                    off→on transition enqueues the first
+ *                                                    crmSyncQueue run (worker.ts self-re-enqueues
+ *                                                    every sync_interval_minutes after that)
  * POST /api/crm/configs/:id/readiness            — run the §6.2 readiness check on demand
+ * POST /api/crm/configs/:id/sync                 — enqueue one immediate sync run outside the
+ *                                                    rolling schedule (support/testing)
  * GET  /api/crm/configs/:id/pipelines            — list CRM pipelines/stages for the mapping UI
  * GET  /api/crm/configs/:id/stage-mappings       — the saved ladder, or an objectMapper-built
  *                                                    draft from the pipeline when nothing is saved
@@ -22,9 +27,8 @@
  * DELETE /api/crm/configs/:id                    — remove config (connection removal reuses
  *                                                    the generic DELETE /api/connections/:id)
  *
- * All routes require authMiddleware + planGuard('pro') (D4). Sync trigger,
- * outcomes and derived-value listing land in Sprint 4+ — not yet
- * implemented here.
+ * All routes require authMiddleware + planGuard('pro') (D4). Outcomes and
+ * derived-value listing land in Sprint 5+ — not yet implemented here.
  *
  * Why two-phase OAuth: a HubSpot portal has no single "which pipeline"
  * answer until after consent is granted (the same reason the GTM OAuth
@@ -44,7 +48,7 @@ import { sendInternalError } from '@/utils/apiError';
 import { supabaseAdmin } from '@/services/database/supabase';
 import * as hubspotOAuth from '@/services/connections/oauthFlows/hubspotOAuth';
 import { hubspotClient } from '@/services/crm/providers/hubspotClient';
-import type { CrmProvider, CrmAccountInfo, CrmPipeline, DecryptedTokens } from '@/services/crm/providers/types';
+import type { CrmAccountInfo, CrmPipeline, DecryptedTokens } from '@/services/crm/providers/types';
 import { encryptTokens, resolveTokens } from '@/services/connections/tokenManager';
 import { getConnectionById } from '@/services/database/connectionQueries';
 import {
@@ -60,6 +64,8 @@ import {
 import { runReadinessCheck } from '@/services/crm/readinessCheck';
 import { buildDefaultStageMappings } from '@/services/crm/objectMapper';
 import { resolveValue } from '@/services/crm/valueLadder';
+import { getProvider } from '@/services/crm/providerRegistry';
+import { crmSyncQueue } from '@/services/queue/jobQueue';
 import type { CrmProviderName, CrmSyncConfig } from '@/types/crm';
 import logger from '@/utils/logger';
 
@@ -75,17 +81,6 @@ async function resolveOrgId(userId: string): Promise<string> {
     .eq('id', userId)
     .single();
   return (data as { organization_id: string } | null)?.organization_id ?? userId;
-}
-
-// Providers implemented so far — Salesforce joins this map in Sprint 10.
-const PROVIDERS: Partial<Record<CrmProviderName, CrmProvider>> = {
-  hubspot: hubspotClient,
-};
-
-function getProvider(name: CrmProviderName): CrmProvider {
-  const provider = PROVIDERS[name];
-  if (!provider) throw new Error(`CRM provider '${name}' is not yet supported`);
-  return provider;
 }
 
 async function checkReadinessForConfig(config: CrmSyncConfig) {
@@ -407,6 +402,15 @@ crmRouter.patch('/configs/:id', async (req: Request, res: Response): Promise<voi
     }
 
     const updated = await updateCrmSyncConfig(req.params.id, orgId, parse.data);
+
+    // Kick off the rolling sync chain on the off→on transition only — the
+    // worker re-enqueues itself every sync_interval_minutes afterwards
+    // (see worker.ts), so re-PATCHing sync_enabled: true while it's already
+    // true must not spawn a second parallel chain.
+    if (parse.data.sync_enabled === true && !existing.sync_enabled) {
+      await crmSyncQueue.add({ config_id: updated.id });
+    }
+
     res.json({ data: updated });
   } catch (err) {
     sendInternalError(res, err, 'PATCH /api/crm/configs/:id');
@@ -428,6 +432,31 @@ crmRouter.post('/configs/:id/readiness', async (req: Request, res: Response): Pr
     res.json({ data: readiness });
   } catch (err) {
     sendInternalError(res, err, 'POST /api/crm/configs/:id/readiness');
+  }
+});
+
+// ── POST /api/crm/configs/:id/sync ─────────────────────────────────────────────
+// Enqueues one immediate crmSyncQueue run outside the config's own rolling
+// schedule — for support/testing, not a replacement for sync_enabled's
+// self-re-enqueuing chain (worker.ts).
+
+crmRouter.post('/configs/:id/sync', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const orgId = await resolveOrgId(req.user.id);
+    const config = await getCrmSyncConfigById(req.params.id, orgId);
+    if (!config) {
+      res.status(404).json({ error: 'CRM sync config not found' });
+      return;
+    }
+    if (!config.sync_enabled) {
+      res.status(400).json({ error: 'Sync is not enabled for this config — enable it first (PATCH sync_enabled: true).' });
+      return;
+    }
+
+    await crmSyncQueue.add({ config_id: config.id });
+    res.status(202).json({ data: { message: 'Sync run enqueued.' } });
+  } catch (err) {
+    sendInternalError(res, err, 'POST /api/crm/configs/:id/sync');
   }
 });
 

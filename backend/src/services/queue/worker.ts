@@ -1,4 +1,5 @@
-import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue, crawlQueue, reconciliationSyncQueue, reconciliationRunQueue, reconciliationStatsQueue, reconciliationStaleResyncQueue, gtmContainerSyncQueue, ihcRulesQueue, ihcDriftQueue, ihcAlertQueue, ihcDigestQueue, dmaIngestQueue, dqmQueue, signalMvRefreshQueue, airIngestionQueue, shopifyWebhookEventQueue, googleDeliveryConfirmationQueue } from './jobQueue';
+import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue, crawlQueue, reconciliationSyncQueue, reconciliationRunQueue, reconciliationStatsQueue, reconciliationStaleResyncQueue, gtmContainerSyncQueue, ihcRulesQueue, ihcDriftQueue, ihcAlertQueue, ihcDigestQueue, dmaIngestQueue, dqmQueue, signalMvRefreshQueue, airIngestionQueue, shopifyWebhookEventQueue, googleDeliveryConfirmationQueue, crmSyncQueue } from './jobQueue';
+import { runSync as runCrmSync } from '@/services/crm/crmSyncOrchestrator';
 import type { GtmContainerSyncJobData, IhcRulesJobData, IhcDriftJobData, IhcAlertJobData, IhcDigestJobData, DQMJobData, AirIngestionJobData, GoogleDeliveryConfirmationJobData } from './jobQueue';
 import { runConfigSyncForConnection, getConnectionsDueForSync, runStatsSyncForConnection, getConnectionsDueForStatsSync, runStaleResyncForConnection, getConnectionsForStaleResync } from '@/services/reconciliation/sync/syncOrchestrator';
 import { executeRun } from '@/services/reconciliation/reconciliationRunner';
@@ -1725,3 +1726,30 @@ shopifyWebhookEventQueue.process(async (job) => {
 });
 
 logger.info('Shopify webhook event queue worker registered');
+
+// ── CRM Sync Queue ─────────────────────────────────────────────────────────────
+// CRM Outcome Integration PRD, Sprint 4. No shared cron — after a run
+// finishes, this self-re-enqueues (same pattern as
+// googleDeliveryConfirmationQueue above) with a delay of the config's own
+// sync_interval_minutes, or delay 0 immediately when the run hit its
+// record cap and needs a continuation (§9.4). A 'disabled' or 'not_found'
+// result stops the chain outright — re-enabling sync later (PATCH
+// sync_enabled: true) is what restarts it, per crm.ts's route comment.
+
+crmSyncQueue.process(async (job) => {
+  const { config_id } = job.data;
+  logger.info({ configId: config_id, jobId: job.id }, 'CRM sync job received');
+
+  const result = await runCrmSync(config_id);
+
+  logger.info({ configId: config_id, ...result }, 'CRM sync job finished');
+
+  if (result.status === 'disabled' || result.status === 'not_found' || result.sync_interval_minutes == null) {
+    return;
+  }
+
+  const delayMs = result.cap_hit ? 0 : result.sync_interval_minutes * 60 * 1000;
+  await crmSyncQueue.add({ config_id }, { delay: delayMs });
+});
+
+logger.info('CRM sync queue worker registered');

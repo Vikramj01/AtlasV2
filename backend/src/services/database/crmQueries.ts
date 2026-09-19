@@ -5,6 +5,8 @@ import type {
   UpdateCrmSyncConfigInput,
   CrmStageMapping,
   StageMappingInput,
+  NewCrmOutcomeEventInput,
+  CrmSyncStatus,
 } from '@/types/crm';
 
 export async function listCrmSyncConfigsForOrg(orgId: string): Promise<CrmSyncConfig[]> {
@@ -80,6 +82,35 @@ export async function deleteCrmSyncConfig(id: string, orgId: string): Promise<vo
     .eq('organization_id', orgId);
 
   if (error) throw new Error(`deleteCrmSyncConfig: ${error.message}`);
+}
+
+// No orgId filter — for worker/internal callers (crmSyncOrchestrator.ts)
+// that only have a config_id off a Bull job payload, mirroring
+// connectionQueries.ts's getConnectionByIdInternal.
+export async function getCrmSyncConfigByIdInternal(id: string): Promise<CrmSyncConfig | null> {
+  const { data, error } = await supabase
+    .from('crm_sync_configs')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (error) throw new Error(`getCrmSyncConfigByIdInternal: ${error.message}`);
+  return data as unknown as CrmSyncConfig | null;
+}
+
+export interface CrmSyncStateUpdate {
+  last_synced_at?: string;
+  last_sync_status: CrmSyncStatus;
+  last_sync_error: string | null;
+}
+
+export async function updateCrmSyncState(id: string, patch: CrmSyncStateUpdate): Promise<void> {
+  const { error } = await supabase
+    .from('crm_sync_configs')
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq('id', id);
+
+  if (error) throw new Error(`updateCrmSyncState: ${error.message}`);
 }
 
 // ── Stage mappings (the ladder itself, §5.3) ────────────────────────────────────
@@ -169,4 +200,31 @@ export async function countRecentOutcomesByMapping(configId: string): Promise<Re
     counts[row.mapping_id] = (counts[row.mapping_id] ?? 0) + 1;
   }
   return counts;
+}
+
+// ── Outcome events (§5.4, written by crmSyncOrchestrator.ts) ────────────────────
+
+// ignoreDuplicates -> Postgres INSERT ... ON CONFLICT DO NOTHING: an
+// overlapping sync window re-observing an already-written (config_id,
+// crm_record_id, crm_stage_id) is a genuine no-op (§9.2), never an update —
+// re-running a sync must not silently overwrite a row outcomeDelivery.ts
+// (Sprint 5) may already be mid-delivery on. RETURNING (via .select()) only
+// ever contains the rows Postgres actually inserted, so the returned
+// count IS the real "how many new outcomes" figure, not an approximation.
+export async function upsertCrmOutcomeEvents(
+  orgId: string,
+  rows: NewCrmOutcomeEventInput[],
+): Promise<number> {
+  if (rows.length === 0) return 0;
+
+  const { data, error } = await supabase
+    .from('crm_outcome_events')
+    .upsert(
+      rows.map((r) => ({ ...r, organization_id: orgId, delivery_detail: {} })),
+      { onConflict: 'config_id,crm_record_id,crm_stage_id', ignoreDuplicates: true },
+    )
+    .select('id');
+
+  if (error) throw new Error(`upsertCrmOutcomeEvents: ${error.message}`);
+  return (data ?? []).length;
 }
