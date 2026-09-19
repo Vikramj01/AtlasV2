@@ -677,3 +677,55 @@ googleDeliveryConfirmationQueue.on('failed', (job, err) => {
   );
 });
 
+// ── CRM Sync Queue ─────────────────────────────────────────────────────────────
+// CRM Outcome Integration PRD, Sprint 4. One job = one incremental sync run
+// for a single crm_sync_configs row. No shared cron: each config paces
+// itself by self-re-enqueuing (via worker.ts, same pattern as
+// googleDeliveryConfirmationQueue above) with a delay of its own
+// sync_interval_minutes after a normal run, or delay 0 immediately when a
+// run hits its record cap and needs a continuation (§9.4). `attempts`/
+// `backoff` here are Bull's own retry for a genuine failure (token refresh
+// error, HubSpot API outage) — distinct from the self-re-enqueue chain,
+// which only fires after a run completes (successfully or not).
+export interface CrmSyncJobData {
+  config_id: string;
+}
+
+export const crmSyncQueue = new Bull<CrmSyncJobData>('crm-sync', makeBullOpts({
+  attempts: 3,
+  backoff: { type: 'exponential', delay: 30_000 },
+  removeOnComplete: 100,
+  removeOnFail: 50,
+}));
+
+crmSyncQueue.on('failed', (job, err) => {
+  logger.error({ jobId: job?.id, configId: job?.data?.config_id, err: err.message }, 'CRM sync job failed');
+});
+
+// ── CRM Derived Value Queue ────────────────────────────────────────────────────
+// CRM Outcome Integration PRD, Sprint 7 (§7.3). Weekly batch: recomputes
+// stage_to_won_rate × avg_won_amount snapshots for every config in DERIVED
+// mode. Fan-out job (no config_id) discovers eligible configs and enqueues
+// per-config children — same shape as airIngestionQueue above. Only the
+// config_id is in the payload; derivedValueCalculator.ts is a pure
+// crm_outcome_events read, so no CRM credentials/tokens ever touch this queue.
+export interface CrmDerivedValueJobData {
+  trigger: 'scheduled' | 'manual';
+  config_id?: string; // present for per-config child jobs and manual trigger
+}
+
+export const crmDerivedValueQueue = new Bull<CrmDerivedValueJobData>('crm-derived-value', makeBullOpts({
+  attempts: 2,
+  backoff: { type: 'exponential', delay: 30_000 },
+  removeOnComplete: 50,
+  removeOnFail: 25,
+}));
+
+crmDerivedValueQueue.on('completed', (job) => {
+  logger.info({ jobId: job.id, configId: job.data.config_id, trigger: job.data.trigger }, 'CRM derived-value job completed');
+});
+
+crmDerivedValueQueue.on('failed', (job, err) => {
+  logger.error({ jobId: job?.id, configId: job?.data?.config_id, err: err.message }, 'CRM derived-value job failed');
+});
+

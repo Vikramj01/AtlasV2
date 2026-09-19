@@ -21,6 +21,7 @@ import { ErrorLog } from '@/components/capi/ErrorLog';
 import { SkeletonCard } from '@/components/common/SkeletonCard';
 import { AudienceUploadTab } from '@/components/capi/AudienceUploadTab';
 import { RefundsTab } from '@/components/capi/RefundsTab';
+import { CrmOutcomesTab } from '@/components/capi/CrmOutcomesTab';
 import type { CAPIProviderConfig } from '@/types/capi';
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -357,7 +358,7 @@ interface CAPIMonitoringDashboardProps {
 }
 
 type Window = 7 | 30;
-type Tab = 'delivery' | 'audience' | 'refunds';
+type Tab = 'delivery' | 'audience' | 'refunds' | 'crm';
 
 export function CAPIMonitoringDashboard({ provider, onBack }: CAPIMonitoringDashboardProps) {
   const { dashboard, dashboardLoading, setDashboard, setDashboardLoading } = useCAPIStore();
@@ -414,26 +415,30 @@ export function CAPIMonitoringDashboard({ provider, onBack }: CAPIMonitoringDash
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Delivery / Audience tab switcher — Audience only for Google */}
-          {provider.provider === 'google' && (
-            <div className="flex items-center rounded-lg border border-[#E5E7EB] p-0.5">
-              {(['delivery', 'audience', 'refunds'] as Tab[]).map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => setTab(t)}
-                  className="px-3 py-1 text-xs font-medium rounded transition-colors capitalize"
-                  style={
-                    tab === t
-                      ? { backgroundColor: NAVY, color: '#fff' }
-                      : { color: '#9CA3AF' }
-                  }
-                >
-                  {t === 'delivery' ? 'Delivery' : t === 'audience' ? 'Audience' : 'Refunds'}
-                </button>
-              ))}
-            </div>
-          )}
+          {/* Delivery / Audience / Refunds / CRM Outcomes tab switcher —
+              Audience and Refunds stay Google-only; CRM Outcomes shows for
+              every provider since a CRM outcome delivers to whichever
+              destinations its own ladder configures, not just this one. */}
+          <div className="flex items-center rounded-lg border border-[#E5E7EB] p-0.5">
+            {(provider.provider === 'google'
+              ? (['delivery', 'audience', 'refunds', 'crm'] as Tab[])
+              : (['delivery', 'crm'] as Tab[])
+            ).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setTab(t)}
+                className="px-3 py-1 text-xs font-medium rounded transition-colors capitalize"
+                style={
+                  tab === t
+                    ? { backgroundColor: NAVY, color: '#fff' }
+                    : { color: '#9CA3AF' }
+                }
+              >
+                {t === 'delivery' ? 'Delivery' : t === 'audience' ? 'Audience' : t === 'refunds' ? 'Refunds' : 'CRM Outcomes'}
+              </button>
+            ))}
+          </div>
 
           {/* 7d / 30d toggle — only on Delivery tab */}
           {tab === 'delivery' && (
@@ -478,6 +483,11 @@ export function CAPIMonitoringDashboard({ provider, onBack }: CAPIMonitoringDash
       {/* ── Refunds tab ──────────────────────────────────────────────────── */}
       {tab === 'refunds' && (
         <RefundsTab />
+      )}
+
+      {/* ── CRM Outcomes tab ─────────────────────────────────────────────── */}
+      {tab === 'crm' && (
+        <CrmOutcomesTab />
       )}
 
       {/* ── Delivery tab ─────────────────────────────────────────────────── */}

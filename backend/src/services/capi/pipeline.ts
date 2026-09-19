@@ -117,7 +117,12 @@ function buildHashedIdentifiers(
 
 // ── Consent gate ──────────────────────────────────────────────────────────────
 
-function isConsentGranted(event: AtlasEvent, provider: CAPIProvider): boolean {
+// Exported for outcomeDelivery.ts (CRM Outcome Integration, §8) — a CRM
+// outcome that resolves to an original capi_events row via atlas_event_id
+// must apply this SAME per-provider consent decision to that inherited
+// consent_state before delivering, rather than reimplementing the
+// meta/google/linkedin category mapping a second time.
+export function isConsentGranted(event: AtlasEvent, provider: CAPIProvider): boolean {
   const d = event.consent_state;
   if (!d) return false;
 

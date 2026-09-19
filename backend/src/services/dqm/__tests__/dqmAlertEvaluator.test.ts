@@ -7,7 +7,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { evaluateGTGAlert, evaluateDMAAlert, evaluateSgtmAlert, evaluateGoogleDeliveryAlert } from '../dqmAlertEvaluator';
+import { evaluateGTGAlert, evaluateDMAAlert, evaluateSgtmAlert, evaluateGoogleDeliveryAlert, evaluateCrmSyncAlert } from '../dqmAlertEvaluator';
+import type { CrmSyncAlertInput } from '../dqmAlertEvaluator';
 
 // ── evaluateGTGAlert ──────────────────────────────────────────────────────────
 
@@ -301,5 +302,104 @@ describe('evaluateGoogleDeliveryAlert', () => {
     const r2 = evaluateGoogleDeliveryAlert({ outcome: 'poll_exhausted', reasons: [], existingAlertActive: true });
     expect(r1.decision).toBe('none');
     expect(r2.decision).toBe('none');
+  });
+});
+
+// ── evaluateCrmSyncAlert (CRM Outcome Integration Sprint 8, §10) ────────────────
+
+describe('evaluateCrmSyncAlert', () => {
+  function healthyInput(overrides: Partial<CrmSyncAlertInput> = {}): CrmSyncAlertInput {
+    return {
+      consecutiveFailures: 0,
+      tokenExpired: false,
+      unresolvedIdentityRate7d: 5,
+      skippedWindowRate7d: 2,
+      derivedWithheldForBiddingPrimaryStage: false,
+      existingAlertActive: false,
+      ...overrides,
+    };
+  }
+
+  it('an entirely healthy input → none', () => {
+    const r = evaluateCrmSyncAlert(healthyInput());
+    expect(r.decision).toBe('none');
+  });
+
+  it('token expired → open critical, taking priority over every other condition', () => {
+    const r = evaluateCrmSyncAlert(healthyInput({
+      tokenExpired: true,
+      consecutiveFailures: 5,
+      unresolvedIdentityRate7d: 90,
+    }));
+    expect(r.decision).toBe('open');
+    expect(r.severity).toBe('critical');
+    expect(r.title).toBe('CRM Connection Expired');
+  });
+
+  it('2 consecutive failures → open critical', () => {
+    const r = evaluateCrmSyncAlert(healthyInput({ consecutiveFailures: 2 }));
+    expect(r.decision).toBe('open');
+    expect(r.severity).toBe('critical');
+    expect(r.title).toBe('CRM Sync Failing');
+  });
+
+  it('1 consecutive failure (below the threshold) → does not fire on its own', () => {
+    const r = evaluateCrmSyncAlert(healthyInput({ consecutiveFailures: 1 }));
+    expect(r.decision).toBe('none');
+  });
+
+  it('unresolved identity rate > 30% → open critical', () => {
+    const r = evaluateCrmSyncAlert(healthyInput({ unresolvedIdentityRate7d: 31 }));
+    expect(r.decision).toBe('open');
+    expect(r.severity).toBe('critical');
+    expect(r.title).toBe('CRM Identity Resolution Failing');
+  });
+
+  it('unresolved identity rate in [10, 30] → open warning', () => {
+    const r = evaluateCrmSyncAlert(healthyInput({ unresolvedIdentityRate7d: 10 }));
+    expect(r.decision).toBe('open');
+    expect(r.severity).toBe('warning');
+    expect(r.title).toBe('CRM Identity Resolution Degraded');
+  });
+
+  it('unresolved identity rate below 10% → does not fire', () => {
+    const r = evaluateCrmSyncAlert(healthyInput({ unresolvedIdentityRate7d: 9.9 }));
+    expect(r.decision).toBe('none');
+  });
+
+  it('null unresolved identity rate (no data) never fires that condition', () => {
+    const r = evaluateCrmSyncAlert(healthyInput({ unresolvedIdentityRate7d: null }));
+    expect(r.decision).toBe('none');
+  });
+
+  it('skipped_window rate > 10% → open warning', () => {
+    const r = evaluateCrmSyncAlert(healthyInput({ skippedWindowRate7d: 10.1 }));
+    expect(r.decision).toBe('open');
+    expect(r.severity).toBe('warning');
+    expect(r.title).toBe('CRM Outcomes Missing Ingest Windows');
+  });
+
+  it('DERIVED value withheld for a bidding-primary stage → open warning', () => {
+    const r = evaluateCrmSyncAlert(healthyInput({ derivedWithheldForBiddingPrimaryStage: true }));
+    expect(r.decision).toBe('open');
+    expect(r.severity).toBe('warning');
+    expect(r.title).toBe('CRM Derived Value Withheld');
+  });
+
+  it('picks the WORST applicable condition, not the first one checked', () => {
+    // Both identity-degraded (warning-tier) and consecutive-failures
+    // (critical-tier) apply — critical must win.
+    const r = evaluateCrmSyncAlert(healthyInput({ consecutiveFailures: 2, unresolvedIdentityRate7d: 15 }));
+    expect(r.title).toBe('CRM Sync Failing');
+  });
+
+  it('an active alert with a still-firing condition → update, not open', () => {
+    const r = evaluateCrmSyncAlert(healthyInput({ consecutiveFailures: 2, existingAlertActive: true }));
+    expect(r.decision).toBe('update');
+  });
+
+  it('recovery from an active alert → resolve', () => {
+    const r = evaluateCrmSyncAlert(healthyInput({ existingAlertActive: true }));
+    expect(r.decision).toBe('resolve');
   });
 });

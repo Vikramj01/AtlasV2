@@ -239,3 +239,88 @@ export function evaluateGoogleDeliveryAlert(input: GoogleDeliveryAlertInput): Al
   }
   return { decision: 'none', severity: null, title: '', message: '' };
 }
+
+// ── CRM sync evaluation (CRM Outcome Integration Sprint 8, §10) ─────────────────
+//
+// Unlike GTG/DMA/sGTM (one health signal per check), the PRD names SIX
+// distinct alert conditions for CRM sync health but is explicit that this
+// must still land as "one rolled-up alert per org, not one per record."
+// This picks the single worst applicable condition, in the priority order
+// below, rather than trying to represent all six in one alert row — the
+// same "worst status wins" shape evaluateSgtmAlert() already uses across
+// multiple probed endpoints. A resolved condition further down the list
+// while a higher one is still active never downgrades the alert; the
+// caller re-evaluates from scratch on every run, so the alert simply
+// reflects whichever condition is worst THIS run.
+
+export interface CrmSyncAlertInput {
+  consecutiveFailures: number;                     // max across the org's enabled configs
+  tokenExpired: boolean;                            // any enabled config's own CRM connection is expired/revoked
+  unresolvedIdentityRate7d: number | null;          // 0-100 over crm_outcome_events, org-wide, last 7 days; null = no rows to compute from
+  skippedWindowRate7d: number | null;               // 0-100 of ATTEMPTED deliveries only (identity resolved); null = no attempted deliveries
+  derivedWithheldForBiddingPrimaryStage: boolean;   // a DERIVED-mode stage with a real destination configured has a withheld latest snapshot
+  existingAlertActive: boolean;
+}
+
+const CONSECUTIVE_FAILURES_THRESHOLD = 2; // mirrors incrementAlertOk()'s own >=2 resolve threshold elsewhere in this file
+const UNRESOLVED_IDENTITY_HIGH_THRESHOLD = 30;
+const UNRESOLVED_IDENTITY_MEDIUM_THRESHOLD = 10;
+const SKIPPED_WINDOW_THRESHOLD = 10;
+
+export function evaluateCrmSyncAlert(input: CrmSyncAlertInput): AlertEvalResult {
+  const {
+    consecutiveFailures,
+    tokenExpired,
+    unresolvedIdentityRate7d,
+    skippedWindowRate7d,
+    derivedWithheldForBiddingPrimaryStage,
+    existingAlertActive,
+  } = input;
+
+  if (tokenExpired) {
+    const message = 'The CRM connection has expired or been revoked. Outcome sync has stopped until it is reconnected.';
+    return existingAlertActive
+      ? { decision: 'update', severity: 'critical', title: 'CRM Connection Expired', message }
+      : { decision: 'open', severity: 'critical', title: 'CRM Connection Expired', message };
+  }
+
+  if (consecutiveFailures >= CONSECUTIVE_FAILURES_THRESHOLD) {
+    const message = `CRM sync has failed on ${consecutiveFailures} consecutive runs. Outcomes are not reaching connected platforms.`;
+    return existingAlertActive
+      ? { decision: 'update', severity: 'critical', title: 'CRM Sync Failing', message }
+      : { decision: 'open', severity: 'critical', title: 'CRM Sync Failing', message };
+  }
+
+  if (unresolvedIdentityRate7d !== null && unresolvedIdentityRate7d > UNRESOLVED_IDENTITY_HIGH_THRESHOLD) {
+    const message = `${unresolvedIdentityRate7d.toFixed(1)}% of CRM records over the last 7 days could not be matched to an identity (click ID or hashed email/phone) — their outcomes never reach any platform.`;
+    return existingAlertActive
+      ? { decision: 'update', severity: 'critical', title: 'CRM Identity Resolution Failing', message }
+      : { decision: 'open', severity: 'critical', title: 'CRM Identity Resolution Failing', message };
+  }
+
+  if (unresolvedIdentityRate7d !== null && unresolvedIdentityRate7d >= UNRESOLVED_IDENTITY_MEDIUM_THRESHOLD) {
+    const message = `${unresolvedIdentityRate7d.toFixed(1)}% of CRM records over the last 7 days could not be matched to an identity. Check that click-ID/email capture properties are actually populated on the CRM side.`;
+    return existingAlertActive
+      ? { decision: 'update', severity: 'warning', title: 'CRM Identity Resolution Degraded', message }
+      : { decision: 'open', severity: 'warning', title: 'CRM Identity Resolution Degraded', message };
+  }
+
+  if (skippedWindowRate7d !== null && skippedWindowRate7d > SKIPPED_WINDOW_THRESHOLD) {
+    const message = `${skippedWindowRate7d.toFixed(1)}% of resolved CRM outcomes over the last 7 days arrived past the destination's ingest window and were never delivered.`;
+    return existingAlertActive
+      ? { decision: 'update', severity: 'warning', title: 'CRM Outcomes Missing Ingest Windows', message }
+      : { decision: 'open', severity: 'warning', title: 'CRM Outcomes Missing Ingest Windows', message };
+  }
+
+  if (derivedWithheldForBiddingPrimaryStage) {
+    const message = 'A DERIVED-mode stage with a platform destination configured has too little history to compute a trusted value and is falling back to its declared value.';
+    return existingAlertActive
+      ? { decision: 'update', severity: 'warning', title: 'CRM Derived Value Withheld', message }
+      : { decision: 'open', severity: 'warning', title: 'CRM Derived Value Withheld', message };
+  }
+
+  if (existingAlertActive) {
+    return { decision: 'resolve', severity: null, title: '', message: '' };
+  }
+  return { decision: 'none', severity: null, title: '', message: '' };
+}

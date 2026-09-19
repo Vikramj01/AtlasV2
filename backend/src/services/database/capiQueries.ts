@@ -300,6 +300,34 @@ export async function getCAPIEventForConfirmation(eventId: string): Promise<CAPI
   return data as CAPIEventForConfirmation | null;
 }
 
+// ── CRM Outcome Integration (§6.3 point 2 / §8) ─────────────────────────────
+// Resolves an original lead-capture event by its atlas_event_id, so
+// outcomeDelivery.ts can inherit its consent_state rather than laundering a
+// consent_blocked lead through the server-sourced CRM path. Most recent row
+// wins if the same atlas_event_id was ever logged against more than one
+// provider — consent_state is the same raw per-category object regardless
+// of which provider logged it.
+export interface OriginalCAPIEventForConsent {
+  consent_state: Record<string, string> | null;
+}
+
+export async function getCAPIEventByAtlasEventId(
+  organizationId: string,
+  atlasEventId: string,
+): Promise<OriginalCAPIEventForConsent | null> {
+  const { data, error } = await supabase
+    .from('capi_events')
+    .select('consent_state')
+    .eq('organization_id', organizationId)
+    .eq('atlas_event_id', atlasEventId)
+    .order('processed_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw new Error(`Failed to load original CAPI event by atlas_event_id: ${error.message}`);
+  return data as OriginalCAPIEventForConsent | null;
+}
+
 export async function updateCAPIEventDeliveryConfirmation(
   eventId: string,
   update: {

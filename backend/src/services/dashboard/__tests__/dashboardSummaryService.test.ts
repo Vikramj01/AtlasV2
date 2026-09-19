@@ -17,6 +17,7 @@ import { supabaseAdmin } from '@/services/database/supabase';
 import {
   checkStatusSeverity,
   dmaSeverity,
+  crmSyncSeverity,
   worstDqmSeverity,
   getClientSummaries,
 } from '../dashboardSummaryService';
@@ -66,6 +67,22 @@ describe('dmaSeverity', () => {
   });
   it('returns null when healthy', () => {
     expect(dmaSeverity({ consecutive_failures: 0, avg_match_rate: 80 })).toBeNull();
+  });
+});
+
+describe('crmSyncSeverity', () => {
+  it('returns null when the client has no enabled CRM sync config', () => {
+    expect(crmSyncSeverity(undefined)).toBeNull();
+  });
+  it('returns high at the two-consecutive-failures threshold', () => {
+    expect(crmSyncSeverity({ consecutive_failures: 2, last_sync_status: 'failed' })).toBe('high');
+  });
+  it('returns medium for a single failed run (below the consecutive threshold)', () => {
+    expect(crmSyncSeverity({ consecutive_failures: 1, last_sync_status: 'failed' })).toBe('medium');
+  });
+  it('returns null when the last run was ok or partial', () => {
+    expect(crmSyncSeverity({ consecutive_failures: 0, last_sync_status: 'ok' })).toBeNull();
+    expect(crmSyncSeverity({ consecutive_failures: 0, last_sync_status: 'partial' })).toBeNull();
   });
 });
 
@@ -158,5 +175,41 @@ describe('getClientSummaries', () => {
     mockTables({ clients: [] });
     const summaries = await getClientSummaries('org-empty');
     expect(summaries).toEqual([]);
+  });
+
+  it('folds a failing CRM sync config into a client\'s dqm severity (Sprint 8, §10)', async () => {
+    const clients = [
+      { id: 'c1', name: 'Alpha' }, // healthy CRM sync
+      { id: 'c2', name: 'Beta' },  // 2 consecutive CRM sync failures -> critical
+    ];
+
+    mockTables({
+      clients,
+      client_platforms: [],
+      deployments: [
+        { client_id: 'c1', last_generated_at: '2026-08-01T00:00:00Z' },
+        { client_id: 'c2', last_generated_at: '2026-08-01T00:00:00Z' },
+      ],
+      audit_findings: [],
+      reconciliation_findings: [],
+      dqm_sgtm_checks: [],
+      dqm_gtg_checks: [],
+      dqm_dma_poll_state: [],
+      client_identity_configs: [],
+      crm_sync_configs: [
+        { client_id: 'c1', consecutive_failures: 0, last_sync_status: 'ok' },
+        { client_id: 'c2', consecutive_failures: 2, last_sync_status: 'failed' },
+      ],
+    });
+
+    const summaries = await getClientSummaries('org-1');
+    const byId = Object.fromEntries(summaries.map((s) => [s.id, s]));
+
+    expect(byId.c1.dqm_worst_severity).toBeNull();
+    expect(byId.c1.health_level).toBe('healthy');
+
+    expect(byId.c2.dqm_worst_severity).toBe('high');
+    expect(byId.c2.dqm_alert_count).toBe(1);
+    expect(byId.c2.health_level).toBe('critical');
   });
 });
