@@ -16,6 +16,7 @@ import { SectionErrorBoundary } from '@/components/common/ErrorBoundary';
 import { CrmConnectCard } from '@/components/crm/CrmConnectCard';
 import { ReadinessPanel } from '@/components/crm/ReadinessPanel';
 import { StageLadderEditor } from '@/components/crm/StageLadderEditor';
+import { DerivedValuePanel } from '@/components/crm/DerivedValuePanel';
 import { useCrmStore } from '@/store/crmStore';
 import { useOrganisationStore } from '@/store/organisationStore';
 import { useOrganisations } from '@/hooks/useOrganisations';
@@ -129,6 +130,9 @@ export function CrmIntegrationPage() {
               <div key={config.id} className="space-y-4">
                 <SectionErrorBoundary label="Signal ladder">
                   <StageLadderEditor config={config} />
+                </SectionErrorBoundary>
+                <SectionErrorBoundary label="Derived values">
+                  <DerivedValuePanel config={config} />
                 </SectionErrorBoundary>
                 <SectionErrorBoundary label="Readiness">
                   <ReadinessPanel config={config} />

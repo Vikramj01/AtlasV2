@@ -161,3 +161,51 @@ export interface EarlierDeliveredOutcome {
   event_id: string;
   delivery_detail: Record<string, unknown>;
 }
+
+// crm_derived_value_snapshots (§5.5) — populated by derivedValueCalculator.ts
+// (Sprint 7) on a weekly schedule, read by crmSyncOrchestrator.ts (feeds
+// valueLadder.ts's DERIVED branch) and GET /configs/:id/derived-values.
+export interface CrmDerivedValueSnapshot {
+  id: string;
+  organization_id: string;
+  config_id: string;
+  crm_stage_id: string;
+  sample_size: number;
+  reached_won_count: number;
+  stage_to_won_rate: number;
+  avg_won_amount: number;
+  currency: string;
+  derived_value: number;
+  confidence: CrmDerivedConfidence;
+  window_start: string; // DATE
+  window_end: string;   // DATE
+  computed_at: string;
+}
+
+// Row shape derivedValueCalculator.ts writes — organization_id is added by
+// the query function from the config, matching NewCrmOutcomeEventInput's
+// convention above.
+export interface NewDerivedValueSnapshotInput {
+  config_id: string;
+  crm_stage_id: string;
+  sample_size: number;
+  reached_won_count: number;
+  stage_to_won_rate: number;
+  avg_won_amount: number;
+  currency: string;
+  derived_value: number;
+  confidence: CrmDerivedConfidence;
+  window_start: string; // DATE
+  window_end: string;   // DATE
+}
+
+// One crm_outcome_events row's worth of raw material for the calculator —
+// never identity/PII fields, only what the stage-to-won-rate math needs.
+export interface OutcomeEventForDerivedCalc {
+  crm_record_id: string;
+  crm_stage_id: string;
+  mapping_id: string | null;
+  conversion_value: number | null;
+  currency: string | null;
+  stage_changed_at: string;
+}

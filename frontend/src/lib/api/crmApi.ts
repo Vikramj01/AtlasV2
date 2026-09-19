@@ -8,6 +8,7 @@ import type {
   ReadinessResult,
   StageMappingsResponse,
   StageMappingInput,
+  CrmDerivedValueSnapshot,
 } from '@/types/crm';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
@@ -117,6 +118,13 @@ export async function replaceStageMappings(configId: string, mappings: StageMapp
   return res.data;
 }
 
+// ── Derived values (Sprint 7, §7.3) ──────────────────────────────────────────
+
+export async function getDerivedValues(configId: string): Promise<CrmDerivedValueSnapshot[]> {
+  const res = await apiFetch<{ data: CrmDerivedValueSnapshot[] }>(`/crm/configs/${configId}/derived-values`);
+  return res.data ?? [];
+}
+
 export const crmApi = {
   connectHubSpot,
   discoverHubSpotPortal,
@@ -129,4 +137,5 @@ export const crmApi = {
   checkReadiness,
   getStageMappings,
   replaceStageMappings,
+  getDerivedValues,
 };

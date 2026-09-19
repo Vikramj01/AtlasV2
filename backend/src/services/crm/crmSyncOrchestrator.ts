@@ -1,6 +1,6 @@
 /**
  * crmSyncOrchestrator — the sync engine. docs/prd/crm-outcome-integration.md
- * §4.3's data flow, Sprints 4-6.
+ * §4.3's data flow, Sprints 4-7.
  *
  * `runSync(configId)` does one incremental pull: fetch records whose stage
  * changed since the last successful sync (with a 60-minute overlap so a
@@ -30,6 +30,13 @@
  * record, gated by the same findExistingOutcomeKeys() pre-check that gates
  * everything else — the lost stage's own row can only be inserted once.
  *
+ * DERIVED mode (Sprint 7, §7.3): this file no longer hardcodes `null` for
+ * resolveValue()'s fourth argument — it fetches the latest
+ * crm_derived_value_snapshots row per stage once per run
+ * (getLatestDerivedValueSnapshots) and passes it through. valueLadder.ts's
+ * own withheld→DECLARED fallback (already built in Sprint 3) handles
+ * everything from there; this file only supplies real data instead of null.
+ *
  * Known structural limitation, not a bug: fetchChangedRecords (§4.2)
  * reports each record's CURRENT stage at fetch time, not a change history.
  * A record that moves through more than one mapped stage between two sync
@@ -48,6 +55,7 @@ import {
   updateCrmSyncState,
   findExistingOutcomeKeys,
   listDeliveredOutcomesForRecord,
+  getLatestDerivedValueSnapshots,
 } from '@/services/database/crmQueries';
 import { getProvider } from './providerRegistry';
 import { resolveTokens } from '@/services/connections/tokenManager';
@@ -55,7 +63,7 @@ import { resolveStageMapping } from './objectMapper';
 import { resolveIdentity, resolveIdentityPropertyMap } from './identityResolver';
 import { resolveValue } from './valueLadder';
 import { deliverOutcome, handleLostDeal } from './outcomeDelivery';
-import type { ObservedCrmAmount } from './valueLadder';
+import type { ObservedCrmAmount, DerivedValueInput } from './valueLadder';
 import type { CrmRecord } from './providers/types';
 import type { CrmStageMapping, NewCrmOutcomeEventInput } from '@/types/crm';
 import logger from '@/utils/logger';
@@ -123,6 +131,19 @@ export async function runSync(configId: string, opts?: { recordCap?: number }): 
   }
 
   const stageMappings = await listCrmStageMappings(config.id);
+
+  // Sprint 7 (§7.3) — fetched once per run, not per record, since it's
+  // config-scoped: derivedValueCalculator.ts's weekly job already computed
+  // whatever's current. Empty in DECLARED mode (valueLadder.ts's resolveValue()
+  // never reads a derived input there anyway), so no wasted query.
+  const derivedValuesByStage = new Map<string, DerivedValueInput>();
+  if (config.value_mode === 'DERIVED') {
+    const snapshots = await getLatestDerivedValueSnapshots(config.id);
+    for (const s of snapshots) {
+      derivedValuesByStage.set(s.crm_stage_id, { value: s.derived_value, currency: s.currency, confidence: s.confidence });
+    }
+  }
+
   const until = new Date();
   const since = config.last_synced_at
     ? new Date(new Date(config.last_synced_at).getTime() - OVERLAP_MS)
@@ -163,7 +184,8 @@ export async function runSync(configId: string, opts?: { recordCap?: number }): 
 
       const identity = resolveIdentity(record.properties, config!.identity_property_map, null);
       const observedAmount = mapping.is_terminal_won ? extractObservedAmount(record.properties) : null;
-      const resolvedValue = resolveValue(mapping, config!, observedAmount, null);
+      const derivedInput = derivedValuesByStage.get(mapping.crm_stage_id) ?? null;
+      const resolvedValue = resolveValue(mapping, config!, observedAmount, derivedInput);
       const eventId = computeEventId(config!.id, record.id, mapping.crm_stage_id);
       const stageChangedAt = record.stage_changed_at ?? until.toISOString();
 

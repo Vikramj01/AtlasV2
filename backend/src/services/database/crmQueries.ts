@@ -8,6 +8,9 @@ import type {
   NewCrmOutcomeEventInput,
   CrmSyncStatus,
   EarlierDeliveredOutcome,
+  CrmDerivedValueSnapshot,
+  NewDerivedValueSnapshotInput,
+  OutcomeEventForDerivedCalc,
 } from '@/types/crm';
 
 export async function listCrmSyncConfigsForOrg(orgId: string): Promise<CrmSyncConfig[]> {
@@ -276,4 +279,80 @@ export async function listDeliveredOutcomesForRecord(
 
   if (error) throw new Error(`listDeliveredOutcomesForRecord: ${error.message}`);
   return (data ?? []) as EarlierDeliveredOutcome[];
+}
+
+// ── Derived value calculator (Sprint 7, §7.3) ───────────────────────────────────
+
+// Every crm_outcome_events row within the trailing window, for
+// derivedValueCalculator.ts's pure computeStageSnapshots() to fold over.
+// Identity/PII columns are deliberately not selected — this is a value/rate
+// computation, not a delivery.
+export async function listOutcomeEventsForDerivedCalc(
+  configId: string,
+  sinceISO: string,
+): Promise<OutcomeEventForDerivedCalc[]> {
+  const { data, error } = await supabase
+    .from('crm_outcome_events')
+    .select('crm_record_id, crm_stage_id, mapping_id, conversion_value, currency, stage_changed_at')
+    .eq('config_id', configId)
+    .gte('stage_changed_at', sinceISO);
+
+  if (error) throw new Error(`listOutcomeEventsForDerivedCalc: ${error.message}`);
+  return (data ?? []) as OutcomeEventForDerivedCalc[];
+}
+
+// Upserts on (config_id, crm_stage_id, window_end) — a re-run within the
+// same day (manual trigger after the weekly cron already ran) replaces that
+// day's snapshot rather than duplicating it; a genuinely new week's
+// window_end always gets its own row, so history is preserved.
+export async function upsertDerivedValueSnapshots(
+  orgId: string,
+  rows: NewDerivedValueSnapshotInput[],
+): Promise<void> {
+  if (rows.length === 0) return;
+
+  const { error } = await supabase
+    .from('crm_derived_value_snapshots')
+    .upsert(
+      rows.map((r) => ({ ...r, organization_id: orgId })),
+      { onConflict: 'config_id,crm_stage_id,window_end' },
+    );
+
+  if (error) throw new Error(`upsertDerivedValueSnapshots: ${error.message}`);
+}
+
+// Latest snapshot per crm_stage_id for a config — read by
+// crmSyncOrchestrator.ts (feeds valueLadder.ts) and GET
+// /configs/:id/derived-values. supabase-js has no DISTINCT ON, so this
+// fetches recent rows ordered by window_end and keeps the first (most
+// recent) one seen per stage; 200 is generously above any realistic
+// (stage count × weeks retained) product.
+export async function getLatestDerivedValueSnapshots(configId: string): Promise<CrmDerivedValueSnapshot[]> {
+  const { data, error } = await supabase
+    .from('crm_derived_value_snapshots')
+    .select('*')
+    .eq('config_id', configId)
+    .order('window_end', { ascending: false })
+    .limit(200);
+
+  if (error) throw new Error(`getLatestDerivedValueSnapshots: ${error.message}`);
+
+  const latestByStage = new Map<string, CrmDerivedValueSnapshot>();
+  for (const row of (data ?? []) as CrmDerivedValueSnapshot[]) {
+    if (!latestByStage.has(row.crm_stage_id)) latestByStage.set(row.crm_stage_id, row);
+  }
+  return Array.from(latestByStage.values());
+}
+
+// Internal, no org filter — for the weekly fan-out job (worker.ts), which
+// only needs config ids to enqueue, mirroring getCrmSyncConfigByIdInternal's
+// worker-caller convention.
+export async function listDerivedModeConfigIds(): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('crm_sync_configs')
+    .select('id')
+    .eq('value_mode', 'DERIVED');
+
+  if (error) throw new Error(`listDerivedModeConfigIds: ${error.message}`);
+  return ((data ?? []) as { id: string }[]).map((r) => r.id);
 }

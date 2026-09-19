@@ -16,6 +16,7 @@ vi.mock('@/services/database/crmQueries', () => ({
   updateCrmSyncState: vi.fn(),
   findExistingOutcomeKeys: vi.fn(),
   listDeliveredOutcomesForRecord: vi.fn(),
+  getLatestDerivedValueSnapshots: vi.fn(),
 }));
 
 vi.mock('@/services/crm/providerRegistry', () => ({
@@ -45,6 +46,7 @@ import {
   updateCrmSyncState,
   findExistingOutcomeKeys,
   listDeliveredOutcomesForRecord,
+  getLatestDerivedValueSnapshots,
 } from '@/services/database/crmQueries';
 import { getProvider } from '@/services/crm/providerRegistry';
 import { resolveTokens } from '@/services/connections/tokenManager';
@@ -143,6 +145,9 @@ beforeEach(() => {
     meta_signal: { status: 'skipped', reason: 'no_active_meta_connection' },
     linkedin_and_others: 'logged_only',
   });
+  // Default: no derived-value snapshots — most tests use DECLARED mode
+  // (makeConfig()'s default), where this is never even queried.
+  vi.mocked(getLatestDerivedValueSnapshots).mockResolvedValue([]);
 });
 
 describe('runSync', () => {
@@ -444,6 +449,72 @@ describe('runSync', () => {
 
       expect(deliverOutcome).not.toHaveBeenCalled(); // unresolved identity — §6.3 point 5
       expect(handleLostDeal).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('DERIVED value mode (Sprint 7, §7.3)', () => {
+    it('never queries derived-value snapshots in DECLARED mode', async () => {
+      vi.mocked(getCrmSyncConfigByIdInternal).mockResolvedValue(makeConfig({ value_mode: 'DECLARED' }));
+      vi.mocked(listCrmStageMappings).mockResolvedValue([makeMapping()]);
+      vi.mocked(getProvider).mockReturnValue(makeProvider([makeRecord()]));
+
+      await runSync('config-1');
+
+      expect(getLatestDerivedValueSnapshots).not.toHaveBeenCalled();
+    });
+
+    it('fetches derived-value snapshots once per run (not per record) and resolves DERIVED when confidence is not withheld', async () => {
+      vi.mocked(getCrmSyncConfigByIdInternal).mockResolvedValue(makeConfig({ value_mode: 'DERIVED' }));
+      vi.mocked(listCrmStageMappings).mockResolvedValue([makeMapping({ declared_value: 50 })]);
+      vi.mocked(getLatestDerivedValueSnapshots).mockResolvedValue([{
+        id: 's1', organization_id: 'org-1', config_id: 'config-1', crm_stage_id: 'appointmentscheduled',
+        sample_size: 100, reached_won_count: 25, stage_to_won_rate: 0.25, avg_won_amount: 2000,
+        currency: 'USD', derived_value: 500, confidence: 'high',
+        window_start: '2026-03-01', window_end: '2026-08-28', computed_at: '2026-08-28T00:00:00Z',
+      }]);
+      vi.mocked(getProvider).mockReturnValue(makeProvider([makeRecord(), makeRecord({ id: 'deal-2' })]));
+
+      await runSync('config-1');
+
+      expect(getLatestDerivedValueSnapshots).toHaveBeenCalledTimes(1);
+      const [, rows] = vi.mocked(upsertCrmOutcomeEvents).mock.calls[0];
+      expect(rows[0]).toMatchObject({ value_source: 'DERIVED', derived_confidence: 'high', conversion_value: 500, currency: 'USD' });
+      expect(rows[1]).toMatchObject({ value_source: 'DERIVED', conversion_value: 500 });
+    });
+
+    it('degrades to DECLARED when the latest snapshot for the stage is withheld', async () => {
+      vi.mocked(getCrmSyncConfigByIdInternal).mockResolvedValue(makeConfig({ value_mode: 'DERIVED' }));
+      vi.mocked(listCrmStageMappings).mockResolvedValue([makeMapping({ declared_value: 75, currency: 'USD' })]);
+      vi.mocked(getLatestDerivedValueSnapshots).mockResolvedValue([{
+        id: 's1', organization_id: 'org-1', config_id: 'config-1', crm_stage_id: 'appointmentscheduled',
+        sample_size: 5, reached_won_count: 0, stage_to_won_rate: 0, avg_won_amount: 0,
+        currency: 'USD', derived_value: 0, confidence: 'withheld',
+        window_start: '2026-03-01', window_end: '2026-08-28', computed_at: '2026-08-28T00:00:00Z',
+      }]);
+      vi.mocked(getProvider).mockReturnValue(makeProvider([makeRecord()]));
+
+      await runSync('config-1');
+
+      const [, rows] = vi.mocked(upsertCrmOutcomeEvents).mock.calls[0];
+      expect(rows[0]).toMatchObject({ value_source: 'DECLARED', conversion_value: 75 });
+    });
+
+    it('falls back to DECLARED for a stage with no snapshot at all, without mixing up another stage\'s snapshot', async () => {
+      const mqlMapping = makeMapping({ crm_stage_id: 'mql', atlas_event_name: 'crm_mql', declared_value: 10 });
+      vi.mocked(getCrmSyncConfigByIdInternal).mockResolvedValue(makeConfig({ value_mode: 'DERIVED' }));
+      vi.mocked(listCrmStageMappings).mockResolvedValue([mqlMapping]);
+      vi.mocked(getLatestDerivedValueSnapshots).mockResolvedValue([{
+        id: 's1', organization_id: 'org-1', config_id: 'config-1', crm_stage_id: 'sql', // a DIFFERENT stage
+        sample_size: 100, reached_won_count: 25, stage_to_won_rate: 0.25, avg_won_amount: 2000,
+        currency: 'USD', derived_value: 500, confidence: 'high',
+        window_start: '2026-03-01', window_end: '2026-08-28', computed_at: '2026-08-28T00:00:00Z',
+      }]);
+      vi.mocked(getProvider).mockReturnValue(makeProvider([makeRecord({ stage_id: 'mql' })]));
+
+      await runSync('config-1');
+
+      const [, rows] = vi.mocked(upsertCrmOutcomeEvents).mock.calls[0];
+      expect(rows[0]).toMatchObject({ value_source: 'DECLARED', conversion_value: 10 });
     });
   });
 });

@@ -6,12 +6,14 @@ import type {
   ReadinessResult,
   StageMappingsResponse,
   StageMappingInput,
+  CrmDerivedValueSnapshot,
 } from '@/types/crm';
 
 interface CrmState {
   configs: CrmSyncConfig[];
   readiness: Record<string, ReadinessResult>; // keyed by config_id
   stageMappings: Record<string, StageMappingsResponse>; // keyed by config_id
+  derivedValues: Record<string, CrmDerivedValueSnapshot[]>; // keyed by config_id
   loading: Record<string, boolean>;
   errors: Record<string, string | null>;
 
@@ -21,6 +23,7 @@ interface CrmState {
   setSyncEnabled: (configId: string, enabled: boolean) => Promise<void>;
   loadStageMappings: (configId: string) => Promise<void>;
   saveStageMappings: (configId: string, mappings: StageMappingInput[]) => Promise<void>;
+  loadDerivedValues: (configId: string) => Promise<void>;
   clearError: (key: string) => void;
 }
 
@@ -28,6 +31,7 @@ export const useCrmStore = create<CrmState>((set) => ({
   configs: [],
   readiness: {},
   stageMappings: {},
+  derivedValues: {},
   loading: {},
   errors: {},
 
@@ -130,6 +134,23 @@ export const useCrmStore = create<CrmState>((set) => ({
         errors: { ...s.errors, [key]: (err as Error).message },
       }));
       throw err;
+    }
+  },
+
+  loadDerivedValues: async (configId) => {
+    const key = `derived-values-${configId}`;
+    set((s) => ({ loading: { ...s.loading, [key]: true }, errors: { ...s.errors, [key]: null } }));
+    try {
+      const result = await crmApi.getDerivedValues(configId);
+      set((s) => ({
+        derivedValues: { ...s.derivedValues, [configId]: result },
+        loading: { ...s.loading, [key]: false },
+      }));
+    } catch (err) {
+      set((s) => ({
+        loading: { ...s.loading, [key]: false },
+        errors: { ...s.errors, [key]: (err as Error).message },
+      }));
     }
   },
 

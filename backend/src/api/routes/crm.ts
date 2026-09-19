@@ -24,11 +24,16 @@
  * GET  /api/crm/configs/:id/stage-mappings       — the saved ladder, or an objectMapper-built
  *                                                    draft from the pipeline when nothing is saved
  * PUT  /api/crm/configs/:id/stage-mappings       — replace the whole ladder
+ * GET  /api/crm/configs/:id/derived-values       — latest crm_derived_value_snapshots per stage
+ *                                                    (Sprint 7) — whatever the weekly
+ *                                                    derivedValueCalculator.ts job last computed;
+ *                                                    this route triggers no computation itself
  * DELETE /api/crm/configs/:id                    — remove config (connection removal reuses
  *                                                    the generic DELETE /api/connections/:id)
  *
- * All routes require authMiddleware + planGuard('pro') (D4). Outcomes and
- * derived-value listing land in Sprint 5+ — not yet implemented here.
+ * All routes require authMiddleware + planGuard('pro') (D4). `/configs/:id/outcomes`
+ * (paginated crm_outcome_events) is the one PRD-listed route still not
+ * implemented here.
  *
  * Why two-phase OAuth: a HubSpot portal has no single "which pipeline"
  * answer until after consent is granted (the same reason the GTM OAuth
@@ -60,13 +65,15 @@ import {
   listCrmStageMappings,
   replaceCrmStageMappings,
   countRecentOutcomesByMapping,
+  getLatestDerivedValueSnapshots,
 } from '@/services/database/crmQueries';
 import { runReadinessCheck } from '@/services/crm/readinessCheck';
 import { buildDefaultStageMappings } from '@/services/crm/objectMapper';
 import { resolveValue } from '@/services/crm/valueLadder';
+import type { DerivedValueInput } from '@/services/crm/valueLadder';
 import { getProvider } from '@/services/crm/providerRegistry';
 import { crmSyncQueue } from '@/services/queue/jobQueue';
-import type { CrmProviderName, CrmSyncConfig } from '@/types/crm';
+import type { CrmProviderName, CrmSyncConfig, CrmDerivedValueSnapshot } from '@/types/crm';
 import logger from '@/utils/logger';
 
 export const crmRouter = Router();
@@ -89,20 +96,28 @@ async function checkReadinessForConfig(config: CrmSyncConfig) {
   return runReadinessCheck(provider, tokens, config.tracked_object, config.identity_property_map);
 }
 
-// The ladder view has no specific CRM record in hand, so this is "what
-// would be used right now" absent a record's own observed amount or a
-// Sprint 7 derived-value snapshot — both null here, never fabricated.
-function withResolvedValue<T extends { is_terminal_won?: boolean; declared_value?: number | null; currency?: string | null }>(
+// The ladder view has no specific CRM record in hand, so the observed
+// amount is always null here (never fabricated). The derived value,
+// though, is real when supplied (Sprint 7) — whatever
+// derivedValueCalculator.ts's weekly job last computed for this stage —
+// so the ladder shows the same DERIVED/withheld state a live sync run
+// would actually resolve, not an unconditional DECLARED placeholder.
+function withResolvedValue<T extends { crm_stage_id: string; is_terminal_won?: boolean; declared_value?: number | null; currency?: string | null }>(
   mapping: T,
   config: Pick<CrmSyncConfig, 'value_mode' | 'default_currency'>,
+  derivedByStage?: Map<string, DerivedValueInput>,
 ) {
   const resolved_value = resolveValue(
     { is_terminal_won: mapping.is_terminal_won ?? false, declared_value: mapping.declared_value ?? null, currency: mapping.currency ?? null },
     config,
     null,
-    null,
+    derivedByStage?.get(mapping.crm_stage_id) ?? null,
   );
   return { ...mapping, resolved_value };
+}
+
+function buildDerivedByStageMap(snapshots: CrmDerivedValueSnapshot[]): Map<string, DerivedValueInput> {
+  return new Map(snapshots.map((s) => [s.crm_stage_id, { value: s.derived_value, currency: s.currency, confidence: s.confidence }]));
 }
 
 // ── Pending connection cache (post-consent, pre-finalize) ─────────────────────
@@ -500,10 +515,13 @@ crmRouter.get('/configs/:id/stage-mappings', async (req: Request, res: Response)
 
     if (saved.length > 0) {
       const counts = await countRecentOutcomesByMapping(config.id);
+      const derivedByStage = config.value_mode === 'DERIVED'
+        ? buildDerivedByStageMap(await getLatestDerivedValueSnapshots(config.id))
+        : undefined;
       res.json({
         data: {
           is_draft: false,
-          mappings: saved.map((m) => withResolvedValue({ ...m, outcomes_last_30d: counts[m.id] ?? 0 }, config)),
+          mappings: saved.map((m) => withResolvedValue({ ...m, outcomes_last_30d: counts[m.id] ?? 0 }, config, derivedByStage)),
         },
       });
       return;
@@ -547,14 +565,39 @@ crmRouter.put('/configs/:id/stage-mappings', async (req: Request, res: Response)
 
     const mappings = await replaceCrmStageMappings(config.id, orgId, parse.data);
     const counts = await countRecentOutcomesByMapping(config.id);
+    const derivedByStage = config.value_mode === 'DERIVED'
+      ? buildDerivedByStageMap(await getLatestDerivedValueSnapshots(config.id))
+      : undefined;
     res.json({
       data: {
         is_draft: false,
-        mappings: mappings.map((m) => withResolvedValue({ ...m, outcomes_last_30d: counts[m.id] ?? 0 }, config)),
+        mappings: mappings.map((m) => withResolvedValue({ ...m, outcomes_last_30d: counts[m.id] ?? 0 }, config, derivedByStage)),
       },
     });
   } catch (err) {
     sendInternalError(res, err, 'PUT /api/crm/configs/:id/stage-mappings');
+  }
+});
+
+// ── GET /api/crm/configs/:id/derived-values ────────────────────────────────────
+// Latest crm_derived_value_snapshots per stage (Sprint 7, §7.3) — whatever
+// the weekly derivedValueCalculator.ts job last computed. This route never
+// triggers a computation itself; a config in DECLARED mode simply has no
+// rows (the calculator only ever writes for DERIVED-mode configs).
+
+crmRouter.get('/configs/:id/derived-values', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const orgId = await resolveOrgId(req.user.id);
+    const config = await getCrmSyncConfigById(req.params.id, orgId);
+    if (!config) {
+      res.status(404).json({ error: 'CRM sync config not found' });
+      return;
+    }
+
+    const snapshots = await getLatestDerivedValueSnapshots(config.id);
+    res.json({ data: snapshots });
+  } catch (err) {
+    sendInternalError(res, err, 'GET /api/crm/configs/:id/derived-values');
   }
 });
 

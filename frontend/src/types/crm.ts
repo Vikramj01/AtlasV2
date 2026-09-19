@@ -127,3 +127,22 @@ export interface StageMappingInput {
   linkedin_conversion_id?: string | null;
   enabled?: boolean;
 }
+
+// crm_derived_value_snapshots (§5.5, Sprint 7) — latest per-stage snapshot,
+// whatever derivedValueCalculator.ts's weekly job last computed.
+export interface CrmDerivedValueSnapshot {
+  id: string;
+  organization_id: string;
+  config_id: string;
+  crm_stage_id: string;
+  sample_size: number;
+  reached_won_count: number;
+  stage_to_won_rate: number;
+  avg_won_amount: number;
+  currency: string;
+  derived_value: number;
+  confidence: DerivedConfidence;
+  window_start: string;
+  window_end: string;
+  computed_at: string;
+}
