@@ -80,6 +80,10 @@ export const env = {
   META_APP_ID: optional('META_APP_ID', ''),
   META_APP_SECRET: optional('META_APP_SECRET', ''),
 
+  // HubSpot OAuth app credentials (CRM Outcome Integration, D1 — HubSpot first)
+  HUBSPOT_CLIENT_ID: optional('HUBSPOT_CLIENT_ID', ''),
+  HUBSPOT_CLIENT_SECRET: optional('HUBSPOT_CLIENT_SECRET', ''),
+
   // HMAC secret for OAuth state parameter CSRF protection
   // Generate: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
   OAUTH_STATE_SECRET: optional('OAUTH_STATE_SECRET', 'dev-oauth-state-secret-change-in-production'),
