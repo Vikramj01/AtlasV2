@@ -24,6 +24,10 @@ export interface CrmSyncConfig {
   last_synced_at: string | null;
   last_sync_status: CrmSyncStatus | null;
   last_sync_error: string | null;
+  // Sprint 8 (§10) — reset to 0 on 'ok'/'partial', incremented on 'failed'.
+  // The only persistent cross-run state this feature needs to detect
+  // "failed on consecutive runs" without a dedicated run-history table.
+  consecutive_failures: number;
   created_at: string;
   updated_at: string;
 }
@@ -208,4 +212,14 @@ export interface OutcomeEventForDerivedCalc {
   conversion_value: number | null;
   currency: string | null;
   stage_changed_at: string;
+}
+
+// GET /configs/:id/outcomes/daily (Sprint 8, §10) — one real day-grouped
+// row for CrmOutcomesTab's chart. Per Implementation Rule 12, this only
+// exists because there is a real query behind it (crm_outcome_events
+// grouped by day) — never a fabricated series.
+export interface CrmDailyOutcomeCount {
+  date: string; // YYYY-MM-DD
+  total: number;
+  delivered: number;
 }

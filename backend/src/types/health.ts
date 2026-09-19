@@ -46,7 +46,8 @@ export type AlertType =
   | 'dqm_gtg'
   | 'dqm_dma'
   | 'dqm_sgtm'
-  | 'dqm_google_delivery';
+  | 'dqm_google_delivery'
+  | 'dqm_crm_sync';
 
 export interface HealthAlert {
   id: string;

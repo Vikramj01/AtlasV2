@@ -28,12 +28,14 @@
  *                                                    (Sprint 7) — whatever the weekly
  *                                                    derivedValueCalculator.ts job last computed;
  *                                                    this route triggers no computation itself
+ * GET  /api/crm/configs/:id/outcomes             — paginated crm_outcome_events (Sprint 8),
+ *                                                    optional ?delivery_status filter
+ * GET  /api/crm/configs/:id/outcomes/daily       — real day-grouped counts backing
+ *                                                    CrmOutcomesTab's chart (Sprint 8)
  * DELETE /api/crm/configs/:id                    — remove config (connection removal reuses
  *                                                    the generic DELETE /api/connections/:id)
  *
- * All routes require authMiddleware + planGuard('pro') (D4). `/configs/:id/outcomes`
- * (paginated crm_outcome_events) is the one PRD-listed route still not
- * implemented here.
+ * All routes require authMiddleware + planGuard('pro') (D4).
  *
  * Why two-phase OAuth: a HubSpot portal has no single "which pipeline"
  * answer until after consent is granted (the same reason the GTM OAuth
@@ -66,6 +68,8 @@ import {
   replaceCrmStageMappings,
   countRecentOutcomesByMapping,
   getLatestDerivedValueSnapshots,
+  listOutcomeEvents,
+  getDailyOutcomeCounts,
 } from '@/services/database/crmQueries';
 import { runReadinessCheck } from '@/services/crm/readinessCheck';
 import { buildDefaultStageMappings } from '@/services/crm/objectMapper';
@@ -212,6 +216,19 @@ const stageMappingSchema = z.object({
 });
 
 const replaceStageMappingsSchema = z.array(stageMappingSchema);
+
+const listOutcomesQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
+  delivery_status: z.enum([
+    'pending', 'delivered', 'partial', 'failed',
+    'skipped_unresolved', 'skipped_window', 'dedup_skipped',
+  ]).optional(),
+});
+
+const dailyOutcomesQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(90).optional(),
+});
 
 // ── GET /api/crm/oauth/hubspot/start ──────────────────────────────────────────
 
@@ -598,6 +615,63 @@ crmRouter.get('/configs/:id/derived-values', async (req: Request, res: Response)
     res.json({ data: snapshots });
   } catch (err) {
     sendInternalError(res, err, 'GET /api/crm/configs/:id/derived-values');
+  }
+});
+
+// ── GET /api/crm/configs/:id/outcomes ────────────────────────────────────────
+// Paginated crm_outcome_events (Sprint 8, §11) — the one PRD-listed route
+// that had stayed unimplemented since Sprint 5. Simple offset/limit
+// pagination (crm_outcome_events volume is per-config, not the org-wide
+// firehose the Signal Tracking Dashboard's cursor-based listing handles).
+
+crmRouter.get('/configs/:id/outcomes', async (req: Request, res: Response): Promise<void> => {
+  const parse = listOutcomesQuerySchema.safeParse(req.query);
+  if (!parse.success) {
+    res.status(400).json({ error: 'Invalid request', details: parse.error.flatten() });
+    return;
+  }
+
+  try {
+    const orgId = await resolveOrgId(req.user.id);
+    const config = await getCrmSyncConfigById(req.params.id, orgId);
+    if (!config) {
+      res.status(404).json({ error: 'CRM sync config not found' });
+      return;
+    }
+
+    const limit = parse.data.limit ?? 50;
+    const offset = parse.data.offset ?? 0;
+    const result = await listOutcomeEvents(config.id, { limit, offset, deliveryStatus: parse.data.delivery_status });
+    res.json({ data: result });
+  } catch (err) {
+    sendInternalError(res, err, 'GET /api/crm/configs/:id/outcomes');
+  }
+});
+
+// ── GET /api/crm/configs/:id/outcomes/daily ──────────────────────────────────
+// Real day-grouped counts (Sprint 8, §10) — Implementation Rule 12 permits
+// a chart here specifically because there is a real crm_outcome_events
+// query behind it, wired below rather than fabricated.
+
+crmRouter.get('/configs/:id/outcomes/daily', async (req: Request, res: Response): Promise<void> => {
+  const parse = dailyOutcomesQuerySchema.safeParse(req.query);
+  if (!parse.success) {
+    res.status(400).json({ error: 'Invalid request', details: parse.error.flatten() });
+    return;
+  }
+
+  try {
+    const orgId = await resolveOrgId(req.user.id);
+    const config = await getCrmSyncConfigById(req.params.id, orgId);
+    if (!config) {
+      res.status(404).json({ error: 'CRM sync config not found' });
+      return;
+    }
+
+    const counts = await getDailyOutcomeCounts(config.id, parse.data.days ?? 30);
+    res.json({ data: counts });
+  } catch (err) {
+    sendInternalError(res, err, 'GET /api/crm/configs/:id/outcomes/daily');
   }
 });
 

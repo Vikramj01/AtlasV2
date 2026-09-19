@@ -23,6 +23,8 @@ export interface CrmSyncConfig {
   last_synced_at: string | null;
   last_sync_status: CrmSyncStatus | null;
   last_sync_error: string | null;
+  // Sprint 8 — reset to 0 on 'ok'/'partial', incremented on 'failed'.
+  consecutive_failures: number;
   created_at: string;
   updated_at: string;
 }
@@ -145,4 +147,47 @@ export interface CrmDerivedValueSnapshot {
   window_start: string;
   window_end: string;
   computed_at: string;
+}
+
+// crm_outcome_events (§5.4, Sprint 8 read surface) — mirrors backend/src/types/crm.ts.
+export type CrmIdentityMethod = 'click_id' | 'hashed_email' | 'hashed_phone' | 'unresolved';
+export type CrmDeliveryStatus =
+  | 'pending' | 'delivered' | 'partial' | 'failed'
+  | 'skipped_unresolved' | 'skipped_window' | 'dedup_skipped';
+
+export interface CrmOutcomeEvent {
+  id: string;
+  organization_id: string;
+  client_id: string;
+  config_id: string;
+  mapping_id: string | null;
+  crm_record_id: string;
+  crm_object: CrmObjectType;
+  crm_stage_id: string;
+  stage_changed_at: string;
+  atlas_event_name: string;
+  event_id: string;
+  identity_method: CrmIdentityMethod;
+  identity_key_present: string[];
+  conversion_value: number | null;
+  currency: string | null;
+  value_source: ValueSource;
+  derived_confidence: DerivedConfidence | null;
+  delivery_status: CrmDeliveryStatus;
+  delivery_detail: Record<string, unknown>;
+  delivered_at: string | null;
+  created_at: string;
+}
+
+export interface ListOutcomeEventsResult {
+  rows: CrmOutcomeEvent[];
+  total: number;
+}
+
+// GET /configs/:id/outcomes/daily (Sprint 8) — real day-grouped counts
+// backing CrmOutcomesTab's chart (Implementation Rule 12).
+export interface CrmDailyOutcomeCount {
+  date: string; // YYYY-MM-DD
+  total: number;
+  delivered: number;
 }

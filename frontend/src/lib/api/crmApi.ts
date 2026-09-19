@@ -9,6 +9,9 @@ import type {
   StageMappingsResponse,
   StageMappingInput,
   CrmDerivedValueSnapshot,
+  CrmDeliveryStatus,
+  ListOutcomeEventsResult,
+  CrmDailyOutcomeCount,
 } from '@/types/crm';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
@@ -125,6 +128,29 @@ export async function getDerivedValues(configId: string): Promise<CrmDerivedValu
   return res.data ?? [];
 }
 
+// ── Outcomes (Sprint 8, §10/§11) ─────────────────────────────────────────────
+
+export interface GetOutcomesParams {
+  limit?: number;
+  offset?: number;
+  deliveryStatus?: CrmDeliveryStatus;
+}
+
+export async function getOutcomes(configId: string, params: GetOutcomesParams = {}): Promise<ListOutcomeEventsResult> {
+  const qs = new URLSearchParams();
+  if (params.limit != null) qs.set('limit', String(params.limit));
+  if (params.offset != null) qs.set('offset', String(params.offset));
+  if (params.deliveryStatus) qs.set('delivery_status', params.deliveryStatus);
+  const suffix = qs.toString() ? `?${qs.toString()}` : '';
+  const res = await apiFetch<{ data: ListOutcomeEventsResult }>(`/crm/configs/${configId}/outcomes${suffix}`);
+  return res.data ?? { rows: [], total: 0 };
+}
+
+export async function getDailyOutcomeCounts(configId: string, days = 30): Promise<CrmDailyOutcomeCount[]> {
+  const res = await apiFetch<{ data: CrmDailyOutcomeCount[] }>(`/crm/configs/${configId}/outcomes/daily?days=${days}`);
+  return res.data ?? [];
+}
+
 export const crmApi = {
   connectHubSpot,
   discoverHubSpotPortal,
@@ -138,4 +164,6 @@ export const crmApi = {
   getStageMappings,
   replaceStageMappings,
   getDerivedValues,
+  getOutcomes,
+  getDailyOutcomeCounts,
 };

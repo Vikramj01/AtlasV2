@@ -11,6 +11,9 @@ import type {
   CrmDerivedValueSnapshot,
   NewDerivedValueSnapshotInput,
   OutcomeEventForDerivedCalc,
+  CrmOutcomeEvent,
+  CrmDeliveryStatus,
+  CrmDailyOutcomeCount,
 } from '@/types/crm';
 
 export async function listCrmSyncConfigsForOrg(orgId: string): Promise<CrmSyncConfig[]> {
@@ -108,10 +111,29 @@ export interface CrmSyncStateUpdate {
   last_sync_error: string | null;
 }
 
+// Sprint 8 (§10) — "Sync failed on consecutive runs" needs a streak counter
+// crm_sync_configs didn't have before (only ever stored the LAST run's
+// status). Read-increment-write, same non-atomic-but-tolerated pattern as
+// healthQueries.ts's incrementAlertOk() — a rare race between two
+// overlapping runs for the same config is not worth an RPC here.
+async function nextConsecutiveFailures(id: string, status: CrmSyncStatus): Promise<number> {
+  if (status !== 'failed') return 0; // 'ok' or 'partial' — the sync recovered, reset the streak
+
+  const { data } = await supabase
+    .from('crm_sync_configs')
+    .select('consecutive_failures')
+    .eq('id', id)
+    .single();
+
+  return ((data as { consecutive_failures: number } | null)?.consecutive_failures ?? 0) + 1;
+}
+
 export async function updateCrmSyncState(id: string, patch: CrmSyncStateUpdate): Promise<void> {
+  const consecutive_failures = await nextConsecutiveFailures(id, patch.last_sync_status);
+
   const { error } = await supabase
     .from('crm_sync_configs')
-    .update({ ...patch, updated_at: new Date().toISOString() })
+    .update({ ...patch, consecutive_failures, updated_at: new Date().toISOString() })
     .eq('id', id);
 
   if (error) throw new Error(`updateCrmSyncState: ${error.message}`);
@@ -355,4 +377,62 @@ export async function listDerivedModeConfigIds(): Promise<string[]> {
 
   if (error) throw new Error(`listDerivedModeConfigIds: ${error.message}`);
   return ((data ?? []) as { id: string }[]).map((r) => r.id);
+}
+
+// ── Outcomes surface (Sprint 8, §11 — GET /configs/:id/outcomes) ────────────────
+
+export interface ListOutcomeEventsParams {
+  limit: number;
+  offset: number;
+  deliveryStatus?: CrmDeliveryStatus;
+}
+
+// Simple offset/limit pagination — crm_outcome_events volume is per-config,
+// not the org-wide firehose the Signal Tracking Dashboard's cursor-based
+// listSignalEvents() has to handle, so the simpler shape is proportionate.
+export async function listOutcomeEvents(
+  configId: string,
+  params: ListOutcomeEventsParams,
+): Promise<{ rows: CrmOutcomeEvent[]; total: number }> {
+  let query = supabase
+    .from('crm_outcome_events')
+    .select('*', { count: 'exact' })
+    .eq('config_id', configId)
+    .order('created_at', { ascending: false })
+    .range(params.offset, params.offset + params.limit - 1);
+
+  if (params.deliveryStatus) {
+    query = query.eq('delivery_status', params.deliveryStatus);
+  }
+
+  const { data, error, count } = await query;
+  if (error) throw new Error(`listOutcomeEvents: ${error.message}`);
+  return { rows: (data ?? []) as CrmOutcomeEvent[], total: count ?? 0 };
+}
+
+// GET /configs/:id/outcomes/daily — real day-grouped counts for
+// CrmOutcomesTab's chart (Implementation Rule 12: only a chart backed by a
+// real time-series query is allowed). Grouped in JS, same "fetch the window,
+// reduce client-side" approach as getLatestDerivedValueSnapshots() above —
+// supabase-js has no native GROUP BY without a dedicated RPC function.
+export async function getDailyOutcomeCounts(configId: string, days: number): Promise<CrmDailyOutcomeCount[]> {
+  const sinceISO = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await supabase
+    .from('crm_outcome_events')
+    .select('created_at, delivery_status')
+    .eq('config_id', configId)
+    .gte('created_at', sinceISO);
+
+  if (error) throw new Error(`getDailyOutcomeCounts: ${error.message}`);
+
+  const byDay = new Map<string, CrmDailyOutcomeCount>();
+  for (const row of (data ?? []) as { created_at: string; delivery_status: CrmDeliveryStatus }[]) {
+    const date = row.created_at.slice(0, 10);
+    const entry = byDay.get(date) ?? { date, total: 0, delivered: 0 };
+    entry.total += 1;
+    if (row.delivery_status === 'delivered' || row.delivery_status === 'partial') entry.delivered += 1;
+    byDay.set(date, entry);
+  }
+
+  return Array.from(byDay.values()).sort((a, b) => a.date.localeCompare(b.date));
 }
