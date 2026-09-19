@@ -21,6 +21,7 @@ interface CrmState {
   createConfig: (input: CreateCrmSyncConfigInput) => Promise<CrmSyncConfig>;
   checkReadiness: (configId: string) => Promise<ReadinessResult>;
   setSyncEnabled: (configId: string, enabled: boolean) => Promise<void>;
+  setWriteBackEnabled: (configId: string, enabled: boolean) => Promise<void>;
   loadStageMappings: (configId: string) => Promise<void>;
   saveStageMappings: (configId: string, mappings: StageMappingInput[]) => Promise<void>;
   loadDerivedValues: (configId: string) => Promise<void>;
@@ -89,6 +90,24 @@ export const useCrmStore = create<CrmState>((set) => ({
     set((s) => ({ loading: { ...s.loading, [key]: true }, errors: { ...s.errors, [key]: null } }));
     try {
       const updated = await crmApi.updateConfig(configId, { sync_enabled: enabled });
+      set((s) => ({
+        configs: s.configs.map((c) => (c.id === configId ? updated : c)),
+        loading: { ...s.loading, [key]: false },
+      }));
+    } catch (err) {
+      set((s) => ({
+        loading: { ...s.loading, [key]: false },
+        errors: { ...s.errors, [key]: (err as Error).message },
+      }));
+      throw err;
+    }
+  },
+
+  setWriteBackEnabled: async (configId, enabled) => {
+    const key = `write-back-enabled-${configId}`;
+    set((s) => ({ loading: { ...s.loading, [key]: true }, errors: { ...s.errors, [key]: null } }));
+    try {
+      const updated = await crmApi.updateConfig(configId, { write_back_enabled: enabled });
       set((s) => ({
         configs: s.configs.map((c) => (c.id === configId ? updated : c)),
         loading: { ...s.loading, [key]: false },

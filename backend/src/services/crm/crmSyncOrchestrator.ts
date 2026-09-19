@@ -37,6 +37,13 @@
  * own withheld→DECLARED fallback (already built in Sprint 3) handles
  * everything from there; this file only supplies real data instead of null.
  *
+ * Attribution write-back (Sprint 9, D3, §6.4): after a delivered/partial
+ * outcome, if the config has write_back_enabled, this file calls
+ * outcomeDelivery.ts's writeBackAttribution() with the same provider/tokens
+ * already resolved once for this run (not re-resolved per record). Never
+ * gates or delays the crm_outcome_events write below it — a write-back
+ * failure is caught and logged inside writeBackAttribution() itself.
+ *
  * Known structural limitation, not a bug: fetchChangedRecords (§4.2)
  * reports each record's CURRENT stage at fetch time, not a change history.
  * A record that moves through more than one mapped stage between two sync
@@ -62,9 +69,9 @@ import { resolveTokens } from '@/services/connections/tokenManager';
 import { resolveStageMapping } from './objectMapper';
 import { resolveIdentity, resolveIdentityPropertyMap } from './identityResolver';
 import { resolveValue } from './valueLadder';
-import { deliverOutcome, handleLostDeal } from './outcomeDelivery';
+import { deliverOutcome, handleLostDeal, writeBackAttribution } from './outcomeDelivery';
 import type { ObservedCrmAmount, DerivedValueInput } from './valueLadder';
-import type { CrmRecord } from './providers/types';
+import type { CrmRecord, CrmProvider, DecryptedTokens } from './providers/types';
 import type { CrmStageMapping, NewCrmOutcomeEventInput } from '@/types/crm';
 import logger from '@/utils/logger';
 
@@ -149,8 +156,8 @@ export async function runSync(configId: string, opts?: { recordCap?: number }): 
     ? new Date(new Date(config.last_synced_at).getTime() - OVERLAP_MS)
     : new Date(until.getTime() - config.backfill_days * 24 * 60 * 60 * 1000);
 
-  let tokens;
-  let provider;
+  let tokens: DecryptedTokens;
+  let provider: CrmProvider;
   try {
     provider = getProvider(config.provider);
     tokens = await resolveTokens(config.connection_id);
@@ -224,6 +231,20 @@ export async function runSync(configId: string, opts?: { recordCap?: number }): 
           stageMappings,
         );
         deliveryDetail = { ...deliveryDetail, lost_deal: lostDeal };
+      }
+
+      // Sprint 9 (D3, §6.4) — opt-in, off by default. Never gates or delays
+      // the crm_outcome_events write below; failures are caught and logged
+      // inside writeBackAttribution() itself, never here.
+      if (config!.write_back_enabled && (deliveryStatus === 'delivered' || deliveryStatus === 'partial')) {
+        await writeBackAttribution(provider, tokens, {
+          config_id: config!.id,
+          crm_record_id: record.id,
+          tracked_object: config!.tracked_object,
+          atlas_event_name: mapping.atlas_event_name,
+          delivery_detail: deliveryDetail,
+          delivered_at: deliveredAt ?? new Date().toISOString(),
+        });
       }
 
       rows.push({

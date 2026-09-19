@@ -22,12 +22,13 @@ const VERDICT_CONFIG: Record<ReadinessVerdict, { label: string; icon: typeof Che
 };
 
 export function ReadinessPanel({ config }: ReadinessPanelProps) {
-  const { readiness, loading, errors, checkReadiness, setSyncEnabled } = useCrmStore();
+  const { readiness, loading, errors, checkReadiness, setSyncEnabled, setWriteBackEnabled } = useCrmStore();
 
   const result = readiness[config.id];
   const checking = loading[`readiness-${config.id}`] ?? false;
   const checkError = errors[`readiness-${config.id}`];
   const togglingSync = loading[`sync-enabled-${config.id}`] ?? false;
+  const togglingWriteBack = loading[`write-back-enabled-${config.id}`] ?? false;
 
   useEffect(() => {
     checkReadiness(config.id).catch(() => { /* surfaced via errors[] */ });
@@ -43,9 +44,18 @@ export function ReadinessPanel({ config }: ReadinessPanelProps) {
     }
   }
 
+  async function handleToggleWriteBack() {
+    try {
+      await setWriteBackEnabled(config.id, !config.write_back_enabled);
+    } catch {
+      // surfaced via errors[] below
+    }
+  }
+
   const verdictInfo = result ? VERDICT_CONFIG[result.verdict] : null;
   const VerdictIcon = verdictInfo?.icon;
   const syncToggleError = errors[`sync-enabled-${config.id}`];
+  const writeBackToggleError = errors[`write-back-enabled-${config.id}`];
 
   return (
     <Card className="border-console-border bg-console-surface">
@@ -108,6 +118,29 @@ export function ReadinessPanel({ config }: ReadinessPanelProps) {
               </Button>
             </div>
             {syncToggleError && <p className="text-xs text-severity-critical">{syncToggleError}</p>}
+
+            <div className="pt-2 border-t border-console-border flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-console-fg">
+                  {config.write_back_enabled ? 'Attribution write-back is enabled' : 'Attribution write-back is off'}
+                </p>
+                <p className="text-xs text-console-fg-muted">
+                  Off by default. When enabled, Atlas writes the source platform, delivered
+                  Atlas events, and last-delivered timestamp back onto the CRM record in
+                  Atlas-namespaced properties only — never a standard CRM field.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant={config.write_back_enabled ? 'outline' : 'default'}
+                onClick={handleToggleWriteBack}
+                disabled={togglingWriteBack}
+              >
+                {togglingWriteBack ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+                {config.write_back_enabled ? 'Disable write-back' : 'Enable write-back'}
+              </Button>
+            </div>
+            {writeBackToggleError && <p className="text-xs text-severity-critical">{writeBackToggleError}</p>}
           </>
         ) : null}
       </CardContent>

@@ -33,6 +33,10 @@ vi.mock('@/services/capi/refundDelivery', () => ({
   submitConversionAdjustment: vi.fn(),
 }));
 
+vi.mock('@/services/database/crmQueries', () => ({
+  listDeliveredEventNamesForRecord: vi.fn(),
+}));
+
 function makeSupabaseChain(result: { data: unknown; error: unknown }) {
   const chain: Record<string, unknown> = {};
   chain.select = vi.fn(() => chain);
@@ -60,10 +64,12 @@ import {
 import { processServerSourcedEvent, isConsentGranted } from '@/services/capi/pipeline';
 import { uploadOfflineConversions } from '@/services/offline-conversions/googleOfflineUpload';
 import { submitConversionAdjustment } from '@/services/capi/refundDelivery';
+import { listDeliveredEventNamesForRecord } from '@/services/database/crmQueries';
 import logger from '@/utils/logger';
-import { deliverOutcome, handleLostDeal, type OutcomeDeliveryInput } from '../outcomeDelivery';
+import { deliverOutcome, handleLostDeal, writeBackAttribution, type OutcomeDeliveryInput } from '../outcomeDelivery';
 import type { CrmStageMapping, EarlierDeliveredOutcome } from '@/types/crm';
 import type { ResolvedIdentity } from '../identityResolver';
+import type { CrmProvider, DecryptedTokens } from '../providers/types';
 
 const RAW_EMAIL = 'lead-secret@example.com';
 const RAW_PHONE = '+15551234567';
@@ -580,5 +586,166 @@ describe('handleLostDeal (Sprint 6, §7.4)', () => {
     expect(allLoggedText).not.toContain(RAW_EMAIL);
     expect(allLoggedText).not.toContain(RAW_PHONE);
     expect(allLoggedText).not.toContain(RAW_GCLID);
+  });
+});
+
+// ── Attribution write-back (Sprint 9, D3, §6.4) ──────────────────────────────
+
+describe('writeBackAttribution', () => {
+  const TOKENS = { access_token: 'tok', expires_at: 0, token_type: 'bearer' } as DecryptedTokens;
+
+  function makeProvider(overrides: Partial<CrmProvider> = {}): CrmProvider {
+    return {
+      name: 'hubspot',
+      testConnection: vi.fn(),
+      listPipelines: vi.fn(),
+      listProperties: vi.fn(),
+      fetchChangedRecords: vi.fn(),
+      writeAttribution: vi.fn().mockResolvedValue(undefined),
+      ...overrides,
+    };
+  }
+
+  it('is a no-op when the provider does not implement writeAttribution', async () => {
+    const provider = makeProvider({ writeAttribution: undefined });
+    await writeBackAttribution(provider, TOKENS, {
+      config_id: 'config-1',
+      crm_record_id: 'deal-1',
+      tracked_object: 'deal',
+      atlas_event_name: 'crm_closed_won',
+      delivery_detail: { google: { status: 'delivered' } },
+      delivered_at: '2026-01-02T00:00:00Z',
+    });
+    expect(listDeliveredEventNamesForRecord).not.toHaveBeenCalled();
+  });
+
+  it('merges prior delivered event names with the current one, deduplicated', async () => {
+    vi.mocked(listDeliveredEventNamesForRecord).mockResolvedValue(['crm_mql', 'crm_sql']);
+    const provider = makeProvider();
+
+    await writeBackAttribution(provider, TOKENS, {
+      config_id: 'config-1',
+      crm_record_id: 'deal-1',
+      tracked_object: 'deal',
+      atlas_event_name: 'crm_sql', // already in prior names — must not duplicate
+      delivery_detail: {},
+      delivered_at: '2026-01-02T00:00:00Z',
+    });
+
+    expect(provider.writeAttribution).toHaveBeenCalledWith(
+      TOKENS,
+      'deal',
+      'deal-1',
+      expect.objectContaining({ atlas_conversions_delivered: 'crm_mql,crm_sql' }),
+    );
+  });
+
+  it('sets atlas_attributed_source to the comma-separated list of destinations that actually delivered', async () => {
+    vi.mocked(listDeliveredEventNamesForRecord).mockResolvedValue([]);
+    const provider = makeProvider();
+
+    await writeBackAttribution(provider, TOKENS, {
+      config_id: 'config-1',
+      crm_record_id: 'deal-1',
+      tracked_object: 'deal',
+      atlas_event_name: 'crm_closed_won',
+      delivery_detail: {
+        google: { status: 'delivered' },
+        meta: { status: 'failed', reason: 'no_active_meta_connection' },
+        linkedin: { status: 'delivered' },
+      },
+      delivered_at: '2026-01-02T00:00:00Z',
+    });
+
+    const [, , , properties] = vi.mocked(provider.writeAttribution!).mock.calls[0];
+    expect(properties.atlas_attributed_source).toBe('google,linkedin');
+  });
+
+  it('omits atlas_attributed_source entirely when no destination shows delivered in the detail', async () => {
+    vi.mocked(listDeliveredEventNamesForRecord).mockResolvedValue([]);
+    const provider = makeProvider();
+
+    await writeBackAttribution(provider, TOKENS, {
+      config_id: 'config-1',
+      crm_record_id: 'deal-1',
+      tracked_object: 'deal',
+      atlas_event_name: 'crm_closed_won',
+      delivery_detail: { google: { status: 'skipped_window' } },
+      delivered_at: '2026-01-02T00:00:00Z',
+    });
+
+    const [, , , properties] = vi.mocked(provider.writeAttribution!).mock.calls[0];
+    expect(properties).not.toHaveProperty('atlas_attributed_source');
+  });
+
+  it('never writes atlas_attributed_campaign — no campaign-name data source exists', async () => {
+    vi.mocked(listDeliveredEventNamesForRecord).mockResolvedValue([]);
+    const provider = makeProvider();
+
+    await writeBackAttribution(provider, TOKENS, {
+      config_id: 'config-1',
+      crm_record_id: 'deal-1',
+      tracked_object: 'deal',
+      atlas_event_name: 'crm_closed_won',
+      delivery_detail: { google: { status: 'delivered' } },
+      delivered_at: '2026-01-02T00:00:00Z',
+    });
+
+    const [, , , properties] = vi.mocked(provider.writeAttribution!).mock.calls[0];
+    expect(properties).not.toHaveProperty('atlas_attributed_campaign');
+  });
+
+  it('passes atlas_last_delivered_at through verbatim', async () => {
+    vi.mocked(listDeliveredEventNamesForRecord).mockResolvedValue([]);
+    const provider = makeProvider();
+
+    await writeBackAttribution(provider, TOKENS, {
+      config_id: 'config-1',
+      crm_record_id: 'deal-1',
+      tracked_object: 'deal',
+      atlas_event_name: 'crm_closed_won',
+      delivery_detail: {},
+      delivered_at: '2026-03-04T05:06:07Z',
+    });
+
+    const [, , , properties] = vi.mocked(provider.writeAttribution!).mock.calls[0];
+    expect(properties.atlas_last_delivered_at).toBe('2026-03-04T05:06:07Z');
+  });
+
+  it('never throws when writeAttribution rejects — logs a warning instead', async () => {
+    vi.mocked(listDeliveredEventNamesForRecord).mockResolvedValue([]);
+    const provider = makeProvider({ writeAttribution: vi.fn().mockRejectedValue(new Error('HubSpot 403')) });
+
+    await expect(
+      writeBackAttribution(provider, TOKENS, {
+        config_id: 'config-1',
+        crm_record_id: 'deal-1',
+        tracked_object: 'deal',
+        atlas_event_name: 'crm_closed_won',
+        delivery_detail: { google: { status: 'delivered' } },
+        delivered_at: '2026-01-02T00:00:00Z',
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(logger.warn).toHaveBeenCalled();
+  });
+
+  it('never throws when listDeliveredEventNamesForRecord itself rejects', async () => {
+    vi.mocked(listDeliveredEventNamesForRecord).mockRejectedValue(new Error('db timeout'));
+    const provider = makeProvider();
+
+    await expect(
+      writeBackAttribution(provider, TOKENS, {
+        config_id: 'config-1',
+        crm_record_id: 'deal-1',
+        tracked_object: 'deal',
+        atlas_event_name: 'crm_closed_won',
+        delivery_detail: {},
+        delivered_at: '2026-01-02T00:00:00Z',
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(provider.writeAttribution).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalled();
   });
 });

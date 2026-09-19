@@ -18,6 +18,27 @@
  * ever needed — HubSpot has no pipeline object to list for that case.
  *
  * HubSpot CRM API docs: https://developers.hubspot.com/docs/reference/api/crm
+ *
+ * writeAttribution() (Sprint 9, D3, §6.4) lazily creates each Atlas-
+ * namespaced write-back property the first time this call actually has a
+ * value for it (never all four up front — atlas_attributed_campaign has no
+ * resolvable data source anywhere in this codebase today, so it is never
+ * created until outcomeDelivery.ts actually has a campaign name to give
+ * it), then PATCHes the record. Property creation is idempotent — HubSpot
+ * returns 409 for a name that already exists on that object type, treated
+ * as success. This sandbox's egress proxy blocks api.hubapi.com (same
+ * class of restriction as the other vendor docs blocked per Key Technical
+ * Decision §14/§24 and Sprint 0's ingestWindows.ts note), so the Properties
+ * API's exact create-payload shape (type/fieldType/groupName) could not be
+ * re-verified live here — built from HubSpot's stable, well-documented CRM
+ * v3 surface (the same distinction CLAUDE.md draws between this API and
+ * the actually-drifted Data Manager API). Re-verify against a live portal
+ * before this reaches a real client. All four write-back properties are
+ * modelled as plain string type (not HubSpot's special 'datetime' type,
+ * which requires a specific midnight-UTC-milliseconds value format that
+ * could not be verified live either) — atlas_last_delivered_at is a plain
+ * ISO 8601 string, always human-readable and never at risk of that
+ * footgun.
  */
 
 import type {
@@ -45,6 +66,14 @@ const STAGE_PROPERTY_BY_OBJECT: Record<CrmObjectType, string> = {
 function objectPath(object: CrmObjectType): 'deals' | 'contacts' {
   return object === 'deal' ? 'deals' : 'contacts';
 }
+
+// HubSpot's own default built-in property group per object type — every
+// portal has these, so a custom property can always be created into one
+// without first checking it exists.
+const DEFAULT_PROPERTY_GROUP: Record<CrmObjectType, string> = {
+  deal: 'dealinformation',
+  contact: 'contactinformation',
+};
 
 async function hubspotFetch(
   path: string,
@@ -235,5 +264,45 @@ export const hubspotClient: CrmProvider = {
 
       after = page.paging?.next?.after;
     } while (after);
+  },
+
+  async writeAttribution(
+    tokens: DecryptedTokens,
+    object: CrmObjectType,
+    recordId: string,
+    properties: Record<string, string>,
+  ): Promise<void> {
+    const propertyNames = Object.keys(properties);
+    if (propertyNames.length === 0) return;
+
+    // Idempotent create — one call per property this call actually has a
+    // value for, never a bulk up-front creation of all four write-back
+    // properties (atlas_attributed_campaign in particular is never created
+    // until there is a real campaign name to give it).
+    for (const name of propertyNames) {
+      const response = await hubspotFetch(`/crm/v3/properties/${objectPath(object)}`, tokens, {
+        method: 'POST',
+        body: JSON.stringify({
+          name,
+          label: name,
+          type: 'string',
+          fieldType: 'text',
+          groupName: DEFAULT_PROPERTY_GROUP[object],
+        }),
+      });
+      if (!response.ok && response.status !== 409) {
+        const body = await response.text();
+        throw new Error(`HubSpot writeAttribution: failed to ensure property '${name}' exists (${response.status}): ${body}`);
+      }
+    }
+
+    const response = await hubspotFetch(`/crm/v3/objects/${objectPath(object)}/${recordId}`, tokens, {
+      method: 'PATCH',
+      body: JSON.stringify({ properties }),
+    });
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`HubSpot writeAttribution failed (${response.status}): ${body}`);
+    }
   },
 };

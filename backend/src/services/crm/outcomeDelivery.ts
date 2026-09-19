@@ -85,9 +85,27 @@
  * matches against) could not be independently re-verified live in this
  * sandbox — see Key Technical Decision §14's standing note on this
  * environment's network restrictions to Google's own docs.
+ *
+ * Attribution write-back (Sprint 9, D3, §6.4): writeBackAttribution() is
+ * called by crmSyncOrchestrator.ts right after a delivery resolves to
+ * 'delivered' or 'partial', only when the config has write_back_enabled
+ * (opt-in, off by default). It is a no-op when the provider doesn't
+ * implement CrmProvider.writeAttribution (Salesforce, Sprint 10) and never
+ * throws — any failure is caught and logged here, per the PRD's explicit
+ * instruction that a write-back failure must never fail a delivery that
+ * already succeeded. atlas_conversions_delivered is sourced from Atlas's
+ * own crm_outcome_events history (listDeliveredEventNamesForRecord), not
+ * read back from the CRM record itself — there is no read-modify-write
+ * race with the portal this way, and no new method is needed on the
+ * frozen §4.2 CrmProvider interface. atlas_attributed_campaign is
+ * deliberately never written: no campaign-name field exists anywhere in
+ * Atlas's identity/CAPI pipeline today (confirmed by repo-wide grep), and
+ * Implementation Rule 12 forbids fabricating one just to populate an
+ * optional PRD field the PRD itself hedges as "where resolvable."
  */
 
 import { listProviders, getProvider as getCapiProviderConfig, getCAPIEventByAtlasEventId } from '@/services/database/capiQueries';
+import { listDeliveredEventNamesForRecord } from '@/services/database/crmQueries';
 import { safeDecryptCredentials } from '@/services/capi/credentials';
 import { processServerSourcedEvent, isConsentGranted } from '@/services/capi/pipeline';
 import { uploadOfflineConversions } from '@/services/offline-conversions/googleOfflineUpload';
@@ -96,6 +114,7 @@ import { supabaseAdmin } from '@/services/database/supabase';
 import { GOOGLE_ADS_INGEST_WINDOW_DAYS, META_OFFLINE_INGEST_WINDOW_DAYS, LINKEDIN_INGEST_WINDOW_DAYS } from './ingestWindows';
 import { randomUUID } from 'crypto';
 import type { ResolvedIdentity } from './identityResolver';
+import type { CrmProvider, CrmObjectType, DecryptedTokens } from './providers/types';
 import type { AtlasEvent, GoogleCredentials } from '@/types/capi';
 import type { ConsentDecisions } from '@/types/consent';
 import type { CrmStageMapping, CrmDeliveryStatus, EarlierDeliveredOutcome } from '@/types/crm';
@@ -369,6 +388,54 @@ export async function deliverOutcome(
     detail,
     delivered_at: status === 'delivered' || status === 'partial' ? new Date().toISOString() : null,
   };
+}
+
+// ── Attribution write-back (Sprint 9, D3, §6.4) ──────────────────────────────
+
+export interface WriteBackInput {
+  config_id: string;
+  crm_record_id: string;
+  tracked_object: CrmObjectType;
+  atlas_event_name: string;
+  delivery_detail: Record<string, unknown>;
+  delivered_at: string;
+}
+
+/**
+ * provider/tokens are passed in by the caller (resolved once per sync run,
+ * not re-resolved per record) rather than re-fetched here. Never throws —
+ * see the module header's write-back note.
+ */
+export async function writeBackAttribution(
+  provider: CrmProvider,
+  tokens: DecryptedTokens,
+  input: WriteBackInput,
+): Promise<void> {
+  if (!provider.writeAttribution) return; // provider doesn't support it yet (Salesforce, Sprint 10)
+
+  try {
+    const priorNames = await listDeliveredEventNamesForRecord(input.config_id, input.crm_record_id);
+    const names = new Set(priorNames);
+    names.add(input.atlas_event_name);
+
+    const sources = Object.entries(input.delivery_detail)
+      .filter(([, v]) => (v as { status?: string } | undefined)?.status === 'delivered')
+      .map(([destination]) => destination);
+
+    const properties: Record<string, string> = {
+      atlas_conversions_delivered: Array.from(names).join(','),
+      atlas_last_delivered_at: input.delivered_at,
+    };
+    // atlas_attributed_campaign intentionally omitted — see module header.
+    if (sources.length > 0) properties.atlas_attributed_source = sources.join(',');
+
+    await provider.writeAttribution(tokens, input.tracked_object, input.crm_record_id, properties);
+  } catch (err) {
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err), configId: input.config_id, crmRecordId: input.crm_record_id },
+      'CRM attribution write-back failed — non-fatal, the delivery it describes already succeeded',
+    );
+  }
 }
 
 // ── Lost-deal handling (Sprint 6, §7.4) ──────────────────────────────────────

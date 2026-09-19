@@ -282,6 +282,27 @@ export async function findExistingOutcomeKeys(
   );
 }
 
+// Attribution write-back (Sprint 9, D3, §6.4). Sources
+// atlas_conversions_delivered from Atlas's own already-persisted delivery
+// history rather than reading the CRM record back (no read-modify-write
+// race with the portal, and no new CrmProvider method needed against its
+// frozen §4.2 interface) — distinct rows only, most-recent-first is not
+// meaningful here since the caller folds this into a Set anyway.
+export async function listDeliveredEventNamesForRecord(
+  configId: string,
+  crmRecordId: string,
+): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('crm_outcome_events')
+    .select('atlas_event_name')
+    .eq('config_id', configId)
+    .eq('crm_record_id', crmRecordId)
+    .in('delivery_status', ['delivered', 'partial']);
+
+  if (error) throw new Error(`listDeliveredEventNamesForRecord: ${error.message}`);
+  return Array.from(new Set(((data ?? []) as { atlas_event_name: string }[]).map((r) => r.atlas_event_name)));
+}
+
 // Lost-deal handling (Sprint 6, §7.4). Called once, only when the current
 // record's stage is is_terminal_lost — outcomeDelivery.ts's handleLostDeal()
 // reads mapping_id + event_id + delivery_detail off these rows to decide

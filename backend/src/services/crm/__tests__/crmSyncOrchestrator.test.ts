@@ -33,6 +33,7 @@ vi.mock('@/services/connections/tokenManager', () => ({
 vi.mock('@/services/crm/outcomeDelivery', () => ({
   deliverOutcome: vi.fn(),
   handleLostDeal: vi.fn(),
+  writeBackAttribution: vi.fn(),
 }));
 
 vi.mock('@/utils/logger', () => ({
@@ -50,7 +51,7 @@ import {
 } from '@/services/database/crmQueries';
 import { getProvider } from '@/services/crm/providerRegistry';
 import { resolveTokens } from '@/services/connections/tokenManager';
-import { deliverOutcome, handleLostDeal } from '@/services/crm/outcomeDelivery';
+import { deliverOutcome, handleLostDeal, writeBackAttribution } from '@/services/crm/outcomeDelivery';
 import { runSync } from '../crmSyncOrchestrator';
 import type { CrmSyncConfig, CrmStageMapping } from '@/types/crm';
 import type { CrmRecord, CrmProvider } from '../providers/types';
@@ -148,6 +149,7 @@ beforeEach(() => {
   // Default: no derived-value snapshots — most tests use DECLARED mode
   // (makeConfig()'s default), where this is never even queried.
   vi.mocked(getLatestDerivedValueSnapshots).mockResolvedValue([]);
+  vi.mocked(writeBackAttribution).mockResolvedValue(undefined);
 });
 
 describe('runSync', () => {
@@ -515,6 +517,86 @@ describe('runSync', () => {
 
       const [, rows] = vi.mocked(upsertCrmOutcomeEvents).mock.calls[0];
       expect(rows[0]).toMatchObject({ value_source: 'DECLARED', conversion_value: 10 });
+    });
+  });
+
+  describe('attribution write-back (Sprint 9, D3, §6.4)', () => {
+    it('calls writeBackAttribution when write_back_enabled is true and delivery succeeds', async () => {
+      vi.mocked(getCrmSyncConfigByIdInternal).mockResolvedValue(makeConfig({ write_back_enabled: true }));
+      const mapping = makeMapping({ google_conversion_action_id: 'AW-123/abc' });
+      vi.mocked(listCrmStageMappings).mockResolvedValue([mapping]);
+      vi.mocked(getProvider).mockReturnValue(makeProvider([makeRecord()]));
+      vi.mocked(deliverOutcome).mockResolvedValue({
+        status: 'delivered',
+        detail: { google: { status: 'delivered' } },
+        delivered_at: '2026-01-02T00:00:00Z',
+      });
+
+      await runSync('config-1');
+
+      expect(writeBackAttribution).toHaveBeenCalledTimes(1);
+      const [providerArg, tokensArg, input] = vi.mocked(writeBackAttribution).mock.calls[0];
+      expect(providerArg).toBeDefined();
+      expect(tokensArg).toEqual({ access_token: 'tok', expires_at: 0, token_type: 'bearer' });
+      expect(input).toMatchObject({
+        config_id: 'config-1',
+        crm_record_id: 'deal-1',
+        tracked_object: 'deal',
+        atlas_event_name: mapping.atlas_event_name,
+        delivered_at: '2026-01-02T00:00:00Z',
+      });
+    });
+
+    it('calls writeBackAttribution on a partial delivery too', async () => {
+      vi.mocked(getCrmSyncConfigByIdInternal).mockResolvedValue(makeConfig({ write_back_enabled: true }));
+      vi.mocked(listCrmStageMappings).mockResolvedValue([makeMapping()]);
+      vi.mocked(getProvider).mockReturnValue(makeProvider([makeRecord()]));
+      vi.mocked(deliverOutcome).mockResolvedValue({
+        status: 'partial',
+        detail: { google: { status: 'delivered' }, meta: { status: 'failed' } },
+        delivered_at: '2026-01-02T00:00:00Z',
+      });
+
+      await runSync('config-1');
+
+      expect(writeBackAttribution).toHaveBeenCalledTimes(1);
+    });
+
+    it('never calls writeBackAttribution when write_back_enabled is false (the default)', async () => {
+      vi.mocked(getCrmSyncConfigByIdInternal).mockResolvedValue(makeConfig({ write_back_enabled: false }));
+      vi.mocked(listCrmStageMappings).mockResolvedValue([makeMapping()]);
+      vi.mocked(getProvider).mockReturnValue(makeProvider([makeRecord()]));
+      vi.mocked(deliverOutcome).mockResolvedValue({
+        status: 'delivered',
+        detail: { google: { status: 'delivered' } },
+        delivered_at: '2026-01-02T00:00:00Z',
+      });
+
+      await runSync('config-1');
+
+      expect(writeBackAttribution).not.toHaveBeenCalled();
+    });
+
+    it('never calls writeBackAttribution when enabled but the outcome only reached a non-delivered status', async () => {
+      vi.mocked(getCrmSyncConfigByIdInternal).mockResolvedValue(makeConfig({ write_back_enabled: true }));
+      vi.mocked(listCrmStageMappings).mockResolvedValue([makeMapping()]);
+      vi.mocked(getProvider).mockReturnValue(makeProvider([makeRecord()]));
+      vi.mocked(deliverOutcome).mockResolvedValue({ status: 'failed', detail: { google: { status: 'failed' } }, delivered_at: null });
+
+      await runSync('config-1');
+
+      expect(writeBackAttribution).not.toHaveBeenCalled();
+    });
+
+    it('never calls writeBackAttribution for an unresolved identity, since deliverOutcome itself is never called', async () => {
+      vi.mocked(getCrmSyncConfigByIdInternal).mockResolvedValue(makeConfig({ write_back_enabled: true }));
+      vi.mocked(listCrmStageMappings).mockResolvedValue([makeMapping()]);
+      vi.mocked(getProvider).mockReturnValue(makeProvider([makeRecord({ properties: {} })]));
+
+      await runSync('config-1');
+
+      expect(deliverOutcome).not.toHaveBeenCalled();
+      expect(writeBackAttribution).not.toHaveBeenCalled();
     });
   });
 });
