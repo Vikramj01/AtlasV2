@@ -69,6 +69,37 @@ export async function finalizeHubSpotConnection(ref: string): Promise<{ connecti
   return res.data;
 }
 
+// ── Salesforce OAuth (two-phase, Sprint 10) ──────────────────────────────────
+
+export async function connectSalesforce(clientId?: string, sandbox?: boolean): Promise<{ auth_url: string; state: string }> {
+  const qs = new URLSearchParams();
+  if (clientId) qs.set('client_id', clientId);
+  if (sandbox) qs.set('sandbox', 'true');
+  const suffix = qs.toString() ? `?${qs.toString()}` : '';
+  const res = await apiFetch<{ data: { auth_url: string; state: string } }>(`/crm/oauth/salesforce/start${suffix}`);
+  return res.data;
+}
+
+/** Call after Salesforce redirects back to the callback route with `code`/`state`. */
+export async function discoverSalesforceOrg(
+  code: string,
+  state: string,
+): Promise<{ ref: string; account: CrmAccountInfo; pipelines: CrmPipeline[] }> {
+  const res = await apiFetch<{ data: { ref: string; account: CrmAccountInfo; pipelines: CrmPipeline[] } }>(
+    `/crm/oauth/salesforce/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`,
+  );
+  return res.data;
+}
+
+/** Persists the connection once the discovered org is confirmed. */
+export async function finalizeSalesforceConnection(ref: string): Promise<{ connection_id: string; account: CrmAccountInfo }> {
+  const res = await apiFetch<{ data: { connection_id: string; account: CrmAccountInfo } }>(
+    '/crm/oauth/salesforce/callback/finalize',
+    { method: 'POST', body: JSON.stringify({ ref }) },
+  );
+  return res.data;
+}
+
 // ── Configs ───────────────────────────────────────────────────────────────────
 
 export async function listConfigs(): Promise<CrmSyncConfig[]> {
@@ -155,6 +186,9 @@ export const crmApi = {
   connectHubSpot,
   discoverHubSpotPortal,
   finalizeHubSpotConnection,
+  connectSalesforce,
+  discoverSalesforceOrg,
+  finalizeSalesforceConnection,
   listConfigs,
   createConfig,
   updateConfig,

@@ -113,6 +113,7 @@ export default function App() {
                 <Route path="/settings/implementation-health/gtm/callback" element={<SectionErrorBoundary label="GTM OAuth"><ImplementationHealthPage /></SectionErrorBoundary>} />
                 <Route path="/crm" element={<SectionErrorBoundary label="CRM Outcome Integration"><CrmIntegrationPage /></SectionErrorBoundary>} />
                 <Route path="/crm/oauth/hubspot/callback" element={<SectionErrorBoundary label="HubSpot OAuth"><CrmIntegrationPage /></SectionErrorBoundary>} />
+                <Route path="/crm/oauth/salesforce/callback" element={<SectionErrorBoundary label="Salesforce OAuth"><CrmIntegrationPage /></SectionErrorBoundary>} />
                 {/* Platform Connections */}
                 <Route path="/connections" element={<ConnectionsPage />} />
                 <Route path="/connections/:clientId" element={<ClientConnectionsPage />} />

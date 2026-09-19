@@ -1,10 +1,12 @@
 // CRM Outcome Integration — /crm (PRD §12).
 //
-// Connect a HubSpot portal (CrmConnectCard), define the value ladder for
-// each config (StageLadderEditor), and run the identity readiness check
-// (ReadinessPanel). The client picker below is a deliberate stopgap from
-// Sprint 2 — there's still no dedicated config-creation wizard; it just
-// gives the ladder/readiness sections a real config to run against.
+// Connect a HubSpot or Salesforce account (CrmConnectCard — Sprint 10
+// generalized this from HubSpot-only to one card per provider), define the
+// value ladder for each config (StageLadderEditor), and run the identity
+// readiness check (ReadinessPanel). The client picker below is a deliberate
+// stopgap from Sprint 2 — there's still no dedicated config-creation
+// wizard; it just gives the ladder/readiness sections a real config to run
+// against.
 
 import { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
@@ -22,12 +24,13 @@ import { useOrganisationStore } from '@/store/organisationStore';
 import { useOrganisations } from '@/hooks/useOrganisations';
 import { clientApi } from '@/lib/api/organisationApi';
 import type { Client } from '@/types/organisation';
-import type { CrmAccountInfo, CrmPipeline } from '@/types/crm';
+import type { CrmAccountInfo, CrmPipeline, CrmProviderName } from '@/types/crm';
 
 interface PendingConnection {
   connectionId: string;
   account: CrmAccountInfo;
   pipelines: CrmPipeline[];
+  provider: CrmProviderName;
 }
 
 function CreateConfigStopgap({ pending, onCreated }: { pending: PendingConnection; onCreated: () => void }) {
@@ -51,7 +54,7 @@ function CreateConfigStopgap({ pending, onCreated }: { pending: PendingConnectio
       await createConfig({
         client_id: selectedClientId,
         connection_id: pending.connectionId,
-        provider: 'hubspot',
+        provider: pending.provider,
       });
       onCreated();
     } catch (err) {
@@ -105,15 +108,24 @@ export function CrmIntegrationPage() {
         <div>
           <h1 className="text-page-title text-console-fg">CRM Outcome Integration</h1>
           <p className="text-sm text-console-fg-muted mt-1">
-            Read HubSpot deal-stage changes into a value-calibrated conversion ladder.
+            Read HubSpot or Salesforce stage changes into a value-calibrated conversion ladder.
           </p>
         </div>
 
-        <SectionErrorBoundary label="HubSpot connection">
-          <CrmConnectCard
-            onConnected={(connectionId, account, pipelines) => setPending({ connectionId, account, pipelines })}
-          />
-        </SectionErrorBoundary>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <SectionErrorBoundary label="HubSpot connection">
+            <CrmConnectCard
+              provider="hubspot"
+              onConnected={(connectionId, account, pipelines, provider) => setPending({ connectionId, account, pipelines, provider })}
+            />
+          </SectionErrorBoundary>
+          <SectionErrorBoundary label="Salesforce connection">
+            <CrmConnectCard
+              provider="salesforce"
+              onConnected={(connectionId, account, pipelines, provider) => setPending({ connectionId, account, pipelines, provider })}
+            />
+          </SectionErrorBoundary>
+        </div>
 
         {pending && (
           <SectionErrorBoundary label="Assign connection to client">

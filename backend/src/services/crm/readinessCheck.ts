@@ -65,7 +65,7 @@ export async function runReadinessCheck(
   object: CrmObjectType,
   identityPropertyMap: Record<string, string> | null | undefined,
 ): Promise<ReadinessResult> {
-  const expectedProperties = Array.from(new Set(Object.values(resolveIdentityPropertyMap(identityPropertyMap))));
+  const expectedProperties = Array.from(new Set(Object.values(resolveIdentityPropertyMap(identityPropertyMap, provider.name))));
 
   const existingProperties = await provider.listProperties(tokens, object);
   const existingNames = new Set(existingProperties.map((p) => p.name));

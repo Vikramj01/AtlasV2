@@ -26,6 +26,8 @@
  * consent_state) rather than re-deriving one from possibly-stale CRM data.
  */
 
+import type { CrmProviderName } from './providers/types';
+
 export type IdentityMethod = 'click_id' | 'hashed_email' | 'hashed_phone' | 'unresolved';
 
 // Logical identity keys this resolver understands, independent of which
@@ -54,10 +56,35 @@ export const DEFAULT_IDENTITY_PROPERTY_MAP: Record<IdentityKey, string> = {
   phone: 'phone',   // ditto
 };
 
+// Salesforce (Sprint 10) — its field-naming conventions differ structurally
+// from HubSpot's: standard fields are PascalCase (Email, Phone), and a
+// CUSTOM field's API name MUST end in __c (a Salesforce platform
+// requirement, not a style choice) — an Atlas-namespaced custom field
+// created on a Salesforce org is therefore atlas_gclid__c, never
+// atlas_gclid. Still only a DEFAULT — crm_sync_configs.identity_property_map
+// always overrides individual entries, exactly as it already must for a
+// HubSpot portal whose deal-stage setup doesn't match the HubSpot default
+// map either (e.g. a deal with no direct email/phone property at all).
+export const SALESFORCE_DEFAULT_IDENTITY_PROPERTY_MAP: Record<IdentityKey, string> = {
+  gclid: 'atlas_gclid__c',
+  gbraid: 'atlas_gbraid__c',
+  wbraid: 'atlas_wbraid__c',
+  fbclid: 'atlas_fbclid__c',
+  ttclid: 'atlas_ttclid__c',
+  li_fat_id: 'atlas_li_fat_id__c',
+  msclkid: 'atlas_msclkid__c',
+  oppref: 'atlas_oppref__c',
+  event_id: 'atlas_event_id__c',
+  email: 'Email',
+  phone: 'Phone',
+};
+
 export function resolveIdentityPropertyMap(
   configMap: Record<string, string> | null | undefined,
+  provider: CrmProviderName = 'hubspot',
 ): Record<IdentityKey, string> {
-  return { ...DEFAULT_IDENTITY_PROPERTY_MAP, ...(configMap ?? {}) };
+  const base = provider === 'salesforce' ? SALESFORCE_DEFAULT_IDENTITY_PROPERTY_MAP : DEFAULT_IDENTITY_PROPERTY_MAP;
+  return { ...base, ...(configMap ?? {}) };
 }
 
 export interface ResolvedIdentity {
@@ -85,8 +112,9 @@ export function resolveIdentity(
   properties: Record<string, string | null | undefined>,
   identityPropertyMap: Record<string, string> | null | undefined,
   originalEvent?: OriginalEventIdentity | null,
+  provider: CrmProviderName = 'hubspot',
 ): ResolvedIdentity {
-  const propertyMap = resolveIdentityPropertyMap(identityPropertyMap);
+  const propertyMap = resolveIdentityPropertyMap(identityPropertyMap, provider);
 
   const keysPresent: IdentityKey[] = [];
   const values: Partial<Record<IdentityKey, string>> = {};

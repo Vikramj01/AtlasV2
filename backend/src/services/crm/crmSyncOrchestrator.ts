@@ -71,7 +71,7 @@ import { resolveIdentity, resolveIdentityPropertyMap } from './identityResolver'
 import { resolveValue } from './valueLadder';
 import { deliverOutcome, handleLostDeal, writeBackAttribution } from './outcomeDelivery';
 import type { ObservedCrmAmount, DerivedValueInput } from './valueLadder';
-import type { CrmRecord, CrmProvider, DecryptedTokens } from './providers/types';
+import type { CrmRecord, CrmProvider, DecryptedTokens, CrmProviderName } from './providers/types';
 import type { CrmStageMapping, NewCrmOutcomeEventInput } from '@/types/crm';
 import logger from '@/utils/logger';
 
@@ -85,14 +85,20 @@ const DEFAULT_RECORD_CAP = 5000;
 // upserts — not a PRD-specified figure, just keeps a single run from
 // building one giant IN(...) query or insert payload.
 const BATCH_SIZE = 100;
-// HubSpot's standard built-in deal amount property. Deliberately not also
-// requesting a per-deal currency property (e.g. `deal_currency_code`) —
-// that property only exists on portals with multi-currency enabled, and
-// HubSpot's Search API is not confirmed here to tolerate an unknown
-// property name gracefully (unlike CRM v3's general read endpoints, which
-// do). Every CRM_AMOUNT observation currently falls back to the config's
-// default_currency until this is verified live.
-const OBSERVED_AMOUNT_PROPERTY = 'amount';
+// Each provider's standard built-in deal/opportunity amount property —
+// HubSpot's is lowercase 'amount'; Salesforce's standard Opportunity field
+// is 'Amount' (Sprint 10, PascalCase per Salesforce's own field-naming
+// convention). Deliberately not also requesting a per-record currency
+// property (e.g. HubSpot's `deal_currency_code` or Salesforce's
+// `CurrencyIsoCode`) — both only exist on orgs/portals with multi-currency
+// enabled, and neither provider's read path here is confirmed to tolerate
+// an unknown property name gracefully. Every CRM_AMOUNT observation
+// currently falls back to the config's default_currency until this is
+// verified live.
+const OBSERVED_AMOUNT_PROPERTY_BY_PROVIDER: Record<CrmProviderName, string> = {
+  hubspot: 'amount',
+  salesforce: 'Amount',
+};
 
 export type SyncRunStatus = 'ok' | 'partial' | 'failed' | 'disabled' | 'not_found';
 
@@ -114,8 +120,8 @@ function outcomeKey(crmRecordId: string, crmStageId: string): string {
   return `${crmRecordId}::${crmStageId}`;
 }
 
-function extractObservedAmount(properties: Record<string, string | null | undefined>): ObservedCrmAmount {
-  const raw = properties[OBSERVED_AMOUNT_PROPERTY];
+function extractObservedAmount(properties: Record<string, string | null | undefined>, provider: CrmProviderName): ObservedCrmAmount {
+  const raw = properties[OBSERVED_AMOUNT_PROPERTY_BY_PROVIDER[provider]];
   if (raw == null || raw === '') return { amount: null, currency: null };
   const parsed = Number(raw);
   return { amount: Number.isFinite(parsed) ? parsed : null, currency: null };
@@ -168,8 +174,8 @@ export async function runSync(configId: string, opts?: { recordCap?: number }): 
     return { status: 'failed', records_processed: 0, outcomes_written: 0, outcomes_skipped_unmapped: 0, cap_hit: false, sync_interval_minutes: config.sync_interval_minutes, error: message };
   }
 
-  const propertyMap = resolveIdentityPropertyMap(config.identity_property_map);
-  const propertyNames = Array.from(new Set([...Object.values(propertyMap), OBSERVED_AMOUNT_PROPERTY]));
+  const propertyMap = resolveIdentityPropertyMap(config.identity_property_map, config.provider);
+  const propertyNames = Array.from(new Set([...Object.values(propertyMap), OBSERVED_AMOUNT_PROPERTY_BY_PROVIDER[config.provider]]));
 
   let recordsProcessed = 0;
   let outcomesWritten = 0;
@@ -189,8 +195,8 @@ export async function runSync(configId: string, opts?: { recordCap?: number }): 
     for (const { record, mapping } of batch) {
       if (existingKeys.has(outcomeKey(record.id, mapping.crm_stage_id))) continue; // §9.2 — already processed by an earlier overlapping run
 
-      const identity = resolveIdentity(record.properties, config!.identity_property_map, null);
-      const observedAmount = mapping.is_terminal_won ? extractObservedAmount(record.properties) : null;
+      const identity = resolveIdentity(record.properties, config!.identity_property_map, null, config!.provider);
+      const observedAmount = mapping.is_terminal_won ? extractObservedAmount(record.properties, config!.provider) : null;
       const derivedInput = derivedValuesByStage.get(mapping.crm_stage_id) ?? null;
       const resolvedValue = resolveValue(mapping, config!, observedAmount, derivedInput);
       const eventId = computeEventId(config!.id, record.id, mapping.crm_stage_id);

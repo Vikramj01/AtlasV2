@@ -18,13 +18,18 @@ import type { OAuthTokens } from '@/types/connections';
 const AUTH_URL = 'https://app.hubspot.com/oauth/authorize';
 const TOKEN_URL = 'https://api.hubapi.com/oauth/v1/token';
 
-// Read-only scopes only for v1 — write-back (D3, Sprint 9) needs
-// crm.objects.{deals,contacts}.write added, which will force a reconnect
-// since HubSpot re-prompts consent on a widened scope set. Not requested
-// now per YAGNI; add it when Sprint 9 actually ships write-back.
+// Sprint 9 shipped writeAttribution() (D3), so the write scopes below are
+// now requested — write-back would otherwise 403 against a real portal
+// despite the code path being correct. A connection made before this
+// change was authorized under the old read-only scope set and must be
+// reconnected (HubSpot re-prompts consent on a widened scope) before its
+// write_back_enabled toggle can actually work; there is no way to silently
+// upgrade an already-granted OAuth grant's scopes after the fact.
 const SCOPES = [
   'crm.objects.deals.read',
+  'crm.objects.deals.write',
   'crm.objects.contacts.read',
+  'crm.objects.contacts.write',
   'crm.schemas.deals.read',
   'crm.schemas.contacts.read',
 ].join(' ');

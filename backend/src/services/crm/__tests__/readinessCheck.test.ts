@@ -145,4 +145,21 @@ describe('runReadinessCheck', () => {
       }
     }
   });
+
+  it('checks against the Salesforce-shaped default property names for provider "salesforce" (Sprint 10)', async () => {
+    const provider = makeProvider({
+      name: 'salesforce',
+      listProperties: vi.fn(async () => [{ name: 'atlas_gclid__c', label: 'Atlas GCLID', type: 'string' }]),
+      fetchChangedRecords: recordsGenerator([
+        { id: '1', object: 'deal', stage_id: 's', stage_changed_at: null, properties: { atlas_gclid__c: 'gclid-value' } },
+      ]),
+    });
+
+    const result = await runReadinessCheck(provider, tokens, 'deal', null);
+
+    expect(result.verdict).toBe('READY');
+    expect(result.present_properties).toContain('atlas_gclid__c');
+    // The HubSpot-shaped name must never appear in this provider's expected list.
+    expect(result.missing_properties).not.toContain('atlas_gclid');
+  });
 });

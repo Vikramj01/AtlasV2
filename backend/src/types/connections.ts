@@ -8,6 +8,11 @@ export interface OAuthTokens {
   expires_at: number;   // unix ms
   token_type: string;
   scope?: string;
+  // Salesforce-only (CRM Outcome Integration Sprint 10) — unlike every other
+  // provider here, Salesforce's API base URL is per-org, not fixed, and is
+  // returned alongside access_token on every token exchange/refresh. Optional
+  // so every other provider's token shape is unaffected.
+  instance_url?: string;
 }
 
 // Full DB row — oauth_tokens is the encrypted TEXT blob (never sent to client)

@@ -8,6 +8,10 @@
  *                                                    Redis under a one-time ref — nothing
  *                                                    is persisted yet (mirrors gtm.ts)
  * POST /api/crm/oauth/hubspot/callback/finalize  — persists the platform_connections row
+ * GET  /api/crm/oauth/salesforce/start           — Sprint 10 — begin OAuth, optional
+ *                                                    ?sandbox=true for a test.salesforce.com org
+ * GET  /api/crm/oauth/salesforce/callback        — same two-phase shape as HubSpot's
+ * POST /api/crm/oauth/salesforce/callback/finalize — shares finalizeConnection() with HubSpot's
  * GET  /api/crm/configs                          — list configs for org
  * POST /api/crm/configs                          — create config for a client
  * PATCH /api/crm/configs/:id                     — update mapping, value mode, schedule —
@@ -54,7 +58,9 @@ import { planGuard } from '../middleware/planGuard';
 import { sendInternalError } from '@/utils/apiError';
 import { supabaseAdmin } from '@/services/database/supabase';
 import * as hubspotOAuth from '@/services/connections/oauthFlows/hubspotOAuth';
+import * as salesforceOAuth from '@/services/connections/oauthFlows/salesforceOAuth';
 import { hubspotClient } from '@/services/crm/providers/hubspotClient';
+import { salesforceClient } from '@/services/crm/providers/salesforceClient';
 import type { CrmAccountInfo, CrmPipeline, DecryptedTokens } from '@/services/crm/providers/types';
 import { encryptTokens, resolveTokens } from '@/services/connections/tokenManager';
 import { getConnectionById } from '@/services/database/connectionQueries';
@@ -137,6 +143,12 @@ interface PendingCrmConnection {
   provider: CrmProviderName;
   tokens: DecryptedTokens;
   account: CrmAccountInfo;
+  // Salesforce only (Sprint 10) — which login host (production/sandbox)
+  // this connection was authorized against, persisted into
+  // platform_connections.metadata at finalize time so a future refresh
+  // call (not yet wired for either provider — see salesforceOAuth.ts's
+  // module header) knows which host to refresh against.
+  sandbox?: boolean;
 }
 
 function pendingConnectionKey(ref: string): string {
@@ -165,6 +177,11 @@ async function takePendingConnection(ref: string): Promise<PendingCrmConnection 
 
 const oauthStartSchema = z.object({
   client_id: z.string().uuid().optional(),
+});
+
+const salesforceOauthStartSchema = z.object({
+  client_id: z.string().uuid().optional(),
+  sandbox: z.coerce.boolean().optional(),
 });
 
 const oauthCallbackSchema = z.object({
@@ -286,9 +303,69 @@ crmRouter.get('/oauth/hubspot/callback', async (req: Request, res: Response): Pr
   }
 });
 
-// ── POST /api/crm/oauth/hubspot/callback/finalize ─────────────────────────────
+// ── GET /api/crm/oauth/salesforce/start ────────────────────────────────────────
 
-crmRouter.post('/oauth/hubspot/callback/finalize', async (req: Request, res: Response): Promise<void> => {
+crmRouter.get('/oauth/salesforce/start', async (req: Request, res: Response): Promise<void> => {
+  const parse = salesforceOauthStartSchema.safeParse(req.query);
+  if (!parse.success) {
+    res.status(400).json({ error: 'Invalid request', details: parse.error.flatten() });
+    return;
+  }
+
+  try {
+    const sandbox = parse.data.sandbox ?? false;
+    const state = salesforceOAuth.generateState(parse.data.client_id, sandbox);
+    res.json({ data: { auth_url: salesforceOAuth.getAuthUrl(state, sandbox), state } });
+  } catch (err) {
+    sendInternalError(res, err, 'GET /api/crm/oauth/salesforce/start');
+  }
+});
+
+// ── GET /api/crm/oauth/salesforce/callback ─────────────────────────────────────
+
+crmRouter.get('/oauth/salesforce/callback', async (req: Request, res: Response): Promise<void> => {
+  const parse = oauthCallbackSchema.safeParse(req.query);
+  if (!parse.success) {
+    res.status(400).json({ error: 'Invalid callback params', details: parse.error.flatten() });
+    return;
+  }
+
+  const { code, state } = parse.data;
+
+  try {
+    const { clientId, sandbox } = salesforceOAuth.verifyState(state);
+    const orgId = await resolveOrgId(req.user.id);
+
+    const tokens = await salesforceOAuth.handleCallback(code, sandbox);
+    const account = await salesforceClient.testConnection(tokens);
+    const pipelines: CrmPipeline[] = await salesforceClient.listPipelines(tokens);
+
+    const ref = await savePendingConnection({
+      orgId,
+      clientId: clientId ?? null,
+      provider: 'salesforce',
+      tokens,
+      account,
+      sandbox,
+    });
+
+    logger.info({ orgId, orgSfId: account.account_id, sandbox }, 'Salesforce OAuth consent granted, org discovered');
+
+    res.json({ data: { ref, account, pipelines } });
+  } catch (err) {
+    if (err instanceof Error && err.message.includes('state')) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
+    sendInternalError(res, err, 'GET /api/crm/oauth/salesforce/callback');
+  }
+});
+
+// ── POST /api/crm/oauth/{hubspot,salesforce}/callback/finalize ────────────────
+// Shared by both providers — the logic is identical once `pending` is
+// resolved (pending.provider already carries which one this is).
+
+async function finalizeConnection(req: Request, res: Response, routeLabel: string): Promise<void> {
   const parse = oauthFinalizeSchema.safeParse(req.body);
   if (!parse.success) {
     res.status(400).json({ error: 'Invalid request', details: parse.error.flatten() });
@@ -325,7 +402,7 @@ crmRouter.post('/oauth/hubspot/callback/finalize', async (req: Request, res: Res
           oauth_tokens: encryptTokens(pending.tokens),
           status: 'active',
           last_error: null,
-          metadata: {},
+          metadata: pending.provider === 'salesforce' ? { sandbox: pending.sandbox ?? false } : {},
           updated_at: new Date().toISOString(),
         },
         { onConflict: 'organization_id,platform,account_id' },
@@ -334,18 +411,21 @@ crmRouter.post('/oauth/hubspot/callback/finalize', async (req: Request, res: Res
       .single();
 
     if (insertErr || !connection) {
-      throw new Error(`Failed to store HubSpot connection: ${insertErr?.message}`);
+      throw new Error(`Failed to store ${pending.provider} connection: ${insertErr?.message}`);
     }
 
-    logger.info({ connectionId: connection.id, orgId }, 'HubSpot connection created');
+    logger.info({ connectionId: connection.id, orgId, provider: pending.provider }, 'CRM connection created');
 
     res.status(201).json({
       data: { connection_id: connection.id, account: pending.account },
     });
   } catch (err) {
-    sendInternalError(res, err, 'POST /api/crm/oauth/hubspot/callback/finalize');
+    sendInternalError(res, err, routeLabel);
   }
-});
+}
+
+crmRouter.post('/oauth/hubspot/callback/finalize', (req, res) => finalizeConnection(req, res, 'POST /api/crm/oauth/hubspot/callback/finalize'));
+crmRouter.post('/oauth/salesforce/callback/finalize', (req, res) => finalizeConnection(req, res, 'POST /api/crm/oauth/salesforce/callback/finalize'));
 
 // ── GET /api/crm/configs ───────────────────────────────────────────────────────
 

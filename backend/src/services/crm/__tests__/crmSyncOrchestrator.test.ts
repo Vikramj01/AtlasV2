@@ -271,6 +271,25 @@ describe('runSync', () => {
     expect(rows[0].conversion_value).toBe(4200);
   });
 
+  it('reads the PascalCase Amount field for a Salesforce-provider config, not HubSpot\'s lowercase amount (Sprint 10)', async () => {
+    vi.mocked(getCrmSyncConfigByIdInternal).mockResolvedValue(makeConfig({ provider: 'salesforce' }));
+    vi.mocked(listCrmStageMappings).mockResolvedValue([
+      makeMapping({ crm_stage_id: 'closedwon', is_terminal_won: true, declared_value: 100 }),
+    ]);
+    vi.mocked(getProvider).mockReturnValue(makeProvider([
+      // Salesforce's own Email field is PascalCase too — 'email' (lowercase)
+      // would resolve nothing under the Salesforce default identity map.
+      makeRecord({ stage_id: 'closedwon', properties: { Email: 'lead@example.com', Amount: '4200', amount: '999' } }),
+    ]));
+
+    await runSync('config-1');
+
+    const [, rows] = vi.mocked(upsertCrmOutcomeEvents).mock.calls[0];
+    expect(rows[0].value_source).toBe('CRM_AMOUNT');
+    expect(rows[0].conversion_value).toBe(4200); // not 999 — the lowercase 'amount' key must be ignored for Salesforce
+    expect(rows[0].identity_method).toBe('hashed_email');
+  });
+
   it('produces the same deterministic event_id for the same (config, record, stage) across two runs', async () => {
     vi.mocked(getCrmSyncConfigByIdInternal).mockResolvedValue(makeConfig());
     vi.mocked(listCrmStageMappings).mockResolvedValue([makeMapping()]);
