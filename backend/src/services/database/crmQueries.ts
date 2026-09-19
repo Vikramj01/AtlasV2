@@ -220,11 +220,38 @@ export async function upsertCrmOutcomeEvents(
   const { data, error } = await supabase
     .from('crm_outcome_events')
     .upsert(
-      rows.map((r) => ({ ...r, organization_id: orgId, delivery_detail: {} })),
+      rows.map((r) => ({ ...r, organization_id: orgId })),
       { onConflict: 'config_id,crm_record_id,crm_stage_id', ignoreDuplicates: true },
     )
     .select('id');
 
   if (error) throw new Error(`upsertCrmOutcomeEvents: ${error.message}`);
   return (data ?? []).length;
+}
+
+// Pre-delivery idempotency guard (§9.2). Must run BEFORE outcomeDelivery.ts
+// is ever invoked for a record — the ignoreDuplicates upsert above only
+// stops a DUPLICATE DB ROW, it does nothing to stop a second real API call
+// to Google/Meta/LinkedIn for a record an earlier, overlapping sync run
+// already delivered. Returns the set of "crm_record_id::crm_stage_id" keys
+// already present for this config, so the orchestrator can skip delivery
+// entirely for anything already in it.
+export async function findExistingOutcomeKeys(
+  configId: string,
+  crmRecordIds: string[],
+): Promise<Set<string>> {
+  if (crmRecordIds.length === 0) return new Set();
+
+  const { data, error } = await supabase
+    .from('crm_outcome_events')
+    .select('crm_record_id, crm_stage_id')
+    .eq('config_id', configId)
+    .in('crm_record_id', crmRecordIds);
+
+  if (error) throw new Error(`findExistingOutcomeKeys: ${error.message}`);
+
+  return new Set(
+    ((data ?? []) as { crm_record_id: string; crm_stage_id: string }[])
+      .map((r) => `${r.crm_record_id}::${r.crm_stage_id}`),
+  );
 }

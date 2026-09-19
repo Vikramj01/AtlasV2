@@ -1,26 +1,31 @@
 /**
  * crmSyncOrchestrator — the sync engine. docs/prd/crm-outcome-integration.md
- * §4.3's data flow, Sprint 4.
+ * §4.3's data flow, Sprints 4-5.
  *
  * `runSync(configId)` does one incremental pull: fetch records whose stage
  * changed since the last successful sync (with a 60-minute overlap so a
  * record whose write lands right at the boundary isn't missed — §9.4),
  * resolve each to a stage/event via objectMapper.ts, resolve identity via
- * identityResolver.ts, resolve a value via valueLadder.ts, and persist an
- * idempotent crm_outcome_events row per (config, record, stage) — never a
- * fabricated identifier, never overwriting a row already written by an
- * earlier overlapping run (§9.2).
+ * identityResolver.ts, resolve a value via valueLadder.ts, attempt delivery
+ * via outcomeDelivery.ts, and persist an idempotent crm_outcome_events row
+ * per (config, record, stage) with the real post-delivery status — never a
+ * fabricated identifier, never re-delivering (not just never re-inserting)
+ * a record an earlier overlapping run already processed (§9.2).
  *
- * Deliberately NOT done here (Sprint 5's job, per the PRD's own split):
- *   - Actual delivery to Google/Meta/LinkedIn (outcomeDelivery.ts)
- *   - Per-destination ingest-window skipping — a single outcome row has no
- *     single destination (a stage can map to Google AND Meta AND LinkedIn
- *     conversion IDs simultaneously), so "skipped_window" is a delivery-time,
- *     per-destination concern, not a sync-time one
- *   - atlas_event_id -> capi_events consent/identity inheritance (§6.3 point
- *     2, §8) — that join happens where it's actually consumed (delivery),
- *     not here; identity resolution in this file only ever exercises steps
- *     1/3/4/5 of §6.3 (click_id / hashed_email / hashed_phone / unresolved)
+ * Idempotency has two layers, both required: findExistingOutcomeKeys()
+ * (crmQueries.ts) is checked BEFORE delivery is ever attempted for a batch
+ * — a DB-level ignoreDuplicates upsert alone would stop a duplicate ROW,
+ * but says nothing about a duplicate live call to Google/Meta/LinkedIn,
+ * which is the failure that actually matters. The upsert's
+ * ignoreDuplicates stays on as a safety net for a race between two
+ * concurrent runs, not as the primary guard.
+ *
+ * Deliberately NOT done here even in Sprint 5, per the PRD's own sprint
+ * split:
+ *   - Lost-deal retraction/adjustment (Sprint 6) — a closed-lost stage's
+ *     own outcome (if the operator mapped one) delivers like any other
+ *     stage; reversing an EARLIER stage's already-delivered value is a
+ *     distinct mechanism this file doesn't implement.
  *
  * Known structural limitation, not a bug: fetchChangedRecords (§4.2)
  * reports each record's CURRENT stage at fetch time, not a change history.
@@ -33,15 +38,22 @@
  */
 
 import { createHash } from 'crypto';
-import { getCrmSyncConfigByIdInternal, listCrmStageMappings, upsertCrmOutcomeEvents, updateCrmSyncState } from '@/services/database/crmQueries';
+import {
+  getCrmSyncConfigByIdInternal,
+  listCrmStageMappings,
+  upsertCrmOutcomeEvents,
+  updateCrmSyncState,
+  findExistingOutcomeKeys,
+} from '@/services/database/crmQueries';
 import { getProvider } from './providerRegistry';
 import { resolveTokens } from '@/services/connections/tokenManager';
 import { resolveStageMapping } from './objectMapper';
 import { resolveIdentity, resolveIdentityPropertyMap } from './identityResolver';
 import { resolveValue } from './valueLadder';
+import { deliverOutcome } from './outcomeDelivery';
 import type { ObservedCrmAmount } from './valueLadder';
 import type { CrmRecord } from './providers/types';
-import type { NewCrmOutcomeEventInput } from '@/types/crm';
+import type { CrmStageMapping, NewCrmOutcomeEventInput } from '@/types/crm';
 import logger from '@/utils/logger';
 
 // §9.4 — deliberate overlap so a record whose write lands right at the
@@ -50,9 +62,10 @@ import logger from '@/utils/logger';
 const OVERLAP_MS = 60 * 60 * 1000;
 // §9.4 default record cap per run.
 const DEFAULT_RECORD_CAP = 5000;
-// Batch size for crm_outcome_events upserts — not a PRD-specified figure,
-// just keeps a single run from building one giant insert payload.
-const UPSERT_BATCH_SIZE = 100;
+// Batch size for the existing-outcome pre-check + crm_outcome_events
+// upserts — not a PRD-specified figure, just keeps a single run from
+// building one giant IN(...) query or insert payload.
+const BATCH_SIZE = 100;
 // HubSpot's standard built-in deal amount property. Deliberately not also
 // requesting a per-deal currency property (e.g. `deal_currency_code`) —
 // that property only exists on portals with multi-currency enabled, and
@@ -78,11 +91,20 @@ function computeEventId(configId: string, crmRecordId: string, crmStageId: strin
   return createHash('sha256').update(`${configId}:${crmRecordId}:${crmStageId}`).digest('hex').slice(0, 32);
 }
 
+function outcomeKey(crmRecordId: string, crmStageId: string): string {
+  return `${crmRecordId}::${crmStageId}`;
+}
+
 function extractObservedAmount(properties: Record<string, string | null | undefined>): ObservedCrmAmount {
   const raw = properties[OBSERVED_AMOUNT_PROPERTY];
   if (raw == null || raw === '') return { amount: null, currency: null };
   const parsed = Number(raw);
   return { amount: Number.isFinite(parsed) ? parsed : null, currency: null };
+}
+
+interface Candidate {
+  record: CrmRecord;
+  mapping: CrmStageMapping;
 }
 
 export async function runSync(configId: string, opts?: { recordCap?: number }): Promise<SyncRunResult> {
@@ -122,12 +144,68 @@ export async function runSync(configId: string, opts?: { recordCap?: number }): 
   let outcomesSkippedUnmapped = 0;
   let capHit = false;
   let lastStageChangedAt: string | null = null;
-  let pendingRows: NewCrmOutcomeEventInput[] = [];
+  let candidateBatch: Candidate[] = [];
 
-  async function flush(): Promise<void> {
-    if (pendingRows.length === 0) return;
-    outcomesWritten += await upsertCrmOutcomeEvents(config!.organization_id, pendingRows);
-    pendingRows = [];
+  // Resolves identity/value/delivery for a batch of candidates that have
+  // already passed the existing-outcome pre-check, then upserts them.
+  async function processBatch(batch: Candidate[]): Promise<void> {
+    if (batch.length === 0) return;
+
+    const existingKeys = await findExistingOutcomeKeys(config!.id, batch.map((c) => c.record.id));
+    const rows: NewCrmOutcomeEventInput[] = [];
+
+    for (const { record, mapping } of batch) {
+      if (existingKeys.has(outcomeKey(record.id, mapping.crm_stage_id))) continue; // §9.2 — already processed by an earlier overlapping run
+
+      const identity = resolveIdentity(record.properties, config!.identity_property_map, null);
+      const observedAmount = mapping.is_terminal_won ? extractObservedAmount(record.properties) : null;
+      const resolvedValue = resolveValue(mapping, config!, observedAmount, null);
+      const eventId = computeEventId(config!.id, record.id, mapping.crm_stage_id);
+      const stageChangedAt = record.stage_changed_at ?? until.toISOString();
+
+      // §6.3 point 5 — never fabricate an identifier. An unresolved record
+      // never reaches outcomeDelivery.ts at all.
+      let deliveryStatus: NewCrmOutcomeEventInput['delivery_status'] = 'skipped_unresolved';
+      let deliveryDetail: Record<string, unknown> = {};
+      let deliveredAt: string | null = null;
+
+      if (identity.method !== 'unresolved') {
+        const delivery = await deliverOutcome(mapping, {
+          organization_id: config!.organization_id,
+          event_id: eventId,
+          stage_changed_at: stageChangedAt,
+          conversion_value: resolvedValue.value,
+          currency: resolvedValue.currency,
+          identity,
+        });
+        deliveryStatus = delivery.status;
+        deliveryDetail = delivery.detail;
+        deliveredAt = delivery.delivered_at;
+      }
+
+      rows.push({
+        client_id: config!.client_id,
+        config_id: config!.id,
+        mapping_id: mapping.id,
+        crm_record_id: record.id,
+        crm_object: record.object,
+        crm_stage_id: mapping.crm_stage_id,
+        stage_changed_at: stageChangedAt,
+        atlas_event_name: mapping.atlas_event_name,
+        event_id: eventId,
+        identity_method: identity.method,
+        identity_key_present: identity.keys_present,
+        conversion_value: resolvedValue.value,
+        currency: resolvedValue.currency,
+        value_source: resolvedValue.value_source,
+        derived_confidence: resolvedValue.derived_confidence,
+        delivery_status: deliveryStatus,
+        delivery_detail: deliveryDetail,
+        delivered_at: deliveredAt,
+      });
+    }
+
+    outcomesWritten += await upsertCrmOutcomeEvents(config!.organization_id, rows);
   }
 
   try {
@@ -146,36 +224,13 @@ export async function runSync(configId: string, opts?: { recordCap?: number }): 
         continue;
       }
 
-      // §6.3 steps 1/3/4/5 only — the atlas_event_id -> capi_events
-      // preference (step 2) is Sprint 5's job, per this file's header.
-      const identity = resolveIdentity(record.properties, config.identity_property_map, null);
-      const observedAmount = mapping.is_terminal_won ? extractObservedAmount(record.properties) : null;
-      const resolvedValue = resolveValue(mapping, config, observedAmount, null);
-
-      pendingRows.push({
-        client_id: config.client_id,
-        config_id: config.id,
-        mapping_id: mapping.id,
-        crm_record_id: record.id,
-        crm_object: record.object,
-        crm_stage_id: record.stage_id,
-        stage_changed_at: record.stage_changed_at ?? until.toISOString(),
-        atlas_event_name: mapping.atlas_event_name,
-        event_id: computeEventId(config.id, record.id, record.stage_id),
-        identity_method: identity.method,
-        identity_key_present: identity.keys_present,
-        conversion_value: resolvedValue.value,
-        currency: resolvedValue.currency,
-        value_source: resolvedValue.value_source,
-        derived_confidence: resolvedValue.derived_confidence,
-        // §6.3 point 5 — never fabricate an identifier; an unresolved
-        // record is persisted and counted, not silently dropped.
-        delivery_status: identity.method === 'unresolved' ? 'skipped_unresolved' : 'pending',
-      });
-
-      if (pendingRows.length >= UPSERT_BATCH_SIZE) await flush();
+      candidateBatch.push({ record, mapping });
+      if (candidateBatch.length >= BATCH_SIZE) {
+        await processBatch(candidateBatch);
+        candidateBatch = [];
+      }
     }
-    await flush();
+    await processBatch(candidateBatch);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await updateCrmSyncState(config.id, { last_sync_status: 'failed', last_sync_error: message });

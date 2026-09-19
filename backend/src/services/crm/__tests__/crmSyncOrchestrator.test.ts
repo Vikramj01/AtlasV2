@@ -14,6 +14,7 @@ vi.mock('@/services/database/crmQueries', () => ({
   listCrmStageMappings: vi.fn(),
   upsertCrmOutcomeEvents: vi.fn(),
   updateCrmSyncState: vi.fn(),
+  findExistingOutcomeKeys: vi.fn(),
 }));
 
 vi.mock('@/services/crm/providerRegistry', () => ({
@@ -22,6 +23,13 @@ vi.mock('@/services/crm/providerRegistry', () => ({
 
 vi.mock('@/services/connections/tokenManager', () => ({
   resolveTokens: vi.fn(),
+}));
+
+// Sprint 5's delivery module is exercised for real in outcomeDelivery.test.ts —
+// here it's mocked so the orchestrator's own batching/idempotency/state
+// logic can be tested without a live Google/Meta/LinkedIn call chain.
+vi.mock('@/services/crm/outcomeDelivery', () => ({
+  deliverOutcome: vi.fn(),
 }));
 
 vi.mock('@/utils/logger', () => ({
@@ -33,9 +41,11 @@ import {
   listCrmStageMappings,
   upsertCrmOutcomeEvents,
   updateCrmSyncState,
+  findExistingOutcomeKeys,
 } from '@/services/database/crmQueries';
 import { getProvider } from '@/services/crm/providerRegistry';
 import { resolveTokens } from '@/services/connections/tokenManager';
+import { deliverOutcome } from '@/services/crm/outcomeDelivery';
 import { runSync } from '../crmSyncOrchestrator';
 import type { CrmSyncConfig, CrmStageMapping } from '@/types/crm';
 import type { CrmRecord, CrmProvider } from '../providers/types';
@@ -115,6 +125,13 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(resolveTokens).mockResolvedValue({ access_token: 'tok', expires_at: 0, token_type: 'bearer' });
   vi.mocked(upsertCrmOutcomeEvents).mockImplementation(async (_orgId, rows) => rows.length);
+  // Default: no earlier overlapping run has already processed this record —
+  // most tests aren't exercising the §9.2 pre-delivery idempotency check.
+  vi.mocked(findExistingOutcomeKeys).mockResolvedValue(new Set());
+  // Default: nothing configured for the stage (matches makeMapping()'s
+  // google/meta/linkedin fields all being null) — mirrors deliverOutcome's
+  // own real "nothing to attempt" behavior.
+  vi.mocked(deliverOutcome).mockResolvedValue({ status: 'pending', detail: {}, delivered_at: null });
 });
 
 describe('runSync', () => {
@@ -153,6 +170,48 @@ describe('runSync', () => {
       value_source: 'DECLARED',
       conversion_value: 50,
     });
+  });
+
+  it('calls deliverOutcome for a resolved identity and persists its real status/detail', async () => {
+    vi.mocked(getCrmSyncConfigByIdInternal).mockResolvedValue(makeConfig());
+    vi.mocked(listCrmStageMappings).mockResolvedValue([
+      makeMapping({ google_conversion_action_id: 'AW-123/abc' }),
+    ]);
+    vi.mocked(getProvider).mockReturnValue(makeProvider([makeRecord()]));
+    vi.mocked(deliverOutcome).mockResolvedValue({
+      status: 'delivered',
+      detail: { google: { status: 'delivered' } },
+      delivered_at: '2026-01-02T00:00:01Z',
+    });
+
+    await runSync('config-1');
+
+    expect(deliverOutcome).toHaveBeenCalledTimes(1);
+    const [mappingArg, inputArg] = vi.mocked(deliverOutcome).mock.calls[0];
+    expect(mappingArg.google_conversion_action_id).toBe('AW-123/abc');
+    expect(inputArg.organization_id).toBe('org-1');
+    expect(inputArg.identity.method).toBe('hashed_email');
+
+    const [, rows] = vi.mocked(upsertCrmOutcomeEvents).mock.calls[0];
+    expect(rows[0]).toMatchObject({
+      delivery_status: 'delivered',
+      delivery_detail: { google: { status: 'delivered' } },
+      delivered_at: '2026-01-02T00:00:01Z',
+    });
+  });
+
+  it('skips delivery entirely for a record an earlier overlapping run already processed (§9.2)', async () => {
+    vi.mocked(getCrmSyncConfigByIdInternal).mockResolvedValue(makeConfig());
+    vi.mocked(listCrmStageMappings).mockResolvedValue([makeMapping()]);
+    vi.mocked(getProvider).mockReturnValue(makeProvider([makeRecord()]));
+    vi.mocked(findExistingOutcomeKeys).mockResolvedValue(new Set(['deal-1::appointmentscheduled']));
+
+    const result = await runSync('config-1');
+
+    expect(deliverOutcome).not.toHaveBeenCalled();
+    expect(result.outcomes_written).toBe(0);
+    // Still counted as processed/seen — only the write+delivery is skipped.
+    expect(result.records_processed).toBe(1);
   });
 
   it('skips (and counts) a record whose current stage has no mapping', async () => {

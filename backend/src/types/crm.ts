@@ -124,7 +124,13 @@ export interface CrmOutcomeEvent {
 }
 
 // Row shape the orchestrator writes — organization_id is added by the query
-// function from the config, not carried by the caller.
+// function from the config, not carried by the caller. delivery_status/
+// delivery_detail/delivered_at reflect the REAL outcome of
+// outcomeDelivery.ts's attempt (Sprint 5), made in-memory in the same pass
+// as identity resolution — never a placeholder written first and patched
+// later, since the raw (unhashed) identity values needed to attempt
+// delivery are never persisted (§5.4's PII rule) and so cannot be re-read
+// from the DB by a later step.
 export interface NewCrmOutcomeEventInput {
   client_id: string;
   config_id: string;
@@ -141,5 +147,7 @@ export interface NewCrmOutcomeEventInput {
   currency: string | null;
   value_source: CrmValueSource;
   derived_confidence: CrmDerivedConfidence | null;
-  delivery_status: 'pending' | 'skipped_unresolved';
+  delivery_status: CrmDeliveryStatus;
+  delivery_detail: Record<string, unknown>;
+  delivered_at: string | null;
 }
