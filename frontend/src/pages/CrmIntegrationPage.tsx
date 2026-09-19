@@ -1,10 +1,10 @@
 // CRM Outcome Integration — /crm (PRD §12).
 //
-// Sprint 2 scope: connect a HubSpot portal (CrmConnectCard) and run the
-// identity readiness check against a config (ReadinessPanel). The client
-// picker below is a deliberate stopgap — StageLadderEditor (Sprint 3) is
-// the real config-creation surface; this just gives ReadinessPanel a real
-// config to check against before that exists.
+// Connect a HubSpot portal (CrmConnectCard), define the value ladder for
+// each config (StageLadderEditor), and run the identity readiness check
+// (ReadinessPanel). The client picker below is a deliberate stopgap from
+// Sprint 2 — there's still no dedicated config-creation wizard; it just
+// gives the ladder/readiness sections a real config to run against.
 
 import { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
@@ -15,6 +15,7 @@ import { PlanGate } from '@/components/common/PlanGate';
 import { SectionErrorBoundary } from '@/components/common/ErrorBoundary';
 import { CrmConnectCard } from '@/components/crm/CrmConnectCard';
 import { ReadinessPanel } from '@/components/crm/ReadinessPanel';
+import { StageLadderEditor } from '@/components/crm/StageLadderEditor';
 import { useCrmStore } from '@/store/crmStore';
 import { useOrganisationStore } from '@/store/organisationStore';
 import { useOrganisations } from '@/hooks/useOrganisations';
@@ -99,7 +100,7 @@ export function CrmIntegrationPage() {
 
   return (
     <PlanGate minPlan="pro" featureName="CRM Outcome Integration">
-      <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
+      <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
         <div>
           <h1 className="text-page-title text-console-fg">CRM Outcome Integration</h1>
           <p className="text-sm text-console-fg-muted mt-1">
@@ -123,13 +124,18 @@ export function CrmIntegrationPage() {
         )}
 
         {!orgsLoading && configs.length > 0 && (
-          <SectionErrorBoundary label="Readiness">
-            <div className="space-y-4">
-              {configs.map((config) => (
-                <ReadinessPanel key={config.id} config={config} />
-              ))}
-            </div>
-          </SectionErrorBoundary>
+          <div className="space-y-8">
+            {configs.map((config) => (
+              <div key={config.id} className="space-y-4">
+                <SectionErrorBoundary label="Signal ladder">
+                  <StageLadderEditor config={config} />
+                </SectionErrorBoundary>
+                <SectionErrorBoundary label="Readiness">
+                  <ReadinessPanel config={config} />
+                </SectionErrorBoundary>
+              </div>
+            ))}
+          </div>
         )}
       </div>
     </PlanGate>

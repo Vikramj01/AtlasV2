@@ -92,6 +92,7 @@ interface HubSpotPipelineStage {
   id: string;
   label: string;
   displayOrder: number;
+  metadata?: { isClosed?: string | boolean; probability?: string | number };
 }
 
 interface HubSpotPipeline {
@@ -153,6 +154,12 @@ export const hubspotClient: CrmProvider = {
           id: stage.id,
           label: stage.label,
           display_order: stage.displayOrder,
+          metadata: stage.metadata
+            ? {
+                is_closed: stage.metadata.isClosed === true || stage.metadata.isClosed === 'true',
+                probability: stage.metadata.probability != null ? Number(stage.metadata.probability) : null,
+              }
+            : undefined,
         })),
     }));
   },

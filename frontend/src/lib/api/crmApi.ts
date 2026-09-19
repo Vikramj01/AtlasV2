@@ -6,6 +6,8 @@ import type {
   CrmAccountInfo,
   CrmPipeline,
   ReadinessResult,
+  StageMappingsResponse,
+  StageMappingInput,
 } from '@/types/crm';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
@@ -100,6 +102,21 @@ export async function checkReadiness(configId: string): Promise<ReadinessResult>
   return res.data;
 }
 
+// ── Stage mappings (the ladder) ──────────────────────────────────────────────
+
+export async function getStageMappings(configId: string): Promise<StageMappingsResponse> {
+  const res = await apiFetch<{ data: StageMappingsResponse }>(`/crm/configs/${configId}/stage-mappings`);
+  return res.data;
+}
+
+export async function replaceStageMappings(configId: string, mappings: StageMappingInput[]): Promise<StageMappingsResponse> {
+  const res = await apiFetch<{ data: StageMappingsResponse }>(`/crm/configs/${configId}/stage-mappings`, {
+    method: 'PUT',
+    body: JSON.stringify(mappings),
+  });
+  return res.data;
+}
+
 export const crmApi = {
   connectHubSpot,
   discoverHubSpotPortal,
@@ -110,4 +127,6 @@ export const crmApi = {
   deleteConfig,
   getPipelines,
   checkReadiness,
+  getStageMappings,
+  replaceStageMappings,
 };

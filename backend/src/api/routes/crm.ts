@@ -16,12 +16,15 @@
  *                                                    rejected unless it comes back READY
  * POST /api/crm/configs/:id/readiness            — run the §6.2 readiness check on demand
  * GET  /api/crm/configs/:id/pipelines            — list CRM pipelines/stages for the mapping UI
+ * GET  /api/crm/configs/:id/stage-mappings       — the saved ladder, or an objectMapper-built
+ *                                                    draft from the pipeline when nothing is saved
+ * PUT  /api/crm/configs/:id/stage-mappings       — replace the whole ladder
  * DELETE /api/crm/configs/:id                    — remove config (connection removal reuses
  *                                                    the generic DELETE /api/connections/:id)
  *
- * All routes require authMiddleware + planGuard('pro') (D4). Stage-mapping
- * CRUD, sync trigger, outcomes and derived-value listing land in Sprint 3+
- * — not yet implemented here.
+ * All routes require authMiddleware + planGuard('pro') (D4). Sync trigger,
+ * outcomes and derived-value listing land in Sprint 4+ — not yet
+ * implemented here.
  *
  * Why two-phase OAuth: a HubSpot portal has no single "which pipeline"
  * answer until after consent is granted (the same reason the GTM OAuth
@@ -50,8 +53,13 @@ import {
   createCrmSyncConfig,
   updateCrmSyncConfig,
   deleteCrmSyncConfig,
+  listCrmStageMappings,
+  replaceCrmStageMappings,
+  countRecentOutcomesByMapping,
 } from '@/services/database/crmQueries';
 import { runReadinessCheck } from '@/services/crm/readinessCheck';
+import { buildDefaultStageMappings } from '@/services/crm/objectMapper';
+import { resolveValue } from '@/services/crm/valueLadder';
 import type { CrmProviderName, CrmSyncConfig } from '@/types/crm';
 import logger from '@/utils/logger';
 
@@ -84,6 +92,22 @@ async function checkReadinessForConfig(config: CrmSyncConfig) {
   const provider = getProvider(config.provider);
   const tokens = await resolveTokens(config.connection_id);
   return runReadinessCheck(provider, tokens, config.tracked_object, config.identity_property_map);
+}
+
+// The ladder view has no specific CRM record in hand, so this is "what
+// would be used right now" absent a record's own observed amount or a
+// Sprint 7 derived-value snapshot — both null here, never fabricated.
+function withResolvedValue<T extends { is_terminal_won?: boolean; declared_value?: number | null; currency?: string | null }>(
+  mapping: T,
+  config: Pick<CrmSyncConfig, 'value_mode' | 'default_currency'>,
+) {
+  const resolved_value = resolveValue(
+    { is_terminal_won: mapping.is_terminal_won ?? false, declared_value: mapping.declared_value ?? null, currency: mapping.currency ?? null },
+    config,
+    null,
+    null,
+  );
+  return { ...mapping, resolved_value };
 }
 
 // ── Pending connection cache (post-consent, pre-finalize) ─────────────────────
@@ -161,6 +185,23 @@ const updateConfigSchema = z.object({
   sync_interval_minutes: z.number().int().min(60).optional(),
   write_back_enabled: z.boolean().optional(),
 });
+
+const stageMappingSchema = z.object({
+  crm_stage_id: z.string().min(1),
+  crm_stage_label: z.string().optional(),
+  stage_order: z.number().int(),
+  atlas_event_name: z.string().min(1),
+  is_terminal_won: z.boolean().optional(),
+  is_terminal_lost: z.boolean().optional(),
+  declared_value: z.number().nonnegative().nullable().optional(),
+  currency: z.string().length(3).nullable().optional(),
+  google_conversion_action_id: z.string().nullable().optional(),
+  meta_event_name: z.string().nullable().optional(),
+  linkedin_conversion_id: z.string().nullable().optional(),
+  enabled: z.boolean().optional(),
+});
+
+const replaceStageMappingsSchema = z.array(stageMappingSchema);
 
 // ── GET /api/crm/oauth/hubspot/start ──────────────────────────────────────────
 
@@ -408,6 +449,83 @@ crmRouter.get('/configs/:id/pipelines', async (req: Request, res: Response): Pro
     res.json({ data: pipelines });
   } catch (err) {
     sendInternalError(res, err, 'GET /api/crm/configs/:id/pipelines');
+  }
+});
+
+// ── GET /api/crm/configs/:id/stage-mappings ────────────────────────────────────
+// Returns the saved ladder, or — when nothing has been saved yet — a
+// draft built by objectMapper.ts from the connected pipeline's stages
+// (is_draft: true), so StageLadderEditor always has something to render
+// and the operator edits/confirms rather than starting from a blank form.
+
+crmRouter.get('/configs/:id/stage-mappings', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const orgId = await resolveOrgId(req.user.id);
+    const config = await getCrmSyncConfigById(req.params.id, orgId);
+    if (!config) {
+      res.status(404).json({ error: 'CRM sync config not found' });
+      return;
+    }
+
+    const saved = await listCrmStageMappings(config.id);
+
+    if (saved.length > 0) {
+      const counts = await countRecentOutcomesByMapping(config.id);
+      res.json({
+        data: {
+          is_draft: false,
+          mappings: saved.map((m) => withResolvedValue({ ...m, outcomes_last_30d: counts[m.id] ?? 0 }, config)),
+        },
+      });
+      return;
+    }
+
+    const provider = getProvider(config.provider);
+    const tokens = await resolveTokens(config.connection_id);
+    const pipelines = await provider.listPipelines(tokens);
+    const pipeline = pipelines.find((p) => p.id === config.pipeline_id) ?? pipelines[0];
+
+    if (!pipeline) {
+      res.json({ data: { is_draft: true, mappings: [] } });
+      return;
+    }
+
+    const draft = buildDefaultStageMappings(pipeline).map((m) => withResolvedValue({ ...m, outcomes_last_30d: 0 }, config));
+    res.json({ data: { is_draft: true, mappings: draft } });
+  } catch (err) {
+    sendInternalError(res, err, 'GET /api/crm/configs/:id/stage-mappings');
+  }
+});
+
+// ── PUT /api/crm/configs/:id/stage-mappings ────────────────────────────────────
+// Replaces the whole ladder (PRD §11) — see replaceCrmStageMappings()'s own
+// comment for why this upserts by crm_stage_id rather than delete+reinsert.
+
+crmRouter.put('/configs/:id/stage-mappings', async (req: Request, res: Response): Promise<void> => {
+  const parse = replaceStageMappingsSchema.safeParse(req.body);
+  if (!parse.success) {
+    res.status(400).json({ error: 'Invalid request', details: parse.error.flatten() });
+    return;
+  }
+
+  try {
+    const orgId = await resolveOrgId(req.user.id);
+    const config = await getCrmSyncConfigById(req.params.id, orgId);
+    if (!config) {
+      res.status(404).json({ error: 'CRM sync config not found' });
+      return;
+    }
+
+    const mappings = await replaceCrmStageMappings(config.id, orgId, parse.data);
+    const counts = await countRecentOutcomesByMapping(config.id);
+    res.json({
+      data: {
+        is_draft: false,
+        mappings: mappings.map((m) => withResolvedValue({ ...m, outcomes_last_30d: counts[m.id] ?? 0 }, config)),
+      },
+    });
+  } catch (err) {
+    sendInternalError(res, err, 'PUT /api/crm/configs/:id/stage-mappings');
   }
 });
 

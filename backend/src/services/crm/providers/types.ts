@@ -27,6 +27,17 @@ export interface CrmPipelineStage {
   id: string;
   label: string;
   display_order: number;
+  // Best-effort — HubSpot's Pipelines API documents isClosed/probability on
+  // deal stage metadata (probability 1.0 = closed-won, 0.0 = closed-lost),
+  // not independently re-verified against a live export in this sandbox.
+  // objectMapper.ts uses this only to pre-fill a default ladder's
+  // is_terminal_won/is_terminal_lost — the operator reviews and can correct
+  // it before saving, so a wrong guess here is a UI default, not a silent
+  // delivery-affecting error.
+  metadata?: {
+    is_closed: boolean;
+    probability: number | null;
+  };
 }
 
 export interface CrmPipeline {

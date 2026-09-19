@@ -77,3 +77,53 @@ export interface ReadinessResult {
   sample_size: number;
   message: string;
 }
+
+export type ValueSource = 'DECLARED' | 'DERIVED' | 'CRM_AMOUNT' | 'NONE';
+export type DerivedConfidence = 'high' | 'low' | 'withheld';
+
+export interface ValueResolution {
+  value: number | null;
+  currency: string | null;
+  value_source: ValueSource;
+  derived_confidence: DerivedConfidence | null;
+}
+
+// One row in the ladder editor — either a saved crm_stage_mappings row or an
+// objectMapper-built draft (which has no id/organization_id/config_id yet).
+export interface StageMappingRow {
+  id?: string;
+  crm_stage_id: string;
+  crm_stage_label: string;
+  stage_order: number;
+  atlas_event_name: string;
+  is_terminal_won: boolean;
+  is_terminal_lost: boolean;
+  declared_value: number | null;
+  currency: string | null;
+  google_conversion_action_id: string | null;
+  meta_event_name: string | null;
+  linkedin_conversion_id: string | null;
+  enabled: boolean;
+  outcomes_last_30d: number;
+  resolved_value: ValueResolution;
+}
+
+export interface StageMappingsResponse {
+  is_draft: boolean;
+  mappings: StageMappingRow[];
+}
+
+export interface StageMappingInput {
+  crm_stage_id: string;
+  crm_stage_label?: string;
+  stage_order: number;
+  atlas_event_name: string;
+  is_terminal_won?: boolean;
+  is_terminal_lost?: boolean;
+  declared_value?: number | null;
+  currency?: string | null;
+  google_conversion_action_id?: string | null;
+  meta_event_name?: string | null;
+  linkedin_conversion_id?: string | null;
+  enabled?: boolean;
+}

@@ -51,3 +51,41 @@ export interface UpdateCrmSyncConfigInput {
   sync_interval_minutes?: number;
   write_back_enabled?: boolean;
 }
+
+// Full DB row for crm_stage_mappings — the ladder itself (§5.3).
+export interface CrmStageMapping {
+  id: string;
+  organization_id: string;
+  config_id: string;
+  crm_stage_id: string;
+  crm_stage_label: string;
+  stage_order: number;
+  atlas_event_name: string;
+  is_terminal_won: boolean;
+  is_terminal_lost: boolean;
+  declared_value: number | null;
+  currency: string | null;
+  google_conversion_action_id: string | null;
+  meta_event_name: string | null;
+  linkedin_conversion_id: string | null;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// One stage's desired shape for PUT /configs/:id/stage-mappings — the
+// operator-submitted (or objectMapper-defaulted) ladder, pre-persistence.
+export interface StageMappingInput {
+  crm_stage_id: string;
+  crm_stage_label?: string;
+  stage_order: number;
+  atlas_event_name: string;
+  is_terminal_won?: boolean;
+  is_terminal_lost?: boolean;
+  declared_value?: number | null;
+  currency?: string | null;
+  google_conversion_action_id?: string | null;
+  meta_event_name?: string | null;
+  linkedin_conversion_id?: string | null;
+  enabled?: boolean;
+}
