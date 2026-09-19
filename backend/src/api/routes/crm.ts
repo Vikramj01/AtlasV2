@@ -10,14 +10,18 @@
  * POST /api/crm/oauth/hubspot/callback/finalize  — persists the platform_connections row
  * GET  /api/crm/configs                          — list configs for org
  * POST /api/crm/configs                          — create config for a client
- * PATCH /api/crm/configs/:id                     — update mapping, value mode, schedule
+ * PATCH /api/crm/configs/:id                     — update mapping, value mode, schedule —
+ *                                                    setting sync_enabled: true re-runs the
+ *                                                    §6.2 readiness check server-side and is
+ *                                                    rejected unless it comes back READY
+ * POST /api/crm/configs/:id/readiness            — run the §6.2 readiness check on demand
  * GET  /api/crm/configs/:id/pipelines            — list CRM pipelines/stages for the mapping UI
  * DELETE /api/crm/configs/:id                    — remove config (connection removal reuses
  *                                                    the generic DELETE /api/connections/:id)
  *
- * All routes require authMiddleware + planGuard('pro') (D4). Readiness
- * (§6.2), stage-mapping CRUD, sync trigger, outcomes and derived-value
- * listing land in Sprint 2+ — not yet implemented here.
+ * All routes require authMiddleware + planGuard('pro') (D4). Stage-mapping
+ * CRUD, sync trigger, outcomes and derived-value listing land in Sprint 3+
+ * — not yet implemented here.
  *
  * Why two-phase OAuth: a HubSpot portal has no single "which pipeline"
  * answer until after consent is granted (the same reason the GTM OAuth
@@ -47,7 +51,8 @@ import {
   updateCrmSyncConfig,
   deleteCrmSyncConfig,
 } from '@/services/database/crmQueries';
-import type { CrmProviderName } from '@/types/crm';
+import { runReadinessCheck } from '@/services/crm/readinessCheck';
+import type { CrmProviderName, CrmSyncConfig } from '@/types/crm';
 import logger from '@/utils/logger';
 
 export const crmRouter = Router();
@@ -73,6 +78,12 @@ function getProvider(name: CrmProviderName): CrmProvider {
   const provider = PROVIDERS[name];
   if (!provider) throw new Error(`CRM provider '${name}' is not yet supported`);
   return provider;
+}
+
+async function checkReadinessForConfig(config: CrmSyncConfig) {
+  const provider = getProvider(config.provider);
+  const tokens = await resolveTokens(config.connection_id);
+  return runReadinessCheck(provider, tokens, config.tracked_object, config.identity_property_map);
 }
 
 // ── Pending connection cache (post-consent, pre-finalize) ─────────────────────
@@ -321,9 +332,12 @@ crmRouter.post('/configs', async (req: Request, res: Response): Promise<void> =>
 });
 
 // ── PATCH /api/crm/configs/:id ─────────────────────────────────────────────────
-// Note: sync_enabled has no readiness gate yet — Sprint 2's §6.2 readiness
-// check (PROPERTIES_PRESENT_NO_DATA etc.) is what should block this in
-// front of a real sync running against an unwired identity join.
+// Per the PRD's §6.2 sequencing note ("do not proceed past a
+// PROPERTIES_PRESENT_NO_DATA verdict"), turning sync_enabled on re-runs the
+// readiness check server-side rather than trusting the frontend to have
+// called /readiness first — a POST /readiness call the UI forgot to make
+// (or a client re-pointed at a different, unwired portal after the last
+// check) must not be able to slip an unready config into a real sync run.
 
 crmRouter.patch('/configs/:id', async (req: Request, res: Response): Promise<void> => {
   const parse = updateConfigSchema.safeParse(req.body);
@@ -340,10 +354,39 @@ crmRouter.patch('/configs/:id', async (req: Request, res: Response): Promise<voi
       return;
     }
 
+    if (parse.data.sync_enabled === true) {
+      const readiness = await checkReadinessForConfig(existing);
+      if (readiness.verdict !== 'READY') {
+        res.status(400).json({
+          error: `Cannot enable sync — readiness check returned ${readiness.verdict}: ${readiness.message}`,
+          readiness,
+        });
+        return;
+      }
+    }
+
     const updated = await updateCrmSyncConfig(req.params.id, orgId, parse.data);
     res.json({ data: updated });
   } catch (err) {
     sendInternalError(res, err, 'PATCH /api/crm/configs/:id');
+  }
+});
+
+// ── POST /api/crm/configs/:id/readiness ────────────────────────────────────────
+
+crmRouter.post('/configs/:id/readiness', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const orgId = await resolveOrgId(req.user.id);
+    const config = await getCrmSyncConfigById(req.params.id, orgId);
+    if (!config) {
+      res.status(404).json({ error: 'CRM sync config not found' });
+      return;
+    }
+
+    const readiness = await checkReadinessForConfig(config);
+    res.json({ data: readiness });
+  } catch (err) {
+    sendInternalError(res, err, 'POST /api/crm/configs/:id/readiness');
   }
 });
 

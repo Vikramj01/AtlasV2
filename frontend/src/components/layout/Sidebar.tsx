@@ -7,7 +7,7 @@ import {
   Building2, LayoutGrid, ShieldCheck, Activity,
   HeartPulse, ShieldAlert, GitBranch, Tag,
   Link2, ArrowLeftRight, Plus, Target, Zap, BarChart2,
-  ChevronDown, ChevronRight,
+  ChevronDown, ChevronRight, Workflow,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { OrgSwitcher } from '@/components/organisation/OrgSwitcher';
@@ -96,6 +96,7 @@ function orgNav(orgId: string, orgType: 'agency' | 'brand' = 'agency', primaryCl
     // ── Implementation ─────────────────────────────────────────────────────
     { label: SECTION_LABELS.conversionStrategyGate.primary,    technicalLabel: SECTION_LABELS.conversionStrategyGate.technical,    to: '/planning/strategy', Icon: Target, group: 'IMPLEMENTATION' },
     { label: SECTION_LABELS.platformConnections.primary,       technicalLabel: SECTION_LABELS.platformConnections.technical,       to: '/connections',       Icon: Link2,  group: 'IMPLEMENTATION' },
+    { label: 'CRM Outcome Integration',                         technicalLabel: 'crm_outcome_integration',                            to: '/crm',               Icon: Workflow, group: 'IMPLEMENTATION' },
     // ── Tracking ───────────────────────────────────────────────────────────
     { label: SECTION_LABELS.signalTracking.primary, technicalLabel: SECTION_LABELS.signalTracking.technical, to: '/signal-tracking',                Icon: Activity,       group: 'TRACKING' },
     { label: SECTION_LABELS.reconciliation.primary, technicalLabel: SECTION_LABELS.reconciliation.technical, to: '/reconciliation',                 Icon: ArrowLeftRight, group: 'TRACKING' },

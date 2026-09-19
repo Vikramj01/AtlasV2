@@ -47,6 +47,7 @@ const ConnectionsPage           = lazyWithRetry(() => import('@/pages/Connection
 const ClientConnectionsPage     = lazyWithRetry(() => import('@/pages/ClientConnectionsPage').then(m => ({ default: m.ClientConnectionsPage })));
 const ReconciliationPage        = lazyWithRetry(() => import('@/pages/ReconciliationPage').then(m => ({ default: m.ReconciliationPage })));
 const ImplementationHealthPage  = lazyWithRetry(() => import('@/pages/ImplementationHealthPage').then(m => ({ default: m.ImplementationHealthPage })));
+const CrmIntegrationPage        = lazyWithRetry(() => import('@/pages/CrmIntegrationPage').then(m => ({ default: m.CrmIntegrationPage })));
 const ReconciliationRunDetailPage = lazyWithRetry(() => import('@/pages/ReconciliationRunDetailPage').then(m => ({ default: m.ReconciliationRunDetailPage })));
 const DataManagerConsolePage      = lazyWithRetry(() => import('@/pages/DataManagerConsolePage').then(m => ({ default: m.DataManagerConsolePage })));
 const SignalTrackingDashboard     = lazyWithRetry(() => import('@/pages/SignalTrackingDashboard').then(m => ({ default: m.SignalTrackingDashboard })));
@@ -110,6 +111,8 @@ export default function App() {
                 <Route path="/settings/billing/cancel" element={<BillingCancelPage />} />
                 <Route path="/settings/implementation-health" element={<SectionErrorBoundary label="Implementation Health"><ImplementationHealthPage /></SectionErrorBoundary>} />
                 <Route path="/settings/implementation-health/gtm/callback" element={<SectionErrorBoundary label="GTM OAuth"><ImplementationHealthPage /></SectionErrorBoundary>} />
+                <Route path="/crm" element={<SectionErrorBoundary label="CRM Outcome Integration"><CrmIntegrationPage /></SectionErrorBoundary>} />
+                <Route path="/crm/oauth/hubspot/callback" element={<SectionErrorBoundary label="HubSpot OAuth"><CrmIntegrationPage /></SectionErrorBoundary>} />
                 {/* Platform Connections */}
                 <Route path="/connections" element={<ConnectionsPage />} />
                 <Route path="/connections/:clientId" element={<ClientConnectionsPage />} />
