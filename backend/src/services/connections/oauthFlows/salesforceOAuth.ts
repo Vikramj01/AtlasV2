@@ -58,6 +58,15 @@ function buildRedirectUri(): string {
   return `${env.FRONTEND_URL.replace(/\/$/, '')}/crm/oauth/salesforce/callback`;
 }
 
+// Makes the unset env vars a reliable off-switch rather than an accidental
+// one — without this, pasting credentials into the deployment turns the
+// entire (currently unwired) feature live with no code change or review.
+function assertSalesforceCredentialsConfigured(): void {
+  if (!env.SALESFORCE_CLIENT_ID || !env.SALESFORCE_CLIENT_SECRET) {
+    throw new Error('Salesforce OAuth is not configured on this deployment (SALESFORCE_CLIENT_ID / SALESFORCE_CLIENT_SECRET unset)');
+  }
+}
+
 // Mirrors hubspotOAuth.ts's generateState/verifyState exactly, with one
 // extra field (sandbox) threaded through alongside clientId.
 export function generateState(clientId?: string, sandbox = false): string {
@@ -95,6 +104,7 @@ export function verifyState(state: string): { clientId?: string; sandbox: boolea
 }
 
 export function getAuthUrl(state: string, sandbox: boolean): string {
+  assertSalesforceCredentialsConfigured();
   const params = new URLSearchParams({
     response_type: 'code',
     client_id: env.SALESFORCE_CLIENT_ID,
@@ -119,6 +129,7 @@ interface SalesforceTokenResponse {
 const CONSERVATIVE_EXPIRY_MS = 60 * 24 * 60 * 60 * 1000;
 
 export async function handleCallback(code: string, sandbox: boolean): Promise<OAuthTokens> {
+  assertSalesforceCredentialsConfigured();
   const response = await fetch(`${loginHost(sandbox)}/services/oauth2/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -155,6 +166,7 @@ export async function handleCallback(code: string, sandbox: boolean): Promise<OA
 // the data API. Salesforce does not rotate refresh_token on refresh by
 // default, so the current one is reused if the response omits it.
 export async function refreshAccessToken(refreshToken: string, sandbox: boolean): Promise<OAuthTokens> {
+  assertSalesforceCredentialsConfigured();
   const response = await fetch(`${loginHost(sandbox)}/services/oauth2/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },

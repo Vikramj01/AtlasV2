@@ -34,14 +34,14 @@ export function dmaSeverity(state: { consecutive_failures: number; avg_match_rat
   return null;
 }
 
-// CRM Outcome Integration Sprint 8 (§10). crm_sync_configs is genuinely
+// CRM Outcome Integration Sprint 8 (§10). outcome_source_configs is genuinely
 // per-client (client_id UNIQUE — one config per client), so this reads the
-// config row directly rather than the org-level dqm_crm_sync alert, same
+// config row directly rather than the org-level dqm_outcome_sync alert, same
 // as sGTM's own per-client dqm_sgtm_checks below. Deliberately coarser than
 // the org-level alert's full six-condition evaluation (evaluateCrmSyncAlert
 // in dqmAlertEvaluator.ts) — the Dashboard card only needs a signal, the
 // richer picture lives on CrmOutcomesTab.
-export function crmSyncSeverity(config: { consecutive_failures: number; last_sync_status: string | null } | undefined): DqmSeverity | null {
+export function outcomeSyncSeverity(config: { consecutive_failures: number; last_sync_status: string | null } | undefined): DqmSeverity | null {
   if (!config) return null;
   if (config.consecutive_failures >= 2) return 'high';
   if (config.last_sync_status === 'failed') return 'medium';
@@ -325,7 +325,7 @@ export async function getClientSummaries(orgId: string): Promise<DashboardClient
   const clientIds = clients.map((c: { id: string }) => c.id);
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
-  const [platformRows, deploymentRows, ihcCountRows, reconCountRows, sgtmRows, gtgRows, dmaRows, identityConfigRows, crmSyncRows] = await Promise.all([
+  const [platformRows, deploymentRows, ihcCountRows, reconCountRows, sgtmRows, gtgRows, dmaRows, identityConfigRows, outcomeSyncRows] = await Promise.all([
     supabase
       .from('client_platforms')
       .select('client_id, platform')
@@ -382,10 +382,10 @@ export async function getClientSummaries(orgId: string): Promise<DashboardClient
       .select('id, client_id')
       .in('client_id', clientIds),
 
-    // crm_sync_configs is genuinely per-client (client_id UNIQUE) — one row
+    // outcome_source_configs is genuinely per-client (client_id UNIQUE) — one row
     // at most per client, unlike GTG/DMA's org_id-as-client_id convention.
     supabase
-      .from('crm_sync_configs')
+      .from('outcome_source_configs')
       .select('client_id, consecutive_failures, last_sync_status')
       .in('client_id', clientIds)
       .eq('sync_enabled', true),
@@ -411,10 +411,10 @@ export async function getClientSummaries(orgId: string): Promise<DashboardClient
     dmaByClient[r.org_id] = { consecutive_failures: r.consecutive_failures, avg_match_rate: r.avg_match_rate };
   }
 
-  const crmSyncByClient: Record<string, { consecutive_failures: number; last_sync_status: string | null }> = {};
-  for (const row of crmSyncRows.data ?? []) {
+  const outcomeSyncByClient: Record<string, { consecutive_failures: number; last_sync_status: string | null }> = {};
+  for (const row of outcomeSyncRows.data ?? []) {
     const r = row as { client_id: string; consecutive_failures: number; last_sync_status: string | null };
-    crmSyncByClient[r.client_id] = { consecutive_failures: r.consecutive_failures, last_sync_status: r.last_sync_status };
+    outcomeSyncByClient[r.client_id] = { consecutive_failures: r.consecutive_failures, last_sync_status: r.last_sync_status };
   }
 
   // ── Per-client CAPI match quality / dedup rate ───────────────────────────────
@@ -499,11 +499,11 @@ export async function getClientSummaries(orgId: string): Promise<DashboardClient
       checkStatusSeverity(sgtmLatestByClient[c.id]),
       checkStatusSeverity(gtgLatestByClient[c.id]),
       dmaSeverity(dmaByClient[c.id]),
-      crmSyncSeverity(crmSyncByClient[c.id]),
+      outcomeSyncSeverity(outcomeSyncByClient[c.id]),
     );
     const dqmAlertCount = [sgtmLatestByClient[c.id], gtgLatestByClient[c.id]].filter((s) => checkStatusSeverity(s) !== null).length
       + (dmaSeverity(dmaByClient[c.id]) !== null ? 1 : 0)
-      + (crmSyncSeverity(crmSyncByClient[c.id]) !== null ? 1 : 0);
+      + (outcomeSyncSeverity(outcomeSyncByClient[c.id]) !== null ? 1 : 0);
 
     const capiAgg = capiAggByClient[c.id];
     const capiMatchQuality = capiAgg && capiAgg.qualityCount > 0

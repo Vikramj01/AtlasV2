@@ -4,10 +4,10 @@ import { probeGTGPath, saveGTGCheck } from './gtgProbe';
 import { probeSgtmHealth, saveSgtmCheck } from './sgtmProbe';
 import { pollDMADiagnostics, upsertDMAPollState, updateDMABackoff, getDMAPollState } from './dmaPolling';
 import { pollMetaEmqForOrg, saveMetaEmqOutcome } from './metaEmqPolling';
-import { evaluateGTGAlert, evaluateDMAAlert, evaluateSgtmAlert, evaluateCrmSyncAlert } from './dqmAlertEvaluator';
+import { evaluateGTGAlert, evaluateDMAAlert, evaluateSgtmAlert, evaluateOutcomeSyncAlert } from './dqmAlertEvaluator';
 import type { GTGStatus } from './dqmAlertEvaluator';
 import { sendDQMAlertNotification } from './dqmAlertDelivery';
-import { computeCrmSyncHealthSignals } from '@/services/crm/crmSyncHealthCheck';
+import { computeOutcomeSyncHealthSignals } from '@/services/outcomes/syncHealthCheck';
 import {
   getAlertByType,
   createAlert,
@@ -56,7 +56,7 @@ async function loadOrgConfig(orgId: string): Promise<OrgConfig> {
 
 async function writeDQMRunLog(
   orgId: string,
-  checkType: 'gtg' | 'dma' | 'sgtm' | 'meta_emq' | 'crm_sync',
+  checkType: 'gtg' | 'dma' | 'sgtm' | 'meta_emq' | 'outcome_sync',
   status: string,
   latencyMs: number | null,
   triggeredBy: 'scheduled' | 'manual',
@@ -76,14 +76,14 @@ async function writeDQMRunLog(
 
 async function applyAlertDecision(
   orgId: string,
-  checkType: 'gtg' | 'dma' | 'sgtm' | 'crm_sync',
+  checkType: 'gtg' | 'dma' | 'sgtm' | 'outcome_sync',
   decision: import('./dqmAlertEvaluator').AlertEvalResult,
 ): Promise<string> {
   const alertType =
     checkType === 'gtg' ? 'dqm_gtg' :
     checkType === 'dma' ? 'dqm_dma' :
     checkType === 'sgtm' ? 'dqm_sgtm' :
-    'dqm_crm_sync';
+    'dqm_outcome_sync';
 
   if (decision.decision === 'open') {
     await createAlert(orgId, alertType, decision.severity!, decision.title, decision.message, null, null);
@@ -185,30 +185,30 @@ export async function runDQMForOrg(
     await writeDQMRunLog(orgId, 'sgtm', sgtmChecks.length === 0 ? 'not-applicable' : sgtmWorstStatus, sgtmWorstResponseMs, triggeredBy, sgtmAction);
   }
 
-  // ── CRM sync health — one rolled-up alert across all enabled crm_sync_configs ─
-  // (CRM Outcome Integration PRD Sprint 8, §10). computeCrmSyncHealthSignals()
+  // ── Outcome sync health — one rolled-up alert across all enabled outcome_source_configs ─
+  // (CRM Outcome Integration PRD Sprint 8, §10). computeOutcomeSyncHealthSignals()
   // returns null when the org has no enabled config at all — same "nothing
   // to monitor" early-out sGTM uses above, so a stale alert from a since-
   // disabled/deleted config still resolves via the evaluator's existingAlertActive
   // branch rather than being left dangling.
-  const existingCrmSyncAlert = await getAlertByType(orgId, 'dqm_crm_sync');
-  const crmSyncSignals = await computeCrmSyncHealthSignals(orgId, !!existingCrmSyncAlert).catch((err) => {
-    logger.error({ err, orgId }, 'DQM: CRM sync health check failed');
+  const existingOutcomeSyncAlert = await getAlertByType(orgId, 'dqm_outcome_sync');
+  const outcomeSyncSignals = await computeOutcomeSyncHealthSignals(orgId, !!existingOutcomeSyncAlert).catch((err) => {
+    logger.error({ err, orgId }, 'DQM: outcome sync health check failed');
     return null;
   });
 
-  if (crmSyncSignals) {
-    const crmSyncDecision = evaluateCrmSyncAlert(crmSyncSignals);
-    if (crmSyncDecision.decision !== 'none') {
-      const crmSyncAction = await applyAlertDecision(orgId, 'crm_sync', crmSyncDecision);
-      await writeDQMRunLog(orgId, 'crm_sync', crmSyncDecision.title || 'ok', null, triggeredBy, crmSyncAction);
+  if (outcomeSyncSignals) {
+    const outcomeSyncDecision = evaluateOutcomeSyncAlert(outcomeSyncSignals);
+    if (outcomeSyncDecision.decision !== 'none') {
+      const outcomeSyncAction = await applyAlertDecision(orgId, 'outcome_sync', outcomeSyncDecision);
+      await writeDQMRunLog(orgId, 'outcome_sync', outcomeSyncDecision.title || 'ok', null, triggeredBy, outcomeSyncAction);
     }
-  } else if (existingCrmSyncAlert) {
+  } else if (existingOutcomeSyncAlert) {
     // No enabled config left to evaluate, but a stale alert is still open —
     // resolve it the same way a healthy run would (2 consecutive "ok"s),
     // consistent with every other check's resolve path in this file.
-    const crmSyncAction = await applyAlertDecision(orgId, 'crm_sync', { decision: 'resolve', severity: null, title: '', message: '' });
-    await writeDQMRunLog(orgId, 'crm_sync', 'not-applicable', null, triggeredBy, crmSyncAction);
+    const outcomeSyncAction = await applyAlertDecision(orgId, 'outcome_sync', { decision: 'resolve', severity: null, title: '', message: '' });
+    await writeDQMRunLog(orgId, 'outcome_sync', 'not-applicable', null, triggeredBy, outcomeSyncAction);
   }
 
   // ── Meta EMQ poll — one Dataset Quality API call per connected Meta provider ─

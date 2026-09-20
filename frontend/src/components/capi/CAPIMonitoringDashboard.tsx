@@ -21,7 +21,7 @@ import { ErrorLog } from '@/components/capi/ErrorLog';
 import { SkeletonCard } from '@/components/common/SkeletonCard';
 import { AudienceUploadTab } from '@/components/capi/AudienceUploadTab';
 import { RefundsTab } from '@/components/capi/RefundsTab';
-import { CrmOutcomesTab } from '@/components/capi/CrmOutcomesTab';
+import { OutcomesTab } from '@/components/capi/OutcomesTab';
 import type { CAPIProviderConfig } from '@/types/capi';
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -487,7 +487,7 @@ export function CAPIMonitoringDashboard({ provider, onBack }: CAPIMonitoringDash
 
       {/* ── CRM Outcomes tab ─────────────────────────────────────────────── */}
       {tab === 'crm' && (
-        <CrmOutcomesTab />
+        <OutcomesTab />
       )}
 
       {/* ── Delivery tab ─────────────────────────────────────────────────── */}

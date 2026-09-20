@@ -253,7 +253,7 @@ export function evaluateGoogleDeliveryAlert(input: GoogleDeliveryAlertInput): Al
 // caller re-evaluates from scratch on every run, so the alert simply
 // reflects whichever condition is worst THIS run.
 
-export interface CrmSyncAlertInput {
+export interface OutcomeSyncAlertInput {
   consecutiveFailures: number;                     // max across the org's enabled configs
   tokenExpired: boolean;                            // any enabled config's own CRM connection is expired/revoked
   unresolvedIdentityRate7d: number | null;          // 0-100 over crm_outcome_events, org-wide, last 7 days; null = no rows to compute from
@@ -267,7 +267,7 @@ const UNRESOLVED_IDENTITY_HIGH_THRESHOLD = 30;
 const UNRESOLVED_IDENTITY_MEDIUM_THRESHOLD = 10;
 const SKIPPED_WINDOW_THRESHOLD = 10;
 
-export function evaluateCrmSyncAlert(input: CrmSyncAlertInput): AlertEvalResult {
+export function evaluateOutcomeSyncAlert(input: OutcomeSyncAlertInput): AlertEvalResult {
   const {
     consecutiveFailures,
     tokenExpired,

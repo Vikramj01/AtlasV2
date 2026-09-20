@@ -17,7 +17,7 @@ import { supabaseAdmin } from '@/services/database/supabase';
 import {
   checkStatusSeverity,
   dmaSeverity,
-  crmSyncSeverity,
+  outcomeSyncSeverity,
   worstDqmSeverity,
   getClientSummaries,
 } from '../dashboardSummaryService';
@@ -70,19 +70,19 @@ describe('dmaSeverity', () => {
   });
 });
 
-describe('crmSyncSeverity', () => {
+describe('outcomeSyncSeverity', () => {
   it('returns null when the client has no enabled CRM sync config', () => {
-    expect(crmSyncSeverity(undefined)).toBeNull();
+    expect(outcomeSyncSeverity(undefined)).toBeNull();
   });
   it('returns high at the two-consecutive-failures threshold', () => {
-    expect(crmSyncSeverity({ consecutive_failures: 2, last_sync_status: 'failed' })).toBe('high');
+    expect(outcomeSyncSeverity({ consecutive_failures: 2, last_sync_status: 'failed' })).toBe('high');
   });
   it('returns medium for a single failed run (below the consecutive threshold)', () => {
-    expect(crmSyncSeverity({ consecutive_failures: 1, last_sync_status: 'failed' })).toBe('medium');
+    expect(outcomeSyncSeverity({ consecutive_failures: 1, last_sync_status: 'failed' })).toBe('medium');
   });
   it('returns null when the last run was ok or partial', () => {
-    expect(crmSyncSeverity({ consecutive_failures: 0, last_sync_status: 'ok' })).toBeNull();
-    expect(crmSyncSeverity({ consecutive_failures: 0, last_sync_status: 'partial' })).toBeNull();
+    expect(outcomeSyncSeverity({ consecutive_failures: 0, last_sync_status: 'ok' })).toBeNull();
+    expect(outcomeSyncSeverity({ consecutive_failures: 0, last_sync_status: 'partial' })).toBeNull();
   });
 });
 
@@ -196,7 +196,7 @@ describe('getClientSummaries', () => {
       dqm_gtg_checks: [],
       dqm_dma_poll_state: [],
       client_identity_configs: [],
-      crm_sync_configs: [
+      outcome_source_configs: [
         { client_id: 'c1', consecutive_failures: 0, last_sync_status: 'ok' },
         { client_id: 'c2', consecutive_failures: 2, last_sync_status: 'failed' },
       ],
