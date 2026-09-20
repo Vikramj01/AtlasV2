@@ -44,7 +44,7 @@ import { slackRouter } from '@/api/routes/slack';
 import { insightsRouter } from '@/api/routes/insights';
 import { publicAuditRouter } from '@/api/routes/publicAudit';
 import { shopifyAppRouter } from '@/api/routes/shopifyApp';
-import { crmRouter } from '@/api/routes/crm';
+import { outcomesRouter } from '@/api/routes/outcomes';
 import logger from '@/utils/logger';
 import { env } from '@/config/env';
 
@@ -169,7 +169,7 @@ app.use('/api/crawl', crawlRouter);
 app.use('/api/connections', connectionsRouter);
 app.use('/api/reconciliation', reconciliationRouter);
 app.use('/api/gtm', gtmRouter);
-app.use('/api/crm', crmRouter);
+app.use('/api/outcomes', outcomesRouter);
 app.use('/api/ihc', ihcRouter);
 app.use('/api/enricher', enricherRouter);
 app.use('/api/dqm', dqmRouter);
