@@ -10,6 +10,7 @@
  * controlled by SIGNAL_VALIDATOR_PRICE_CENTS.
  */
 
+import { randomUUID } from 'crypto';
 import { getStripe } from '@/services/stripe/client';
 import { supabaseAdmin, uploadSignalValidatorPdf } from '@/services/database/supabase';
 import { env } from '@/config/env';
@@ -20,12 +21,53 @@ export interface SignalValidatorCheckoutResult {
   sessionId: string;
 }
 
+// Free-access allowlist for the standalone paid product — see
+// SIGNAL_VALIDATOR_FREE_ACCESS_EMAIL's own comment in env.ts. Checked before
+// Stripe is ever touched so a matching email never creates a real charge.
+function isFreeAccessEmail(email: string): boolean {
+  return env.SIGNAL_VALIDATOR_FREE_ACCESS_EMAIL !== '' && email.toLowerCase() === env.SIGNAL_VALIDATOR_FREE_ACCESS_EMAIL;
+}
+
+async function createComped(url: string, email: string, successUrl: string): Promise<SignalValidatorCheckoutResult> {
+  // Not a real Stripe session id — prefixed so it can never collide with one
+  // (Stripe's own ids always start with "cs_") and is unambiguous in logs/DB.
+  const sessionId = `free_${randomUUID()}`;
+
+  const { error } = await supabaseAdmin.from('signal_validator_purchases').insert({
+    checkout_session_id: sessionId,
+    email,
+    url,
+    amount_cents: 0,
+    status: 'pending',
+  });
+
+  if (error) {
+    logger.error({ err: error.message, sessionId }, '[signalValidator] Failed to record comped purchase row');
+    throw new Error('Failed to record purchase');
+  }
+
+  // Fire-and-forget, same as the Stripe webhook path — the diagnostic can run
+  // a real Browserbase session (lead-gen attribution chain) and take well
+  // longer than this request should block for. The result page polls
+  // /purchases/:sessionId exactly as it does after a real Stripe redirect.
+  fulfilSignalValidatorPurchase(sessionId).catch((err) => {
+    logger.error({ err, sessionId }, '[signalValidator] Comped purchase fulfilment failed');
+  });
+
+  logger.info({ sessionId, url, email }, '[signalValidator] Standalone checkout bypassed (free-access allowlist)');
+  return { checkoutUrl: successUrl.replace('{CHECKOUT_SESSION_ID}', sessionId), sessionId };
+}
+
 export async function createSignalValidatorCheckout(
   url: string,
   email: string,
   successUrl: string,
   cancelUrl: string,
 ): Promise<SignalValidatorCheckoutResult> {
+  if (isFreeAccessEmail(email)) {
+    return createComped(url, email, successUrl);
+  }
+
   const stripe = getStripe();
 
   const session = await stripe.checkout.sessions.create({
