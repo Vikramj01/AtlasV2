@@ -84,6 +84,12 @@ export function CampaignSignalValidatorLandingPage() {
           </form>
         </CardContent>
       </Card>
+
+      <p className="mt-4 max-w-md text-center text-xs text-muted-foreground">
+        For a lead-gen site, this diagnostic submits one identifiable test lead
+        (<code>atlas-signal-validator-scan@example.com</code>) through your site&apos;s own form to check
+        whether click-id attribution survives the submission — safe to ignore or delete if it reaches your CRM.
+      </p>
     </div>
   );
 }

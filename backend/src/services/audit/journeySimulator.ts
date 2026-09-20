@@ -7,6 +7,7 @@ import type {
   AuditData, FunnelType, Region, DataLayerEvent, NetworkRequest, CookieSnapshot, LocalStorageSnapshot, ConsoleError,
   RuleSetVersion, SiteType, SecondaryMotion, DeclaredPlatform, DeclarationSource, TrafficRegion, CMP, DeclaredConversion,
   StepCoverage, StepUrlSource, ConsentCapture, SettleOutcome, WaitForOutcome, RequestInitiator, CommercePlatformDetection,
+  FormCarriageObservation,
 } from '@/types/audit';
 import type { NamingConvention } from '@/types/taxonomy';
 import { JOURNEY_CONFIGS } from '@/services/browserbase/journeyConfigs';
@@ -14,6 +15,7 @@ import {
   instrumentDataLayer,
   flushDataLayer,
   interceptNetworkRequests,
+  interceptAllRequests,
   interceptRequestInitiators,
   interceptConsoleErrors,
   captureCookies,
@@ -32,7 +34,9 @@ import {
   type SettleConfig,
   type SettleRetryConfig,
   type CDPSession,
+  type CapturedRequest,
 } from './dataCapture';
+import { detectFormCarriage, buildClickIdCandidates } from '@/services/attribution/formCarriageDetection';
 import { extractGa4ClientId, ga4SessionStartDetected } from '@/services/detection/trackingSignals';
 import { detectConsentBanner, dismissConsentBanner, type EvaluatePage } from '@/services/detection/consentBanner';
 import { detectCommercePlatform, type CommercePlatformSignals } from '@/services/detection/commercePlatformDetector';
@@ -312,6 +316,21 @@ export async function simulateJourney(
   const requestProvenance: RequestInitiator[] = [];
   const { detach: detachRequestInitiators } = await interceptRequestInitiators(context, page, requestProvenance, stepRef, opts.audit_id);
 
+  // Attribution Chain Check PRD §5.2 (Link 3 — form carriage) — a second,
+  // deliberately unfiltered listener over the same request stream, gated
+  // on the one funnel type that can ever exercise a lead-gen form, so
+  // every other audit's memory/behavior is unaffected. See
+  // interceptAllRequests's docstring (dataCapture.ts) for why this can't
+  // reuse the tracked-only sink above.
+  const formSubmissionCapture: CapturedRequest[] = [];
+  const captureFormSubmissions = opts.funnel_type === 'lead_gen' && !!(opts.test_email || opts.test_phone);
+  if (captureFormSubmissions) {
+    interceptAllRequests(page, formSubmissionCapture);
+  }
+  let formCarriageObservation: FormCarriageObservation | undefined;
+  /** How long to keep observing after the submit click before deciding nothing fired — mirrors the consent-dismiss settle wait's order of magnitude just above/below it in this file. */
+  const FORM_SUBMIT_CAPTURE_WINDOW_MS = 3000;
+
   let landingFinalUrl: string | undefined;
   let landingReferrerCaptured: string | undefined;
   let outboundCrossDomainLinks: { total: number; withGl: number } | undefined;
@@ -485,8 +504,31 @@ export async function simulateJourney(
           if (opts.test_phone && page.fill) {
             await page.fill('input[type="tel"], input[name*="phone" i]', opts.test_phone).catch(() => {});
           }
+
+          // Link 3 (form carriage) — page.click()'s selector engine only
+          // ever reaches the main frame, so a submit control living inside
+          // a cross-origin iframe form (e.g. an embedded Typeform/Stripe
+          // widget) genuinely can't be clicked here; that failure is what
+          // tells detectFormCarriage this link was never exercised at all
+          // (NOT_OBSERVED), as opposed to exercised-and-broken (FAIL).
+          let submitSucceeded = false;
           if (page.click) {
-            await page.click('button[type="submit"], input[type="submit"]').catch(() => {});
+            const preSubmitRequestCount = formSubmissionCapture.length;
+            submitSucceeded = await page
+              .click('button[type="submit"], input[type="submit"]')
+              .then(() => true)
+              .catch(() => false);
+            if (submitSucceeded && captureFormSubmissions) {
+              await new Promise((r) => setTimeout(r, FORM_SUBMIT_CAPTURE_WINDOW_MS));
+            }
+            if (captureFormSubmissions) {
+              formCarriageObservation = detectFormCarriage({
+                formInteractionAttempted: true,
+                submitSucceeded,
+                capturedRequests: formSubmissionCapture.slice(preSubmitRequestCount),
+                candidates: buildClickIdCandidates(injected),
+              });
+            }
           }
         }
 
@@ -727,6 +769,7 @@ export async function simulateJourney(
     steps_visited: steps.map((s) => s.name),
     step_coverage: stepCoverage,
     consent_capture: consentCapture,
+    attribution_form_carriage: formCarriageObservation,
     landing_final_url: landingFinalUrl,
     landing_referrer_captured: landingReferrerCaptured,
     outboundCrossDomainLinks,

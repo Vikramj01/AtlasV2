@@ -8,6 +8,24 @@ export interface VerdictReasonCode {
   detail: string;
 }
 
+// Attribution Chain Check PRD — mirrors backend/src/services/attribution/chainModel.ts.
+// Lead-gen only; undefined for an ecommerce/saas site or when the
+// underlying browser-based scan failed (the backend fails open, never
+// fails the whole diagnostic on this).
+export type ChainLinkVerdict = 'PASS' | 'FAIL' | 'NOT_OBSERVED';
+export type ChainLink = 'arrival' | 'persistence' | 'form_carriage' | 'crm_arrival' | 'real_population';
+export type RemedyTier = 1 | 2 | 3 | 4 | 5;
+export type NotObservedReason = 'no_paid_traffic' | 'no_conversion_surface';
+
+export interface AttributionChainResult {
+  links: Record<ChainLink, ChainLinkVerdict>;
+  break_at: ChainLink | null;
+  break_evidence: string;
+  remedy_tier: RemedyTier | null;
+  not_observed_reason: NotObservedReason | null;
+  scope: 'pre_connection' | 'post_connection';
+}
+
 export interface EventVerdict {
   rating: VerdictRating;
   score: number;
@@ -15,6 +33,7 @@ export interface EventVerdict {
   reasons: VerdictReasonCode[];
   remediation: string[];
   summary: string;
+  attribution_chain?: AttributionChainResult;
 }
 
 export interface SignalValidatorRun {

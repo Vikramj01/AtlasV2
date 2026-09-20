@@ -19,6 +19,7 @@ import {
   LANDING_REDIRECT_PRESERVES_QUERY_STRING,
   CAPTURE_OCCURS_BEFORE_REDIRECT_COMPLETES,
   REFERRER_PRESERVED_THROUGH_ENTRY,
+  CLICK_ID_CARRIED_IN_FORM_SUBMIT,
   L2_RULES,
 } from '../L2';
 import type { AuditData } from '@/types/audit';
@@ -374,11 +375,62 @@ describe('REFERRER_PRESERVED_THROUGH_ENTRY (L2.11)', () => {
   });
 });
 
+describe('CLICK_ID_CARRIED_IN_FORM_SUBMIT (L2.14)', () => {
+  it('is skipped when attribution_form_carriage was never resolved (not a lead_gen scan, or no test_email/test_phone)', () => {
+    const auditData = makeAuditData();
+    expect(CLICK_ID_CARRIED_IN_FORM_SUBMIT.test(auditData).status).toBe('skipped');
+  });
+
+  it('is skipped, never failed, when the observation is NOT_OBSERVED (e.g. a cross-origin iframe form)', () => {
+    const auditData = makeAuditData({
+      attribution_form_carriage: { verdict: 'NOT_OBSERVED', evidence: 'The form submit control could not be reached.' },
+    });
+    const result = CLICK_ID_CARRIED_IN_FORM_SUBMIT.test(auditData);
+    expect(result.status).toBe('skipped');
+    expect(result.technical_details.found).toMatch(/could not be reached/);
+  });
+
+  it('passes when the observation verdict is PASS', () => {
+    const auditData = makeAuditData({
+      attribution_form_carriage: { verdict: 'PASS', evidence: 'The submitted form request to forms.hubspot.com carried the injected gclid value in its body.' },
+    });
+    const result = CLICK_ID_CARRIED_IN_FORM_SUBMIT.test(auditData);
+    expect(result.status).toBe('pass');
+    expect(result.technical_details.evidence).toEqual(['The submitted form request to forms.hubspot.com carried the injected gclid value in its body.']);
+  });
+
+  it('fails when the observation verdict is FAIL', () => {
+    const auditData = makeAuditData({
+      attribution_form_carriage: { verdict: 'FAIL', evidence: 'The form submission fired 1 request(s) to www.example.com, but none carried the click id captured at arrival.' },
+    });
+    const result = CLICK_ID_CARRIED_IN_FORM_SUBMIT.test(auditData);
+    expect(result.status).toBe('fail');
+    expect(result.severity).toBe('critical');
+  });
+
+  it('never asserts an absence claim in its own authored copy — outputLint.ts banned tokens never appear', () => {
+    const bannedTokens = ['not detected', 'missing', 'broken', 'is not installed', 'you have no', 'zero measurement'];
+    for (const status of ['pass', 'fail', 'skipped'] as const) {
+      const auditData = status === 'skipped'
+        ? makeAuditData()
+        : makeAuditData({ attribution_form_carriage: { verdict: status === 'pass' ? 'PASS' : 'FAIL', evidence: 'x' } });
+      const result = CLICK_ID_CARRIED_IN_FORM_SUBMIT.test(auditData);
+      const remediation = typeof CLICK_ID_CARRIED_IN_FORM_SUBMIT.remediation === 'function'
+        ? CLICK_ID_CARRIED_IN_FORM_SUBMIT.remediation(result)
+        : CLICK_ID_CARRIED_IN_FORM_SUBMIT.remediation;
+      const text = `${result.technical_details.found} ${result.technical_details.expected} ${remediation}`.toLowerCase();
+      for (const token of bannedTokens) {
+        expect(text).not.toContain(token);
+      }
+    }
+  });
+});
+
 describe('L2_RULES', () => {
-  it('exports all 12 crawl-detectable L2 rules', () => {
-    expect(L2_RULES).toHaveLength(12);
-    expect(new Set(L2_RULES.map((r) => r.id)).size).toBe(12);
-    expect(new Set(L2_RULES.map((r) => r.rule_id)).size).toBe(12);
+  it('exports all 13 crawl-detectable L2 rules (12 plus L2.14 — Attribution Chain Check PRD)', () => {
+    expect(L2_RULES).toHaveLength(13);
+    expect(new Set(L2_RULES.map((r) => r.id)).size).toBe(13);
+    expect(new Set(L2_RULES.map((r) => r.rule_id)).size).toBe(13);
   });
 
   it('excludes L2.12 (second-pass detectable, deferred)', () => {

@@ -83,6 +83,7 @@ import { resolveValue } from '@/services/outcomes/valueLadder';
 import type { DerivedValueInput } from '@/services/outcomes/valueLadder';
 import { getProvider } from '@/services/outcomes/sourceRegistry';
 import { outcomeSyncQueue } from '@/services/queue/jobQueue';
+import { getLatestAttributionChainForClient } from '@/services/attribution/attributionAdvisory';
 import type { CrmProviderName, OutcomeSourceConfig, OutcomeDerivedValueSnapshot } from '@/types/outcomes';
 import logger from '@/utils/logger';
 
@@ -523,7 +524,16 @@ outcomesRouter.patch('/configs/:id', async (req: Request, res: Response): Promis
       await outcomeSyncQueue.add({ config_id: updated.id });
     }
 
-    res.json({ data: updated });
+    // Attribution Chain Check PRD §8.1 — advisory only, never blocking:
+    // surface a prior lead-gen chain-check result on the same off→on
+    // transition, so whoever just enabled sync can see whether an earlier
+    // scan found a break upstream of this connection, without hard-gating
+    // on a scan that may be months stale.
+    const attributionChainAdvisory = parse.data.sync_enabled === true && !existing.sync_enabled
+      ? await getLatestAttributionChainForClient(existing.client_id)
+      : null;
+
+    res.json({ data: { ...updated, ...(attributionChainAdvisory ? { attribution_chain_advisory: attributionChainAdvisory } : {}) } });
   } catch (err) {
     sendInternalError(res, err, 'PATCH /api/outcomes/configs/:id');
   }

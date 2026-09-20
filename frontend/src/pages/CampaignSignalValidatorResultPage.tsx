@@ -63,7 +63,7 @@ export function CampaignSignalValidatorResultPage() {
           <p>
             {purchase?.status === 'pending'
               ? 'Confirming your payment…'
-              : 'Running your diagnostic — this usually takes a few seconds.'}
+              : 'Running your diagnostic — this usually takes a few seconds, longer for a lead-gen site’s attribution chain check.'}
           </p>
         </div>
       )}

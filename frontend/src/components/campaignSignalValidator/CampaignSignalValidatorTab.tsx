@@ -75,6 +75,11 @@ export function CampaignSignalValidatorTab({ clientId, websiteUrl }: { clientId:
             {scanning ? 'Running…' : 'Run diagnostic'}
           </Button>
           {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
+          <p className="mt-2 text-xs text-muted-foreground">
+            For a lead-gen client, this submits one identifiable test lead
+            (<code>atlas-signal-validator-scan@example.com</code>) through their form to check click-id
+            attribution — safe to ignore or delete if it reaches their CRM.
+          </p>
         </CardContent>
       </Card>
 

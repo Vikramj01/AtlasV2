@@ -22,13 +22,15 @@ const VALID_SEVERITIES = new Set<Severity>(['critical', 'high', 'medium', 'low']
 const VALID_DETECTION_METHODS = new Set<DetectionMethod>(['crawl', 'second_pass', 'credentials', 'connector']);
 
 describe('REGISTER — structural integrity', () => {
-  it('carries exactly 95 rules across the 12 shipped layers (L0-L10, L12)', () => {
+  it('carries exactly 96 rules across the 12 shipped layers (L0-L10, L12)', () => {
     // 90 + OPPREF_CAPTURED_AT_LANDING (L2.13), OPENAI_PIXEL_PRESENT (L1.17),
     // OPENAI_CONVERSION_EVENT_FIRES (L5.15) — ATLAS_OPENAI_ADS_AND_REGIONS_PRD Part A.
     // 93 + 2 — Pre-Connection Scan Confidence Tiering PRD §10.2/§10.4 splits:
     // GOOGLE_GLOBAL_SITE_TAG_PRESENT -> GTAG_LOADER_PRESENT + GOOGLE_ADS_AW_ID_PRESENT;
     // FBP_AND_FBC_COOKIES_PRESENT -> FBP_COOKIE_PRESENT + FBC_COOKIE_PRESENT.
-    expect(REGISTER).toHaveLength(95);
+    // 95 + CLICK_ID_CARRIED_IN_FORM_SUBMIT (L2.14) — Attribution Chain Check
+    // PRD §5.2/§9 Sprint 3.
+    expect(REGISTER).toHaveLength(96);
   });
 
   it('every rule has a unique register id (L#.#)', () => {
