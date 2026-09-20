@@ -52,11 +52,13 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { randomUUID } from 'crypto';
+import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { planGuard } from '../middleware/planGuard';
 import { sendInternalError } from '@/utils/apiError';
 import { supabaseAdmin } from '@/services/database/supabase';
+import { env } from '@/config/env';
 import * as hubspotOAuth from '@/services/connections/oauthFlows/hubspotOAuth';
 import * as salesforceOAuth from '@/services/connections/oauthFlows/salesforceOAuth';
 import { hubspotClient } from '@/services/outcomes/sources/hubspotClient';
@@ -67,13 +69,16 @@ import { getConnectionById } from '@/services/database/connectionQueries';
 import {
   listOutcomeSourceConfigsForOrg,
   getOutcomeSourceConfigById,
+  getOutcomeSourceConfigByIdInternal,
   createOutcomeSourceConfig,
+  createWebhookOutcomeSourceConfig,
   updateOutcomeSourceConfig,
   deleteOutcomeSourceConfig,
   listOutcomeStageMappings,
   replaceOutcomeStageMappings,
   countRecentOutcomesByMapping,
   getLatestDerivedValueSnapshots,
+  getRecentIdentityMethodsForConfig,
   listOutcomeEvents,
   getDailyOutcomeCounts,
 } from '@/services/database/outcomeQueries';
@@ -84,6 +89,16 @@ import type { DerivedValueInput } from '@/services/outcomes/valueLadder';
 import { getProvider } from '@/services/outcomes/sourceRegistry';
 import { outcomeSyncQueue } from '@/services/queue/jobQueue';
 import { getLatestAttributionChainForClient } from '@/services/attribution/attributionAdvisory';
+import { computeTierStats } from '@/services/outcomes/deliveryGate';
+import { runWebhookIngest } from '@/services/outcomes/webhookIngest';
+import {
+  generateWebhookSecret,
+  encryptWebhookSecret,
+  decryptWebhookSecret,
+  verifyWebhookRequest,
+  WEBHOOK_SIGNATURE_HEADER,
+  WEBHOOK_TIMESTAMP_HEADER,
+} from '@/services/outcomes/webhookAuth';
 import type { OutcomeSourceType, OutcomeSourceConfig, OutcomeDerivedValueSnapshot } from '@/types/outcomes';
 import logger from '@/utils/logger';
 
@@ -102,6 +117,14 @@ async function resolveOrgId(userId: string): Promise<string> {
 }
 
 async function checkReadinessForConfig(config: OutcomeSourceConfig) {
+  // Readiness checking is a pull-source concept (readinessCheck.ts itself
+  // requires listProperties, which a push source doesn't implement) — a
+  // webhook config (connection_id null by construction) should never
+  // reach this, but guard explicitly rather than letting resolveTokens(null)
+  // fail with an unrelated-looking error.
+  if (!config.connection_id) {
+    throw new Error(`Outcome source config ${config.id} has no connection_id — readiness checking only applies to pull sources`);
+  }
   const provider = getProvider(config.source_type);
   const tokens = await resolveTokens(config.connection_id);
   return runReadinessCheck(provider, tokens, config.tracked_object, config.identity_property_map);
@@ -227,6 +250,20 @@ const updateConfigSchema = z.object({
   sync_enabled: z.boolean().optional(),
   sync_interval_minutes: z.number().int().min(60).optional(),
   write_back_enabled: z.boolean().optional(),
+  // Phase 3 (§6.3) — an operator setting this true always clears
+  // delivery_disabled_reason (see the route below); the gate itself only
+  // ever sets that field back, never through this schema.
+  delivery_enabled: z.boolean().optional(),
+});
+
+// Phase 3 (§6.1) — deliberately its own schema, not createConfigSchema
+// widened, since a webhook config takes no connection_id/source_type/
+// pipeline_id/identity_property_map/backfill_days at all.
+const createWebhookConfigSchema = z.object({
+  client_id: z.string().uuid(),
+  tracked_object: z.enum(['contact', 'deal']).optional(),
+  value_mode: z.enum(['DECLARED', 'DERIVED']).optional(),
+  default_currency: z.string().length(3).optional(),
 });
 
 const stageMappingSchema = z.object({
@@ -491,6 +528,64 @@ outcomesRouter.post('/configs', async (req: Request, res: Response): Promise<voi
   }
 });
 
+// ── POST /api/outcomes/configs/webhook ──────────────────────────────────────
+// Phase 3 (§6.1) — a webhook config's own creation route. The plaintext
+// secret is returned ONLY in this response; every other read of this
+// config (GET /configs, GET /configs/:id via listOutcomeSourceConfigsForOrg/
+// getOutcomeSourceConfigById) returns webhook_secret_encrypted, never the
+// plaintext — the operator must copy it now.
+
+outcomesRouter.post('/configs/webhook', async (req: Request, res: Response): Promise<void> => {
+  const parse = createWebhookConfigSchema.safeParse(req.body);
+  if (!parse.success) {
+    res.status(400).json({ error: 'Invalid request', details: parse.error.flatten() });
+    return;
+  }
+
+  try {
+    const orgId = await resolveOrgId(req.user.id);
+    const secret = generateWebhookSecret();
+    const config = await createWebhookOutcomeSourceConfig(orgId, parse.data, encryptWebhookSecret(secret));
+
+    res.status(201).json({
+      data: {
+        ...config,
+        webhook_secret: secret,
+        webhook_url: `${env.BACKEND_URL}/api/outcomes/webhook/${config.id}`,
+      },
+    });
+  } catch (err) {
+    if (err instanceof Error && err.message.includes('duplicate key value violates unique constraint')) {
+      res.status(409).json({ error: 'This client already has an Outcome source config.' });
+      return;
+    }
+    sendInternalError(res, err, 'POST /api/outcomes/configs/webhook');
+  }
+});
+
+// ── GET /api/outcomes/configs/:id/tiers ─────────────────────────────────────
+// Phase 3 (§6.2) — surfaces the input-tier breakdown a client is asked to
+// see: which tier their records are landing in, and (implicitly, via
+// delivery_enabled/delivery_disabled_reason on the config itself, already
+// returned by every other config read) what the match-rate consequence is.
+
+outcomesRouter.get('/configs/:id/tiers', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const orgId = await resolveOrgId(req.user.id);
+    const config = await getOutcomeSourceConfigById(req.params.id, orgId);
+    if (!config) {
+      res.status(404).json({ error: 'Outcome source config not found' });
+      return;
+    }
+
+    const methods = await getRecentIdentityMethodsForConfig(config.id);
+    const stats = computeTierStats(methods);
+    res.json({ data: stats });
+  } catch (err) {
+    sendInternalError(res, err, 'GET /api/outcomes/configs/:id/tiers');
+  }
+});
+
 // ── PATCH /api/outcomes/configs/:id ─────────────────────────────────────────────────
 // Per the PRD's §6.2 sequencing note ("do not proceed past a
 // PROPERTIES_PRESENT_NO_DATA verdict"), turning sync_enabled on re-runs the
@@ -525,7 +620,15 @@ outcomesRouter.patch('/configs/:id', async (req: Request, res: Response): Promis
       }
     }
 
-    const updated = await updateOutcomeSourceConfig(req.params.id, orgId, parse.data);
+    // Phase 3 (§6.3) — an operator explicitly turning delivery back on
+    // always clears the auto-disable reason; the gate itself (webhookIngest.ts)
+    // is the only other writer of delivery_enabled/delivery_disabled_reason,
+    // and it never goes through this route.
+    const patch = parse.data.delivery_enabled === true
+      ? { ...parse.data, delivery_disabled_reason: null }
+      : parse.data;
+
+    const updated = await updateOutcomeSourceConfig(req.params.id, orgId, patch);
 
     // Kick off the rolling sync chain on the off→on transition only — the
     // worker re-enqueues itself every sync_interval_minutes afterwards
@@ -604,6 +707,10 @@ outcomesRouter.get('/configs/:id/pipelines', async (req: Request, res: Response)
       return;
     }
 
+    if (!config.connection_id) {
+      res.status(400).json({ error: 'This source has no connection to discover pipelines from' });
+      return;
+    }
     const provider = getProvider(config.source_type);
     const tokens = await resolveTokens(config.connection_id);
     const listPipelines = await requireListPipelines(provider);
@@ -646,6 +753,10 @@ outcomesRouter.get('/configs/:id/stage-mappings', async (req: Request, res: Resp
       return;
     }
 
+    if (!config.connection_id) {
+      res.json({ data: { is_draft: true, mappings: [] } });
+      return;
+    }
     const provider = getProvider(config.source_type);
     const tokens = await resolveTokens(config.connection_id);
     const listPipelines = await requireListPipelines(provider);
@@ -795,5 +906,125 @@ outcomesRouter.delete('/configs/:id', async (req: Request, res: Response): Promi
     res.json({ data: { message: 'Outcome source config removed' } });
   } catch (err) {
     sendInternalError(res, err, 'DELETE /api/outcomes/configs/:id');
+  }
+});
+
+// ── Public inbound webhook — /api/outcomes/webhook (docs/prd/universal-outcome-ingestion.md §6.1) ──
+//
+// Deliberately a SEPARATE router, not more routes on outcomesRouter above:
+// outcomesRouter.use(authMiddleware, planGuard('pro')) applies to every
+// route registered on it, and an external sender (a client's own Zapier/
+// Make workflow, a CRM's native webhook action) has no Atlas account to
+// authenticate as. Auth here is the per-config HMAC secret instead —
+// app.ts mounts this router at /api/outcomes/webhook with express.raw()
+// applied first, matching the exact pattern billing.ts's Stripe webhook
+// and shopifyApp.ts's webhooks already use, since HMAC verification needs
+// the exact raw bytes the sender signed, not a re-serialized JSON object.
+//
+// Rate-limited per configId rather than per IP — a legitimate integration
+// calls from its own infrastructure's IP, which a per-IP limit would
+// unfairly conflate across every client using the same CRM/automation
+// vendor's shared egress IPs.
+export const outcomeWebhookRouter = Router();
+
+const WEBHOOK_RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const WEBHOOK_RATE_LIMIT_MAX = 60; // per config, per minute — generous for real stage-change volume
+
+const webhookRateLimiter = rateLimit({
+  windowMs: WEBHOOK_RATE_LIMIT_WINDOW_MS,
+  max: WEBHOOK_RATE_LIMIT_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.params.configId ?? 'unknown',
+  handler: (_req, res) => {
+    res.status(429).json({ error: 'Too many requests for this webhook. Please slow down.' });
+  },
+});
+
+interface WebhookAuthResult {
+  ok: true;
+  config: OutcomeSourceConfig;
+  payload: unknown;
+}
+interface WebhookAuthFailure {
+  ok: false;
+  status: number;
+  error: string;
+}
+
+/**
+ * Shared preamble for both webhook routes below: loads the config,
+ * verifies it's actually a webhook-type source with a secret, verifies the
+ * HMAC signature over the raw body, and parses the body as JSON. Neither
+ * route attempts delivery or persistence here — that's runWebhookIngest()'s
+ * job, called separately by each route with its own dryRun flag.
+ */
+async function authenticateWebhookRequest(req: Request): Promise<WebhookAuthResult | WebhookAuthFailure> {
+  const config = await getOutcomeSourceConfigByIdInternal(req.params.configId);
+  if (!config || config.source_type !== 'webhook' || !config.webhook_secret_encrypted) {
+    return { ok: false, status: 404, error: 'Webhook not found' };
+  }
+
+  const rawBody = req.body as Buffer; // express.raw() upstream (app.ts) — never express.json() for this path
+  if (!Buffer.isBuffer(rawBody)) {
+    return { ok: false, status: 400, error: 'Expected a raw JSON request body' };
+  }
+
+  const secret = decryptWebhookSecret(config.webhook_secret_encrypted);
+  const verification = verifyWebhookRequest(
+    rawBody,
+    secret,
+    req.header(WEBHOOK_SIGNATURE_HEADER),
+    req.header(WEBHOOK_TIMESTAMP_HEADER),
+  );
+  if (!verification.valid) {
+    return { ok: false, status: 401, error: `Signature verification failed: ${verification.reason}` };
+  }
+
+  let payload: unknown;
+  try {
+    payload = JSON.parse(rawBody.toString('utf8'));
+  } catch {
+    return { ok: false, status: 400, error: 'Request body is not valid JSON' };
+  }
+
+  return { ok: true, config, payload };
+}
+
+// POST /api/outcomes/webhook/:configId — the real endpoint. Persists and,
+// if delivery_enabled, attempts live delivery.
+outcomeWebhookRouter.post('/:configId', webhookRateLimiter, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const auth = await authenticateWebhookRequest(req);
+    if (!auth.ok) {
+      res.status(auth.status).json({ error: auth.error });
+      return;
+    }
+
+    const result = await runWebhookIngest(auth.config, auth.payload, { dryRun: false });
+    const statusCode = result.status === 'rejected' ? 422 : result.status === 'skipped_duplicate' ? 200 : 202;
+    res.status(statusCode).json({ data: result });
+  } catch (err) {
+    sendInternalError(res, err, 'POST /api/outcomes/webhook/:configId');
+  }
+});
+
+// POST /api/outcomes/webhook/:configId/validate — the dry-run twin (§6.1's
+// own acceptance criterion: "returns the full would-be outcome without
+// delivering or persisting anything"). Same auth, same computation, zero
+// side effects.
+outcomeWebhookRouter.post('/:configId/validate', webhookRateLimiter, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const auth = await authenticateWebhookRequest(req);
+    if (!auth.ok) {
+      res.status(auth.status).json({ error: auth.error });
+      return;
+    }
+
+    const result = await runWebhookIngest(auth.config, auth.payload, { dryRun: true });
+    const statusCode = result.status === 'rejected' ? 422 : 200;
+    res.status(statusCode).json({ data: result });
+  } catch (err) {
+    sendInternalError(res, err, 'POST /api/outcomes/webhook/:configId/validate');
   }
 });

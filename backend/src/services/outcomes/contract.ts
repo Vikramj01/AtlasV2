@@ -17,13 +17,17 @@
  * no-stage record's effect on `records_processed`, raw per-config
  * `identity_property_map` resolution) that depends on CrmRecord's more
  * permissive, nullable shape in a way forcing OutcomeRecord's strict,
- * non-nullable shape onto it would silently have changed. This module —
- * OUTCOME_CONTRACT_VERSION, the type, and validateOutcomeRecord() — is
- * therefore built and exported now, ready for Phase 3's webhook to be its
- * first real external consumer, but nothing in this codebase constructs or
- * validates an OutcomeRecord yet outside this file's own tests.
+ * non-nullable shape onto it would silently have changed. Phase 2 shipped
+ * this module with no real consumer yet; Phase 3's inbound webhook
+ * (services/outcomes/webhookIngest.ts) is its first — a payload posted to
+ * `POST /api/outcomes/webhook/:configId` is validated here directly, and
+ * resolveContractIdentity() below (Phase 3 addition) turns its already-typed
+ * `identity` object into the same ResolvedIdentity shape identityResolver.ts
+ * produces from raw CRM properties, so outcomeDelivery.ts/valueLadder.ts
+ * need no source-specific branching to consume either.
  */
 import { z } from 'zod';
+import type { IdentityKey, IdentityMethod, ResolvedIdentity } from './identityResolver';
 
 export const OUTCOME_CONTRACT_VERSION = '1.0.0';
 
@@ -106,4 +110,56 @@ export function validateOutcomeRecord(payload: unknown): OutcomeValidationResult
     message: issue.message,
   }));
   return { valid: false, errors };
+}
+
+// Contract identity keys that map 1:1 onto identityResolver.ts's IdentityKey
+// union, except atlas_event_id -> event_id (different name, same concept).
+const CONTRACT_TO_IDENTITY_KEY: Array<[keyof OutcomeRecord['identity'], IdentityKey]> = [
+  ['gclid', 'gclid'], ['gbraid', 'gbraid'], ['wbraid', 'wbraid'],
+  ['fbclid', 'fbclid'], ['ttclid', 'ttclid'], ['li_fat_id', 'li_fat_id'],
+  ['msclkid', 'msclkid'], ['oppref', 'oppref'],
+  ['atlas_event_id', 'event_id'], ['email', 'email'], ['phone', 'phone'],
+];
+
+const CLICK_ID_IDENTITY_KEYS: IdentityKey[] = ['gclid', 'gbraid', 'wbraid', 'fbclid', 'ttclid', 'li_fat_id', 'msclkid', 'oppref'];
+
+/**
+ * Turns an already-validated OutcomeRecord's `identity` object into the
+ * exact ResolvedIdentity shape identityResolver.ts's resolveIdentity()
+ * produces from raw CRM properties, so outcomeDelivery.ts/valueLadder.ts
+ * need no source-specific branching to consume either. No raw-property
+ * lookup here at all — the contract sender already supplies typed identity
+ * fields directly, which is the whole point of the contract.
+ *
+ * A bare atlas_event_id (no click id, no email, no phone) resolves to
+ * 'unresolved' here, not 'click_id' — see this file's own header and
+ * deliveryGate.ts's header for why: treating it as Tier 1 without actually
+ * joining it to a real capi_events row would assert a stronger identity
+ * than this function can verify, and the pull-sync path has never built
+ * that join either (syncOrchestrator.ts always passes originalEvent: null).
+ */
+export function resolveContractIdentity(identity: OutcomeRecord['identity']): ResolvedIdentity {
+  const keysPresent: IdentityKey[] = [];
+  const values: Partial<Record<IdentityKey, string>> = {};
+
+  for (const [contractKey, identityKey] of CONTRACT_TO_IDENTITY_KEY) {
+    const value = identity[contractKey];
+    if (value !== undefined) {
+      keysPresent.push(identityKey);
+      values[identityKey] = value;
+    }
+  }
+
+  let method: IdentityMethod;
+  if (CLICK_ID_IDENTITY_KEYS.some((k) => keysPresent.includes(k))) {
+    method = 'click_id';
+  } else if (keysPresent.includes('email')) {
+    method = 'hashed_email';
+  } else if (keysPresent.includes('phone')) {
+    method = 'hashed_phone';
+  } else {
+    method = 'unresolved';
+  }
+
+  return { method, keys_present: keysPresent, values };
 }

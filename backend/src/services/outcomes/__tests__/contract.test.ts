@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { OUTCOME_CONTRACT_VERSION, validateOutcomeRecord } from '../contract';
+import { OUTCOME_CONTRACT_VERSION, validateOutcomeRecord, resolveContractIdentity } from '../contract';
 
 function validPayload(overrides: Record<string, unknown> = {}) {
   return {
@@ -129,5 +129,65 @@ describe('validateOutcomeRecord — rejects with field-level errors, never coerc
     const result = validateOutcomeRecord({ identity: {} });
     expect(result.valid).toBe(false);
     expect(result.errors.length).toBeGreaterThan(1);
+  });
+});
+
+describe('resolveContractIdentity', () => {
+  it('resolves to click_id when any click-id key is present', () => {
+    expect(resolveContractIdentity({ gclid: 'g1' }).method).toBe('click_id');
+    expect(resolveContractIdentity({ fbclid: 'f1' }).method).toBe('click_id');
+    expect(resolveContractIdentity({ oppref: 'o1' }).method).toBe('click_id');
+  });
+
+  it('click_id wins even when email/phone are also present', () => {
+    const result = resolveContractIdentity({ gclid: 'g1', email: 'hashed', phone: 'hashed' });
+    expect(result.method).toBe('click_id');
+  });
+
+  it('resolves to hashed_email when email is present with no click id', () => {
+    expect(resolveContractIdentity({ email: 'hashed-email' }).method).toBe('hashed_email');
+  });
+
+  it('email wins over phone when both are present with no click id', () => {
+    expect(resolveContractIdentity({ email: 'e', phone: 'p' }).method).toBe('hashed_email');
+  });
+
+  it('resolves to hashed_phone when only phone is present', () => {
+    expect(resolveContractIdentity({ phone: 'hashed-phone' }).method).toBe('hashed_phone');
+  });
+
+  it('resolves to unresolved when nothing is present', () => {
+    expect(resolveContractIdentity({}).method).toBe('unresolved');
+  });
+
+  it('a bare atlas_event_id with nothing else resolves to unresolved, not click_id', () => {
+    // Deliberate: see this module's own header and deliveryGate.ts's — no
+    // capi_events join exists to verify a stronger inherited method, so
+    // this must not silently assert Tier 1.
+    const result = resolveContractIdentity({ atlas_event_id: 'evt-123' });
+    expect(result.method).toBe('unresolved');
+    expect(result.keys_present).toContain('event_id');
+  });
+
+  it('maps atlas_event_id to the event_id identity key, not a literal atlas_event_id key', () => {
+    const result = resolveContractIdentity({ gclid: 'g1', atlas_event_id: 'evt-123' });
+    expect(result.keys_present).toContain('event_id');
+    expect(result.keys_present).not.toContain('atlas_event_id' as never);
+    expect(result.values.event_id).toBe('evt-123');
+  });
+
+  it('keys_present lists every present identity key, not just the winning one', () => {
+    const result = resolveContractIdentity({ gclid: 'g1', fbclid: 'f1', email: 'e' });
+    expect(result.keys_present.sort()).toEqual(['email', 'fbclid', 'gclid'].sort());
+  });
+
+  it('values carries the raw value for every present key', () => {
+    const result = resolveContractIdentity({ gclid: 'g1', email: 'e1' });
+    expect(result.values).toEqual({ gclid: 'g1', email: 'e1' });
+  });
+
+  it('never includes a key with an undefined value', () => {
+    const result = resolveContractIdentity({ gclid: 'g1' });
+    expect(Object.keys(result.values)).toEqual(['gclid']);
   });
 });

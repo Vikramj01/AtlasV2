@@ -55,7 +55,6 @@
  * "do not add parameters"), not a gap this sprint chose to leave.
  */
 
-import { createHash } from 'crypto';
 import {
   getOutcomeSourceConfigByIdInternal,
   listOutcomeStageMappings,
@@ -71,6 +70,7 @@ import { resolveStageMapping } from './objectMapper';
 import { resolveIdentity, resolveIdentityPropertyMap } from './identityResolver';
 import { resolveValue } from './valueLadder';
 import { deliverOutcome, handleLostDeal, writeBackAttribution } from './outcomeDelivery';
+import { computeEventId } from './eventId';
 import type { ObservedCrmAmount, DerivedValueInput } from './valueLadder';
 import type { CrmRecord, OutcomeSource, DecryptedTokens, OutcomeSourceType } from './sources/types';
 import type { OutcomeStageMapping, NewOutcomeEventInput } from '@/types/outcomes';
@@ -96,7 +96,11 @@ const BATCH_SIZE = 100;
 // an unknown property name gracefully. Every CRM_AMOUNT observation
 // currently falls back to the config's default_currency until this is
 // verified live.
-const OBSERVED_AMOUNT_PROPERTY_BY_PROVIDER: Record<OutcomeSourceType, string> = {
+// Pull sources only ('webhook' deliberately excluded — a webhook record
+// carries value/currency directly on the contract, no property name to
+// look up; runSync()'s transport guard means this map is never even
+// reached for one).
+const OBSERVED_AMOUNT_PROPERTY_BY_PROVIDER: Record<Exclude<OutcomeSourceType, 'webhook'>, string> = {
   hubspot: 'amount',
   salesforce: 'Amount',
 };
@@ -113,15 +117,11 @@ export interface SyncRunResult {
   error?: string;
 }
 
-function computeEventId(configId: string, sourceRecordId: string, sourceStageId: string): string {
-  return createHash('sha256').update(`${configId}:${sourceRecordId}:${sourceStageId}`).digest('hex').slice(0, 32);
-}
-
 function outcomeKey(sourceRecordId: string, sourceStageId: string): string {
   return `${sourceRecordId}::${sourceStageId}`;
 }
 
-function extractObservedAmount(properties: Record<string, string | null | undefined>, provider: OutcomeSourceType): ObservedCrmAmount {
+function extractObservedAmount(properties: Record<string, string | null | undefined>, provider: Exclude<OutcomeSourceType, 'webhook'>): ObservedCrmAmount {
   const raw = properties[OBSERVED_AMOUNT_PROPERTY_BY_PROVIDER[provider]];
   if (raw == null || raw === '') return { amount: null, currency: null };
   const parsed = Number(raw);
@@ -163,33 +163,52 @@ export async function runSync(configId: string, opts?: { recordCap?: number }): 
     ? new Date(new Date(config.last_synced_at).getTime() - OVERLAP_MS)
     : new Date(until.getTime() - config.backfill_days * 24 * 60 * 60 * 1000);
 
-  let tokens: DecryptedTokens;
   let provider: OutcomeSource;
   try {
     provider = getProvider(config.source_type);
-    tokens = await resolveTokens(config.connection_id);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await updateOutcomeSyncState(config.id, { last_sync_status: 'failed', last_sync_error: message });
-    logger.error({ configId, err: message }, 'Outcome sync: failed to resolve provider or connection tokens');
+    logger.error({ configId, err: message }, 'Outcome sync: failed to resolve provider');
     return { status: 'failed', records_processed: 0, outcomes_written: 0, outcomes_skipped_unmapped: 0, cap_hit: false, sync_interval_minutes: config.sync_interval_minutes, error: message };
   }
 
-  // Phase 2 transport discriminator (docs/prd/universal-outcome-ingestion.md
-  // §5.2) — runSync() is the POLLING engine; a 'push' source (Phase 3's
-  // webhook, not built yet) receives records via an inbound call and must
-  // never be actively scheduled here. Both sources getProvider() can
-  // currently resolve are 'pull', so this branch is unreachable today —
-  // it exists so a future push source landing in outcomeSyncQueue by
-  // mistake (e.g. a stale scheduled job predating a source's transport
-  // flip) fails closed as 'disabled' rather than polling nothing forever.
+  // Phase 3 transport discriminator (docs/prd/universal-outcome-ingestion.md
+  // §5.2/§6) — runSync() is the POLLING engine; a 'push' source (the
+  // webhook) receives records via an inbound call and must never be
+  // actively scheduled here. Checked BEFORE resolving connection tokens —
+  // a webhook config's connection_id is null by construction (no OAuth
+  // connection exists for it), so resolveTokens() would fail for the wrong
+  // reason if this ran after it instead of before.
   if (provider.transport !== 'pull') {
     logger.warn({ configId, sourceType: config.source_type }, 'Outcome sync: skipped — source transport is not pull');
     return { status: 'disabled', records_processed: 0, outcomes_written: 0, outcomes_skipped_unmapped: 0, cap_hit: false, sync_interval_minutes: config.sync_interval_minutes };
   }
+  // Every 'pull' transport source has a connection_id by construction
+  // (createOutcomeSourceConfig requires one; only createWebhookOutcomeSourceConfig,
+  // whose sources are always 'push', ever leaves it null) — this narrows the
+  // type for OBSERVED_AMOUNT_PROPERTY_BY_PROVIDER's lookup below and guards
+  // against a genuinely malformed row rather than assuming the invariant holds.
+  const pullSourceType = config.source_type as Exclude<OutcomeSourceType, 'webhook'>;
+  if (!config.connection_id) {
+    const message = `Outcome source config ${config.id} is a pull source (${config.source_type}) with no connection_id`;
+    await updateOutcomeSyncState(config.id, { last_sync_status: 'failed', last_sync_error: message });
+    logger.error({ configId }, message);
+    return { status: 'failed', records_processed: 0, outcomes_written: 0, outcomes_skipped_unmapped: 0, cap_hit: false, sync_interval_minutes: config.sync_interval_minutes, error: message };
+  }
 
-  const propertyMap = resolveIdentityPropertyMap(config.identity_property_map, config.source_type);
-  const propertyNames = Array.from(new Set([...Object.values(propertyMap), OBSERVED_AMOUNT_PROPERTY_BY_PROVIDER[config.source_type]]));
+  let tokens: DecryptedTokens;
+  try {
+    tokens = await resolveTokens(config.connection_id);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await updateOutcomeSyncState(config.id, { last_sync_status: 'failed', last_sync_error: message });
+    logger.error({ configId, err: message }, 'Outcome sync: failed to resolve connection tokens');
+    return { status: 'failed', records_processed: 0, outcomes_written: 0, outcomes_skipped_unmapped: 0, cap_hit: false, sync_interval_minutes: config.sync_interval_minutes, error: message };
+  }
+
+  const propertyMap = resolveIdentityPropertyMap(config.identity_property_map, pullSourceType);
+  const propertyNames = Array.from(new Set([...Object.values(propertyMap), OBSERVED_AMOUNT_PROPERTY_BY_PROVIDER[pullSourceType]]));
 
   let recordsProcessed = 0;
   let outcomesWritten = 0;
@@ -210,7 +229,7 @@ export async function runSync(configId: string, opts?: { recordCap?: number }): 
       if (existingKeys.has(outcomeKey(record.id, mapping.crm_stage_id))) continue; // §9.2 — already processed by an earlier overlapping run
 
       const identity = resolveIdentity(record.properties, config!.identity_property_map, null, config!.source_type);
-      const observedAmount = mapping.is_terminal_won ? extractObservedAmount(record.properties, config!.source_type) : null;
+      const observedAmount = mapping.is_terminal_won ? extractObservedAmount(record.properties, pullSourceType) : null;
       const derivedInput = derivedValuesByStage.get(mapping.crm_stage_id) ?? null;
       const resolvedValue = resolveValue(mapping, config!, observedAmount, derivedInput);
       const eventId = computeEventId(config!.id, record.id, mapping.crm_stage_id);

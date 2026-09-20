@@ -4,7 +4,13 @@
 // CrmProviderName -> OutcomeSourceType renamed in Phase 2 (§5.2), mirroring
 // the backend rename of CrmProvider -> OutcomeSource.
 
-export type OutcomeSourceType = 'hubspot' | 'salesforce';
+// Widened in Phase 3 to include 'webhook' — the first non-CRM source type
+// this union actually models (mirrors backend/src/types/outcomes.ts).
+export type OutcomeSourceType = 'hubspot' | 'salesforce' | 'webhook';
+// The subset of OutcomeSourceType that goes through the two-phase OAuth
+// connect flow (SourceConnectCard.tsx) — a webhook source never does, since
+// Atlas receives calls rather than authenticating outward.
+export type OAuthOutcomeSourceType = Extract<OutcomeSourceType, 'hubspot' | 'salesforce'>;
 export type OutcomeObjectType = 'contact' | 'deal';
 export type OutcomeValueMode = 'DECLARED' | 'DERIVED';
 export type OutcomeSyncStatus = 'ok' | 'partial' | 'failed';
@@ -13,7 +19,8 @@ export interface OutcomeSourceConfig {
   id: string;
   organization_id: string;
   client_id: string;
-  connection_id: string;
+  // Nullable since Phase 3 — a webhook source has no OAuth connection at all.
+  connection_id: string | null;
   source_type: OutcomeSourceType;
   pipeline_id: string | null;
   tracked_object: OutcomeObjectType;
@@ -29,6 +36,16 @@ export interface OutcomeSourceConfig {
   last_sync_error: string | null;
   // Sprint 8 — reset to 0 on 'ok'/'partial', incremented on 'failed'.
   consecutive_failures: number;
+  // Phase 3 (§6.1) — always an encrypted envelope, never the plaintext
+  // secret (that's returned once, only from POST /configs/webhook's own
+  // response). Present only to mirror the backend row shape; the frontend
+  // never reads or decrypts it.
+  webhook_secret_encrypted: string | null;
+  // Phase 3 (§6.3) — whether this source's resolved records are actually
+  // attempted for live delivery, vs. persisted and counted only.
+  delivery_enabled: boolean;
+  // Set when deliveryGate.ts auto-disables delivery; null otherwise.
+  delivery_disabled_reason: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -45,6 +62,24 @@ export interface CreateOutcomeSourceConfigInput {
   backfill_days?: number;
 }
 
+// Phase 3 — a webhook config's own creation shape (POST /configs/webhook),
+// deliberately separate from CreateOutcomeSourceConfigInput above (which
+// keeps connection_id required for the pull sources that still need it).
+export interface CreateWebhookOutcomeSourceConfigInput {
+  client_id: string;
+  tracked_object?: OutcomeObjectType;
+  value_mode?: OutcomeValueMode;
+  default_currency?: string;
+}
+
+// The one-time response shape from POST /configs/webhook — carries the
+// plaintext secret and the ready-to-use webhook URL, neither of which is
+// ever returned again by any other read of this config.
+export interface CreatedWebhookOutcomeSourceConfig extends OutcomeSourceConfig {
+  webhook_secret: string;
+  webhook_url: string;
+}
+
 export interface UpdateOutcomeSourceConfigInput {
   pipeline_id?: string | null;
   tracked_object?: OutcomeObjectType;
@@ -55,6 +90,18 @@ export interface UpdateOutcomeSourceConfigInput {
   sync_enabled?: boolean;
   sync_interval_minutes?: number;
   write_back_enabled?: boolean;
+  delivery_enabled?: boolean;
+  delivery_disabled_reason?: string | null;
+}
+
+// GET /configs/:id/tiers (Phase 3, §6.2) — the input-tier breakdown over a
+// config's most recent outcome_events rows.
+export interface OutcomeTierStats {
+  total: number;
+  tier1: number;
+  tier2: number;
+  tier3: number;
+  tier3_rate_percent: number | null;
 }
 
 export interface CrmAccountInfo {

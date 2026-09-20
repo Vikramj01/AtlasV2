@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { PlanGate } from '@/components/common/PlanGate';
 import { SectionErrorBoundary } from '@/components/common/ErrorBoundary';
 import { SourceConnectCard } from '@/components/outcomes/SourceConnectCard';
+import { WebhookSourceCard } from '@/components/outcomes/WebhookSourceCard';
 import { ReadinessPanel } from '@/components/outcomes/ReadinessPanel';
 import { StageLadderEditor } from '@/components/outcomes/StageLadderEditor';
 import { DerivedValuePanel } from '@/components/outcomes/DerivedValuePanel';
@@ -24,13 +25,13 @@ import { useOrganisationStore } from '@/store/organisationStore';
 import { useOrganisations } from '@/hooks/useOrganisations';
 import { clientApi } from '@/lib/api/organisationApi';
 import type { Client } from '@/types/organisation';
-import type { CrmAccountInfo, CrmPipeline, OutcomeSourceType } from '@/types/outcomes';
+import type { CrmAccountInfo, CrmPipeline, OAuthOutcomeSourceType } from '@/types/outcomes';
 
 interface PendingConnection {
   connectionId: string;
   account: CrmAccountInfo;
   pipelines: CrmPipeline[];
-  provider: OutcomeSourceType;
+  provider: OAuthOutcomeSourceType;
 }
 
 function CreateConfigStopgap({ pending, onCreated }: { pending: PendingConnection; onCreated: () => void }) {
@@ -127,6 +128,10 @@ export function OutcomesPage() {
           </SectionErrorBoundary>
         </div>
 
+        <SectionErrorBoundary label="Webhook source">
+          <WebhookSourceCard />
+        </SectionErrorBoundary>
+
         {pending && (
           <SectionErrorBoundary label="Assign connection to client">
             <CreateConfigStopgap
@@ -146,9 +151,16 @@ export function OutcomesPage() {
                 <SectionErrorBoundary label="Derived values">
                   <DerivedValuePanel config={config} />
                 </SectionErrorBoundary>
-                <SectionErrorBoundary label="Readiness">
-                  <ReadinessPanel config={config} />
-                </SectionErrorBoundary>
+                {/* Readiness (§6.2) is a pull-source concept — it calls
+                    listProperties against a connected portal, which a
+                    webhook config (connection_id null) has none of.
+                    WebhookSourceCard above covers the equivalent surface
+                    (tier breakdown + delivery toggle) for webhook sources. */}
+                {config.source_type !== 'webhook' && (
+                  <SectionErrorBoundary label="Readiness">
+                    <ReadinessPanel config={config} />
+                  </SectionErrorBoundary>
+                )}
               </div>
             ))}
           </div>

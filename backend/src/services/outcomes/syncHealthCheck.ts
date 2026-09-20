@@ -101,7 +101,10 @@ export async function computeOutcomeSyncHealthSignals(
   if (enabledConfigs.length === 0) return null;
 
   const configIds = enabledConfigs.map((c) => c.id);
-  const connectionIds = Array.from(new Set(enabledConfigs.map((c) => c.connection_id)));
+  // sync_enabled only ever applies to pull sources, which always have a
+  // connection_id — the filter is defensive typing, not an expected drop
+  // (a webhook config can never set sync_enabled in the first place).
+  const connectionIds = Array.from(new Set(enabledConfigs.map((c) => c.connection_id).filter((id): id is string => !!id)));
   const derivedModeConfigIds = enabledConfigs.filter((c) => c.value_mode === 'DERIVED').map((c) => c.id);
   const consecutiveFailures = Math.max(...enabledConfigs.map((c) => c.consecutive_failures));
 
