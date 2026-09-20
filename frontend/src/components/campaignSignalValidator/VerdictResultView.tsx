@@ -1,6 +1,7 @@
 import { AlertTriangle, CheckCircle2, Info } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { AttributionChainCard } from './AttributionChainCard';
 import type { EventVerdict } from '@/types/campaignSignalValidator';
 
 const RATING_STYLES: Record<EventVerdict['rating'], { badge: string; bar: string }> = {
@@ -81,6 +82,8 @@ export function VerdictResultView({ verdict, url }: { verdict: EventVerdict; url
           </CardContent>
         </Card>
       )}
+
+      {verdict.attribution_chain && <AttributionChainCard chain={verdict.attribution_chain} />}
     </div>
   );
 }

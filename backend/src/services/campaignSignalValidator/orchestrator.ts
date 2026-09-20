@@ -15,6 +15,10 @@
 import { detectSite } from '@/services/planning/siteDetectionService';
 import { evaluateEventVerdict, type PrimaryStageInput, type EventVerdict } from './eventVerdict';
 import { supabaseAdmin } from '@/services/database/supabase';
+import { createBrowserbaseSession, getCDPUrl } from '@/services/browserbase/client';
+import { simulateJourney } from '@/services/audit/journeySimulator';
+import { deriveAttributionChain } from '@/services/attribution/chainOrchestration';
+import type { AttributionChainResult } from '@/services/attribution/chainModel';
 import logger from '@/utils/logger';
 
 export interface DiagnosticRunResult {
@@ -59,7 +63,29 @@ export async function runDiagnostic(params: {
   try {
     const siteDetection = await detectSite(url);
     const primaryStage = clientId ? await loadPrimaryStage(clientId) : null;
-    const verdict = evaluateEventVerdict({ siteDetection, primaryStage });
+
+    // Attribution Chain Check PRD §8 — lead-gen only, since Links 1-3 are
+    // meaningless without a lead-gen form to submit. Unlike the rest of
+    // this diagnostic (a zero-cost fetch+parse scan, deliberately kept
+    // cheap per this file's own header), this branch runs a real
+    // Browserbase session — the chain's raw inputs (synthetic click-id
+    // persistence, an actual form submit's captured network request) don't
+    // exist without one. Justified per-call cost here: the standalone
+    // flow only ever reaches this after a completed Stripe purchase
+    // (checkoutService.fulfilSignalValidatorPurchase), and the in-app flow
+    // is authenticated/org-scoped, the same trust level Atlas's full Audit
+    // Engine already extends to a logged-in user's own Browserbase spend.
+    // Never fails the whole diagnostic — a scan failure here just leaves
+    // attributionChain undefined, so the existing zero-cost verdict still
+    // returns.
+    const attributionChain = siteDetection.inferred_business_type === 'lead_gen'
+      ? await runLeadGenAttributionScan(runId, url).catch((err) => {
+        logger.warn({ err: err instanceof Error ? err.message : String(err), runId, url }, '[campaignSignalValidator] Attribution chain scan failed — continuing without it');
+        return null;
+      })
+      : null;
+
+    const verdict = evaluateEventVerdict({ siteDetection, primaryStage, attributionChain });
 
     await supabaseAdmin
       .from('signal_validator_runs')
@@ -83,6 +109,48 @@ export async function runDiagnostic(params: {
 
     return { id: runId, status: 'failed', verdict: null, error_message: message };
   }
+}
+
+// Identifiable, obviously-synthetic address — per PRD §5.2, a test
+// submission may genuinely reach the prospect's real CRM (the existing
+// journeySimulator.ts form-fill behavior this reuses already has this
+// property and it's accepted). Keeping it stable and Atlas-branded lets a
+// prospect's team recognise and discard the resulting lead record.
+const ATTRIBUTION_SCAN_TEST_EMAIL = 'atlas-signal-validator-scan@example.com';
+
+/**
+ * Runs a real, lead-gen-only Browserbase scan solely to produce the
+ * pre-connection attribution chain (Links 1-3) — see Attribution Chain
+ * Check PRD §5/§8. Deliberately narrow: only injects synthetic click IDs,
+ * fills/submits the landing page's lead-gen form, and returns the derived
+ * chain, rather than running the full Check Register v2 report this
+ * product has no other use for.
+ */
+async function runLeadGenAttributionScan(runId: string, url: string): Promise<AttributionChainResult | null> {
+  const session = await createBrowserbaseSession({ product: 'campaign_signal_validator', run_id: runId });
+
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { chromium } = require('playwright-core') as {
+    chromium: { connectOverCDP: (url: string) => Promise<unknown> };
+  };
+  const browser = await chromium.connectOverCDP(getCDPUrl(session.id)) as Parameters<typeof simulateJourney>[0];
+
+  // Not explicitly closed — same convention as the full Audit Engine's own
+  // orchestrator.ts, where simulateJourney's own context.close() is the
+  // only cleanup and the CDP connection itself is left to the Browserbase
+  // session's own lifecycle (this file never introduced a different
+  // pattern for that elsewhere in this codebase).
+  const auditData = await simulateJourney(browser, {
+    audit_id: runId,
+    website_url: url,
+    funnel_type: 'lead_gen',
+    region: 'us',
+    url_map: {},
+    test_email: ATTRIBUTION_SCAN_TEST_EMAIL,
+    rule_set_version: 'v2',
+  });
+
+  return deriveAttributionChain(auditData, 'pre_connection');
 }
 
 export async function getRun(runId: string): Promise<Record<string, unknown> | null> {

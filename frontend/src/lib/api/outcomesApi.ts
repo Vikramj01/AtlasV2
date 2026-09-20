@@ -2,6 +2,8 @@ import { supabase } from '@/lib/supabase';
 import type {
   OutcomeSourceConfig,
   CreateOutcomeSourceConfigInput,
+  CreateWebhookOutcomeSourceConfigInput,
+  CreatedWebhookOutcomeSourceConfig,
   UpdateOutcomeSourceConfigInput,
   CrmAccountInfo,
   CrmPipeline,
@@ -12,6 +14,7 @@ import type {
   OutcomeDeliveryStatus,
   ListOutcomeEventsResult,
   OutcomeDailyCount,
+  OutcomeTierStats,
 } from '@/types/outcomes';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
@@ -127,6 +130,30 @@ export async function deleteConfig(id: string): Promise<void> {
   await apiFetch(`/outcomes/configs/${id}`, { method: 'DELETE' });
 }
 
+// Phase 3 (§6.1) — creates a webhook-type source. The response is the only
+// place the plaintext secret and the ready-to-use webhook URL ever appear;
+// every later read of this config returns webhook_secret_encrypted instead.
+export async function createWebhookConfig(input: CreateWebhookOutcomeSourceConfigInput): Promise<CreatedWebhookOutcomeSourceConfig> {
+  const res = await apiFetch<{ data: CreatedWebhookOutcomeSourceConfig }>('/outcomes/configs/webhook', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+  return res.data;
+}
+
+// Phase 3 (§6.2) — the input-tier breakdown over a config's most recent
+// outcome_events rows.
+export async function getConfigTiers(configId: string): Promise<OutcomeTierStats> {
+  const res = await apiFetch<{ data: OutcomeTierStats }>(`/outcomes/configs/${configId}/tiers`);
+  return res.data;
+}
+
+// Reconstructs an existing webhook config's URL (never a secret — this is
+// just the endpoint shape POST /configs/webhook already returned once).
+export function buildWebhookUrl(configId: string): string {
+  return `${API_BASE}/api/outcomes/webhook/${configId}`;
+}
+
 export async function getPipelines(configId: string): Promise<CrmPipeline[]> {
   const res = await apiFetch<{ data: CrmPipeline[] }>(`/outcomes/configs/${configId}/pipelines`);
   return res.data ?? [];
@@ -191,8 +218,11 @@ export const outcomesApi = {
   finalizeSalesforceConnection,
   listConfigs,
   createConfig,
+  createWebhookConfig,
   updateConfig,
   deleteConfig,
+  getConfigTiers,
+  buildWebhookUrl,
   getPipelines,
   checkReadiness,
   getStageMappings,

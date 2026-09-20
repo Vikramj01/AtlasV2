@@ -9,6 +9,9 @@
 
 import PDFDocument from 'pdfkit';
 import type { EventVerdict } from './eventVerdict';
+import { buildChainCopy } from '@/services/attribution/chainCopy';
+import { lintChainCopy } from '@/services/attribution/chainCopyLint';
+import logger from '@/utils/logger';
 
 const C = {
   brand: '#4F46E5',
@@ -115,6 +118,43 @@ export function generateSignalValidatorPdf(params: {
         doc.fillColor(C.midText).fontSize(9.5).font('Helvetica')
           .text(`•  ${step}`, LEFT, doc.y, { width: CONTENT_W });
         doc.moveDown(0.4);
+      }
+    }
+
+    // ── Attribution chain (Attribution Chain Check PRD §7/§8) — lead-gen only,
+    // omitted entirely (not an empty heading) when this run has no chain
+    // result, per Implementation Rule 12: never fabricate a section for
+    // data that doesn't exist. Non-throwing lint check, matching the Audit
+    // Engine PDF export's own convention (outputLint.ts is a hard gate on
+    // the web report, a logged-not-blocking check on the PDF path) — a
+    // lint violation here should never stop a paid customer's PDF from
+    // generating.
+    if (verdict.attribution_chain) {
+      const copy = buildChainCopy(verdict.attribution_chain);
+      const lintTexts = [copy.headline, copy.body, copy.remedy?.typical_cause, copy.remedy?.shape_of_work, copy.unverified_note].filter((s): s is string => !!s);
+      const violations = lintChainCopy(lintTexts);
+      if (violations.length > 0) {
+        logger.warn({ violations }, '[signalValidator] Attribution chain copy failed the banned-token lint — rendering anyway');
+      }
+
+      ensureSpace(doc, 90);
+      doc.moveDown(1);
+      doc.fillColor(C.darkText).fontSize(13).font('Helvetica-Bold').text('Attribution chain (lead-gen)', LEFT, doc.y);
+      doc.moveDown(0.4);
+      doc.fillColor(C.darkText).fontSize(11).font('Helvetica-Bold').text(copy.headline, LEFT, doc.y, { width: CONTENT_W });
+      doc.fillColor(C.midText).fontSize(9.5).font('Helvetica').text(copy.body, LEFT, doc.y + 4, { width: CONTENT_W });
+
+      if (copy.remedy) {
+        doc.moveDown(0.5);
+        doc.fillColor(C.darkText).fontSize(10).font('Helvetica-Bold').text(copy.remedy.label, LEFT, doc.y, { width: CONTENT_W });
+        doc.fillColor(C.midText).fontSize(9.5).font('Helvetica')
+          .text(`Typical cause: ${copy.remedy.typical_cause}`, LEFT, doc.y + 2, { width: CONTENT_W })
+          .text(copy.remedy.shape_of_work, LEFT, doc.y + 2, { width: CONTENT_W });
+      }
+
+      if (copy.unverified_note) {
+        doc.moveDown(0.5);
+        doc.fillColor(C.lightText).fontSize(8.5).font('Helvetica').text(copy.unverified_note, LEFT, doc.y, { width: CONTENT_W });
       }
     }
 

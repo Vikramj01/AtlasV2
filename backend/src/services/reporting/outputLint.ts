@@ -36,7 +36,11 @@
  */
 import type { ReportJSON } from '@/types/audit';
 
-const BANNED_TOKENS = ['Not Detected', 'Missing', 'Broken', 'is not installed', 'you have no', 'zero measurement'] as const;
+// Exported so other report-adjacent copy (e.g. Campaign Signal Validator's
+// PDF/result-page text — see services/attribution/chainCopyLint.ts) can
+// share this single list rather than maintaining a second, potentially
+// drifting one.
+export const BANNED_TOKENS = ['Not Detected', 'Missing', 'Broken', 'is not installed', 'you have no', 'zero measurement'] as const;
 
 export interface OutputLintViolation {
   field: string;

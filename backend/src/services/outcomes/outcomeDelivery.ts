@@ -90,14 +90,14 @@
  * called by crmSyncOrchestrator.ts right after a delivery resolves to
  * 'delivered' or 'partial', only when the config has write_back_enabled
  * (opt-in, off by default). It is a no-op when the provider doesn't
- * implement CrmProvider.writeAttribution (Salesforce, Sprint 10) and never
+ * implement OutcomeSource.writeAttribution (Salesforce, Sprint 10) and never
  * throws — any failure is caught and logged here, per the PRD's explicit
  * instruction that a write-back failure must never fail a delivery that
  * already succeeded. atlas_conversions_delivered is sourced from Atlas's
  * own crm_outcome_events history (listDeliveredEventNamesForRecord), not
  * read back from the CRM record itself — there is no read-modify-write
  * race with the portal this way, and no new method is needed on the
- * frozen §4.2 CrmProvider interface. atlas_attributed_campaign is
+ * frozen §4.2 OutcomeSource interface. atlas_attributed_campaign is
  * deliberately never written: no campaign-name field exists anywhere in
  * Atlas's identity/CAPI pipeline today (confirmed by repo-wide grep), and
  * Implementation Rule 12 forbids fabricating one just to populate an
@@ -114,7 +114,7 @@ import { supabaseAdmin } from '@/services/database/supabase';
 import { GOOGLE_ADS_INGEST_WINDOW_DAYS, META_OFFLINE_INGEST_WINDOW_DAYS, LINKEDIN_INGEST_WINDOW_DAYS } from './ingestWindows';
 import { randomUUID } from 'crypto';
 import type { ResolvedIdentity } from './identityResolver';
-import type { CrmProvider, OutcomeObjectType, DecryptedTokens } from './sources/types';
+import type { OutcomeSource, OutcomeObjectType, DecryptedTokens } from './sources/types';
 import type { AtlasEvent, GoogleCredentials } from '@/types/capi';
 import type { ConsentDecisions } from '@/types/consent';
 import type { OutcomeStageMapping, OutcomeDeliveryStatus, EarlierDeliveredOutcome } from '@/types/outcomes';
@@ -407,7 +407,7 @@ export interface WriteBackInput {
  * see the module header's write-back note.
  */
 export async function writeBackAttribution(
-  provider: CrmProvider,
+  provider: OutcomeSource,
   tokens: DecryptedTokens,
   input: WriteBackInput,
 ): Promise<void> {

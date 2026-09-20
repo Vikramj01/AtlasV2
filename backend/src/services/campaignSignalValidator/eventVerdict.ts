@@ -17,6 +17,7 @@
  */
 
 import type { SiteDetection } from '@/services/planning/siteDetectionService';
+import type { AttributionChainResult } from '@/services/attribution/chainModel';
 
 export type VerdictRating = 'strong' | 'moderate' | 'weak';
 export type AIMaxRisk = 'low' | 'medium' | 'high';
@@ -35,6 +36,15 @@ export interface EventVerdict {
   reasons: VerdictReasonCode[];
   remediation: string[];
   summary: string;
+  /**
+   * Attribution Chain Check PRD §8 — the lead-gen-only pre-connection chain
+   * result (Links 1-3), added ALONGSIDE rating/score/ai_max_risk above, not
+   * folded into them. Deliberately never a percentage and never a scoring
+   * input (PRD §5.4/§10.11) — undefined for a non-lead-gen site, or when
+   * the underlying browser-based scan failed (orchestrator.ts fails open,
+   * never fails the whole diagnostic on this).
+   */
+  attribution_chain?: AttributionChainResult;
 }
 
 export interface PrimaryStageInput {
@@ -46,12 +56,14 @@ export interface PrimaryStageInput {
 export interface VerdictInput {
   siteDetection: SiteDetection;
   primaryStage?: PrimaryStageInput | null;
+  /** See EventVerdict.attribution_chain. */
+  attributionChain?: AttributionChainResult | null;
 }
 
 const RATING_THRESHOLDS = { strong: 70, moderate: 40 };
 
 export function evaluateEventVerdict(input: VerdictInput): EventVerdict {
-  const { siteDetection, primaryStage } = input;
+  const { siteDetection, primaryStage, attributionChain } = input;
   const reasons: VerdictReasonCode[] = [];
   let score = 100;
 
@@ -155,6 +167,7 @@ export function evaluateEventVerdict(input: VerdictInput): EventVerdict {
     reasons: reasons.sort((a, b) => severityRank(b.severity) - severityRank(a.severity)),
     remediation: buildRemediation(reasons),
     summary: buildSummary(rating, ai_max_risk, reasons.length),
+    ...(attributionChain ? { attribution_chain: attributionChain } : {}),
   };
 }
 

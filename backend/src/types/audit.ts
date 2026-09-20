@@ -869,6 +869,17 @@ export interface ConsentCapture {
   tags_after: string[];
 }
 
+/**
+ * Attribution Chain Check PRD §4/§5.2 — see AuditData.attribution_form_carriage.
+ * Structurally mirrors services/attribution/chainModel.ts's ChainLinkObservation
+ * (this file never imports from services/, per this codebase's types-depend-
+ * on-nothing-service-specific convention — see the top of this file).
+ */
+export interface FormCarriageObservation {
+  verdict: 'PASS' | 'FAIL' | 'NOT_OBSERVED';
+  evidence?: string;
+}
+
 // ─── AuditData passed to validation engine ───────────────────────────────────
 
 export interface AuditData {
@@ -934,6 +945,21 @@ export interface AuditData {
    * and genuinely found no banner.
    */
   consent_capture?: ConsentCapture;
+  /**
+   * Link 3 (form carriage) of the Attribution Chain Check PRD (§5.2) —
+   * whether the click-id value injected at landing actually rode along in
+   * the lead-gen form's own submission request, resolved by the caller
+   * (journeySimulator.ts, via services/attribution/formCarriageDetection.ts's
+   * detectFormCarriage()) before rules run — same "resolve outside, read
+   * inside" pattern as consent_capture/product_domain_reachable above.
+   * Undefined means the check was never attempted for this AuditData (no
+   * test_email/test_phone Scan Input, funnel_type !== 'lead_gen', or an
+   * AuditData built outside journeySimulator.ts) — distinct from a
+   * NOT_OBSERVED verdict, which means the check ran but the form (or its
+   * submit control) genuinely couldn't be exercised, e.g. a cross-origin
+   * iframe form our main-frame-only click selector can't reach.
+   */
+  attribution_form_carriage?: FormCarriageObservation;
   /**
    * The landing page's URL after navigation settled (Playwright's page.url()
    * — reflects any redirect chain the site itself performed), captured by

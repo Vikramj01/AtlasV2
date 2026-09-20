@@ -2,6 +2,7 @@ import { supabaseAdmin as supabase } from './supabase';
 import type {
   OutcomeSourceConfig,
   CreateOutcomeSourceConfigInput,
+  CreateWebhookOutcomeSourceConfigInput,
   UpdateOutcomeSourceConfigInput,
   OutcomeStageMapping,
   StageMappingInput,
@@ -13,6 +14,7 @@ import type {
   OutcomeEventForDerivedCalc,
   OutcomeEvent,
   OutcomeDeliveryStatus,
+  OutcomeIdentityMethod,
   OutcomeDailyCount,
 } from '@/types/outcomes';
 
@@ -61,6 +63,37 @@ export async function createOutcomeSourceConfig(
     .single();
 
   if (error) throw new Error(`createOutcomeSourceConfig: ${error.message}`);
+  return data as unknown as OutcomeSourceConfig;
+}
+
+// Phase 3 (§6.1) — a webhook config's own creation path, deliberately
+// separate from createOutcomeSourceConfig above so that function's
+// connection_id-required insert stays completely unchanged for the pull
+// sources that still need it. The plaintext secret is returned here and
+// nowhere else — the caller (outcomes.ts's POST /configs/webhook route)
+// must show it to the operator immediately, since only the encrypted form
+// is ever persisted.
+export async function createWebhookOutcomeSourceConfig(
+  orgId: string,
+  input: CreateWebhookOutcomeSourceConfigInput,
+  webhookSecretEncrypted: string,
+): Promise<OutcomeSourceConfig> {
+  const { data, error } = await supabase
+    .from('outcome_source_configs')
+    .insert({
+      organization_id: orgId,
+      client_id: input.client_id,
+      connection_id: null,
+      source_type: 'webhook',
+      tracked_object: input.tracked_object ?? 'deal',
+      value_mode: input.value_mode ?? 'DECLARED',
+      default_currency: input.default_currency ?? 'USD',
+      webhook_secret_encrypted: webhookSecretEncrypted,
+    })
+    .select('*')
+    .single();
+
+  if (error) throw new Error(`createWebhookOutcomeSourceConfig: ${error.message}`);
   return data as unknown as OutcomeSourceConfig;
 }
 
@@ -283,10 +316,30 @@ export async function findExistingOutcomeKeys(
   );
 }
 
+// Phase 3 (§6.3) — the raw material for services/outcomes/deliveryGate.ts's
+// tier computation, checked inline after each webhook ingest. Bounded by a
+// row count, not a time window — a low-volume source's "last 200 records"
+// might span months, and that's fine: the gate cares about composition,
+// not recency, and MIN_SAMPLE_FOR_GATE already keeps a thin history from
+// triggering it at all.
+const RECENT_IDENTITY_METHODS_LIMIT = 200;
+
+export async function getRecentIdentityMethodsForConfig(configId: string): Promise<OutcomeIdentityMethod[]> {
+  const { data, error } = await supabase
+    .from('outcome_events')
+    .select('identity_method')
+    .eq('config_id', configId)
+    .order('created_at', { ascending: false })
+    .limit(RECENT_IDENTITY_METHODS_LIMIT);
+
+  if (error) throw new Error(`getRecentIdentityMethodsForConfig: ${error.message}`);
+  return ((data ?? []) as { identity_method: OutcomeIdentityMethod }[]).map((r) => r.identity_method);
+}
+
 // Attribution write-back (Sprint 9, D3, §6.4). Sources
 // atlas_conversions_delivered from Atlas's own already-persisted delivery
 // history rather than reading the CRM record back (no read-modify-write
-// race with the portal, and no new CrmProvider method needed against its
+// race with the portal, and no new OutcomeSource method needed against its
 // frozen §4.2 interface) — distinct rows only, most-recent-first is not
 // meaningful here since the caller folds this into a Set anyway.
 export async function listDeliveredEventNamesForRecord(

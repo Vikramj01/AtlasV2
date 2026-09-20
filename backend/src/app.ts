@@ -44,7 +44,7 @@ import { slackRouter } from '@/api/routes/slack';
 import { insightsRouter } from '@/api/routes/insights';
 import { publicAuditRouter } from '@/api/routes/publicAudit';
 import { shopifyAppRouter } from '@/api/routes/shopifyApp';
-import { outcomesRouter } from '@/api/routes/outcomes';
+import { outcomesRouter, outcomeWebhookRouter } from '@/api/routes/outcomes';
 import logger from '@/utils/logger';
 import { env } from '@/config/env';
 
@@ -64,6 +64,11 @@ app.use('/api/billing/webhook', express.raw({ type: 'application/json' }));
 // Same requirement for every Shopify webhook — HMAC verification needs the
 // exact raw bytes Shopify signed.
 app.use('/api/shopify/webhooks', express.raw({ type: 'application/json' }));
+
+// Universal Outcome Ingestion Phase 3's inbound outcome webhook — same
+// requirement, same reason (webhookAuth.ts's verifyWebhookRequest needs the
+// exact raw bytes the external sender signed).
+app.use('/api/outcomes/webhook', express.raw({ type: 'application/json' }));
 
 app.use(helmet());
 app.use(cors({
@@ -169,6 +174,13 @@ app.use('/api/crawl', crawlRouter);
 app.use('/api/connections', connectionsRouter);
 app.use('/api/reconciliation', reconciliationRouter);
 app.use('/api/gtm', gtmRouter);
+// Registered BEFORE /api/outcomes below — Express matches middleware in
+// registration order, and /api/outcomes is a path PREFIX of
+// /api/outcomes/webhook. If outcomesRouter (whose authMiddleware/
+// planGuard('pro') applies to every request reaching it, matched or not)
+// were registered first, every webhook call would be rejected as
+// unauthenticated before ever reaching this public router.
+app.use('/api/outcomes/webhook', outcomeWebhookRouter);
 app.use('/api/outcomes', outcomesRouter);
 app.use('/api/ihc', ihcRouter);
 app.use('/api/enricher', enricherRouter);

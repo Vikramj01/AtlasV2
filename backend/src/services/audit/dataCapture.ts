@@ -216,6 +216,48 @@ export function interceptNetworkRequests(
   return { getInFlightCount: () => inFlight };
 }
 
+// ── Unfiltered request capture (Attribution Chain Check PRD §5.2) ──────────
+//
+// interceptNetworkRequests above is deliberately scoped to
+// TRACKED_URL_PATTERNS (ad-platform hosts) so every Check Register v2 rule
+// can assume "if it's in networkRequests, it's tracking traffic". A lead-gen
+// form's submission target — a CRM/form-vendor endpoint, or the site's own
+// backend — is essentially never one of those hosts, so Link 3 (form
+// carriage) detection needs a second, genuinely unfiltered listener over
+// the same underlying page.on('request') stream, not an extension of the
+// tracked-only one. journeySimulator.ts registers this only when a lead-gen
+// scan actually configured test_email/test_phone, so the memory/behavior
+// cost lands on the one funnel type that needs it, not on every audit.
+
+export interface CapturedRequest {
+  url: string;
+  method: string;
+  headers: Record<string, string>;
+  body?: string;
+  timestamp: number;
+}
+
+export function interceptAllRequests(
+  page: { on: (event: string, handler: (req: unknown) => void) => void },
+  sink: CapturedRequest[],
+): void {
+  page.on('request', (rawReq: unknown) => {
+    const req = rawReq as {
+      url(): string;
+      method(): string;
+      headers(): Record<string, string>;
+      postData?(): string | null;
+    };
+    sink.push({
+      url: req.url(),
+      method: req.method(),
+      headers: req.headers(),
+      body: req.postData?.() ?? undefined,
+      timestamp: Date.now(),
+    });
+  });
+}
+
 // ── Request initiator capture (Signal vs Implementation PRD P1-01) ────────
 //
 // interceptNetworkRequests above (and Playwright's page.on('request') it's

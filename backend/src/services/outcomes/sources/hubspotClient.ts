@@ -1,5 +1,6 @@
 /**
- * HubSpot CRM API v3 client — implements CrmProvider.
+ * HubSpot CRM API v3 client — implements OutcomeSource (was CrmProvider,
+ * renamed Phase 2, docs/prd/universal-outcome-ingestion.md §5.2).
  *
  * Auth: Bearer access_token, refreshed via hubspotOAuth.ts's
  * refreshAccessToken() when a caller detects a 401 (the orchestrator's job
@@ -8,7 +9,7 @@
  * one).
  *
  * listPipelines() intentionally has no object-type parameter, matching the
- * CrmProvider interface (docs/prd/crm-outcome-integration.md §4.2) exactly.
+ * OutcomeSource interface (docs/prd/crm-outcome-integration.md §4.2) exactly.
  * HubSpot's Pipelines API is itself object-scoped (GET /crm/v3/pipelines/
  * {objectType}) and only deals (and tickets, out of scope) have a real
  * pipeline concept — contacts only have a flat `lifecyclestage` property,
@@ -42,8 +43,8 @@
  */
 
 import type {
-  CrmProvider,
-  CrmProviderName,
+  OutcomeSource,
+  OutcomeSourceType,
   OutcomeObjectType,
   DecryptedTokens,
   CrmAccountInfo,
@@ -147,8 +148,14 @@ interface HubSpotSearchResponse {
   paging?: { next?: { after: string } };
 }
 
-export const hubspotClient: CrmProvider = {
-  name: 'hubspot' as CrmProviderName,
+// `satisfies` rather than `: OutcomeSource` — checks this object against
+// the interface's shape without widening the exported const's own type to
+// it, so direct callers (this client is imported by name in a few places,
+// not only reached through getProvider()) still see testConnection/
+// listPipelines/listProperties as always-present, not optional.
+export const hubspotClient = {
+  name: 'hubspot' as OutcomeSourceType,
+  transport: 'pull',
 
   async testConnection(tokens: DecryptedTokens): Promise<CrmAccountInfo> {
     // The access-token-info endpoint takes the token in the URL path itself
@@ -305,4 +312,4 @@ export const hubspotClient: CrmProvider = {
       throw new Error(`HubSpot writeAttribution failed (${response.status}): ${body}`);
     }
   },
-};
+} satisfies OutcomeSource;

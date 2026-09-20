@@ -23,7 +23,7 @@
  *                                Not a failure — absence is never asserted.
  */
 
-import type { CrmProvider, DecryptedTokens, OutcomeObjectType, CrmRecord } from './sources/types';
+import type { OutcomeSource, DecryptedTokens, OutcomeObjectType, CrmRecord } from './sources/types';
 import { resolveIdentityPropertyMap, isPresent } from './identityResolver';
 
 export type ReadinessVerdict = 'READY' | 'PROPERTIES_PRESENT_NO_DATA' | 'PROPERTIES_ABSENT' | 'NOT_OBSERVED';
@@ -43,7 +43,7 @@ const SAMPLE_SIZE = 25;
 // Wide enough to catch a client whose capture only fires occasionally, not
 // so wide it reads as "all-time" (fetchChangedRecords is a modified-since
 // search, not a full scan — Key Technical Decision-adjacent constraint from
-// the CrmProvider interface itself, §4.2).
+// the OutcomeSource interface itself, §4.2).
 const SAMPLE_WINDOW_DAYS = 90;
 
 function readinessMessage(verdict: ReadinessVerdict): string {
@@ -60,13 +60,20 @@ function readinessMessage(verdict: ReadinessVerdict): string {
 }
 
 export async function runReadinessCheck(
-  provider: CrmProvider,
+  provider: OutcomeSource,
   tokens: DecryptedTokens,
   object: OutcomeObjectType,
   identityPropertyMap: Record<string, string> | null | undefined,
 ): Promise<ReadinessResult> {
   const expectedProperties = Array.from(new Set(Object.values(resolveIdentityPropertyMap(identityPropertyMap, provider.name))));
 
+  // listProperties is optional on OutcomeSource (a push source has nothing
+  // to enumerate ahead of time) — readiness checking as built here is a
+  // pull-source concept, so a push source reaching this function is a
+  // caller bug, not a state to handle gracefully.
+  if (!provider.listProperties) {
+    throw new Error(`Outcome source '${provider.name}' does not support property discovery — readiness checking is a pull-source concept`);
+  }
   const existingProperties = await provider.listProperties(tokens, object);
   const existingNames = new Set(existingProperties.map((p) => p.name));
 
@@ -104,7 +111,7 @@ export async function runReadinessCheck(
 }
 
 async function collectSample(
-  provider: CrmProvider,
+  provider: OutcomeSource,
   tokens: DecryptedTokens,
   object: OutcomeObjectType,
   propertyNames: string[],

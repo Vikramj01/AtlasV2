@@ -2,11 +2,13 @@
 // Phase 1. Formerly types/crm.ts (docs/prd/crm-outcome-integration.md §5) —
 // renamed while the underlying outcome_* tables were empty, per Phase 1's
 // "the codebase currently names the universal outcome layer after one
-// source type" rationale. CrmProviderName stays as-is: renaming the
-// provider/connector abstraction itself (CrmProvider -> OutcomeSource) is
-// Phase 2's job, not this one.
-
-export type CrmProviderName = 'hubspot' | 'salesforce';
+// source type" rationale. CrmProviderName -> OutcomeSourceType renamed in
+// Phase 2 (§5.2) alongside CrmProvider -> OutcomeSource (sources/types.ts).
+// Widened in Phase 3 to include 'webhook' — the first non-CRM source type
+// this union actually models. 'sheet'/'csv' (Phase 4) stay out until those
+// sources are real, matching the same reasoning that kept this narrow in
+// Phase 2.
+export type OutcomeSourceType = 'hubspot' | 'salesforce' | 'webhook';
 export type OutcomeObjectType = 'contact' | 'deal';
 export type OutcomeValueMode = 'DECLARED' | 'DERIVED';
 export type OutcomeSyncStatus = 'ok' | 'partial' | 'failed';
@@ -16,8 +18,11 @@ export interface OutcomeSourceConfig {
   id: string;
   organization_id: string;
   client_id: string;
-  connection_id: string;
-  source_type: CrmProviderName;
+  // Nullable since Phase 3 (§6) — a webhook source has no OAuth connection
+  // at all; Atlas receives calls rather than authenticating outward. Always
+  // present for a pull source (hubspot/salesforce).
+  connection_id: string | null;
+  source_type: OutcomeSourceType;
   pipeline_id: string | null;
   tracked_object: OutcomeObjectType;
   identity_property_map: Record<string, string>;
@@ -34,6 +39,24 @@ export interface OutcomeSourceConfig {
   // The only persistent cross-run state this feature needs to detect
   // "failed on consecutive runs" without a dedicated run-history table.
   consecutive_failures: number;
+  // Phase 3 (§6.1) — AES-256-GCM encrypted at rest (services/outcomes/
+  // webhookAuth.ts), the same envelope shape api/routes/slack.ts already
+  // uses for its own webhook-URL encryption. NULL for a pull source. Never
+  // sent back over the API in plaintext after config creation — only the
+  // creation response carries the real secret, once.
+  webhook_secret_encrypted: string | null;
+  // Phase 3 (§6.3) — deliberately separate from sync_enabled, which stays
+  // pull-polling-specific and unchanged in meaning. Whether this source's
+  // resolved records are actually attempted for live delivery, vs.
+  // persisted and counted only. Auto-disabled by services/outcomes/
+  // deliveryGate.ts the moment a delivery-enabled source's tier-3 rate
+  // crosses threshold — see delivery_disabled_reason.
+  delivery_enabled: boolean;
+  // Set when the gate above auto-disables delivery; cleared back to NULL
+  // the next time delivery_enabled is turned back on (by an operator or
+  // otherwise). The sole "fully inspectable by an operator" surface for
+  // this in Phase 3 — no dedicated health_alerts row yet.
+  delivery_disabled_reason: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -41,13 +64,24 @@ export interface OutcomeSourceConfig {
 export interface CreateOutcomeSourceConfigInput {
   client_id: string;
   connection_id: string;
-  source_type: CrmProviderName;
+  source_type: OutcomeSourceType;
   pipeline_id?: string | null;
   tracked_object?: OutcomeObjectType;
   identity_property_map?: Record<string, string>;
   value_mode?: OutcomeValueMode;
   default_currency?: string;
   backfill_days?: number;
+}
+
+// Phase 3 — a webhook config's own creation shape, deliberately separate
+// from CreateOutcomeSourceConfigInput above (which keeps connection_id
+// required, unchanged, for the pull sources that still need it). See
+// services/database/outcomeQueries.ts's createWebhookOutcomeSourceConfig().
+export interface CreateWebhookOutcomeSourceConfigInput {
+  client_id: string;
+  tracked_object?: OutcomeObjectType;
+  value_mode?: OutcomeValueMode;
+  default_currency?: string;
 }
 
 export interface UpdateOutcomeSourceConfigInput {
@@ -60,6 +94,8 @@ export interface UpdateOutcomeSourceConfigInput {
   sync_enabled?: boolean;
   sync_interval_minutes?: number;
   write_back_enabled?: boolean;
+  delivery_enabled?: boolean;
+  delivery_disabled_reason?: string | null;
 }
 
 // Full DB row for outcome_stage_mappings — the ladder itself (§5.3). Its own
@@ -110,7 +146,12 @@ export type OutcomeValueSource = 'DECLARED' | 'DERIVED' | 'CRM_AMOUNT' | 'NONE';
 export type OutcomeDerivedConfidence = 'high' | 'low' | 'withheld';
 export type OutcomeDeliveryStatus =
   | 'pending' | 'delivered' | 'partial' | 'failed'
-  | 'skipped_unresolved' | 'skipped_window' | 'dedup_skipped';
+  | 'skipped_unresolved' | 'skipped_window' | 'dedup_skipped'
+  // Phase 3 (§6.3) — identity resolved, but this source's delivery_enabled
+  // is false (never turned on, or auto-disabled by the tier-3 gate).
+  // Distinct from skipped_unresolved: here delivery WOULD have been
+  // attempted if the gate allowed it.
+  | 'skipped_delivery_disabled';
 
 export interface OutcomeEvent {
   id: string;

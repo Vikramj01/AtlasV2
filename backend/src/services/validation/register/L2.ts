@@ -666,6 +666,73 @@ export const REFERRER_PRESERVED_THROUGH_ENTRY: ValidationRule = {
   },
 };
 
+// ── L2.14 — Click ID carried in form submission (Attribution Chain Check PRD §5.2) ──
+//
+// id 'L2.14' — the next free slot after L2.13 (see that rule's own comment):
+// L2.12 stays reserved for the distinct, not-yet-implemented consent-gating
+// rule named in this file's header.
+//
+// Distinct from L2.1-L2.7 above: those ask "did the page persist the click
+// id at all" (localStorage/cookie/dataLayer); this asks the next question
+// in the chain — "did that persisted value actually ride along into the
+// lead-gen form's own submission request", the PRD's Link 3. Resolved by
+// journeySimulator.ts (via services/attribution/formCarriageDetection.ts)
+// before this rule ever runs — rules stay pure/synchronous (Key Technical
+// Decision §16), so the browser-driven fill/click/capture-window sequence
+// can't live here.
+export const CLICK_ID_CARRIED_IN_FORM_SUBMIT: ValidationRule = {
+  id: 'L2.14',
+  rule_id: 'CLICK_ID_CARRIED_IN_FORM_SUBMIT',
+  layer: 'click_id_capture',
+  check: 'Click ID carried in form submission',
+  severity: 'critical',
+  applies_to: 'all',
+  platform_scope: 'any',
+  detectable_by: 'crawl',
+  owner: 'Frontend',
+  // DIRECT, same reasoning as every other L2 rule (PRD §10.3 — "Both sides
+  // observed"): the scanner knows exactly which values it injected and
+  // searches every request fired during the submit window for them, so
+  // there's no coverage risk the way there is for a tag firing unprompted
+  // over live network traffic.
+  evidence_class: 'DIRECT',
+  synthetic_evidence: true,
+  remediation: 'Add a hidden field to the lead-gen form that reads the persisted click-id value (from the cookie/localStorage entry Link 2 already proved is captured) and populates it at submit time, so the CRM record the form creates carries the same identifier the landing page captured.',
+  estimated_effort: 'medium',
+
+  test(auditData: AuditData): ValidationResult {
+    const observation = auditData.attribution_form_carriage;
+    // Undefined means the check was never attempted for this run (not a
+    // lead_gen funnel, or no test_email/test_phone Scan Input) — 'skipped',
+    // same treatment every other "resolved outside, read inside" rule gives
+    // a precondition it can't test. A NOT_OBSERVED verdict (the form or its
+    // submit control genuinely couldn't be exercised — e.g. a cross-origin
+    // iframe form) gets the identical 'skipped' treatment: this codebase's
+    // register only ever scores PASS/FAIL, and asserting FAIL here would be
+    // exactly the absence-as-certainty claim outputLint.ts exists to
+    // prevent — we didn't observe a break, we observed nothing at all.
+    const status: RuleStatus = !observation || observation.verdict === 'NOT_OBSERVED'
+      ? 'skipped'
+      : observation.verdict === 'PASS' ? 'pass' : 'fail';
+
+    const found = !observation
+      ? 'No lead-gen form submission was captured for this run (funnel type is not lead_gen, or no test_email/test_phone Scan Input was supplied)'
+      : observation.evidence ?? (observation.verdict === 'PASS' ? 'The click id was carried into the form submission' : 'The click id was not observed in the form submission');
+
+    return {
+      rule_id: this.rule_id,
+      validation_layer: this.layer,
+      status,
+      severity: this.severity,
+      technical_details: {
+        found,
+        expected: 'The click id persisted at landing (Link 2) is still present — in the URL, POST body, or a header — on the request the lead-gen form fires when submitted',
+        evidence: observation?.evidence ? [observation.evidence] : [],
+      },
+    };
+  },
+};
+
 export const L2_RULES: ValidationRule[] = [
   GCLID_CAPTURED_AT_LANDING,
   GBRAID_CAPTURED_AT_LANDING,
@@ -679,4 +746,5 @@ export const L2_RULES: ValidationRule[] = [
   LANDING_REDIRECT_PRESERVES_QUERY_STRING,
   CAPTURE_OCCURS_BEFORE_REDIRECT_COMPLETES,
   REFERRER_PRESERVED_THROUGH_ENTRY,
+  CLICK_ID_CARRIED_IN_FORM_SUBMIT,
 ];

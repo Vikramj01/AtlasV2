@@ -1,17 +1,30 @@
 /**
- * CrmProvider — the abstraction both HubSpot (Sprint 1) and Salesforce
+ * OutcomeSource (was CrmProvider — renamed docs/prd/universal-outcome-ingestion.md
+ * §5.2, Phase 2) — the abstraction both HubSpot (Sprint 1) and Salesforce
  * (Sprint 10) implement, so syncOrchestrator.ts (Sprint 4) is
- * provider-agnostic. Mirrors docs/prd/crm-outcome-integration.md §4.2
- * exactly — do not add parameters to these signatures without updating
- * the PRD, since both providers and the orchestrator depend on this shape.
- * Renaming CrmProvider itself to OutcomeSource is Phase 2's job
- * (docs/prd/universal-outcome-ingestion.md §5.2), not this Phase 1 rename.
+ * source-agnostic. Originally mirrored docs/prd/crm-outcome-integration.md
+ * §4.2 exactly; Phase 2 widens it deliberately:
+ *   - testConnection/listPipelines/listProperties are now optional — a
+ *     push source (Phase 3's webhook) has no pipelines to list and no
+ *     properties to enumerate; only a polled source needs them.
+ *   - fetchChangedRecords stays required and keeps its exact signature and
+ *     CrmRecord-shaped yield — see the docstring on fetchChangedRecords
+ *     below for why this deliberately did NOT change to yield OutcomeRecord
+ *     as docs/prd/universal-outcome-ingestion.md §5.2's literal text
+ *     suggests (see that PRD's §12 implementation notes for the full
+ *     reasoning: it would have silently changed syncOrchestrator.ts's
+ *     records_processed counter for a no-stage record, a behavior an
+ *     existing test locks in).
+ *   - transport (new) — the push/pull discriminator §5.2 asks for, so the
+ *     orchestrator knows whether a source should ever be actively polled at
+ *     all. Both current sources are 'pull'; Phase 3's webhook is the first
+ *     'push' source and is never scheduled onto outcomeSyncQueue.
  */
 
-import type { CrmProviderName, OutcomeObjectType } from '@/types/outcomes';
+import type { OutcomeSourceType, OutcomeObjectType } from '@/types/outcomes';
 import type { OAuthTokens } from '@/types/connections';
 
-export type { CrmProviderName, OutcomeObjectType };
+export type { OutcomeSourceType, OutcomeObjectType };
 
 // Decrypted platform_connections.oauth_tokens envelope. HubSpot models this
 // as a real OAuth token (access + refresh); a future private-key-auth
@@ -62,22 +75,32 @@ export interface CrmRecord {
   properties: Record<string, string | null>;
 }
 
-export interface CrmProvider {
-  readonly name: CrmProviderName;
+export interface OutcomeSource {
+  readonly name: OutcomeSourceType;
 
-  /** Verify credentials and return the account identity for display. */
-  testConnection(tokens: DecryptedTokens): Promise<CrmAccountInfo>;
+  /**
+   * 'pull' — polled on a schedule via syncOrchestrator.ts's runSync()
+   * (HubSpot, Salesforce). 'push' — records arrive via an inbound call
+   * (Phase 3's webhook); runSync() short-circuits rather than polling one.
+   */
+  readonly transport: 'pull' | 'push';
 
-  /** List pipelines and their stages, for the mapping UI. */
-  listPipelines(tokens: DecryptedTokens): Promise<CrmPipeline[]>;
+  /** Verify credentials and return the account identity for display. Optional — a push source has nothing to test a connection against ahead of time. */
+  testConnection?(tokens: DecryptedTokens): Promise<CrmAccountInfo>;
 
-  /** List custom properties on a given object, for readiness checking (§6.2). */
-  listProperties(tokens: DecryptedTokens, object: OutcomeObjectType): Promise<CrmProperty[]>;
+  /** List pipelines and their stages, for the mapping UI. Optional — a push source has no pipeline concept. */
+  listPipelines?(tokens: DecryptedTokens): Promise<CrmPipeline[]>;
+
+  /** List custom properties on a given object, for readiness checking (§6.2). Optional — a push source has nothing to enumerate. */
+  listProperties?(tokens: DecryptedTokens, object: OutcomeObjectType): Promise<CrmProperty[]>;
 
   /**
    * Fetch records whose stage changed within [since, until].
    * MUST paginate internally and MUST be driven by a modified-since
-   * filter, never a full table scan.
+   * filter, never a full table scan. Required — a 'pull' source is
+   * meaningless without it; a 'push' source (Phase 3) implements it as an
+   * empty generator, since syncOrchestrator.ts's transport guard means it's
+   * never actually called for one.
    */
   fetchChangedRecords(
     tokens: DecryptedTokens,
