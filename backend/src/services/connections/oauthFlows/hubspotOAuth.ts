@@ -38,6 +38,15 @@ function buildRedirectUri(): string {
   return `${env.FRONTEND_URL.replace(/\/$/, '')}/crm/oauth/hubspot/callback`;
 }
 
+// Makes the unset env vars a reliable off-switch rather than an accidental
+// one — without this, pasting credentials into the deployment turns the
+// entire (currently unwired) feature live with no code change or review.
+function assertHubspotCredentialsConfigured(): void {
+  if (!env.HUBSPOT_CLIENT_ID || !env.HUBSPOT_CLIENT_SECRET) {
+    throw new Error('HubSpot OAuth is not configured on this deployment (HUBSPOT_CLIENT_ID / HUBSPOT_CLIENT_SECRET unset)');
+  }
+}
+
 // HMAC-SHA256 state parameter for CSRF protection, carrying clientId through
 // the redirect (same shape as googleAdsOAuth.ts's generateState/verifyState).
 export function generateState(clientId?: string): string {
@@ -75,6 +84,7 @@ export function verifyState(state: string): { clientId?: string } {
 }
 
 export function getAuthUrl(state: string): string {
+  assertHubspotCredentialsConfigured();
   const params = new URLSearchParams({
     client_id: env.HUBSPOT_CLIENT_ID,
     redirect_uri: buildRedirectUri(),
@@ -85,6 +95,7 @@ export function getAuthUrl(state: string): string {
 }
 
 export async function handleCallback(code: string): Promise<OAuthTokens> {
+  assertHubspotCredentialsConfigured();
   const response = await fetch(TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -119,6 +130,7 @@ export async function handleCallback(code: string): Promise<OAuthTokens> {
 }
 
 export async function refreshAccessToken(refreshToken: string): Promise<OAuthTokens> {
+  assertHubspotCredentialsConfigured();
   const response = await fetch(TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
