@@ -84,7 +84,7 @@ import type { DerivedValueInput } from '@/services/outcomes/valueLadder';
 import { getProvider } from '@/services/outcomes/sourceRegistry';
 import { outcomeSyncQueue } from '@/services/queue/jobQueue';
 import { getLatestAttributionChainForClient } from '@/services/attribution/attributionAdvisory';
-import type { CrmProviderName, OutcomeSourceConfig, OutcomeDerivedValueSnapshot } from '@/types/outcomes';
+import type { OutcomeSourceType, OutcomeSourceConfig, OutcomeDerivedValueSnapshot } from '@/types/outcomes';
 import logger from '@/utils/logger';
 
 export const outcomesRouter = Router();
@@ -105,6 +105,17 @@ async function checkReadinessForConfig(config: OutcomeSourceConfig) {
   const provider = getProvider(config.source_type);
   const tokens = await resolveTokens(config.connection_id);
   return runReadinessCheck(provider, tokens, config.tracked_object, config.identity_property_map);
+}
+
+// listPipelines is optional on OutcomeSource (a push source has no
+// pipeline concept) — every source getProvider() can currently resolve
+// (hubspot/salesforce) implements it, so this only guards a future push
+// source being routed here by mistake, never a real gap today.
+async function requireListPipelines(provider: ReturnType<typeof getProvider>) {
+  if (!provider.listPipelines) {
+    throw new Error(`Outcome source '${provider.name}' does not support pipeline discovery`);
+  }
+  return provider.listPipelines;
 }
 
 // The ladder view has no specific CRM record in hand, so the observed
@@ -141,7 +152,7 @@ const PENDING_CONNECTION_TTL_S = 10 * 60;
 interface PendingOutcomeConnection {
   orgId: string;
   clientId: string | null;
-  provider: CrmProviderName;
+  provider: OutcomeSourceType;
   tokens: DecryptedTokens;
   account: CrmAccountInfo;
   // Salesforce only (Sprint 10) — which login host (production/sandbox)
@@ -595,7 +606,8 @@ outcomesRouter.get('/configs/:id/pipelines', async (req: Request, res: Response)
 
     const provider = getProvider(config.source_type);
     const tokens = await resolveTokens(config.connection_id);
-    const pipelines = await provider.listPipelines(tokens);
+    const listPipelines = await requireListPipelines(provider);
+    const pipelines = await listPipelines(tokens);
 
     res.json({ data: pipelines });
   } catch (err) {
@@ -636,7 +648,8 @@ outcomesRouter.get('/configs/:id/stage-mappings', async (req: Request, res: Resp
 
     const provider = getProvider(config.source_type);
     const tokens = await resolveTokens(config.connection_id);
-    const pipelines = await provider.listPipelines(tokens);
+    const listPipelines = await requireListPipelines(provider);
+    const pipelines = await listPipelines(tokens);
     const pipeline = pipelines.find((p) => p.id === config.pipeline_id) ?? pipelines[0];
 
     if (!pipeline) {

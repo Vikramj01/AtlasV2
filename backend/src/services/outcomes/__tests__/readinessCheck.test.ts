@@ -1,7 +1,7 @@
 /**
  * readinessCheck unit tests — docs/prd/crm-outcome-integration.md §6.2.
  *
- * Exercises all four verdicts against a mock CrmProvider, since Sprint 2's
+ * Exercises all four verdicts against a mock OutcomeSource, since Sprint 2's
  * exit criterion is specifically that the check "correctly distinguishes
  * all four verdicts" — the properties-exist check alone (i.e. skipping the
  * sample step) would pass every failure mode this is designed to catch, so
@@ -10,11 +10,11 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { runReadinessCheck } from '../readinessCheck';
-import type { CrmProvider, CrmProperty, CrmRecord, DecryptedTokens } from '../sources/types';
+import type { OutcomeSource, CrmProperty, CrmRecord, DecryptedTokens } from '../sources/types';
 
 const tokens: DecryptedTokens = { access_token: 'tok', expires_at: 0, token_type: 'bearer' };
 
-function makeProvider(overrides: Partial<CrmProvider> = {}): CrmProvider {
+function makeProvider(overrides: Partial<OutcomeSource> = {}): OutcomeSource {
   return {
     name: 'hubspot',
     testConnection: vi.fn(),
@@ -22,13 +22,13 @@ function makeProvider(overrides: Partial<CrmProvider> = {}): CrmProvider {
     listProperties: vi.fn(async (): Promise<CrmProperty[]> => []),
     fetchChangedRecords: () => (async function* (): AsyncIterable<CrmRecord> {})(),
     ...overrides,
-  } as unknown as CrmProvider;
+  } as unknown as OutcomeSource;
 }
 
 // fetchChangedRecords is a FUNCTION returning an AsyncIterable, per the
-// CrmProvider interface — these helpers build that function, not the
+// OutcomeSource interface — these helpers build that function, not the
 // iterable itself.
-function recordsGenerator(records: CrmRecord[]): CrmProvider['fetchChangedRecords'] {
+function recordsGenerator(records: CrmRecord[]): OutcomeSource['fetchChangedRecords'] {
   return () => (async function* (): AsyncIterable<CrmRecord> {
     for (const r of records) yield r;
   })();
@@ -120,7 +120,7 @@ describe('runReadinessCheck', () => {
   });
 
   it('none of the four verdict messages contain outputLint.ts-banned absolute-absence tokens', async () => {
-    const scenarios: Array<Partial<CrmProvider>> = [
+    const scenarios: Array<Partial<OutcomeSource>> = [
       { listProperties: vi.fn(async () => []) },
       {
         listProperties: vi.fn(async () => [{ name: 'atlas_gclid', label: 'GCLID', type: 'string' }]),

@@ -69,7 +69,7 @@ import logger from '@/utils/logger';
 import { deliverOutcome, handleLostDeal, writeBackAttribution, type OutcomeDeliveryInput } from '../outcomeDelivery';
 import type { OutcomeStageMapping, EarlierDeliveredOutcome } from '@/types/outcomes';
 import type { ResolvedIdentity } from '../identityResolver';
-import type { CrmProvider, DecryptedTokens } from '../sources/types';
+import type { OutcomeSource, DecryptedTokens } from '../sources/types';
 
 const RAW_EMAIL = 'lead-secret@example.com';
 const RAW_PHONE = '+15551234567';
@@ -594,7 +594,7 @@ describe('handleLostDeal (Sprint 6, §7.4)', () => {
 describe('writeBackAttribution', () => {
   const TOKENS = { access_token: 'tok', expires_at: 0, token_type: 'bearer' } as DecryptedTokens;
 
-  function makeProvider(overrides: Partial<CrmProvider> = {}): CrmProvider {
+  function makeProvider(overrides: Partial<OutcomeSource> = {}): OutcomeSource {
     return {
       name: 'hubspot',
       testConnection: vi.fn(),

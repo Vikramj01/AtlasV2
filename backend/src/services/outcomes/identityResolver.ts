@@ -26,7 +26,7 @@
  * consent_state) rather than re-deriving one from possibly-stale CRM data.
  */
 
-import type { CrmProviderName } from './sources/types';
+import type { OutcomeSourceType } from './sources/types';
 
 export type IdentityMethod = 'click_id' | 'hashed_email' | 'hashed_phone' | 'unresolved';
 
@@ -81,7 +81,7 @@ export const SALESFORCE_DEFAULT_IDENTITY_PROPERTY_MAP: Record<IdentityKey, strin
 
 export function resolveIdentityPropertyMap(
   configMap: Record<string, string> | null | undefined,
-  provider: CrmProviderName = 'hubspot',
+  provider: OutcomeSourceType = 'hubspot',
 ): Record<IdentityKey, string> {
   const base = provider === 'salesforce' ? SALESFORCE_DEFAULT_IDENTITY_PROPERTY_MAP : DEFAULT_IDENTITY_PROPERTY_MAP;
   return { ...base, ...(configMap ?? {}) };
@@ -112,7 +112,7 @@ export function resolveIdentity(
   properties: Record<string, string | null | undefined>,
   identityPropertyMap: Record<string, string> | null | undefined,
   originalEvent?: OriginalEventIdentity | null,
-  provider: CrmProviderName = 'hubspot',
+  provider: OutcomeSourceType = 'hubspot',
 ): ResolvedIdentity {
   const propertyMap = resolveIdentityPropertyMap(identityPropertyMap, provider);
 

@@ -2,11 +2,14 @@
 // Phase 1. Formerly types/crm.ts (docs/prd/crm-outcome-integration.md §5) —
 // renamed while the underlying outcome_* tables were empty, per Phase 1's
 // "the codebase currently names the universal outcome layer after one
-// source type" rationale. CrmProviderName stays as-is: renaming the
-// provider/connector abstraction itself (CrmProvider -> OutcomeSource) is
-// Phase 2's job, not this one.
-
-export type CrmProviderName = 'hubspot' | 'salesforce';
+// source type" rationale. CrmProviderName -> OutcomeSourceType renamed in
+// Phase 2 (§5.2) alongside CrmProvider -> OutcomeSource (sources/types.ts).
+// Deliberately still narrowed to the two sources actually implemented today
+// ('hubspot'|'salesforce') even though outcome_source_configs.source_type's
+// DB CHECK was already widened ahead of time in Phase 1 to include
+// 'webhook'/'sheet'/'csv' — widening this TS union is Phase 3/4's job, when
+// those sources are real.
+export type OutcomeSourceType = 'hubspot' | 'salesforce';
 export type OutcomeObjectType = 'contact' | 'deal';
 export type OutcomeValueMode = 'DECLARED' | 'DERIVED';
 export type OutcomeSyncStatus = 'ok' | 'partial' | 'failed';
@@ -17,7 +20,7 @@ export interface OutcomeSourceConfig {
   organization_id: string;
   client_id: string;
   connection_id: string;
-  source_type: CrmProviderName;
+  source_type: OutcomeSourceType;
   pipeline_id: string | null;
   tracked_object: OutcomeObjectType;
   identity_property_map: Record<string, string>;
@@ -41,7 +44,7 @@ export interface OutcomeSourceConfig {
 export interface CreateOutcomeSourceConfigInput {
   client_id: string;
   connection_id: string;
-  source_type: CrmProviderName;
+  source_type: OutcomeSourceType;
   pipeline_id?: string | null;
   tracked_object?: OutcomeObjectType;
   identity_property_map?: Record<string, string>;

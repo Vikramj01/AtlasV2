@@ -1,10 +1,10 @@
 // Universal Outcome Ingestion types — mirrors backend/src/types/outcomes.ts.
 // Formerly types/crm.ts, renamed while the underlying outcome_* tables
 // were empty (docs/prd/universal-outcome-ingestion.md Phase 1).
-// CrmProviderName stays as-is: renaming the provider/connector abstraction
-// itself (CrmProvider -> OutcomeSource) is Phase 2's job, not this one.
+// CrmProviderName -> OutcomeSourceType renamed in Phase 2 (§5.2), mirroring
+// the backend rename of CrmProvider -> OutcomeSource.
 
-export type CrmProviderName = 'hubspot' | 'salesforce';
+export type OutcomeSourceType = 'hubspot' | 'salesforce';
 export type OutcomeObjectType = 'contact' | 'deal';
 export type OutcomeValueMode = 'DECLARED' | 'DERIVED';
 export type OutcomeSyncStatus = 'ok' | 'partial' | 'failed';
@@ -14,7 +14,7 @@ export interface OutcomeSourceConfig {
   organization_id: string;
   client_id: string;
   connection_id: string;
-  source_type: CrmProviderName;
+  source_type: OutcomeSourceType;
   pipeline_id: string | null;
   tracked_object: OutcomeObjectType;
   identity_property_map: Record<string, string>;
@@ -36,7 +36,7 @@ export interface OutcomeSourceConfig {
 export interface CreateOutcomeSourceConfigInput {
   client_id: string;
   connection_id: string;
-  source_type: CrmProviderName;
+  source_type: OutcomeSourceType;
   pipeline_id?: string | null;
   tracked_object?: OutcomeObjectType;
   identity_property_map?: Record<string, string>;

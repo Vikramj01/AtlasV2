@@ -54,7 +54,7 @@ import { resolveTokens } from '@/services/connections/tokenManager';
 import { deliverOutcome, handleLostDeal, writeBackAttribution } from '@/services/outcomes/outcomeDelivery';
 import { runSync } from '../syncOrchestrator';
 import type { OutcomeSourceConfig, OutcomeStageMapping } from '@/types/outcomes';
-import type { CrmRecord, CrmProvider } from '../sources/types';
+import type { CrmRecord, OutcomeSource } from '../sources/types';
 
 function makeConfig(overrides: Partial<OutcomeSourceConfig> = {}): OutcomeSourceConfig {
   return {
@@ -115,9 +115,10 @@ function makeRecord(overrides: Partial<CrmRecord> = {}): CrmRecord {
   };
 }
 
-function makeProvider(records: CrmRecord[]): CrmProvider {
+function makeProvider(records: CrmRecord[]): OutcomeSource {
   return {
     name: 'hubspot',
+    transport: 'pull',
     testConnection: vi.fn(),
     listPipelines: vi.fn(),
     listProperties: vi.fn(),

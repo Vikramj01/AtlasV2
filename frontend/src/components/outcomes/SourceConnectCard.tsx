@@ -20,15 +20,15 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { outcomesApi } from '@/lib/api/outcomesApi';
-import type { CrmAccountInfo, CrmPipeline, CrmProviderName } from '@/types/outcomes';
+import type { CrmAccountInfo, CrmPipeline, OutcomeSourceType } from '@/types/outcomes';
 
 interface SourceConnectCardProps {
-  provider: CrmProviderName;
-  onConnected?: (connectionId: string, account: CrmAccountInfo, pipelines: CrmPipeline[], provider: CrmProviderName) => void;
+  provider: OutcomeSourceType;
+  onConnected?: (connectionId: string, account: CrmAccountInfo, pipelines: CrmPipeline[], provider: OutcomeSourceType) => void;
 }
 
-const PROVIDER_LABEL: Record<CrmProviderName, string> = { hubspot: 'HubSpot', salesforce: 'Salesforce' };
-const PROVIDER_NOUN: Record<CrmProviderName, string> = { hubspot: 'portal', salesforce: 'org' };
+const PROVIDER_LABEL: Record<OutcomeSourceType, string> = { hubspot: 'HubSpot', salesforce: 'Salesforce' };
+const PROVIDER_NOUN: Record<OutcomeSourceType, string> = { hubspot: 'portal', salesforce: 'org' };
 
 export function SourceConnectCard({ provider, onConnected }: SourceConnectCardProps) {
   const label = PROVIDER_LABEL[provider];

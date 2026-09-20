@@ -24,13 +24,13 @@ import { useOrganisationStore } from '@/store/organisationStore';
 import { useOrganisations } from '@/hooks/useOrganisations';
 import { clientApi } from '@/lib/api/organisationApi';
 import type { Client } from '@/types/organisation';
-import type { CrmAccountInfo, CrmPipeline, CrmProviderName } from '@/types/outcomes';
+import type { CrmAccountInfo, CrmPipeline, OutcomeSourceType } from '@/types/outcomes';
 
 interface PendingConnection {
   connectionId: string;
   account: CrmAccountInfo;
   pipelines: CrmPipeline[];
-  provider: CrmProviderName;
+  provider: OutcomeSourceType;
 }
 
 function CreateConfigStopgap({ pending, onCreated }: { pending: PendingConnection; onCreated: () => void }) {

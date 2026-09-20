@@ -1,7 +1,8 @@
 /**
- * Salesforce REST/SOQL client — implements CrmProvider (CRM Outcome
- * Integration Sprint 10, D1 — "Salesforce as Sprint 10", parity with
- * HubSpot on Sprints 1-8/9).
+ * Salesforce REST/SOQL client — implements OutcomeSource (was CrmProvider,
+ * renamed Phase 2, docs/prd/universal-outcome-ingestion.md §5.2; CRM
+ * Outcome Integration Sprint 10, D1 — "Salesforce as Sprint 10", parity
+ * with HubSpot on Sprints 1-8/9).
  *
  * Auth: Bearer access_token against `tokens.instance_url` (Salesforce's
  * per-org API base — see salesforceOAuth.ts's module header for why this
@@ -50,8 +51,8 @@
  */
 
 import type {
-  CrmProvider,
-  CrmProviderName,
+  OutcomeSource,
+  OutcomeSourceType,
   OutcomeObjectType,
   DecryptedTokens,
   CrmAccountInfo,
@@ -173,8 +174,11 @@ interface DescribeField {
   type: string;
 }
 
-export const salesforceClient: CrmProvider = {
-  name: 'salesforce' as CrmProviderName,
+// `satisfies` rather than `: OutcomeSource` — see hubspotClient.ts's
+// identical comment on why.
+export const salesforceClient = {
+  name: 'salesforce' as OutcomeSourceType,
+  transport: 'pull',
 
   async testConnection(tokens: DecryptedTokens): Promise<CrmAccountInfo> {
     const rows = await soqlQuery<{ Id: string; Name: string }>('SELECT Id, Name FROM Organization LIMIT 1', tokens);
@@ -264,10 +268,10 @@ export const salesforceClient: CrmProvider = {
   },
 
   // No writeAttribution() yet — Sprint 9's D3 write-back is optional per
-  // the CrmProvider interface (§4.2) and this Sprint's exit criterion is
+  // the OutcomeSource interface (§4.2) and this Sprint's exit criterion is
   // scoped to "parity with HubSpot on Sprints 1-8" (§13's Sprint 10 row),
   // which predates Sprint 9. outcomeDelivery.ts's writeBackAttribution()
   // already no-ops cleanly for any provider lacking this method, so a
   // Salesforce config with write_back_enabled: true simply never writes
   // back rather than erroring — never fabricated, never silently assumed.
-};
+} satisfies OutcomeSource;

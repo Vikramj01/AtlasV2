@@ -51,7 +51,7 @@
  * runs only has whatever stage it's sitting in AT POLL TIME recorded — an
  * intermediate stage the deal passed through faster than the sync interval
  * is never observed, never fabricated as a synthetic row. This follows
- * directly from the CrmProvider interface's shape (frozen since Sprint 1 —
+ * directly from the OutcomeSource interface's shape (frozen since Sprint 1 —
  * "do not add parameters"), not a gap this sprint chose to leave.
  */
 
@@ -72,7 +72,7 @@ import { resolveIdentity, resolveIdentityPropertyMap } from './identityResolver'
 import { resolveValue } from './valueLadder';
 import { deliverOutcome, handleLostDeal, writeBackAttribution } from './outcomeDelivery';
 import type { ObservedCrmAmount, DerivedValueInput } from './valueLadder';
-import type { CrmRecord, CrmProvider, DecryptedTokens, CrmProviderName } from './sources/types';
+import type { CrmRecord, OutcomeSource, DecryptedTokens, OutcomeSourceType } from './sources/types';
 import type { OutcomeStageMapping, NewOutcomeEventInput } from '@/types/outcomes';
 import logger from '@/utils/logger';
 
@@ -96,7 +96,7 @@ const BATCH_SIZE = 100;
 // an unknown property name gracefully. Every CRM_AMOUNT observation
 // currently falls back to the config's default_currency until this is
 // verified live.
-const OBSERVED_AMOUNT_PROPERTY_BY_PROVIDER: Record<CrmProviderName, string> = {
+const OBSERVED_AMOUNT_PROPERTY_BY_PROVIDER: Record<OutcomeSourceType, string> = {
   hubspot: 'amount',
   salesforce: 'Amount',
 };
@@ -121,7 +121,7 @@ function outcomeKey(sourceRecordId: string, sourceStageId: string): string {
   return `${sourceRecordId}::${sourceStageId}`;
 }
 
-function extractObservedAmount(properties: Record<string, string | null | undefined>, provider: CrmProviderName): ObservedCrmAmount {
+function extractObservedAmount(properties: Record<string, string | null | undefined>, provider: OutcomeSourceType): ObservedCrmAmount {
   const raw = properties[OBSERVED_AMOUNT_PROPERTY_BY_PROVIDER[provider]];
   if (raw == null || raw === '') return { amount: null, currency: null };
   const parsed = Number(raw);
@@ -164,7 +164,7 @@ export async function runSync(configId: string, opts?: { recordCap?: number }): 
     : new Date(until.getTime() - config.backfill_days * 24 * 60 * 60 * 1000);
 
   let tokens: DecryptedTokens;
-  let provider: CrmProvider;
+  let provider: OutcomeSource;
   try {
     provider = getProvider(config.source_type);
     tokens = await resolveTokens(config.connection_id);
@@ -173,6 +173,19 @@ export async function runSync(configId: string, opts?: { recordCap?: number }): 
     await updateOutcomeSyncState(config.id, { last_sync_status: 'failed', last_sync_error: message });
     logger.error({ configId, err: message }, 'Outcome sync: failed to resolve provider or connection tokens');
     return { status: 'failed', records_processed: 0, outcomes_written: 0, outcomes_skipped_unmapped: 0, cap_hit: false, sync_interval_minutes: config.sync_interval_minutes, error: message };
+  }
+
+  // Phase 2 transport discriminator (docs/prd/universal-outcome-ingestion.md
+  // §5.2) — runSync() is the POLLING engine; a 'push' source (Phase 3's
+  // webhook, not built yet) receives records via an inbound call and must
+  // never be actively scheduled here. Both sources getProvider() can
+  // currently resolve are 'pull', so this branch is unreachable today —
+  // it exists so a future push source landing in outcomeSyncQueue by
+  // mistake (e.g. a stale scheduled job predating a source's transport
+  // flip) fails closed as 'disabled' rather than polling nothing forever.
+  if (provider.transport !== 'pull') {
+    logger.warn({ configId, sourceType: config.source_type }, 'Outcome sync: skipped — source transport is not pull');
+    return { status: 'disabled', records_processed: 0, outcomes_written: 0, outcomes_skipped_unmapped: 0, cap_hit: false, sync_interval_minutes: config.sync_interval_minutes };
   }
 
   const propertyMap = resolveIdentityPropertyMap(config.identity_property_map, config.source_type);

@@ -13,8 +13,8 @@
  * Pure crm_outcome_events read, no CRM API calls. Every mapped stage
  * transition already gets its own crm_outcome_events row (Sprint 4), so
  * this reuses Atlas's own persisted history rather than re-fetching from
- * HubSpot/Salesforce or needing a CrmProvider/tokens at all — the
- * CrmProvider interface (frozen since Sprint 1, §4.2) has no stage-history
+ * HubSpot/Salesforce or needing a OutcomeSource/tokens at all — the
+ * OutcomeSource interface (frozen since Sprint 1, §4.2) has no stage-history
  * method to give this a data source even if it wanted one.
  *
  * stage_to_won_rate is per-stage; avg_won_amount is NOT (note the formula

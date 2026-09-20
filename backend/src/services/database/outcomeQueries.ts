@@ -286,7 +286,7 @@ export async function findExistingOutcomeKeys(
 // Attribution write-back (Sprint 9, D3, §6.4). Sources
 // atlas_conversions_delivered from Atlas's own already-persisted delivery
 // history rather than reading the CRM record back (no read-modify-write
-// race with the portal, and no new CrmProvider method needed against its
+// race with the portal, and no new OutcomeSource method needed against its
 // frozen §4.2 interface) — distinct rows only, most-recent-first is not
 // meaningful here since the caller folds this into a Set anyway.
 export async function listDeliveredEventNamesForRecord(
