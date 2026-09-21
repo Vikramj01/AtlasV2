@@ -346,4 +346,58 @@ Recorded here rather than editing §5 above, so this document still reads as the
 - **A bare `atlas_event_id` (no click ID, no email, no phone) resolves to `unresolved`, not `click_id`**, in `contract.ts`'s `resolveContractIdentity()` — the same "no `capi_events` join exists to verify a stronger inherited method" reasoning `deliveryGate.ts`'s own header documents, and consistent with the pull-sync path, which has never built that join either (`syncOrchestrator.ts` always passes `originalEvent: null` to `resolveIdentity()`). Asserting Tier 1 here without that join would overstate what the webhook payload alone can prove.
 - **Express route-registration order: the public webhook router must be mounted before the authenticated one.** `/api/outcomes` is a path *prefix* of `/api/outcomes/webhook` — `outcomesRouter`'s `authMiddleware`/`planGuard('pro')` middleware applies to every request reaching that router, matched route or not. Registering `outcomesRouter` first would have silently 401'd every external webhook call before it ever reached `outcomeWebhookRouter`. `app.ts` registers `/api/outcomes/webhook` (the public router) first, with an explanatory comment, precisely so this can't regress unnoticed on a future route addition.
 - **Webhook secret encryption reuses `api/routes/slack.ts`'s AES-256-GCM envelope shape** (iv/tag/ciphertext JSON, `CAPI_ENCRYPTION_KEY`), not `tokenManager.ts`'s OAuth-token-shaped `encryptTokens`/`resolveTokens` — a webhook secret is a single opaque string with no refresh/expiry lifecycle, the same shape a Slack webhook URL has, not an OAuth token pair.
-- **Frontend scope**: `OutcomesPage.tsx` (unreachable from the product surface since Phase 0, per that phase's own deliberate decision — unchanged by this phase) gained a new `WebhookSourceCard.tsx` — create a webhook source for a client, see the plaintext secret and webhook URL exactly once at creation (every later read returns only `webhook_secret_encrypted`), and a per-config tier-1/2/3 breakdown plus the delivery-enabled toggle showing `delivery_disabled_reason` when the gate has fired. `ReadinessPanel` (a pull-source-only concept — it calls `listProperties` against a connected portal) is skipped for `source_type: 'webhook'` configs in `OutcomesPage`'s per-config loop; `StageLadderEditor`/`DerivedValuePanel` needed no change since their backing routes already handle a `null` `connection_id` gracefully.
+- **Frontend scope**: `OutcomesPage.tsx` (unreachable from the product surface since Phase 0, per that phase's own deliberate decision — see §13 for the full parked state) gained a new `WebhookSourceCard.tsx` — create a webhook source for a client, see the plaintext secret and webhook URL exactly once at creation (every later read returns only `webhook_secret_encrypted`), and a per-config tier-1/2/3 breakdown plus the delivery-enabled toggle showing `delivery_disabled_reason` when the gate has fired. `ReadinessPanel` (a pull-source-only concept — it calls `listProperties` against a connected portal) is skipped for `source_type: 'webhook'` configs in `OutcomesPage`'s per-config loop; `StageLadderEditor`/`DerivedValuePanel` needed no change since their backing routes already handle a `null` `connection_id` gracefully.
+
+---
+
+## 13. Parked state (2026-09-21)
+
+**Status: the engine is complete and unreachable. Deliberately parked until a real client is being onboarded onto it. Nothing here is a bug or an oversight — it is a scoping decision, recorded so the next person to open this file starts from a list instead of an investigation.**
+
+### 13.1 What "unreachable" means, verified
+
+Verified directly against the connected Supabase project on 2026-09-21, not inferred from this document:
+
+- `outcome_source_configs`, `outcome_stage_mappings`, `outcome_events`, `outcome_derived_value_snapshots` — **0 rows each**.
+- `platform_connections` where `platform in ('hubspot','salesforce')` — **0 rows**.
+- `capi_providers` where `status = 'active'` — **0 rows**, of any provider. Nothing has ever been delivered to an ad platform from any Atlas path in this project, let alone this one.
+
+Structurally:
+
+- `OutcomesPage.tsx` has **no route in `App.tsx` and no entry in `Sidebar.tsx`** (both removed in Phase 0).
+- Both OAuth flows throw a named error before any network call while `HUBSPOT_CLIENT_ID`/`SALESFORCE_CLIENT_ID` are unset, which they are on every deployment.
+- The one live surface is `OutcomesTab` in the CAPI Monitoring Dashboard — read-only operator visibility, deliberately kept.
+
+The backend is fully wired and tested (~200 tests across `backend/src/services/outcomes/__tests__`). `outcomeSyncQueue` and `outcomeDerivedValueQueue` are registered in `worker.ts` and will process jobs; nothing enqueues one because no config exists to enqueue for.
+
+### 13.2 The trigger condition
+
+Un-park when **a named client with a CRM is being onboarded and their Attribution Chain Check shows click IDs actually reaching their CRM** — not when someone asks whether the feature exists.
+
+That second condition is not a formality. The whole value ladder is inert if the client's site drops the click ID between the ad and the CRM record, which most B2B sites do. A client whose chain check shows a Link 1–3 break needs their capture fixed first; connecting outcome ingestion before that produces Tier 3 records, trips the delivery gate, and teaches the client the feature does not work.
+
+### 13.3 The work remaining, in order
+
+Scoped to the webhook path. The HubSpot/Salesforce connectors stay switched off per Phase 0; this list assumes webhook-only, which is the strategic bet in §1.
+
+Estimated **2–3 days focused**. Sized here so a delivery commitment can be made without re-deriving it.
+
+1. **Ladder authoring with no pipeline — the blocker.** `StageLadderEditor.tsx` can only edit rows it is handed; it has no add-row, no delete-row, and `crm_stage_id` is not editable anywhere (it arrives from `buildDefaultStageMappings()`, which needs a CRM pipeline). The backend is already correct — `GET /configs/:id/stage-mappings` returns `{is_draft: true, mappings: []}` when `connection_id` is null, and `PUT` needs no pipeline — but the editor renders "No pipeline stages found to build a ladder from." and disables Save on `rows.length === 0`. **Until this is fixed nothing can ever be delivered**: `resolveStageMapping()` returns null for every incoming record, so every webhook POST returns `skipped_unmapped`. Needs add/remove row, an editable `crm_stage_id` on draft rows (read-only once saved — it is half the `(config_id, crm_stage_id)` upsert key), duplicate/empty validation, and source-neutral copy throughout (the editor is CRM-worded).
+2. **Route + nav entry.** `lazyWithRetry` import and a `SectionErrorBoundary`-wrapped `<Route>` in `App.tsx`; a `TRACKING`-group entry in `Sidebar.tsx`. `/outcomes` is the clean path — the old `/crm/*` strings surviving in `hubspotOAuth.ts`/`salesforceOAuth.ts`/`SourceConnectCard.tsx` are dead and should stay untouched. The page already wraps itself in `PlanGate minPlan="pro"`, matching the router's `planGuard('pro')`.
+3. **Strip the CRM surface from the page.** Remove both `SourceConnectCard` blocks, `CreateConfigStopgap` (it requires a `connection_id`), the `PendingConnection` state and the now-orphaned imports; filter the config loop to `source_type === 'webhook'`; retitle away from "CRM Outcome Integration / Read HubSpot or Salesforce stage changes…". `SourceConnectCard.tsx` and `ReadinessPanel.tsx` stay in the tree unrendered. Note `noUnusedLocals`/`noUnusedParameters` are on — every orphaned import is a build failure.
+4. **Sender documentation.** Nothing outside code comments describes the payload or the signing scheme, and `WebhookSourceCard.tsx` currently points the operator at this PRD's repo path, which a client cannot open. A sender needs: HMAC-SHA256 over `` `${timestamp}.${rawBody}` `` (timestamp signed *with* the body), the exact header names, the skew tolerance, and the `OutcomeRecordSchema` field list. The schema is `.strict()` at every level — an unrecognised field is a hard rejection, which is correct but must be documented or every first integration attempt fails. Surface `POST /configs/:configId/validate` in the UI while doing this: the dry-run twin is built and tested and currently invisible to the operator who needs it most.
+
+**Before a paying client, not before first light-up:** webhook secret rotation (plaintext is returned exactly once from `POST /configs/webhook` and there is no regenerate route — a lost secret today means delete and recreate the config, orphaning its ladder and `outcome_events`); a `value_mode` toggle in the UI (`DERIVED` mode is unreachable today — `WebhookSourceCard.handleCreate()` sends only `client_id` and nothing PATCHes `value_mode`, so `listDerivedModeConfigIds()` returns empty forever and the weekly job is a no-op by construction); and a `health_alerts` row on delivery auto-disable, so the gate firing reaches email/Slack rather than only the page nobody has routed to.
+
+**Known, accepted gaps:** a webhook source is invisible to every health surface (`syncHealthCheck.ts` filters to `sync_enabled` configs, which a webhook config can never set; `outcomeSyncSeverity()` reads `consecutive_failures`/`last_sync_status`, which `webhookIngest.ts` never writes). A contract `value` on a non-terminal-won stage is silently ignored (`webhookIngest.ts` gates `observedAmount` on `is_terminal_won`) and `/validate` does not flag it. `outcome_stage_mappings.linkedin_conversion_id` is decorative — `linkedinDelivery.ts` routes purely by matching `atlas_event_name` against the org's `conversion_routes` and never reads that column. `CLICK_ID_KEYS_BY_DESTINATION` (`identityResolver.ts`) is exported and referenced nowhere; no live leak occurs since each delivery module reads only its own fields, but it should be wired or deleted rather than left looking load-bearing.
+
+### 13.4 Two decisions that are cheap now and expensive later
+
+Everything in §13.3 is frontend wiring, and frontend wiring does not rot — which is most of why parking is safe. These two are schema, and schema is the category that gets harder the moment there are rows behind it. **Same reasoning that forced Phase 1's rename to go first.** Neither needs building now; both need deciding now.
+
+- **`UNIQUE (client_id)` on `outcome_source_configs`** (verified live, constraint `crm_sync_configs_client_id_key`) means one outcome source per client, permanently. Fine for a client with one CRM. It breaks the first time a client wants a CRM *and* a webhook for a second system, or two pipelines — new business vs. renewals — carrying different ladders. Today that is a one-line migration on empty tables. With live rows and delivered conversions behind them it is a data migration plus a decision about which existing config wins.
+- **`outcome_events.source_object` CHECK allows only `'contact'`/`'deal'`** (constraint `crm_outcome_events_crm_object_check`), while the contract accepts a free-form `source_object` and silently drops it (§12). A spreadsheet-backed, product-event or support-ticket source has no honest word in that pair. Widening it now is free.
+
+### 13.5 Why this note exists
+
+The tests will catch a refactor breaking the outcomes service — that is what they are for. What they will not catch is the next session working near `pipeline.ts` or `capiQueries.ts` and not knowing this subsystem exists and is waiting, or re-deriving §13.3 from scratch. The investigation was the expensive part; this section is the artefact of it.
