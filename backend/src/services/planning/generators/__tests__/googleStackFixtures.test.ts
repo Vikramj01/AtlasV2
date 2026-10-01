@@ -46,6 +46,7 @@ import { join } from 'path';
 import { generateGTMContainer } from '../gtmContainerGenerator';
 import type { GTMTagDef, GTMParameter, GTMContainerJSON } from '../gtmContainerGenerator';
 import { validateGTMContainer } from '../gtmSchemaValidator';
+import { classifyGoogleTag } from '../../../google/googleTagClassifier';
 import type { PlanningRecommendation, SuggestedParam, PlanningSession } from '@/types/planning';
 
 // ── Fixture helpers (mirrors nlcs.integration.test.ts's factory pattern) ──────
@@ -171,7 +172,17 @@ describe('Scenario: single-domain baseline (GA4 + Google Ads, no cross-domain, n
     expect(triggers[0].name).toBe('All Pages');
   });
 
-  it('Sprint 5 (C4): no standalone Conversion Linker tag — the sitewide googtag already covers single-domain click-ID capture', () => {
+  it('Google Tag Topology Sprint 2: a separate sitewide Ads googtag (AW- ID) exists alongside the GA4 googtag, on the same trigger', () => {
+    const ads = findTagByName(container, 'Google Tag - Google Ads');
+    expect(ads.type).toBe('googtag');
+    expect(flattenParams(ads.parameter)).toEqual({ tagId: '{{CONST - Google Ads Conversion ID}}' });
+    const ga4 = findTagByName(container, 'GA4 - Config');
+    expect(ads.firingTriggerId).toEqual(ga4.firingTriggerId);
+    // One Google tag per destination: the GA4 tag must not carry the AW- ID.
+    expect(JSON.stringify(ga4.parameter)).not.toContain('Google Ads Conversion ID');
+  });
+
+  it('Sprint 5 (C4, rebased in Topology Sprint 2): no standalone Conversion Linker — the Ads googtag covers single-domain click-ID capture', () => {
     const names = container.containerVersion.tag.map((t) => t.name);
     expect(names).not.toContain('Google Ads - Conversion Linker');
     expect(container.containerVersion.tag.some((t) => t.type === 'gclidw')).toBe(false);
@@ -211,6 +222,11 @@ describe('Scenario: cross-domain (secondary_domains configured)', () => {
     expect(params.linked_domains).toEqual(['app.example.com', 'checkout.example.com']);
   });
 
+  it('keeps both the Ads googtag and the Conversion Linker', () => {
+    expect(findTagByName(container, 'Google Tag - Google Ads').type).toBe('googtag');
+    expect(findTagByName(container, 'Google Ads - Conversion Linker').type).toBe('gclidw');
+  });
+
   it('Conversion Linker enables cross-domain linking with the same domain list', () => {
     const tag = findTagByName(container, 'Google Ads - Conversion Linker');
     const params = flattenParams(tag.parameter);
@@ -238,6 +254,11 @@ describe('Scenario: sGTM-enabled (platformIds.server_container_url set)', () => 
     expect(params.serverContainerUrl).toBe('https://sgtm.example.com');
   });
 
+  it('Topology Sprint 2: emits the Ads googtag and keeps the Conversion Linker', () => {
+    expect(findTagByName(container, 'Google Tag - Google Ads').type).toBe('googtag');
+    expect(container.containerVersion.tag.some((t) => t.name === 'Google Ads - Conversion Linker')).toBe(true);
+  });
+
   it('Sprint 5 (C4): still emits the Conversion Linker despite a single-domain googtag being present — sGTM routing needs its own client-side linker', () => {
     const tag = findTagByName(container, 'Google Ads - Conversion Linker');
     expect(tag.type).toBe('gclidw');
@@ -245,22 +266,38 @@ describe('Scenario: sGTM-enabled (platformIds.server_container_url set)', () => 
   });
 });
 
-// ── Scenario C2: no sitewide Google tag (Google Ads only, no GA4) ────────────
-// Sprint 5 (C4): decision-engine case #2 — with no googtag on the page to
-// auto-capture click IDs, the Conversion Linker must still be emitted.
+// ── Scenario C2: Ads-only (Google Ads selected, GA4 not selected) ────────────
+// Topology Sprint 2: the Ads destination gets its OWN sitewide Google tag, so
+// the single-domain Conversion Linker is skipped (Google's guidance) — before
+// this sprint a GA4-less client got a linker only because no googtag existed.
 
-describe('Scenario: no sitewide Google tag (Google Ads selected, GA4 not selected)', () => {
+describe('Scenario: Ads-only (Google Ads selected, GA4 not selected)', () => {
   const session = makeSession('lead_gen', ['google_ads']);
   const recs: PlanningRecommendation[] = [
     makeRec('r1', 'p1', 'generate_lead', 'generate_lead', ['form_id'], [], ['google_ads']),
   ];
   const container = generateGTMContainer(recs, session);
 
-  it('emits the Conversion Linker since there is no sitewide googtag to cover click-ID capture', () => {
-    expect(container.containerVersion.tag.some((t) => t.name === 'GA4 - Config')).toBe(false);
-    const tag = findTagByName(container, 'Google Ads - Conversion Linker');
-    expect(tag.type).toBe('gclidw');
-    expect(tag.notes).toContain('No sitewide Google tag is present');
+  it('emits an Ads googtag, no GA4 Config and no Conversion Linker (single-domain)', () => {
+    const names = container.containerVersion.tag.map((t) => t.name);
+    expect(names).not.toContain('GA4 - Config');
+    expect(names).toContain('Google Tag - Google Ads');
+    expect(names).not.toContain('Google Ads - Conversion Linker');
+  });
+});
+
+// ── Scenario C3: GA4-only (no Google Ads destination) ────────────────────────
+
+describe('Scenario: GA4-only (GA4 selected, no Google Ads)', () => {
+  const session = makeSession('lead_gen', ['ga4']);
+  const recs: PlanningRecommendation[] = [makeRec('r1', 'p1', 'page_view', 'page_view', [], [], ['ga4'])];
+  const container = generateGTMContainer(recs, session);
+
+  it('emits no Ads googtag and no Conversion Linker', () => {
+    const names = container.containerVersion.tag.map((t) => t.name);
+    expect(names).toContain('GA4 - Config');
+    expect(names).not.toContain('Google Tag - Google Ads');
+    expect(names).not.toContain('Google Ads - Conversion Linker');
   });
 });
 
@@ -400,5 +437,28 @@ describe('Fixture: real GTM export shape — googtag + legacy gaawc coexisting',
     // from 'flc'. A generator emitting 'flc' for a "Conversion Linker" tag
     // (as composableOutputGenerator.ts does today) does not produce this shape.
     expect(params).not.toHaveProperty('enableCrossDomainLinking');
+  });
+});
+
+// ── Topology acceptance 4: every Ads container has a sitewide googtag classified google_ads ──
+
+describe('Every generated container with a Google Ads destination has a classified Ads Google tag', () => {
+  const cases: Array<[string, string[], string[]]> = [
+    ['GA4 + Ads', ['ga4', 'google_ads'], []],
+    ['Ads-only', ['google_ads'], []],
+    ['cross-domain', ['ga4', 'google_ads'], ['app.example.com']],
+  ];
+  it.each(cases)('%s', (_label, platforms, domains) => {
+    const container = generateGTMContainer(
+      [makeRec('r1', 'p1', 'generate_lead', 'generate_lead', ['form_id'], [], platforms)],
+      makeSession('lead_gen', platforms, domains),
+    );
+    const { tag: tags, variable: variables } = container.containerVersion;
+    const adsTags = tags.filter(
+      (t) => t.type === 'googtag' && classifyGoogleTag(t, { variables }).kind === 'google_ads',
+    );
+    expect(adsTags).toHaveLength(1);
+    const trigger = container.containerVersion.trigger.find((tr) => tr.triggerId === adsTags[0].firingTriggerId[0]);
+    expect(trigger?.type).toBe('PAGEVIEW');
   });
 });

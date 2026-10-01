@@ -119,7 +119,7 @@ export function buildGoogleTagInfrastructure(
       firingTriggerId: [options.allPagesTriggerId],
       tagFiringOption: 'oncePerEvent',
       folderId: options.folderId,
-      consentSettings: consentSettingsForTag('googtag', ''),
+      consentSettings: consentSettingsForTag('googtag', '', destinations.ga4.measurementId),
       fingerprint: '0',
       tagManagerUrl: 'https://tagmanager.google.com/',
     });
@@ -148,8 +148,32 @@ export function buildGoogleTagInfrastructure(
       folderId: options.variableFolderId,
     });
 
+    // Google Tag Topology PRD §5.1 (Sprint 2): one Google tag PER destination.
+    // A GA4 `googtag` initialises only its own G- ID; the Ads ID needs its own
+    // sitewide Google tag (Google's documented GTM requirement), instead of
+    // relying on the two IDs happening to be "combined" in Google's tag admin.
+    //
+    // UNVERIFIED (PRD §17, U1): parameter shape reconstructed best-effort —
+    // `tagId` only (same key the GA4 googtag uses). `sendPageView` is
+    // deliberately omitted pending a genuine GTM export containing an AW-
+    // googtag. Re-verify before this reaches a real client.
+    tags.push({
+      ...stub(),
+      tagId: options.nextTagId(),
+      name: 'Google Tag - Google Ads',
+      type: 'googtag',
+      parameter: [tmpl('tagId', '{{CONST - Google Ads Conversion ID}}')],
+      firingTriggerId: [options.allPagesTriggerId],
+      tagFiringOption: 'oncePerEvent',
+      folderId: options.folderId,
+      consentSettings: consentSettingsForTag('googtag', '', destinations.googleAds.conversionId),
+      fingerprint: '0',
+      tagManagerUrl: 'https://tagmanager.google.com/',
+      notes: 'Sitewide Google tag for the Google Ads destination (one Google tag per destination)',
+    });
+
     const linkerDecision = decideConversionLinker({
-      hasGoogleTagFiring: Boolean(destinations.ga4),
+      hasAdsGoogleTagFiring: true,
       hasFloodlight: Boolean(destinations.floodlight),
       crossDomainNeeded: secondaryDomains.length > 0,
       serverContainerConfigured: Boolean(options.serverContainerUrl),
