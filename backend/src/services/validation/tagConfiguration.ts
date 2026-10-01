@@ -5,6 +5,7 @@
  * Every rule returns status: 'skipped' when gtmContainer is absent.
  */
 import type { AuditData, ValidationResult, GTMTag, GTMContainerSnapshot } from '@/types/audit';
+import { classifyGoogleTag, ga4ConfigTagMatch, requiredConsentTypesForGoogleTag } from '../google/googleTagClassifier';
 
 // ── Internal helpers ────────────────────────────────────────────���─────────────
 
@@ -459,12 +460,30 @@ const REQUIRED_CONSENT_TYPES: Partial<Record<string, string[]>> = {
   ga4_event: ['analytics_storage'],
   gaawe:     ['analytics_storage'],
   gaawc:     ['analytics_storage'],
-  googtag:   ['analytics_storage'],
+  // 'googtag' is intentionally absent: its requirement depends on the
+  // destination ID it carries — see requiredConsentTypes().
   fbt:       ['ad_storage', 'ad_user_data'],
   lia:       ['ad_storage'],
   tktk:      ['ad_storage'],
   msadmc:    ['ad_storage'],
 };
+
+/**
+ * Required consent types for a tag. `googtag` is classified by its destination
+ * ID (googleTagClassifier), never by type: an Ads Google tag needs
+ * ad_storage + ad_user_data, a GA4 one analytics_storage, an unknown/GT- one
+ * the union (definite: false → findings carry confidence 'confirm').
+ */
+function requiredConsentTypes(
+  tag: GTMTag,
+  container: GTMContainerSnapshot,
+): { types: string[]; definite: boolean } | undefined {
+  if (tag.type === 'googtag') {
+    return requiredConsentTypesForGoogleTag(classifyGoogleTag(tag, container).kind);
+  }
+  const types = REQUIRED_CONSENT_TYPES[tag.type];
+  return types ? { types, definite: true } : undefined;
+}
 
 /** Consent types where a default of "granted" violates GDPR opt-in requirement. */
 const SENSITIVE_CONSENT_TYPES = new Set([
@@ -524,10 +543,12 @@ export const CONSENT_TYPE_MISMATCH = {
     if (!auditData.gtmContainer) return skippedResult(this.rule_id);
 
     const violations: string[] = [];
+    let allDefinite = true;
 
     for (const tag of auditData.gtmContainer.tags) {
-      const requiredTypes = REQUIRED_CONSENT_TYPES[tag.type];
-      if (!requiredTypes) continue;
+      const required = requiredConsentTypes(tag, auditData.gtmContainer);
+      if (!required) continue;
+      const requiredTypes = required.types;
 
       // Only check tags that actually have consent configured — missing config is caught by 5.8
       if (!tag.consentSettings || tag.consentSettings.consentStatus === 'NOT_SET') continue;
@@ -536,6 +557,7 @@ export const CONSENT_TYPE_MISMATCH = {
       const missingTypes = requiredTypes.filter((t) => !configuredTypes.includes(t));
 
       if (missingTypes.length > 0) {
+        if (!required.definite) allDefinite = false;
         violations.push(
           `"${tag.name}" (${tag.type}): missing ${missingTypes.join(', ')} ` +
           `(has: ${configuredTypes.length > 0 ? configuredTypes.join(', ') : 'none'})`,
@@ -555,6 +577,7 @@ export const CONSENT_TYPE_MISMATCH = {
         expected: 'Ad tags require ad_storage + ad_user_data; GA4 tags require analytics_storage',
         evidence: violations.length > 0 ? violations : ['All consent type mappings are correct'],
       },
+      ...(violations.length > 0 && !allDefinite ? { confidence: 'confirm' as const } : {}),
     };
   },
 };
@@ -734,7 +757,20 @@ export const FRAGILE_CSS_SELECTOR_TRIGGER = {
 // Severity: high — silent session splits corrupt funnel data and attribution
 // without any visible error.
 
-const GA4_CONFIG_TAG_TYPES = new Set(['gaawc', 'googtag']);
+// A 'googtag' is a GA4 Config tag only when its ID classifies as GA4 (G-); an
+// AW-/DC- Google tag is excluded, and an unresolvable/GT- one is included with
+// confidence 'confirm' (googleTagClassifier.ts).
+function ga4ConfigTagsOf(container: GTMContainerSnapshot): { tags: GTMTag[]; allDefinite: boolean } {
+  const tags: GTMTag[] = [];
+  let allDefinite = true;
+  for (const t of container.tags) {
+    const m = ga4ConfigTagMatch(t, container);
+    if (!m.match) continue;
+    tags.push(t);
+    if (!m.definite) allDefinite = false;
+  }
+  return { tags, allDefinite };
+}
 
 function hasOutboundClickTrigger(auditData: AuditData): boolean {
   const triggers = auditData.gtmContainer?.triggers ?? [];
@@ -767,7 +803,7 @@ export const GA4_CROSS_DOMAIN_LINKING_MISSING = {
   test(auditData: AuditData): ValidationResult {
     if (!auditData.gtmContainer) return skippedResult(this.rule_id);
 
-    const ga4ConfigTags = auditData.gtmContainer.tags.filter((t) => GA4_CONFIG_TAG_TYPES.has(t.type));
+    const { tags: ga4ConfigTags, allDefinite: ga4Definite } = ga4ConfigTagsOf(auditData.gtmContainer);
 
     if (ga4ConfigTags.length === 0) {
       return {
@@ -827,6 +863,7 @@ export const GA4_CROSS_DOMAIN_LINKING_MISSING = {
           expected: 'GA4 Config tag lists every client-declared secondary domain in linked_domains so the client_id cookie is passed across the handoff',
           evidence: violations,
         },
+        ...(ga4Definite ? {} : { confidence: 'confirm' as const }),
       };
     }
 
@@ -999,7 +1036,7 @@ export const SGTM_ROUTING_NOT_CONFIGURED = {
       };
     }
 
-    const ga4ConfigTags = auditData.gtmContainer.tags.filter((t) => GA4_CONFIG_TAG_TYPES.has(t.type));
+    const { tags: ga4ConfigTags, allDefinite: ga4Definite } = ga4ConfigTagsOf(auditData.gtmContainer);
 
     if (ga4ConfigTags.length === 0) {
       return {
@@ -1048,6 +1085,7 @@ export const SGTM_ROUTING_NOT_CONFIGURED = {
             : 'GA4 Config tag has enableSendToServerContainer set to true when a verified server-side GTM endpoint is on file',
           evidence: violations,
         },
+        ...(ga4Definite ? {} : { confidence: 'confirm' as const }),
       };
     }
 

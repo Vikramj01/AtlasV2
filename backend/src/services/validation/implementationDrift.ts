@@ -7,7 +7,8 @@
  * The 2-run promotion is enforced in the findings writer, not here — the rule
  * itself always returns the honest status.
  */
-import type { AuditData, ValidationResult, CrawlSignalSnapshot } from '@/types/audit';
+import type { AuditData, ValidationResult, CrawlSignalSnapshot, GTMTag, GTMContainerSnapshot } from '@/types/audit';
+import { ga4ConfigTagMatch } from '../google/googleTagClassifier';
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -42,11 +43,17 @@ const TAG_TYPE_TO_SIGNAL_TYPES: Partial<Record<string, string[]>> = {
   ga4_event: ['ga4_event'],
   gaawe:     ['ga4_event'],
   gaawc:     ['ga4_base'],
-  googtag:   ['ga4_base'],
+  // 'googtag' is resolved by destination ID — see expectedSignalTypesForTag().
   fbt:       ['meta_pixel'],
   lia:       ['linkedin_insight'],
   tktk:      ['tiktok_pixel'],
 };
+
+/** A googtag only produces the GA4 base signal when its ID classifies as GA4 (or can't be resolved); an Ads/Floodlight Google tag has no ga4_base output. */
+function expectedSignalTypesForTag(tag: GTMTag, container: GTMContainerSnapshot): string[] {
+  if (tag.type === 'googtag') return ga4ConfigTagMatch(tag, container).match ? ['ga4_base'] : [];
+  return TAG_TYPE_TO_SIGNAL_TYPES[tag.type] ?? [];
+}
 
 const CSS_CONDITION_TYPES = new Set(['CSS_SELECTOR', 'MATCHES_CSS_SELECTOR', 'MATCHES_CSS']);
 
@@ -86,7 +93,7 @@ export const SELECTOR_NOT_FOUND_ON_LIVE_SITE = {
     }
 
     // Conversion tags that fire on CSS selector triggers
-    const CONVERSION_TAG_TYPES = new Set(Object.keys(TAG_TYPE_TO_SIGNAL_TYPES));
+    const CONVERSION_TAG_TYPES = new Set([...Object.keys(TAG_TYPE_TO_SIGNAL_TYPES), 'googtag']);
     const convTagsOnCss = tags.filter(
       (t) => CONVERSION_TAG_TYPES.has(t.type) && t.firingTriggerId.some((id) => cssTriggerIds.has(id)),
     );
@@ -119,7 +126,7 @@ export const SELECTOR_NOT_FOUND_ON_LIVE_SITE = {
 
     const violations: string[] = [];
     for (const tag of convTagsOnCss) {
-      const expectedTypes = TAG_TYPE_TO_SIGNAL_TYPES[tag.type] ?? [];
+      const expectedTypes = expectedSignalTypesForTag(tag, auditData.gtmContainer);
       const cssTriggerNames = tag.firingTriggerId
         .filter((id) => cssTriggerIds.has(id))
         .map((id) => {
