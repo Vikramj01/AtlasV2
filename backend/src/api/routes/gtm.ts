@@ -9,6 +9,10 @@
  * POST /api/gtm/callback/finalize    — user's account/container pick; persists the connection
  * POST /api/gtm/upload               — manual container JSON upload
  * POST /api/gtm/deploy               — push a generated container into a live GTM workspace (OAuth only)
+ * POST /api/gtm/split-plan          — build a Google tag split delta + diff + guidance (no side effects unless persist)
+ * POST /api/gtm/split-plan/deploy   — deploy that delta as a GTM draft workspace (OAuth only, never publishes)
+ * POST /api/gtm/split-plan/:id/verify   — verify the split actually happened (needs fresh observations)
+ * GET  /api/gtm/split-plan/:id/download — the delta as GTM import JSON
  * GET  /api/gtm/containers           — list connected containers for this org
  * DELETE /api/gtm/containers/:id     — disconnect a container (wipes credentials)
  *
@@ -39,6 +43,9 @@ import { parseContainerJson, validateContainerJsonShape } from '@/services/gtm/c
 import { deployContainerToGtm } from '@/services/gtm/gtmDeployService';
 import type { GTMContainerJSON } from '@/services/planning/generators/gtmContainerGenerator';
 import { gtmContainerSyncQueue } from '@/services/queue/jobQueue';
+import { loadSplitPlanContext, buildSplitPlan } from '@/services/google/googleTagSplitService';
+import { evaluateSplitVerification } from '@/services/google/googleTagSplitVerification';
+import { insertSplitPlan, getSplitPlan, markSplitPlanDeployed, markSplitPlanVerified } from '@/services/database/googleTagSplitPlanQueries';
 import logger from '@/utils/logger';
 
 export const gtmRouter = Router();
@@ -548,6 +555,173 @@ gtmRouter.post('/deploy', async (req: Request, res: Response): Promise<void> => 
     res.status(201).json({ data: summary });
   } catch (err) {
     sendInternalError(res, err, 'POST /api/gtm/deploy');
+  }
+});
+
+// ── Google tag split plans (Google Tag Topology PRD §7, Sprint 4) ─────────────
+// Same router-level gate as /deploy (authMiddleware + planGuard('pro'), D3).
+// Atlas never publishes: deploy creates a draft workspace only.
+
+const splitPlanSchema = z.object({
+  connection_id: z.string().uuid(),
+  persist: z.boolean().optional(),
+});
+const splitDeploySchema = z.object({
+  connection_id: z.string().uuid(),
+  plan_id: z.string().uuid().optional(),
+});
+
+gtmRouter.post('/split-plan', async (req: Request, res: Response): Promise<void> => {
+  const parse = splitPlanSchema.safeParse(req.body);
+  if (!parse.success) {
+    res.status(400).json({ error: 'Invalid request', details: parse.error.flatten() });
+    return;
+  }
+  try {
+    const orgId = await resolveOrgId(req.user.id);
+    const ctx = await loadSplitPlanContext(orgId, parse.data.connection_id);
+    if (ctx === 'no_connection') { res.status(404).json({ error: 'GTM connection not found' }); return; }
+    if (ctx === 'no_snapshot') { res.status(409).json({ error: 'This connection has no container snapshot yet — sync the container first.' }); return; }
+
+    const built = buildSplitPlan(ctx);
+    const deployable = built.plan.delta !== null && built.plan.conflicts.length === 0;
+
+    let planId: string | null = null;
+    if (parse.data.persist && deployable && built.plan.delta) {
+      const row = await insertSplitPlan({
+        organizationId: orgId,
+        clientId: ctx.clientId,
+        connectionId: ctx.connection.id,
+        topologySnapshotIds: ctx.topologyRows.map((r) => r.id),
+        delta: built.plan.delta as unknown as Record<string, unknown>,
+        diff: built.plan.diff as unknown as Record<string, unknown>,
+      });
+      planId = row.id;
+    }
+
+    res.json({
+      data: {
+        plan_id: planId,
+        delta: built.plan.delta,
+        diff: built.plan.diff,
+        conflicts: built.plan.conflicts,
+        destinations: built.plan.destinations,
+        guidance: built.guidance,
+        topology: built.topology,
+        can_deploy_draft: deployable && ctx.connection.auth_method === 'oauth' && Boolean(ctx.connection.account_id),
+      },
+      error: null,
+      message: 'ok',
+    });
+  } catch (err) {
+    sendInternalError(res, err, 'POST /api/gtm/split-plan');
+  }
+});
+
+gtmRouter.post('/split-plan/deploy', async (req: Request, res: Response): Promise<void> => {
+  const parse = splitDeploySchema.safeParse(req.body);
+  if (!parse.success) {
+    res.status(400).json({ error: 'Invalid request', details: parse.error.flatten() });
+    return;
+  }
+  try {
+    const orgId = await resolveOrgId(req.user.id);
+    const ctx = await loadSplitPlanContext(orgId, parse.data.connection_id);
+    if (ctx === 'no_connection') { res.status(404).json({ error: 'GTM connection not found' }); return; }
+    if (ctx === 'no_snapshot') { res.status(409).json({ error: 'This connection has no container snapshot yet — sync the container first.' }); return; }
+
+    if (ctx.connection.auth_method !== 'oauth' || !ctx.connection.account_id) {
+      res.status(400).json({ error: 'Deploying a draft needs an OAuth-connected container. Download the delta and import it manually instead.' });
+      return;
+    }
+
+    // Recomputed server-side from the latest snapshot — never trust a client-supplied delta.
+    const built = buildSplitPlan(ctx);
+    if (!built.plan.delta || built.plan.conflicts.length > 0) {
+      res.status(409).json({ error: 'Nothing deployable: the plan is empty or has conflicts.', data: { conflicts: built.plan.conflicts, diff: built.plan.diff } });
+      return;
+    }
+
+    let existing = null;
+    if (parse.data.plan_id) {
+      existing = await getSplitPlan(parse.data.plan_id, orgId);
+      if (!existing) { res.status(404).json({ error: 'Split plan not found' }); return; }
+    }
+
+    const accessToken = await refreshGtmToken(ctx.connection.id);
+    const summary = await deployContainerToGtm(
+      accessToken,
+      ctx.connection.account_id,
+      ctx.connection.container_id,
+      built.plan.delta,
+      {
+        workspaceName: `Atlas · Google tag split · ${new Date().toISOString().slice(0, 10)}`,
+        workspaceDescription: 'Adds a Google tag per destination. Created by Atlas. Review in GTM Preview, then publish — Atlas never publishes automatically.',
+      },
+    );
+
+    const deltaJson = built.plan.delta as unknown as Record<string, unknown>;
+    const diffJson = built.plan.diff as unknown as Record<string, unknown>;
+    const row = existing
+      ? await markSplitPlanDeployed(existing.id, { delta: deltaJson, diff: diffJson, workspaceId: summary.workspace_id })
+      : await insertSplitPlan({
+          organizationId: orgId,
+          clientId: ctx.clientId,
+          connectionId: ctx.connection.id,
+          topologySnapshotIds: ctx.topologyRows.map((r) => r.id),
+          delta: deltaJson,
+          diff: diffJson,
+          status: 'deployed_draft',
+          deployedWorkspaceId: summary.workspace_id,
+        });
+
+    logger.info({ connectionId: ctx.connection.id, orgId, planId: row.id }, 'Google tag split draft deployed');
+    res.status(201).json({ data: { plan_id: row.id, status: row.status, ...summary }, error: null, message: 'Draft workspace created. Nothing has been published.' });
+  } catch (err) {
+    sendInternalError(res, err, 'POST /api/gtm/split-plan/deploy');
+  }
+});
+
+gtmRouter.post('/split-plan/:id/verify', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const orgId = await resolveOrgId(req.user.id);
+    const plan = await getSplitPlan(req.params['id'], orgId);
+    if (!plan) { res.status(404).json({ error: 'Split plan not found' }); return; }
+    if (plan.status === 'abandoned') { res.status(409).json({ error: 'This plan was abandoned.' }); return; }
+    if (!plan.connection_id) { res.status(400).json({ error: 'This plan has no connection to verify against.' }); return; }
+
+    const ctx = await loadSplitPlanContext(orgId, plan.connection_id);
+    if (ctx === 'no_connection') { res.status(404).json({ error: 'GTM connection not found' }); return; }
+
+    const result = evaluateSplitVerification({
+      planStartedAt: new Date(plan.deployed_at ?? plan.created_at),
+      snapshot: ctx === 'no_snapshot' ? null : ctx.snapshot,
+      topologyRows: ctx === 'no_snapshot' ? [] : ctx.topologyRows,
+      secondaryDomains: ctx === 'no_snapshot' ? [] : ctx.secondaryDomains,
+    });
+
+    let status: string = plan.status;
+    if (result.verified && plan.status !== 'verified') {
+      // The client-scoped discontinuity (PRD §8.1) is written by Sprint 5 once
+      // platform_discontinuities gains client_id/kind.
+      status = (await markSplitPlanVerified(plan.id)).status;
+    }
+    res.json({ data: { plan_id: plan.id, status, verified: result.verified, reasons: result.reasons, topology: result.topology }, error: null, message: 'ok' });
+  } catch (err) {
+    sendInternalError(res, err, 'POST /api/gtm/split-plan/:id/verify');
+  }
+});
+
+gtmRouter.get('/split-plan/:id/download', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const orgId = await resolveOrgId(req.user.id);
+    const plan = await getSplitPlan(req.params['id'], orgId);
+    if (!plan) { res.status(404).json({ error: 'Split plan not found' }); return; }
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="atlas-google-tag-split-${plan.id.slice(0, 8)}.json"`);
+    res.send(JSON.stringify(plan.delta, null, 2));
+  } catch (err) {
+    sendInternalError(res, err, 'GET /api/gtm/split-plan/:id/download');
   }
 });
 

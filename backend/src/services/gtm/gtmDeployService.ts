@@ -115,15 +115,19 @@ export async function deployContainerToGtm(
   accountId: string,
   containerId: string,
   container: GTMContainerJSON,
+  options: { workspaceName?: string; workspaceDescription?: string } = {},
 ): Promise<GtmDeploySummary> {
   const base = `/accounts/${accountId}/containers/${containerId}`;
   const version = container.containerVersion;
 
   // ── 1. Create a new workspace for this deploy ────────────────────────────
-  const workspaceName = `Atlas Deploy — ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`;
+  const workspaceName =
+    options.workspaceName ?? `Atlas Deploy — ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`;
   const workspace = await gtmApiRequest<{ workspaceId: string }>(accessToken, 'POST', `${base}/workspaces`, {
     name: workspaceName,
-    description: 'Created by Atlas Planning Mode. Review in GTM Preview mode, then publish when ready — Atlas never publishes automatically.',
+    description:
+      options.workspaceDescription ??
+      'Created by Atlas Planning Mode. Review in GTM Preview mode, then publish when ready — Atlas never publishes automatically.',
   });
   const workspaceId = workspace.workspaceId;
   const wsBase = `${base}/workspaces/${workspaceId}`;

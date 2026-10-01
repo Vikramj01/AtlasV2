@@ -108,6 +108,16 @@ describe('deployContainerToGtm', () => {
     expect(calls.some((c) => c.url.includes('publish'))).toBe(false);
   });
 
+  it('uses a caller-supplied workspace name and description (Google tag split draft), still never publishing', async () => {
+    await deployContainerToGtm('token', 'acct-1', 'GTM-XXXXX', makeContainer(), {
+      workspaceName: 'Atlas · Google tag split · 2026-10-01',
+      workspaceDescription: 'split draft',
+    });
+    const workspaceCall = calls.find((c) => c.url.endsWith('/accounts/acct-1/containers/GTM-XXXXX/workspaces'))!;
+    expect(workspaceCall.body).toMatchObject({ name: 'Atlas · Google tag split · 2026-10-01', description: 'split draft' });
+    expect(calls.some((c) => c.url.includes('publish'))).toBe(false);
+  });
+
   it('remaps folderId references on tags/triggers/variables to real folder IDs', async () => {
     await deployContainerToGtm('token', 'acct-1', 'GTM-XXXXX', makeContainer());
 

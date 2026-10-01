@@ -1,7 +1,7 @@
 # Atlas PRD · Google Tag Topology (combined tag detection, per-destination Google tags, split remediation)
 
 **Target path in repo:** `docs/prd/google-tag-topology.md`
-**Status:** Sprints 0–3 built (nothing live-verified; see §17)
+**Status:** Sprints 0–4 built (nothing live-verified; see §17)
 **Owner:** Vikram
 **Date:** 2026-10-01
 **Depends on:** `googleTagArchitecture.ts`, `linkerDecisionEngine.ts`, `consent.renderer.ts`, `services/validation/tagConfiguration.ts` (IHC tag-config rules), `gtmSchemaValidator.ts`, `generation.validator.ts`, `implementationDrift.ts`, `gtmDeployService.ts` + `POST /api/gtm/deploy`, GTM OAuth (`tagmanager.edit.containers`), CSE (`crawl_runs`, `detected_signals`), `register/engine.ts` confidence model (`evidence_class`, `observation_confidence`, `confidence`, `client_question`), `platform_discontinuities` + `discontinuityDiff.ts`, DQM orchestrator + `dqmAlertEvaluator.ts`, `getClientSummaries()`, L11 scoping doc (`docs/ATLAS_L11_RECONCILIATION_SCOPING.md`)
@@ -507,3 +507,15 @@ Each item gets an in-file `UNVERIFIED` marker where it is built in.
 - **`google_tag_topology` gained** `declaration_source`, `inferred` and `audit_id` columns beyond §6.2.
 - **Migration `20260921001` is written but NOT applied** to the connected project (decision §22: let the branching pipeline apply it). Live `detected_signals_signal_type_check` was read first.
 - **Back-scan** (`services/google/googleTagBackscan.ts` + `scripts/googleTagBackscan.ts`) is written and unit-tested but **not run** against production data.
+
+### 17.5 Sprint 4 build notes and deviations (2026-10-01)
+
+- **Delta, not a regenerated container.** `googleTagSplitPlanner.ts` calls the same `buildGoogleTagInfrastructure()` the generator uses and keeps only what is absent: a Google tag per GA4/Ads destination lacking a sitewide `googtag` with that exact ID, its `CONST` variable, a Conversion Linker only when the linker decision says so and no `gclidw` exists, and ONE new uniquely-named trigger (`Atlas - Google tag split - All Pages`). It deliberately never reuses a client trigger: a delta referencing an existing trigger ID would need ID passthrough in the deploy service and an import file can't rely on one. Anything that would collide (same-name tag/variable-with-different-value/trigger, an existing Google tag for the ID that isn't sitewide, several IDs of one kind) is returned as a conflict and nothing is planned.
+- **The unverified Ads `googtag` parameter shape (U1) carries into every delta** — it is the generator's best-effort shape. A delta must not reach a real client until U1 is checked against a genuine GTM export.
+- **Deploy** reuses `deployContainerToGtm()` (new optional `workspaceName`/`workspaceDescription`, defaults unchanged) under the existing `authMiddleware + planGuard('pro')` router gate (D3). The route recomputes the plan server-side from the latest snapshot; it never trusts a client-supplied delta. OAuth connections only; manual-upload connections get the download path.
+- **`POST /api/gtm/split-plan` is side-effect-free unless `persist: true`** — a stored plan id is needed for `GET /split-plan/:id/download`, so the UI persists a `planned` row only when the user chooses to download.
+- **Verification (§7.4) needs three fresh facts**, all newer than the plan's deploy: a container snapshot, a topology observation showing SPLIT, and `GOOGLE_ADS_GOOGLE_TAG_MISSING` passing against that snapshot. Atlas does not trigger a CSE run or a container re-sync itself (a CSE run needs Browserbase and the draft is unpublished until the operator publishes); it reports precisely what is missing instead.
+- **Not done here, deferred to Sprint 5:** writing the client-scoped discontinuity on verification (§7.4 step 3) — `platform_discontinuities` only gains `client_id`/`kind` in Sprint 5. `verified_at` is recorded now.
+- **Guidance** lives in `services/ihc/googleTagSplitGuidance.ts` (versioned). Step 1 (admin access on the Google tag, U6) is marked `unverified` and shown with a "Needs confirmation" chip; step 3 states the split location as verified and the draft-first ordering as unmeasured (D2 default, U10).
+- **Frontend:** a "Google tag" tab on `ClientDetailPage` (topology card + split flow). The split flow is launched from the card's "Plan a split" button; launching it from the individual IHC finding rows was not built.
+- **Migration `20260921002` is written, NOT applied** (same as `20260921001`).
