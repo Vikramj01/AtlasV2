@@ -18,6 +18,7 @@ import {
   checkStatusSeverity,
   dmaSeverity,
   outcomeSyncSeverity,
+  topologySeverity,
   worstDqmSeverity,
   getClientSummaries,
 } from '../dashboardSummaryService';
@@ -67,6 +68,18 @@ describe('dmaSeverity', () => {
   });
   it('returns null when healthy', () => {
     expect(dmaSeverity({ consecutive_failures: 0, avg_match_rate: 80 })).toBeNull();
+  });
+});
+
+describe('topologySeverity (Google Tag Topology Sprint 5)', () => {
+  it('maps a lost Ads tag to critical and re-combination to medium', () => {
+    expect(topologySeverity('fail')).toBe('critical');
+    expect(topologySeverity('degraded')).toBe('medium');
+  });
+  it('is null for pass, error (could not check), and no check yet — it never fabricates a problem', () => {
+    expect(topologySeverity('pass')).toBeNull();
+    expect(topologySeverity('error')).toBeNull();
+    expect(topologySeverity(undefined)).toBeNull();
   });
 });
 

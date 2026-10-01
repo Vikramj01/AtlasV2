@@ -39,6 +39,7 @@ export function GoogleTagSplitFlow({ clientId }: GoogleTagSplitFlowProps) {
   const [verify, setVerify] = useState<SplitVerifyResponse | null>(null);
   const [busy, setBusy] = useState<'plan' | 'deploy' | 'download' | 'verify' | null>(null);
   const [confirmDeploy, setConfirmDeploy] = useState(false);
+  const [splitDate, setSplitDate] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -102,7 +103,7 @@ export function GoogleTagSplitFlow({ clientId }: GoogleTagSplitFlowProps) {
 
   async function runVerify() {
     if (!deployed) return;
-    const res = await run('verify', () => googleTagTopologyApi.verifySplit(deployed.plan_id));
+    const res = await run('verify', () => googleTagTopologyApi.verifySplit(deployed.plan_id, splitDate || undefined));
     if (res) setVerify(res);
   }
 
@@ -239,6 +240,16 @@ export function GoogleTagSplitFlow({ clientId }: GoogleTagSplitFlowProps) {
                 >
                   Open the draft in GTM <ExternalLink className="h-3.5 w-3.5" />
                 </a>
+                <label className="block text-sm text-console-fg">
+                  Date you split the tags in Google (optional — defaults to today)
+                  <input
+                    type="date"
+                    className="mt-1 block rounded border border-console-border bg-console-bg px-2 py-1 text-sm"
+                    value={splitDate}
+                    max={new Date().toISOString().slice(0, 10)}
+                    onChange={(e) => setSplitDate(e.target.value)}
+                  />
+                </label>
                 <div>
                   <Button size="sm" variant="outline" onClick={runVerify} disabled={busy !== null}>
                     {busy === 'verify' ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
@@ -248,7 +259,7 @@ export function GoogleTagSplitFlow({ clientId }: GoogleTagSplitFlowProps) {
                 {verify && (
                   verify.verified ? (
                     <p className="flex items-center gap-1.5 text-sm text-severity-success">
-                      <CheckCircle2 className="h-4 w-4" /> Verified: the Google tags are split and the Ads Google tag is present.
+                      <CheckCircle2 className="h-4 w-4" /> Verified: the Google tags are split and the Ads Google tag is present. Atlas has recorded this date so reports and insights can explain the change in how data is collected.
                     </p>
                   ) : (
                     <div>

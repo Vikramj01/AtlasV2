@@ -91,6 +91,16 @@ describe('buildUserMessage', () => {
     expect(msg).toContain('google ads');
   });
 
+  it('a recorded tracking change is labelled as a data-collection change and wins a confidence tie (Google Tag Topology Sprint 5)', () => {
+    const msg = buildUserMessage(anomaly, [
+      { factor_type: 'dqm_alert', factor_date: '2026-07-10', proximity_days: 0, confidence_score: 1 },
+      { factor_type: 'tracking_change', factor_date: '2026-07-10', proximity_days: 0, confidence_score: 1 },
+    ]);
+    expect(msg).toContain('tracking configuration change recorded for a client');
+    expect(msg).toContain('a change in how data is collected, not necessarily in performance');
+    expect(msg).not.toContain('tracking tag failure detected');
+  });
+
   it('shows direction "dropped" for negative deviation', () => {
     expect(buildUserMessage(anomaly, [])).toContain('dropped');
   });

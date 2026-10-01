@@ -48,6 +48,18 @@ export function outcomeSyncSeverity(config: { consecutive_failures: number; last
   return null;
 }
 
+// Google Tag Topology PRD §8.3 (Sprint 5). dqm_google_tag_topology_checks is
+// genuinely per-client (client_id column, the dqm_sgtm_checks precedent), so this
+// reads each client's latest check directly. 'fail' = the sitewide Ads Google tag
+// was lost after a verified split (Ads tracking may be broken: critical);
+// 'degraded' = destinations are combined again (medium). Like every DQM signal
+// here it only ever ESCALATES a health level, never downgrades one.
+export function topologySeverity(status: string | undefined): DqmSeverity | null {
+  if (status === 'fail') return 'critical';
+  if (status === 'degraded') return 'medium';
+  return null; // 'pass' / 'error' (couldn't check) / no check yet
+}
+
 export function worstDqmSeverity(...severities: (DqmSeverity | null)[]): DqmSeverity | null {
   let worst: DqmSeverity | null = null;
   for (const s of severities) {
@@ -325,7 +337,7 @@ export async function getClientSummaries(orgId: string): Promise<DashboardClient
   const clientIds = clients.map((c: { id: string }) => c.id);
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
-  const [platformRows, deploymentRows, ihcCountRows, reconCountRows, sgtmRows, gtgRows, dmaRows, identityConfigRows, outcomeSyncRows] = await Promise.all([
+  const [platformRows, deploymentRows, ihcCountRows, reconCountRows, sgtmRows, gtgRows, dmaRows, identityConfigRows, outcomeSyncRows, topologyRows] = await Promise.all([
     supabase
       .from('client_platforms')
       .select('client_id, platform')
@@ -389,6 +401,14 @@ export async function getClientSummaries(orgId: string): Promise<DashboardClient
       .select('client_id, consecutive_failures, last_sync_status')
       .in('client_id', clientIds)
       .eq('sync_enabled', true),
+
+    // Latest Google tag topology check per client (ordered desc below). Tolerates a
+    // missing table (migration 20260921003 not applied yet): data is just null.
+    supabase
+      .from('dqm_google_tag_topology_checks')
+      .select('client_id, check_status, checked_at')
+      .in('client_id', clientIds)
+      .order('checked_at', { ascending: false }),
   ]);
 
   // ── Per-client DQM alert severity ────────────────────────────────────────────
@@ -415,6 +435,12 @@ export async function getClientSummaries(orgId: string): Promise<DashboardClient
   for (const row of outcomeSyncRows.data ?? []) {
     const r = row as { client_id: string; consecutive_failures: number; last_sync_status: string | null };
     outcomeSyncByClient[r.client_id] = { consecutive_failures: r.consecutive_failures, last_sync_status: r.last_sync_status };
+  }
+
+  const topologyLatestByClient: Record<string, string> = {};
+  for (const row of topologyRows.data ?? []) {
+    const r = row as { client_id: string; check_status: string };
+    if (!topologyLatestByClient[r.client_id]) topologyLatestByClient[r.client_id] = r.check_status;
   }
 
   // ── Per-client CAPI match quality / dedup rate ───────────────────────────────
@@ -500,10 +526,12 @@ export async function getClientSummaries(orgId: string): Promise<DashboardClient
       checkStatusSeverity(gtgLatestByClient[c.id]),
       dmaSeverity(dmaByClient[c.id]),
       outcomeSyncSeverity(outcomeSyncByClient[c.id]),
+      topologySeverity(topologyLatestByClient[c.id]),
     );
     const dqmAlertCount = [sgtmLatestByClient[c.id], gtgLatestByClient[c.id]].filter((s) => checkStatusSeverity(s) !== null).length
       + (dmaSeverity(dmaByClient[c.id]) !== null ? 1 : 0)
-      + (outcomeSyncSeverity(outcomeSyncByClient[c.id]) !== null ? 1 : 0);
+      + (outcomeSyncSeverity(outcomeSyncByClient[c.id]) !== null ? 1 : 0)
+      + (topologySeverity(topologyLatestByClient[c.id]) !== null ? 1 : 0);
 
     const capiAgg = capiAggByClient[c.id];
     const capiMatchQuality = capiAgg && capiAgg.qualityCount > 0

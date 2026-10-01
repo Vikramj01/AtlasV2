@@ -64,6 +64,7 @@ describe('GoogleTagTopologyCard', () => {
     render(<GoogleTagTopologyCard orgId="o" clientId="c" />);
     await waitFor(() => expect(screen.getByText('Combined, Google Ads is the primary ID')).toBeTruthy());
     expect(screen.getByText('AW-1 · primary')).toBeTruthy();
+    expect(screen.getByText(/Consent settings configured on a combined Google tag can apply to every destination/)).toBeTruthy();
     expect(screen.queryByText('Needs confirmation')).toBeNull();
   });
 
@@ -77,11 +78,12 @@ describe('GoogleTagTopologyCard', () => {
     expect(screen.getByText('Needs confirmation')).toBeTruthy();
   });
 
-  it('SPLIT hides the split planner', async () => {
+  it('SPLIT hides the split planner and the combined-tag consent note', async () => {
     api.getTopology.mockResolvedValue(topology({ verdict: 'SPLIT', strength: 'observed' }));
     render(<GoogleTagTopologyCard orgId="o" clientId="c" />);
     await waitFor(() => expect(screen.getByText('One Google tag per destination')).toBeTruthy());
     expect(screen.queryByText('Plan a split')).toBeNull();
+    expect(screen.queryByText(/Consent settings configured on a combined Google tag/)).toBeNull();
   });
 
   it('submits a declaration with parsed destination IDs', async () => {
@@ -153,6 +155,23 @@ describe('GoogleTagSplitFlow', () => {
     expect(screen.getByText(/connected by manual upload/)).toBeTruthy();
   });
 
+  it('passes an operator-entered split date through to verification', async () => {
+    api.listContainers.mockResolvedValue([container]);
+    api.planSplit.mockResolvedValue(plan());
+    api.deploySplit.mockResolvedValue({ plan_id: 'p1', status: 'deployed_draft', workspace_id: 'w', workspace_url: 'https://x', tags_created: 1 });
+    api.verifySplit.mockResolvedValue({ plan_id: 'p1', status: 'deployed_draft', verified: false, reasons: ['x'], topology: { verdict: 'UNKNOWN', strength: 'none', combined_tags: [], destination_count: 0 } });
+    const { container: dom } = render(<GoogleTagSplitFlow clientId="c" />);
+    await waitFor(() => expect(screen.getByText('Build split plan')).toBeTruthy());
+    fireEvent.click(screen.getByText('Build split plan'));
+    await waitFor(() => expect(screen.getByText('Deploy as GTM draft')).toBeTruthy());
+    fireEvent.click(screen.getByText('Deploy as GTM draft'));
+    fireEvent.click(screen.getByText('Create draft'));
+    await waitFor(() => expect(screen.getByText('Verify the split')).toBeTruthy());
+    fireEvent.change(dom.querySelector('input[type="date"]')!, { target: { value: '2026-10-01' } });
+    fireEvent.click(screen.getByText('Verify the split'));
+    await waitFor(() => expect(api.verifySplit).toHaveBeenCalledWith('p1', '2026-10-01'));
+  });
+
   it('a failed verification lists what still fails; a verified one says so', async () => {
     api.listContainers.mockResolvedValue([container]);
     api.planSplit.mockResolvedValue(plan());
@@ -168,6 +187,7 @@ describe('GoogleTagSplitFlow', () => {
     fireEvent.click(screen.getByText('Verify the split'));
     await waitFor(() => expect(screen.getByText('Not verified yet')).toBeTruthy());
     expect(screen.getByText(/No container snapshot/)).toBeTruthy();
+    expect(api.verifySplit).toHaveBeenLastCalledWith('p1', undefined); // no split date entered
 
     api.verifySplit.mockResolvedValue({ plan_id: 'p1', status: 'verified', verified: true, reasons: [], topology: { verdict: 'SPLIT', strength: 'observed', combined_tags: [], destination_count: 2 } });
     fireEvent.click(screen.getByText('Verify the split'));

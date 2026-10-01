@@ -100,12 +100,13 @@ describe('fetchCorrelationFactors', () => {
   beforeEach(() => vi.resetAllMocks());
 
   function setupEmptyFactors() {
-    // 5 calls in order: dqm_gtg_checks, crawl_runs, profiles, health_snapshots, enricher_runs
+    // calls in order: dqm_gtg_checks, crawl_runs, profiles, health_snapshots, enricher_runs, platform_discontinuities
     vi.mocked(supabaseAdmin.from)
       .mockReturnValueOnce(makeChain([], null))   // dqm_gtg_checks
       .mockReturnValueOnce(makeChain([], null))   // crawl_runs
       .mockReturnValueOnce(makeChain([], null))   // profiles
       .mockReturnValueOnce(makeChain([], null))   // enricher_runs
+      .mockReturnValueOnce(makeChain([], null))  // platform_discontinuities (tracking_change)
       ;
   }
 
@@ -129,7 +130,8 @@ describe('fetchCorrelationFactors', () => {
       .mockReturnValueOnce(makeChain(dqmData, null)) // dqm_gtg_checks
       .mockReturnValueOnce(makeChain([], null))      // crawl_runs
       .mockReturnValueOnce(makeChain([], null))      // profiles
-      .mockReturnValueOnce(makeChain([], null));     // enricher_runs
+      .mockReturnValueOnce(makeChain([], null))     // enricher_runs
+      .mockReturnValueOnce(makeChain([], null));  // platform_discontinuities (tracking_change)
 
     const factors = await fetchCorrelationFactors(orgId, date);
     expect(factors).toHaveLength(1);
@@ -148,7 +150,8 @@ describe('fetchCorrelationFactors', () => {
       .mockReturnValueOnce(makeChain([], null))        // dqm_gtg_checks
       .mockReturnValueOnce(makeChain(crawlData, null)) // crawl_runs
       .mockReturnValueOnce(makeChain([], null))        // profiles
-      .mockReturnValueOnce(makeChain([], null));       // enricher_runs
+      .mockReturnValueOnce(makeChain([], null))       // enricher_runs
+      .mockReturnValueOnce(makeChain([], null));  // platform_discontinuities (tracking_change)
 
     const factors = await fetchCorrelationFactors(orgId, date);
     expect(factors).toHaveLength(1);
@@ -169,7 +172,8 @@ describe('fetchCorrelationFactors', () => {
       .mockReturnValueOnce(makeChain([], null))          // crawl_runs
       .mockReturnValueOnce(makeChain(profileData, null)) // profiles
       .mockReturnValueOnce(makeChain(snapData, null))    // health_snapshots
-      .mockReturnValueOnce(makeChain([], null));         // enricher_runs
+      .mockReturnValueOnce(makeChain([], null))         // enricher_runs
+      .mockReturnValueOnce(makeChain([], null));  // platform_discontinuities (tracking_change)
 
     const factors = await fetchCorrelationFactors(orgId, date);
     expect(factors).toHaveLength(1);
@@ -187,11 +191,12 @@ describe('fetchCorrelationFactors', () => {
       .mockReturnValueOnce(makeChain([], null))  // dqm_gtg_checks
       .mockReturnValueOnce(makeChain([], null))  // crawl_runs
       .mockReturnValueOnce(makeChain([], null))  // profiles (empty)
-      .mockReturnValueOnce(makeChain([], null)); // enricher_runs
+      .mockReturnValueOnce(makeChain([], null)) // enricher_runs
+      .mockReturnValueOnce(makeChain([], null));  // platform_discontinuities (tracking_change)
 
     await fetchCorrelationFactors(orgId, date);
-    // Only 4 calls: profiles resolved to empty so health_snapshots was skipped
-    expect(vi.mocked(supabaseAdmin.from)).toHaveBeenCalledTimes(4);
+    // Only 5 calls: profiles resolved to empty so health_snapshots was skipped
+    expect(vi.mocked(supabaseAdmin.from)).toHaveBeenCalledTimes(5);
   });
 
   it('returns a bse_delivery_failure factor from a failed enricher run', async () => {
@@ -200,7 +205,8 @@ describe('fetchCorrelationFactors', () => {
       .mockReturnValueOnce(makeChain([], null))           // dqm_gtg_checks
       .mockReturnValueOnce(makeChain([], null))           // crawl_runs
       .mockReturnValueOnce(makeChain([], null))           // profiles
-      .mockReturnValueOnce(makeChain(enricherData, null)); // enricher_runs
+      .mockReturnValueOnce(makeChain(enricherData, null)) // enricher_runs
+      .mockReturnValueOnce(makeChain([], null));  // platform_discontinuities (tracking_change)
 
     const factors = await fetchCorrelationFactors(orgId, date);
     expect(factors).toHaveLength(1);
@@ -224,7 +230,8 @@ describe('fetchCorrelationFactors', () => {
       .mockReturnValueOnce(makeChain([], null))            // crawl_runs
       .mockReturnValueOnce(makeChain(profileData, null))   // profiles
       .mockReturnValueOnce(makeChain(snapData, null))      // health_snapshots
-      .mockReturnValueOnce(makeChain(enricherData, null)); // enricher_runs
+      .mockReturnValueOnce(makeChain(enricherData, null)) // enricher_runs
+      .mockReturnValueOnce(makeChain([], null));  // platform_discontinuities (tracking_change)
 
     const factors = await fetchCorrelationFactors(orgId, date);
     expect(factors).toHaveLength(3);
@@ -234,6 +241,82 @@ describe('fetchCorrelationFactors', () => {
 });
 
 // ── runCorrelationForOrg ──────────────────────────────────────────────────────
+
+describe('fetchCorrelationFactors — tracking_change (Google Tag Topology Sprint 5)', () => {
+  const orgId = 'org-1';
+  const date  = '2026-07-10';
+
+  beforeEach(() => vi.resetAllMocks());
+
+  function withDiscontinuities(chain: unknown) {
+    vi.mocked(supabaseAdmin.from)
+      .mockReturnValueOnce(makeChain([], null))  // dqm_gtg_checks
+      .mockReturnValueOnce(makeChain([], null))  // crawl_runs
+      .mockReturnValueOnce(makeChain([], null))  // profiles
+      .mockReturnValueOnce(makeChain([], null))  // enricher_runs
+      .mockReturnValueOnce(chain as any);        // platform_discontinuities
+  }
+
+  it('returns a source-restricted tracking_change factor for a client discontinuity in the window', async () => {
+    withDiscontinuities(makeChain([
+      { id: 'disc-1', platform: 'google_ads', title: 'Google tag split', effective_date: '2026-07-11', description: 'd', organization_id: orgId },
+    ], null));
+    const factors = await fetchCorrelationFactors(orgId, date);
+    expect(factors).toHaveLength(1);
+    expect(factors[0]).toMatchObject({
+      factor_type: 'tracking_change', factor_ref_id: 'disc-1', factor_date: '2026-07-11',
+      proximity_days: 1, confidence_score: 0.75, applies_to_sources: ['google_ads'],
+    });
+  });
+
+  it('queries only this org\'s client-scoped rows in the ±3-day window', async () => {
+    const chain = makeChain([], null);
+    withDiscontinuities(chain);
+    await fetchCorrelationFactors(orgId, date);
+    expect(chain.eq).toHaveBeenCalledWith('kind', 'client_tracking_change');
+    expect(chain.eq).toHaveBeenCalledWith('organization_id', orgId);
+    expect(chain.gte).toHaveBeenCalledWith('effective_date', '2026-07-07');
+    expect(chain.lte).toHaveBeenCalledWith('effective_date', '2026-07-13');
+  });
+
+  it('is non-fatal: a failing discontinuity read (migration not applied yet) keeps the other four factors', async () => {
+    withDiscontinuities(makeChain(null, { message: 'column "kind" does not exist' }));
+    await expect(fetchCorrelationFactors(orgId, date)).resolves.toEqual([]);
+  });
+});
+
+describe('runCorrelationForOrg — source-restricted factors', () => {
+  const orgId = 'org-1';
+  const date  = '2026-07-10';
+
+  beforeEach(() => vi.resetAllMocks());
+
+  it('fans a ga4/google_ads tracking change out only to anomalies from those sources, and strips applies_to_sources before insert', async () => {
+    const anomalies = [
+      { id: 'a-ga4', source: 'ga4' },
+      { id: 'a-meta', source: 'meta_ads' },
+      { id: 'a-ads', source: 'google_ads' },
+    ];
+    const insertChain = makeChain(null, null);
+    vi.mocked(supabaseAdmin.from)
+      .mockReturnValueOnce(makeChain(anomalies, null))  // air_anomalies
+      .mockReturnValueOnce(makeChain([], null))          // dqm_gtg_checks
+      .mockReturnValueOnce(makeChain([], null))          // crawl_runs
+      .mockReturnValueOnce(makeChain([], null))          // profiles
+      .mockReturnValueOnce(makeChain([], null))          // enricher_runs
+      .mockReturnValueOnce(makeChain([{ id: 'disc-1', platform: 'ga4', title: 't', effective_date: '2026-07-10', description: 'd', organization_id: orgId }], null)) // discontinuities
+      .mockReturnValueOnce(makeChain(null, null))        // delete
+      .mockReturnValueOnce(insertChain);                 // insert
+
+    await runCorrelationForOrg(orgId, date);
+
+    const [rows] = insertChain.insert.mock.calls[0] as [Array<Record<string, unknown>>];
+    // The factor's platform is 'ga4': only the ga4 anomaly gets it.
+    expect(rows.map((r) => r.anomaly_id)).toEqual(['a-ga4']);
+    expect(rows[0]).not.toHaveProperty('applies_to_sources');
+    expect(rows[0].factor_type).toBe('tracking_change');
+  });
+});
 
 describe('runCorrelationForOrg', () => {
   const orgId = 'org-1';
@@ -262,6 +345,7 @@ describe('runCorrelationForOrg', () => {
       .mockReturnValueOnce(makeChain([], null))        // crawl_runs
       .mockReturnValueOnce(makeChain([], null))        // profiles
       .mockReturnValueOnce(makeChain([], null))        // enricher_runs
+      .mockReturnValueOnce(makeChain([], null))  // platform_discontinuities (tracking_change)
       .mockReturnValueOnce(deleteChain);               // air_insight_correlations delete
 
     await runCorrelationForOrg(orgId, date);
@@ -281,6 +365,7 @@ describe('runCorrelationForOrg', () => {
       .mockReturnValueOnce(makeChain([], null))        // crawl_runs
       .mockReturnValueOnce(makeChain([], null))        // profiles
       .mockReturnValueOnce(makeChain([], null))        // enricher_runs
+      .mockReturnValueOnce(makeChain([], null))  // platform_discontinuities (tracking_change)
       .mockReturnValueOnce(deleteChain)                // delete
       .mockReturnValueOnce(insertChain);               // insert
 
@@ -304,6 +389,7 @@ describe('runCorrelationForOrg', () => {
       .mockReturnValueOnce(makeChain([], null))             // crawl_runs
       .mockReturnValueOnce(makeChain([], null))             // profiles
       .mockReturnValueOnce(makeChain([], null))             // enricher_runs
+      .mockReturnValueOnce(makeChain([], null))  // platform_discontinuities (tracking_change)
       .mockReturnValueOnce(makeChain(null, null))           // delete (ok)
       .mockReturnValueOnce(makeChain(null, { message: 'insert exploded' })); // insert
 

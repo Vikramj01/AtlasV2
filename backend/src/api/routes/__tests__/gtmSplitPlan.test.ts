@@ -34,6 +34,7 @@ vi.mock('@/config/env', () => ({
   },
 }));
 vi.mock('@/services/google/googleTagSplitService', () => ({ loadSplitPlanContext: vi.fn(), buildSplitPlan: vi.fn() }));
+vi.mock('@/services/database/discontinuityQueries', () => ({ writeClientDiscontinuities: vi.fn() }));
 vi.mock('@/services/database/googleTagSplitPlanQueries', () => ({
   insertSplitPlan: vi.fn(), getSplitPlan: vi.fn(), markSplitPlanDeployed: vi.fn(), markSplitPlanVerified: vi.fn(),
 }));
@@ -41,6 +42,7 @@ vi.mock('@/services/database/googleTagSplitPlanQueries', () => ({
 import { deployContainerToGtm } from '@/services/gtm/gtmDeployService';
 import { loadSplitPlanContext, buildSplitPlan } from '@/services/google/googleTagSplitService';
 import { insertSplitPlan, getSplitPlan, markSplitPlanVerified } from '@/services/database/googleTagSplitPlanQueries';
+import { writeClientDiscontinuities } from '@/services/database/discontinuityQueries';
 import { gtmRouter } from '../gtm';
 
 const CONN = '11111111-1111-4111-8111-111111111111';
@@ -171,6 +173,78 @@ describe('POST /api/gtm/split-plan/:id/verify (AC 13)', () => {
   it('404s for an unknown plan', async () => {
     vi.mocked(getSplitPlan).mockResolvedValue(null);
     expect((await buildApp().post('/api/gtm/split-plan/p1/verify')).status).toBe(404);
+  });
+});
+
+describe('POST /api/gtm/split-plan/:id/verify — client-scoped discontinuity (Sprint 5, AC 14)', () => {
+  const PLAN = { id: 'p1', status: 'deployed_draft', client_id: 'c1', connection_id: CONN, deployed_at: '2026-10-01T10:00:00Z', created_at: '2026-10-01T09:00:00Z' };
+  const FRESH = '2026-10-02T00:00:00Z';
+  const googtag = (id: string) => ({ tagId: id, name: id, type: 'googtag', firingTriggerId: ['1'], parameter: [{ type: 'TEMPLATE', key: 'tagId', value: id }] });
+  const verifiedCtx = () => ({
+    ...ctx(),
+    snapshot: {
+      snapshot_at: FRESH,
+      container: { tags: [googtag('G-1'), googtag('AW-1'), { tagId: 'c', name: 'conv', type: 'awct', firingTriggerId: ['1'], parameter: [] }], triggers: [{ triggerId: '1', name: 'All Pages', type: 'PAGEVIEW' }], variables: [] },
+    },
+    topologyRows: [
+      { google_tag_id: 'G-1', primary_destination_id: 'G-1', destination_ids: ['G-1'], source: 'operator_declared', declaration_source: 'CLIENT_CONFIRMED', observed_at: FRESH },
+      { google_tag_id: 'AW-1', primary_destination_id: 'AW-1', destination_ids: ['AW-1'], source: 'operator_declared', declaration_source: 'CLIENT_CONFIRMED', observed_at: FRESH },
+    ],
+  });
+  const today = new Date().toISOString().slice(0, 10);
+
+  it('on verification writes one client-scoped discontinuity per affected platform, effective today by default', async () => {
+    vi.mocked(getSplitPlan).mockResolvedValue(PLAN as any);
+    vi.mocked(loadSplitPlanContext).mockResolvedValue(verifiedCtx() as any);
+    vi.mocked(markSplitPlanVerified).mockResolvedValue({ status: 'verified' } as any);
+    const res = await buildApp().post('/api/gtm/split-plan/p1/verify').send({});
+    expect(res.body.data.verified).toBe(true);
+    expect(markSplitPlanVerified).toHaveBeenCalledWith('p1');
+    const rows = vi.mocked(writeClientDiscontinuities).mock.calls[0][0] as any[];
+    expect(rows.map((r) => r.platform)).toEqual(['ga4', 'google_ads']);
+    expect(rows.every((r) => r.kind === 'client_tracking_change' && r.client_id === 'c1' && r.organization_id === 'org-1' && r.effective_date === today)).toBe(true);
+  });
+
+  it('uses an operator-supplied earlier split date', async () => {
+    // Plan created long ago so the supplied date is valid regardless of the real clock.
+    vi.mocked(getSplitPlan).mockResolvedValue({ ...PLAN, created_at: '2020-01-01T00:00:00Z' } as any);
+    vi.mocked(loadSplitPlanContext).mockResolvedValue(verifiedCtx() as any);
+    vi.mocked(markSplitPlanVerified).mockResolvedValue({ status: 'verified' } as any);
+    await buildApp().post('/api/gtm/split-plan/p1/verify').send({ split_date: '2021-06-01' });
+    expect((vi.mocked(writeClientDiscontinuities).mock.calls[0][0] as any[])[0].effective_date).toBe('2021-06-01');
+  });
+
+  it('400s on a bad split date before changing anything', async () => {
+    vi.mocked(getSplitPlan).mockResolvedValue(PLAN as any);
+    const res = await buildApp().post('/api/gtm/split-plan/p1/verify').send({ split_date: '2999-01-01' });
+    expect(res.status).toBe(400);
+    expect(markSplitPlanVerified).not.toHaveBeenCalled();
+    expect(writeClientDiscontinuities).not.toHaveBeenCalled();
+  });
+
+  it('writes nothing when verification fails', async () => {
+    vi.mocked(getSplitPlan).mockResolvedValue(PLAN as any);
+    vi.mocked(loadSplitPlanContext).mockResolvedValue({ ...verifiedCtx(), topologyRows: [] } as any);
+    const res = await buildApp().post('/api/gtm/split-plan/p1/verify').send({});
+    expect(res.body.data.verified).toBe(false);
+    expect(writeClientDiscontinuities).not.toHaveBeenCalled();
+  });
+
+  it('does not re-write the discontinuity for an already-verified plan', async () => {
+    vi.mocked(getSplitPlan).mockResolvedValue({ ...PLAN, status: 'verified' } as any);
+    vi.mocked(loadSplitPlanContext).mockResolvedValue(verifiedCtx() as any);
+    await buildApp().post('/api/gtm/split-plan/p1/verify').send({});
+    expect(writeClientDiscontinuities).not.toHaveBeenCalled();
+  });
+
+  it('a failing discontinuity write is non-fatal: the plan is still verified and the response is 200', async () => {
+    vi.mocked(getSplitPlan).mockResolvedValue(PLAN as any);
+    vi.mocked(loadSplitPlanContext).mockResolvedValue(verifiedCtx() as any);
+    vi.mocked(markSplitPlanVerified).mockResolvedValue({ status: 'verified' } as any);
+    vi.mocked(writeClientDiscontinuities).mockRejectedValueOnce(new Error('column "kind" does not exist'));
+    const res = await buildApp().post('/api/gtm/split-plan/p1/verify').send({});
+    expect(res.status).toBe(200);
+    expect(res.body.data).toMatchObject({ verified: true, status: 'verified' });
   });
 });
 

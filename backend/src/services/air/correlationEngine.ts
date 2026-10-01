@@ -17,6 +17,7 @@
 import { supabaseAdmin } from '@/services/database/supabase';
 import { getAirEligibleOrgIds } from '@/services/air/ingestion/ingestionOrchestrator';
 import { subtractDays } from '@/services/air/anomalyDetector';
+import { listClientDiscontinuitiesInWindow } from '@/services/database/discontinuityQueries';
 import logger from '@/utils/logger';
 
 const CORRELATION_WINDOW_DAYS = 3;
@@ -26,7 +27,9 @@ export type FactorType =
   | 'dqm_alert'
   | 'cse_signal_change'
   | 'andromeda_score_drop'
-  | 'bse_delivery_failure';
+  | 'bse_delivery_failure'
+  // Google Tag Topology (Sprint 5): a client-scoped tracking change (e.g. a verified Google tag split) recorded in platform_discontinuities.
+  | 'tracking_change';
 
 export interface CorrelationRow {
   anomaly_id: string;
@@ -36,6 +39,12 @@ export interface CorrelationRow {
   proximity_days: number;
   confidence_score: number;
 }
+
+// A factor as fetched: `applies_to_sources` (when set) restricts which anomalies
+// it fans out to — a Google tag split affects GA4 / Google Ads figures only, so
+// it must not be offered as an explanation for a Meta anomaly. Stripped before
+// insert; air_insight_correlations has no such column.
+export type FetchedFactor = Omit<CorrelationRow, 'anomaly_id'> & { applies_to_sources?: string[] };
 
 // Adds `days` calendar days to a YYYY-MM-DD date string.
 export function addDays(date: string, days: number): string {
@@ -69,10 +78,10 @@ export function computeConfidence(proximityDays: number): number {
 export async function fetchCorrelationFactors(
   orgId: string,
   detectedDate: string,
-): Promise<Omit<CorrelationRow, 'anomaly_id'>[]> {
+): Promise<FetchedFactor[]> {
   const { windowStart, windowEnd } = buildWindowDates(detectedDate);
   const windowEndTs = windowEnd + 'T23:59:59Z';
-  const out: Omit<CorrelationRow, 'anomaly_id'>[] = [];
+  const out: FetchedFactor[] = [];
 
   // ── 1. dqm_alert: failed GTG checks ──────────────────────────────────────
   const { data: dqmRows } = await supabaseAdmin
@@ -144,6 +153,27 @@ export async function fetchCorrelationFactors(
     out.push({ factor_type: 'bse_delivery_failure', factor_ref_id: row.id, factor_date: factorDate, proximity_days: prox, confidence_score: computeConfidence(prox) });
   }
 
+  // ── 5. tracking_change: client-scoped discontinuities (Google tag split) ───
+  // Non-fatal: before migration 20260921003 is applied the kind/organization_id
+  // columns don't exist, and AIR must keep correlating its other four factors.
+  try {
+    const changes = await listClientDiscontinuitiesInWindow(orgId, windowStart, windowEnd);
+    for (const row of changes) {
+      if (!row.effective_date) continue;
+      const prox = computeProximityDays(detectedDate, row.effective_date);
+      out.push({
+        factor_type: 'tracking_change',
+        factor_ref_id: row.id,
+        factor_date: row.effective_date,
+        proximity_days: prox,
+        confidence_score: computeConfidence(prox),
+        applies_to_sources: [row.platform],
+      });
+    }
+  } catch (err) {
+    logger.warn({ orgId, err: err instanceof Error ? err.message : String(err) }, 'AIR correlation: could not read client discontinuities');
+  }
+
   return out;
 }
 
@@ -151,7 +181,7 @@ export async function fetchCorrelationFactors(
 export async function runCorrelationForOrg(orgId: string, date: string): Promise<void> {
   const { data: anomalies, error: fetchErr } = await supabaseAdmin
     .from('air_anomalies')
-    .select('id')
+    .select('id, source')
     .eq('org_id', orgId)
     .eq('detected_date', date);
 
@@ -162,7 +192,7 @@ export async function runCorrelationForOrg(orgId: string, date: string): Promise
   }
 
   const factors = await fetchCorrelationFactors(orgId, date);
-  const anomalyIds = (anomalies as { id: string }[]).map((a) => a.id);
+  const anomalyIds = (anomalies as { id: string; source: string }[]).map((a) => a.id);
 
   // Delete stale correlations for this anomaly set before re-inserting.
   await supabaseAdmin
@@ -175,10 +205,13 @@ export async function runCorrelationForOrg(orgId: string, date: string): Promise
     return;
   }
 
-  // Cross-product: every anomaly gets every factor.
+  // Cross-product: every anomaly gets every factor — except a source-restricted
+  // factor (a tracking change on ga4/google_ads) only reaches anomalies from
+  // those sources.
   const rows: CorrelationRow[] = [];
-  for (const anomaly of anomalies as { id: string }[]) {
-    for (const factor of factors) {
+  for (const anomaly of anomalies as { id: string; source: string }[]) {
+    for (const { applies_to_sources, ...factor } of factors) {
+      if (applies_to_sources && !applies_to_sources.includes(anomaly.source)) continue;
       rows.push({ anomaly_id: anomaly.id, ...factor });
     }
   }

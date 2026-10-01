@@ -70,8 +70,12 @@ export const googleTagTopologyApi = {
     return res.data;
   },
 
-  async verifySplit(planId: string): Promise<SplitVerifyResponse> {
-    const res = await apiJson<{ data: SplitVerifyResponse }>(`/api/gtm/split-plan/${planId}/verify`, post());
+  /** `splitDate` (YYYY-MM-DD, optional) is when the operator actually split the tags, if earlier than today. */
+  async verifySplit(planId: string, splitDate?: string): Promise<SplitVerifyResponse> {
+    const res = await apiJson<{ data: SplitVerifyResponse }>(
+      `/api/gtm/split-plan/${planId}/verify`,
+      post(splitDate ? { split_date: splitDate } : {}),
+    );
     return res.data;
   },
 

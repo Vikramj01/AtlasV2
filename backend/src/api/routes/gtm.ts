@@ -45,6 +45,8 @@ import type { GTMContainerJSON } from '@/services/planning/generators/gtmContain
 import { gtmContainerSyncQueue } from '@/services/queue/jobQueue';
 import { loadSplitPlanContext, buildSplitPlan } from '@/services/google/googleTagSplitService';
 import { evaluateSplitVerification } from '@/services/google/googleTagSplitVerification';
+import { buildSplitDiscontinuityRows, resolveSplitEffectiveDate } from '@/services/google/googleTagDiscontinuities';
+import { writeClientDiscontinuities } from '@/services/database/discontinuityQueries';
 import { insertSplitPlan, getSplitPlan, markSplitPlanDeployed, markSplitPlanVerified } from '@/services/database/googleTagSplitPlanQueries';
 import logger from '@/utils/logger';
 
@@ -566,6 +568,10 @@ const splitPlanSchema = z.object({
   connection_id: z.string().uuid(),
   persist: z.boolean().optional(),
 });
+const splitVerifySchema = z.object({
+  // Optional operator-confirmed split date (YYYY-MM-DD). Validated in resolveSplitEffectiveDate().
+  split_date: z.string().optional(),
+});
 const splitDeploySchema = z.object({
   connection_id: z.string().uuid(),
   plan_id: z.string().uuid().optional(),
@@ -683,12 +689,25 @@ gtmRouter.post('/split-plan/deploy', async (req: Request, res: Response): Promis
 });
 
 gtmRouter.post('/split-plan/:id/verify', async (req: Request, res: Response): Promise<void> => {
+  const parse = splitVerifySchema.safeParse(req.body ?? {});
+  if (!parse.success) {
+    res.status(400).json({ error: 'Invalid request', details: parse.error.flatten() });
+    return;
+  }
   try {
     const orgId = await resolveOrgId(req.user.id);
     const plan = await getSplitPlan(req.params['id'], orgId);
     if (!plan) { res.status(404).json({ error: 'Split plan not found' }); return; }
     if (plan.status === 'abandoned') { res.status(409).json({ error: 'This plan was abandoned.' }); return; }
     if (!plan.connection_id) { res.status(400).json({ error: 'This plan has no connection to verify against.' }); return; }
+
+    // Validate a supplied split date up front so a bad one never half-applies.
+    const effective = resolveSplitEffectiveDate({
+      splitDate: parse.data.split_date,
+      planCreatedAt: new Date(plan.created_at),
+      now: new Date(),
+    });
+    if ('error' in effective) { res.status(400).json({ error: effective.error }); return; }
 
     const ctx = await loadSplitPlanContext(orgId, plan.connection_id);
     if (ctx === 'no_connection') { res.status(404).json({ error: 'GTM connection not found' }); return; }
@@ -702,9 +721,21 @@ gtmRouter.post('/split-plan/:id/verify', async (req: Request, res: Response): Pr
 
     let status: string = plan.status;
     if (result.verified && plan.status !== 'verified') {
-      // The client-scoped discontinuity (PRD §8.1) is written by Sprint 5 once
-      // platform_discontinuities gains client_id/kind.
       status = (await markSplitPlanVerified(plan.id)).status;
+      // The split changes how data is collected from this date: record it as a
+      // client-scoped discontinuity so reconciliation and AIR read the step
+      // change as annotated context (PRD §8.1). Non-fatal — the plan is already
+      // verified, and the (client, platform, date, title) constraint makes a
+      // retry idempotent.
+      if (plan.client_id) {
+        try {
+          await writeClientDiscontinuities(
+            buildSplitDiscontinuityRows({ organizationId: orgId, clientId: plan.client_id, effectiveDate: effective.date }),
+          );
+        } catch (err) {
+          logger.warn({ planId: plan.id, err: err instanceof Error ? err.message : String(err) }, 'Failed to record split discontinuity');
+        }
+      }
     }
     res.json({ data: { plan_id: plan.id, status, verified: result.verified, reasons: result.reasons, topology: result.topology }, error: null, message: 'ok' });
   } catch (err) {

@@ -29,7 +29,7 @@ function skipped(rule_id: string, found: string): ValidationResult {
   };
 }
 
-function isSitewide(tag: GTMTag, container: GTMContainerSnapshot): boolean {
+export function isSitewide(tag: GTMTag, container: GTMContainerSnapshot): boolean {
   if (tag.firingTriggerId.length === 0) return false;
   return tag.firingTriggerId.some((id) => {
     const trig = container.triggers.find((t) => t.triggerId === id);
@@ -43,10 +43,17 @@ function isSitewide(tag: GTMTag, container: GTMContainerSnapshot): boolean {
 }
 
 /** True when the container shows an intent to use Google Ads: an Ads tag type, or an AW- constant. */
-function hasAdsDestination(container: GTMContainerSnapshot): boolean {
+export function hasAdsDestination(container: GTMContainerSnapshot): boolean {
   if (container.tags.some((t) => t.type === 'awct' || t.type === 'asp' || t.type === 'sp')) return true;
   return container.variables.some(
     (v) => v.type === 'c' && /^AW-/i.test(v.parameter?.find((p) => p.key === 'value')?.value?.trim() ?? ''),
+  );
+}
+
+/** True when a sitewide Google tag whose ID classifies as Google Ads is present. */
+export function hasSitewideAdsGoogleTag(container: GTMContainerSnapshot): boolean {
+  return container.tags.some(
+    (t) => t.type === 'googtag' && classifyGoogleTag(t, container).kind === 'google_ads' && isSitewide(t, container),
   );
 }
 
@@ -65,7 +72,7 @@ export const GOOGLE_ADS_GOOGLE_TAG_MISSING = {
 
     const adsGoogleTags = container.tags.filter(
       (t) => t.type === 'googtag' && classifyGoogleTag(t, container).kind === 'google_ads' && isSitewide(t, container),
-    );
+    ); // same predicate as hasSitewideAdsGoogleTag(); kept as a list to name the tag in the pass evidence
 
     if (adsGoogleTags.length > 0) {
       return {

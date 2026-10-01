@@ -89,12 +89,19 @@ Change: ${direction} ${absPct}% vs 14-day average (was ${anomaly.baseline_value.
 Severity: ${anomaly.severity}`;
 
   if (factors.length > 0) {
-    const topFactor = [...factors].sort((a, b) => b.confidence_score - a.confidence_score)[0];
+    // A recorded tracking change explains a step change better than any other
+    // factor at equal proximity, so it wins ties.
+    const topFactor = [...factors].sort(
+      (a, b) =>
+        b.confidence_score - a.confidence_score ||
+        Number(b.factor_type === 'tracking_change') - Number(a.factor_type === 'tracking_change'),
+    )[0];
     const factorLabel: Record<string, string> = {
       dqm_alert:            'tracking tag failure detected',
       cse_signal_change:    'crawl run completed (signal change possible)',
       andromeda_score_drop: 'platform health score dropped',
       bse_delivery_failure: 'audience delivery failure',
+      tracking_change:      'tracking configuration change recorded for a client (e.g. a Google tag split) — a change in how data is collected, not necessarily in performance',
     };
     const label = factorLabel[topFactor.factor_type] ?? topFactor.factor_type;
     message += `\nTop correlated signal: ${label} on ${topFactor.factor_date} (${topFactor.proximity_days} day(s) away, confidence ${topFactor.confidence_score})`;

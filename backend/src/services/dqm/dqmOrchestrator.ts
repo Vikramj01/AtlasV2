@@ -4,7 +4,8 @@ import { probeGTGPath, saveGTGCheck } from './gtgProbe';
 import { probeSgtmHealth, saveSgtmCheck } from './sgtmProbe';
 import { pollDMADiagnostics, upsertDMAPollState, updateDMABackoff, getDMAPollState } from './dmaPolling';
 import { pollMetaEmqForOrg, saveMetaEmqOutcome } from './metaEmqPolling';
-import { evaluateGTGAlert, evaluateDMAAlert, evaluateSgtmAlert, evaluateOutcomeSyncAlert } from './dqmAlertEvaluator';
+import { evaluateGTGAlert, evaluateDMAAlert, evaluateSgtmAlert, evaluateOutcomeSyncAlert, evaluateGoogleTagTopologyAlert } from './dqmAlertEvaluator';
+import { computeGoogleTagTopologySignals } from './googleTagTopologyMonitor';
 import type { GTGStatus } from './dqmAlertEvaluator';
 import { sendDQMAlertNotification } from './dqmAlertDelivery';
 import { computeOutcomeSyncHealthSignals } from '@/services/outcomes/syncHealthCheck';
@@ -56,7 +57,7 @@ async function loadOrgConfig(orgId: string): Promise<OrgConfig> {
 
 async function writeDQMRunLog(
   orgId: string,
-  checkType: 'gtg' | 'dma' | 'sgtm' | 'meta_emq' | 'outcome_sync',
+  checkType: 'gtg' | 'dma' | 'sgtm' | 'meta_emq' | 'outcome_sync' | 'google_tag_topology',
   status: string,
   latencyMs: number | null,
   triggeredBy: 'scheduled' | 'manual',
@@ -76,13 +77,14 @@ async function writeDQMRunLog(
 
 async function applyAlertDecision(
   orgId: string,
-  checkType: 'gtg' | 'dma' | 'sgtm' | 'outcome_sync',
+  checkType: 'gtg' | 'dma' | 'sgtm' | 'outcome_sync' | 'google_tag_topology',
   decision: import('./dqmAlertEvaluator').AlertEvalResult,
 ): Promise<string> {
   const alertType =
     checkType === 'gtg' ? 'dqm_gtg' :
     checkType === 'dma' ? 'dqm_dma' :
     checkType === 'sgtm' ? 'dqm_sgtm' :
+    checkType === 'google_tag_topology' ? 'dqm_google_tag_topology' :
     'dqm_outcome_sync';
 
   if (decision.decision === 'open') {
@@ -209,6 +211,28 @@ export async function runDQMForOrg(
     // consistent with every other check's resolve path in this file.
     const outcomeSyncAction = await applyAlertDecision(orgId, 'outcome_sync', { decision: 'resolve', severity: null, title: '', message: '' });
     await writeDQMRunLog(orgId, 'outcome_sync', 'not-applicable', null, triggeredBy, outcomeSyncAction);
+  }
+
+  // ── Google tag topology — one rolled-up alert across clients with a verified split ──
+  // (Google Tag Topology PRD §8.3). Gated to once per 24h per client inside
+  // computeGoogleTagTopologySignals() — topology changes rarely, so the 15-minute
+  // loop reuses each client's stored check. Null = no verified split to monitor;
+  // a stale alert still resolves via the evaluator/applyAlertDecision path.
+  const existingTopologyAlert = await getAlertByType(orgId, 'dqm_google_tag_topology');
+  const topologySignals = await computeGoogleTagTopologySignals(orgId, !!existingTopologyAlert).catch((err) => {
+    logger.error({ err, orgId }, 'DQM: Google tag topology check failed');
+    return null;
+  });
+
+  if (topologySignals) {
+    const topologyDecision = evaluateGoogleTagTopologyAlert(topologySignals);
+    if (topologyDecision.decision !== 'none') {
+      const topologyAction = await applyAlertDecision(orgId, 'google_tag_topology', topologyDecision);
+      await writeDQMRunLog(orgId, 'google_tag_topology', topologyDecision.title || 'ok', null, triggeredBy, topologyAction);
+    }
+  } else if (existingTopologyAlert) {
+    const topologyAction = await applyAlertDecision(orgId, 'google_tag_topology', { decision: 'resolve', severity: null, title: '', message: '' });
+    await writeDQMRunLog(orgId, 'google_tag_topology', 'not-applicable', null, triggeredBy, topologyAction);
   }
 
   // ── Meta EMQ poll — one Dataset Quality API call per connected Meta provider ─

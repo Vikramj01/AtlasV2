@@ -157,3 +157,34 @@ The shape that actually holds:
 Add a test asserting L11 never appears in any scored layer set — this is the kind of
 invariant that silently regresses, and there is precedent for guarding it (the
 `PLATFORM_MATCHER_HOSTS` invariant test).
+
+## 7. Inputs from the Google Tag Topology work (added 2026-10-01)
+
+`docs/prd/google-tag-topology.md` §8.2. L11 is still not built; this section only fixes what it
+must *consume* when it is, so the Google tag work doesn't have to be reopened.
+
+**L11 reads two things per client, both already persisted:**
+
+1. **The client's current Google tag topology verdict and its strength** —
+   `computeTopologyVerdict()` over `google_tag_topology`'s current rows
+   (`services/google/googleTagTopology.ts`): verdict `SPLIT` / `COMBINED` /
+   `COMBINED_ADS_PRIMARY` / `UNKNOWN`, strength `declared` / `observed` / `assumed` / `none`.
+2. **Client-scoped discontinuities** — `platform_discontinuities` rows with
+   `kind = 'client_tracking_change'` for that client (migration `20260921003`). A verified split
+   writes one per affected platform (`ga4`, `google_ads`) with the verification date (or the
+   operator-confirmed split date). Read them the same way `discontinuityDiff.ts` does, scoped to
+   the client being reconciled; never another client's.
+
+**How L11 may use them — wording is load-bearing:**
+
+- When a GA4 versus Google Ads discrepancy coincides with a verdict of `COMBINED` or
+  `COMBINED_ADS_PRIMARY`, L11 lists combination as a **candidate explanation**. It is never
+  stated as the established cause: combination is one of several things that make GA4 and Ads
+  figures differ, and Atlas can only observe or be told about it, not read it from the container.
+- A verdict whose strength is `assumed` or `none` must carry the same "needs confirmation"
+  treatment as any other `INFERRED` finding (`outputLint.ts` still applies).
+- When a discrepancy straddles a client-scoped discontinuity's `effective_date`, L11 annotates it
+  as a known change in how data is collected from that date, not as drift. This is
+  disclosure-only, consistent with §4: it never enters a score.
+- `UNKNOWN` is not evidence of a split. L11 says nothing about combination for a client whose
+  topology is unknown.

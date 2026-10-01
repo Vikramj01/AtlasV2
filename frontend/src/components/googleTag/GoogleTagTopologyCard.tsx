@@ -160,6 +160,12 @@ export function GoogleTagTopologyCard({ orgId, clientId }: GoogleTagTopologyCard
                 <ul className="space-y-2">{topology.current.map((r) => <TagRow key={r.id} row={r} />)}</ul>
               )}
 
+              {(topology.verdict === 'COMBINED' || topology.verdict === 'COMBINED_ADS_PRIMARY') && (
+                <p className="text-sm text-console-fg-muted">
+                  Consent settings configured on a combined Google tag can apply to every destination on it.
+                </p>
+              )}
+
               {topology.verdict !== 'SPLIT' && (
                 <Button size="sm" variant="outline" onClick={() => setShowSplit((v) => !v)}>
                   {showSplit ? 'Hide split plan' : 'Plan a split'}
