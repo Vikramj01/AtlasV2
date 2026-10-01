@@ -2,6 +2,15 @@
  * Attribution infrastructure decision engine — Google Stack Alignment sprint
  * plan, Sprint 5 (C4).
  *
+ * Google Tag Topology Sprint 2 (PRD §5.2): the "sitewide Google tag" input
+ * is now specifically the Google tag for the Google Ads destination
+ * (`hasAdsGoogleTagFiring`). Before, `googleTagArchitecture.ts` passed
+ * `Boolean(destinations.ga4)`, i.e. a GA4-only googtag was treated as
+ * covering Ads click-ID capture — only true if the client's G- and AW- IDs
+ * happen to be combined in Google's tag admin, which container JSON can't
+ * show. Whether a GA4-only googtag also writes usable Ads click-ID cookies is
+ * undocumented (PRD U2) and deliberately NOT relied on.
+ *
  * Before this sprint, `googleTagArchitecture.ts` emitted a Google Ads
  * Conversion Linker (`gclidw`) tag unconditionally whenever a Google Ads
  * destination was configured, regardless of whether a sitewide Google tag
@@ -43,8 +52,14 @@
  */
 
 export interface LinkerDecisionInputs {
-  /** True when a sitewide Google tag (`googtag`) is present and fires on every page. */
-  hasGoogleTagFiring: boolean;
+  /**
+   * True when a sitewide Google tag whose classified destination is Google Ads
+   * (`AW-`) is present and fires on every page. A GA4-only `googtag` does NOT
+   * count: it initialises its own G- destination only, and whether it also
+   * writes usable Ads click-ID cookies is undocumented (PRD §5.2 / U2) —
+   * depending on that is the bug class this input exists to remove.
+   */
+  hasAdsGoogleTagFiring: boolean;
   /** True when a Floodlight (Campaign Manager) destination is configured. Always false today — see module header. */
   hasFloodlight: boolean;
   /** True when the client has secondary domains requiring cross-domain linking. */
@@ -77,14 +92,14 @@ export function decideConversionLinker(inputs: LinkerDecisionInputs): LinkerDeci
       reason: 'Cross-domain linking is configured explicitly on the Conversion Linker tag — not confirmed redundant with the Google tag\'s own cross-domain config without a live export',
     };
   }
-  if (!inputs.hasGoogleTagFiring) {
+  if (!inputs.hasAdsGoogleTagFiring) {
     return {
       emitConversionLinker: true,
-      reason: 'No sitewide Google tag is present to auto-capture Google click IDs for this destination',
+      reason: 'No sitewide Google tag for the Google Ads destination is present to capture Google click IDs',
     };
   }
   return {
     emitConversionLinker: false,
-    reason: 'A sitewide Google tag is already present and firing on every page, single-domain, no sGTM — it auto-captures Google click IDs for its own destinations, making a standalone Conversion Linker tag redundant',
+    reason: 'A sitewide Google tag for the Google Ads destination is already present and firing on every page, single-domain, no sGTM — per Google\'s guidance a standalone Conversion Linker tag is redundant',
   };
 }

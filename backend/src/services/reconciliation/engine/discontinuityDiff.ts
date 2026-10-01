@@ -51,10 +51,30 @@ export async function runDiscontinuityDiff(
 
   const activePlatforms = [...new Set(connections.map((c) => c.platform))];
 
-  const { data: discontinuities, error } = await supabaseAdmin
+  // Platform-wide rows apply to everyone; client-scoped rows (kind =
+  // 'client_tracking_change', e.g. a Google tag split — Google Tag Topology PRD
+  // §8.1) apply ONLY to the client whose run this is, never to another client.
+  const scoped = await supabaseAdmin
     .from('platform_discontinuities')
     .select('id, platform, title, effective_date, description')
-    .in('platform', activePlatforms) as unknown as { data: PlatformDiscontinuity[] | null; error: unknown };
+    .in('platform', activePlatforms)
+    .or(`kind.eq.platform,client_id.eq.${clientId}`) as unknown as { data: PlatformDiscontinuity[] | null; error: unknown };
+
+  let discontinuities = scoped.data;
+  let error = scoped.error;
+  if (error) {
+    // The kind/client_id columns come from migration 20260921003. If it isn't
+    // applied yet the scoped query errors; fall back to the platform-wide query
+    // rather than silently dropping every annotation. No client-scoped rows can
+    // exist before that migration, so nothing can leak on this path.
+    logger.warn({ runId, clientId }, 'Discontinuity diff: scoped query failed, falling back to platform-wide rows');
+    const fallback = await supabaseAdmin
+      .from('platform_discontinuities')
+      .select('id, platform, title, effective_date, description')
+      .in('platform', activePlatforms) as unknown as { data: PlatformDiscontinuity[] | null; error: unknown };
+    discontinuities = fallback.data;
+    error = fallback.error;
+  }
 
   if (error || !discontinuities?.length) return;
 

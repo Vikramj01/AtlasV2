@@ -15,7 +15,9 @@ export type SignalType =
   | 'tiktok_pixel'
   | 'linkedin_insight'
   | 'snapchat_pixel'
-  | 'custom_event';
+  | 'custom_event'
+  // Google Tag Topology (Sprint 3): one row per Google measurement destination observed on a page, with the loaded Google tag it can be attributed to (null when unattributable).
+  | 'google_tag_destination_observed';
 
 export type SignalHealthStatus = 'healthy' | 'degraded' | 'missing' | 'duplicate' | 'misconfigured';
 export type DetectedAt = 'page_load' | 'dom_ready' | 'interaction' | 'network';

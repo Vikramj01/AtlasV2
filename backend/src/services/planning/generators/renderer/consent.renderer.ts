@@ -8,6 +8,8 @@
  *   - Infrastructure tags (html consent, click ID, UTM) → 'notNeeded'
  */
 
+import { kindFromGoogleId } from '../../../google/googleTagClassifier';
+
 export type ConsentPurpose = 'analytics' | 'ads' | 'infrastructure';
 
 export interface ConsentSettings {
@@ -18,6 +20,8 @@ export interface ConsentSettings {
  *  Atlas generates 'googtag' now, but still classifies gaawc correctly when
  *  auditing/reading an existing client's older container. */
 const ANALYTICS_TAG_TYPES = new Set(['googtag', 'gaawc', 'gaawe']);
+// 'googtag' is in the set above only as the fallback for an unclassified Google
+// tag; when the caller passes its destination ID it is classified by ID instead.
 
 /** GTM tag types that require ad_storage consent. */
 const ADS_TAG_TYPES = new Set(['awct', 'gclidw']);
@@ -33,7 +37,16 @@ const ANALYTICS_HTML_PREFIXES: string[] = [];
  * Returns 'infrastructure' for non-measurement tags (Consent Mode defaults,
  * click ID capture, UTM capture, Atlas Signal Tag, etc.).
  */
-export function consentPurposeForTag(tagType: string, tagName: string): ConsentPurpose {
+export function consentPurposeForTag(
+  tagType: string,
+  tagName: string,
+  resolvedGoogleTagId?: string | null,
+): ConsentPurpose {
+  if (tagType === 'googtag' && resolvedGoogleTagId) {
+    const kind = kindFromGoogleId(resolvedGoogleTagId);
+    if (kind === 'google_ads' || kind === 'floodlight') return 'ads';
+    if (kind === 'ga4') return 'analytics';
+  }
   if (ANALYTICS_TAG_TYPES.has(tagType)) return 'analytics';
   if (ADS_TAG_TYPES.has(tagType)) return 'ads';
   if (tagType === 'html') {
@@ -61,6 +74,10 @@ export function renderConsentSettings(purpose: ConsentPurpose): ConsentSettings 
 /**
  * Convenience: derive and render in one call.
  */
-export function consentSettingsForTag(tagType: string, tagName: string): ConsentSettings {
-  return renderConsentSettings(consentPurposeForTag(tagType, tagName));
+export function consentSettingsForTag(
+  tagType: string,
+  tagName: string,
+  resolvedGoogleTagId?: string | null,
+): ConsentSettings {
+  return renderConsentSettings(consentPurposeForTag(tagType, tagName, resolvedGoogleTagId));
 }

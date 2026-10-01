@@ -1145,6 +1145,7 @@ ihcRulesQueue.process(2, async (job) => {
   // LINKING_MISSING needs this precomputed for the same reason (rules stay
   // synchronous).
   let clientSecondaryDomains: string[] | undefined;
+  let googleTagTopology: import('@/types/audit').AuditData['google_tag_topology'];
   const connectionClientId = (connection as { client_id: string | null } | null)?.client_id;
   if (connectionClientId) {
     const { data: sgtmPlatform } = await supabaseAdmin
@@ -1163,6 +1164,16 @@ ihcRulesQueue.process(2, async (job) => {
       .eq('id', connectionClientId)
       .maybeSingle();
     clientSecondaryDomains = (client as { secondary_domains: string[] | null } | null)?.secondary_domains ?? undefined;
+
+    // Google Tag Topology (PRD §6): the combined/split verdict can't be read
+    // from container JSON, so it's resolved here (non-fatal — a lookup
+    // failure leaves it undefined and the topology rules skip).
+    try {
+      const { getTopologyVerdictForClient } = await import('@/services/database/googleTagTopologyQueries');
+      googleTagTopology = await getTopologyVerdictForClient(connectionClientId);
+    } catch (err) {
+      logger.warn({ snapshotId: data.snapshot_id, err: err instanceof Error ? err.message : String(err) }, 'IHC rules: could not resolve Google tag topology');
+    }
   }
 
   // Dynamically import tag_configuration rules (registered in Sprint A2)
@@ -1196,6 +1207,7 @@ ihcRulesQueue.process(2, async (job) => {
     sgtmVerified,
     client_secondary_domains: clientSecondaryDomains,
     client_sgtm_endpoint_url: clientSgtmEndpointUrl,
+    google_tag_topology: googleTagTopology,
   };
   const passingRuleIds: string[] = [];
   const failingFindings: import('@/services/ihc/findingsWriter').FindingInput[] = [];
@@ -1212,12 +1224,14 @@ ihcRulesQueue.process(2, async (job) => {
         property_id: data.property_id,
         rule_id: rule.rule_id,
         validation_layer: rule.validation_layer as import('@/types/audit').ValidationLayer,
-        severity: rule.severity as import('@/types/audit').Severity,
+        // A result may carry its own severity (e.g. GOOGLE_ADS_GOOGLE_TAG_MISSING downgrades to 'low' when a combined tag covers Ads).
+        severity: (result.severity ?? rule.severity) as import('@/types/audit').Severity,
         evidence: {
           snapshot_id: data.snapshot_id,
           connection_id: data.connection_id,
           details: result.technical_details.evidence,
           status: result.status,
+          ...(result.confidence ? { confidence: result.confidence } : {}),
         },
       });
     }

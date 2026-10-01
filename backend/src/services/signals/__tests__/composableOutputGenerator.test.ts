@@ -179,6 +179,14 @@ describe('buildGTMContainer — sitewide Google tag architecture parity with Pla
     expect(composableGa4.type).toBe(planningGa4.type);
     expect(flattenParams(composableGa4.parameter)).toEqual(flattenParams(planningGa4.parameter));
 
+    // Google Tag Topology Sprint 2: the Ads Google tag is identical across both paths too.
+    const composableAds = findTag(container.containerVersion.tag, 'Google Tag - Google Ads');
+    const planningAds = findTag(planningContainer.containerVersion.tag, 'Google Tag - Google Ads');
+    expect(composableAds.type).toBe('googtag');
+    expect(composableAds.type).toBe(planningAds.type);
+    expect(flattenParams(composableAds.parameter)).toEqual(flattenParams(planningAds.parameter));
+    expect(composableAds.consentSettings).toEqual(planningAds.consentSettings);
+
     const composableLinker = findTag(container.containerVersion.tag, 'Google Ads - Conversion Linker');
     const planningLinker = findTag(planningContainer.containerVersion.tag, 'Google Ads - Conversion Linker');
     expect(composableLinker.type).toBe(planningLinker.type);
@@ -195,13 +203,14 @@ describe('buildGTMContainer — sitewide Google tag architecture parity with Pla
 });
 
 describe('buildGTMContainer — Sprint 5 (C4) linker decision engine parity with Planning', () => {
-  it('suppresses the Conversion Linker for a single-domain client, same as Planning', () => {
+  it('suppresses the Conversion Linker for a single-domain client, same as Planning, while keeping the Ads Google tag', () => {
     const client = makeClient({
       secondary_domains: [],
       platforms: [makePlatform('ga4', 'G-ACME12345'), makePlatform('google_ads', 'AW-999888777')],
     });
     const container = buildGTMContainer(client, [], null);
     expect(container.containerVersion.tag.some((t) => t.type === 'gclidw')).toBe(false);
+    expect(container.containerVersion.tag.some((t) => t.name === 'Google Tag - Google Ads')).toBe(true);
     // The CONST variable is created unconditionally by buildGoogleTagInfrastructure()
     // regardless of the linker decision (Planning's per-event awct tags depend on it).
     expect(container.containerVersion.variable.some((v) => v.name === 'CONST - Google Ads Conversion ID')).toBe(true);

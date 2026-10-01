@@ -21,7 +21,11 @@ import type { ValidationLayerV2 } from '@/types/audit';
  * it; only the display can note that two scores aren't directly comparable
  * across a version change.
  */
-export const REGISTER_VERSION = '1.3.0';
+// 1.4.0 — Google Tag Topology Sprint 3: GOOGLE_ADS_AW_ID_PRESENT (L1.18) now
+// passes when the AW- ID is observed in outbound Ads hits even though no gtag.js
+// loader URL carries it (a combined Google tag), which changes verdicts and so
+// scores across the version boundary.
+export const REGISTER_VERSION = '1.4.0';
 
 export const ALL_V2_LAYERS: ValidationLayerV2[] = [
   'scope_configuration', 'foundation_tags', 'click_id_capture', 'storage_durability',

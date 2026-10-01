@@ -15,6 +15,8 @@ import { EnrichmentScoreBadge } from '@/components/enrichment/EnrichmentScoreBad
 import { EnrichmentWarningBanner } from '@/components/enrichment/EnrichmentWarningBanner';
 import { IdentityConfigStep } from '@/components/enrichment/IdentityConfigStep';
 import { CampaignSignalValidatorTab } from '@/components/campaignSignalValidator/CampaignSignalValidatorTab';
+import { GoogleTagTopologyCard } from '@/components/googleTag/GoogleTagTopologyCard';
+import { SectionErrorBoundary } from '@/components/common/ErrorBoundary';
 import type { ClientWithDetails, ClientDeployment, ClientOutput } from '@/types/organisation';
 import type { StrategyBriefRecord } from '@/types/strategy';
 import type { ClientIdentityConfig, ClientEnrichmentScore, SaveIdentityConfigRequest } from '@/types/enrichment';
@@ -193,6 +195,7 @@ export function ClientDetailPage() {
             Set up tracking
           </TabsTrigger>
           <TabsTrigger value="signal-validator">Signal Validator</TabsTrigger>
+          <TabsTrigger value="google-tag">Google tag</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6 mt-4">
@@ -474,6 +477,14 @@ export function ClientDetailPage() {
         <TabsContent value="signal-validator" className="mt-4">
           {clientId && client && (
             <CampaignSignalValidatorTab clientId={clientId} websiteUrl={client.website_url} />
+          )}
+        </TabsContent>
+
+        <TabsContent value="google-tag" className="mt-4">
+          {orgId && clientId && (
+            <SectionErrorBoundary>
+              <GoogleTagTopologyCard orgId={orgId} clientId={clientId} />
+            </SectionErrorBoundary>
           )}
         </TabsContent>
       </Tabs>

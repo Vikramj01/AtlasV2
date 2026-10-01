@@ -4,6 +4,8 @@ export interface RuleInterpretation {
   recommended_owner: string;
   fix_summary: string;
   estimated_effort: 'low' | 'medium' | 'high';
+  /** Question to put to the client when the finding rests on something the container can't show. */
+  client_question?: string;
 }
 
 export const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
@@ -175,5 +177,52 @@ export const RULE_INTERPRETATIONS: Record<string, RuleInterpretation> = {
     fix_summary:
       'Open the GA4 Config tag in GTM, enable "Send to server container", and set the Server Container URL to the exact address this finding\'s evidence names (Atlas\'s own verified endpoint for this client — Client → Platform Configuration). If routing was already enabled but pointed at a different URL, update it to match rather than assuming it was intentional. Re-export the container and re-run this check to confirm.',
     estimated_effort: 'low',
+  },
+
+  GOOGLE_ADS_GOOGLE_TAG_MISSING: {
+    title: 'No Google Tag for the Google Ads Destination',
+    business_impact:
+      "Google requires a Google tag for each ads product in GTM, in addition to the Conversion Linker and conversion tags. Without one, Google Ads conversion tags may not be initialised and click-ID capture can be incomplete, so conversions can go unattributed. If this client's Google destinations are currently combined on one Google tag, that tag may be covering Ads today, and splitting the tag without adding this one would break coverage.",
+    recommended_owner: 'Tag Manager Team',
+    fix_summary:
+      'Add a Google tag in GTM with the Google Ads (AW-) ID, firing on every page, alongside the existing GA4 Google tag. Then re-run this check.',
+    estimated_effort: 'low',
+    client_question:
+      'Are your Google Analytics (G-) and Google Ads (AW-) IDs combined on a single Google tag in Google tag settings?',
+  },
+
+  GOOGLE_TAG_COMBINED: {
+    title: 'Several Destinations Share One Google Tag',
+    business_impact:
+      "When destinations are combined on one Google tag, loading that tag initialises every destination on it, and settings configured on the tag are shared. That can send hits to a destination nobody configured for them and makes it harder to tell why GA4 and Google Ads figures differ.",
+    recommended_owner: 'Tag Manager Team',
+    fix_summary:
+      'In Google tag settings (Manage Google tag), use the split icon next to the destination ID to separate it, and make sure each destination has its own Google tag in GTM before publishing. Re-check any settings that lived on the combined tag (cross-domain, internal traffic, consent).',
+    estimated_effort: 'medium',
+    client_question:
+      'Do you know which ID is the primary ID on this Google tag, and who has admin access to the Google tag itself?',
+  },
+
+  GOOGLE_TAG_COMBINED_ADS_PRIMARY: {
+    title: 'GA4 Combined Under an Ads-Primary Google Tag',
+    business_impact:
+      "GA4 shares a Google tag whose primary ID is a Google Ads or Floodlight ID. Practitioners report that GA4 cross-domain settings then become non-editable in the GA4 interface. Where this client measures across more than one domain, sessions may split at the domain handoff without any visible error.",
+    recommended_owner: 'Tag Manager Team',
+    fix_summary:
+      'Split GA4 onto its own Google tag in Google tag settings (Manage Google tag, split icon next to the ID), after adding a Google tag for each destination in GTM. Then confirm GA4 cross-domain settings are editable and correct.',
+    estimated_effort: 'medium',
+    client_question:
+      'Can you confirm which ID is the primary ID on the combined Google tag, and whether you can edit cross-domain settings in GA4?',
+  },
+
+  GOOGLE_TAG_ID_UNCLASSIFIED: {
+    title: 'Google Tag Destination Could Not Be Determined',
+    business_impact:
+      "A Google tag whose ID is a generic GT- ID, or is read from a variable Atlas cannot resolve, could be serving GA4, Google Ads or both. Until its destinations are known, Atlas cannot tell whether it is correctly configured.",
+    recommended_owner: 'Tag Manager Team',
+    fix_summary:
+      'Confirm which destinations this Google tag serves and record them against the client, or use a fixed Google tag ID so the destination can be read from the container.',
+    estimated_effort: 'low',
+    client_question: 'Which destinations (GA4, Google Ads, other) does this Google tag serve?',
   },
 };

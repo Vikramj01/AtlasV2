@@ -8,21 +8,21 @@ import { describe, it, expect } from 'vitest';
 import { decideConversionLinker } from '../renderer/linkerDecisionEngine';
 
 const BASE = {
-  hasGoogleTagFiring: true,
+  hasAdsGoogleTagFiring: true,
   hasFloodlight: false,
   crossDomainNeeded: false,
   serverContainerConfigured: false,
 };
 
 describe('decideConversionLinker', () => {
-  it('suppresses the linker only in the single-domain, googtag-present, non-sGTM, non-Floodlight case', () => {
+  it('suppresses the linker only in the single-domain, Ads-googtag-present, non-sGTM, non-Floodlight case', () => {
     expect(decideConversionLinker(BASE).emitConversionLinker).toBe(false);
   });
 
   it('emits when no sitewide Google tag is firing', () => {
-    const result = decideConversionLinker({ ...BASE, hasGoogleTagFiring: false });
+    const result = decideConversionLinker({ ...BASE, hasAdsGoogleTagFiring: false });
     expect(result.emitConversionLinker).toBe(true);
-    expect(result.reason).toContain('No sitewide Google tag');
+    expect(result.reason).toContain('No sitewide Google tag for the Google Ads destination');
   });
 
   it('emits when cross-domain linking is needed, even with a Google tag present', () => {
@@ -45,7 +45,7 @@ describe('decideConversionLinker', () => {
 
   it('Floodlight takes precedence when combined with other true inputs', () => {
     const result = decideConversionLinker({
-      hasGoogleTagFiring: false,
+      hasAdsGoogleTagFiring: false,
       hasFloodlight: true,
       crossDomainNeeded: true,
       serverContainerConfigured: true,
@@ -56,7 +56,7 @@ describe('decideConversionLinker', () => {
 
   it('emits when neither a Google tag nor any special case applies (worst case: always emit, never silently drop attribution)', () => {
     const result = decideConversionLinker({
-      hasGoogleTagFiring: false,
+      hasAdsGoogleTagFiring: false,
       hasFloodlight: false,
       crossDomainNeeded: false,
       serverContainerConfigured: false,

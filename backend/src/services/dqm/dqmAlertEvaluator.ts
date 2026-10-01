@@ -324,3 +324,53 @@ export function evaluateOutcomeSyncAlert(input: OutcomeSyncAlertInput): AlertEva
   }
   return { decision: 'none', severity: null, title: '', message: '' };
 }
+
+// ── Google tag topology evaluation (Google Tag Topology PRD §8.3, Sprint 5) ────
+//
+// One rolled-up alert per org (the sGTM / CRM-sync precedent: health_alerts has
+// no client dimension, and extending that shared table for one feature isn't
+// warranted). Per-client state lives in dqm_google_tag_topology_checks; the
+// alert says how many monitored clients are affected. A client that is split
+// again drops out of the counts, so the alert resolves once none are affected.
+
+export interface GoogleTagTopologyAlertInput {
+  /** Clients with a verified split that Atlas could check (a refreshable GTM source exists). */
+  monitoredCount: number;
+  /** Of those, how many are COMBINED again per a post-verification observation. */
+  recombinedCount: number;
+  /** Of those, how many have lost their sitewide Ads Google tag. */
+  adsTagLostCount: number;
+  existingAlertActive: boolean;
+}
+
+export function evaluateGoogleTagTopologyAlert(input: GoogleTagTopologyAlertInput): AlertEvalResult {
+  const { monitoredCount, recombinedCount, adsTagLostCount, existingAlertActive } = input;
+
+  const noop: AlertEvalResult = { decision: 'none', severity: null, title: '', message: '' };
+  const resolve: AlertEvalResult = { decision: 'resolve', severity: null, title: '', message: '' };
+
+  // Nothing monitored (no verified split, or its connection is gone): resolve any stale alert.
+  if (monitoredCount === 0) return existingAlertActive ? resolve : noop;
+
+  const open = (severity: AlertSeverity, title: string, message: string): AlertEvalResult =>
+    existingAlertActive ? { decision: 'update', severity, title, message } : { decision: 'open', severity, title, message };
+
+  if (adsTagLostCount > 0) {
+    // Ads coverage is the expensive failure: a lost Ads Google tag means Google Ads conversions may stop being captured.
+    return open(
+      'critical',
+      'Google Ads Google Tag Missing After Split',
+      `${adsTagLostCount} of ${monitoredCount} monitored client${monitoredCount !== 1 ? 's' : ''} ${adsTagLostCount === 1 ? 'has' : 'have'} lost the sitewide Google tag for the Google Ads destination since the split was verified. Google Ads tracking may be broken until it is restored.`,
+    );
+  }
+
+  if (recombinedCount > 0) {
+    return open(
+      'warning',
+      'Google Tags Combined Again After Split',
+      `${recombinedCount} of ${monitoredCount} monitored client${monitoredCount !== 1 ? 's' : ''} ${recombinedCount === 1 ? 'shows' : 'show'} Google destinations sharing one Google tag again after a verified split. Settings on a combined Google tag are shared between its destinations.`,
+    );
+  }
+
+  return existingAlertActive ? resolve : noop;
+}

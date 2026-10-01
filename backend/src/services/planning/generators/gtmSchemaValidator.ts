@@ -18,6 +18,8 @@ export interface GTMValidationResult {
   warnings: string[];
 }
 
+import { ga4ConfigTagMatch } from '../../google/googleTagClassifier';
+
 interface RawTag {
   name?: string;
   type?: string;
@@ -36,7 +38,7 @@ interface RawContainer {
   containerVersion?: {
     tag?: RawTag[];
     trigger?: RawTrigger[];
-    variable?: unknown[];
+    variable?: Array<{ name?: string; type?: string; parameter?: Array<{ key?: string; value?: string }> }>;
   };
 }
 
@@ -88,7 +90,11 @@ export function validateGTMContainer(json: unknown): GTMValidationResult {
     warnings.push('Missing recommended tag: Atlas - Consent Mode v2 Update');
   }
 
-  const hasGA4Config = tags.some((t) => t.type === 'googtag' || t.type === 'gaawc' || (t.name ?? '').includes('GA4'));
+  // A googtag counts as GA4 config only when its ID is not an Ads/Floodlight one.
+  const variables = cv.variable ?? [];
+  const hasGA4Config = tags.some(
+    (t) => ga4ConfigTagMatch(t, { variables }).match || (t.name ?? '').includes('GA4'),
+  );
   if (!hasGA4Config) {
     warnings.push('No GA4 configuration tag found — add one if GA4 is a target platform');
   }

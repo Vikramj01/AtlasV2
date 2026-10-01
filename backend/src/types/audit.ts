@@ -1110,6 +1110,18 @@ export interface AuditData {
    */
   namingConvention?: NamingConvention;
   /**
+   * Google Tag Topology PRD §6 — this client's current topology verdict,
+   * resolved by the caller (IHC rules job) before rules run, same "resolve
+   * outside, read inside" pattern as sgtmVerified. Undefined when the rule
+   * context has no client at all; a client with no observations resolves to
+   * verdict 'UNKNOWN' rather than undefined.
+   */
+  google_tag_topology?: {
+    verdict: 'SPLIT' | 'COMBINED' | 'COMBINED_ADS_PRIMARY' | 'UNKNOWN';
+    strength: 'declared' | 'observed' | 'assumed' | 'none';
+    combined_tags: Array<{ google_tag_id: string; primary_destination_id: string | null; destination_ids: string[] }>;
+  };
+  /**
    * Console errors and uncaught exceptions observed across the whole
    * crawl (dataCapture.ts's interceptConsoleErrors, registered once
    * alongside interceptNetworkRequests). Undefined — not an empty array —
