@@ -6,6 +6,7 @@
  */
 
 import { Router } from 'express';
+import { z } from 'zod';
 import type { Request, Response } from 'express';
 import { authMiddleware } from '@/api/middleware/authMiddleware';
 import { orgMiddleware } from '@/api/middleware/orgMiddleware';
@@ -40,6 +41,9 @@ import { getOrgClientSummary } from '@/services/clients/clientSummaryService';
 import { generateComposableOutputs } from '@/services/signals/composableOutputGenerator';
 import { createAudit } from '@/services/database/queries';
 import { auditQueue } from '@/services/queue/jobQueue';
+import { getCurrentTopologyRows, getTopologyHistory, writeTopologySnapshot } from '@/services/database/googleTagTopologyQueries';
+import { computeTopologyVerdict } from '@/services/google/googleTagTopology';
+import { kindFromGoogleId } from '@/services/google/googleTagClassifier';
 import logger from '@/utils/logger';
 import type { BusinessType, UpsertPlatformsRequest, UpsertPagesRequest } from '@/types/organisation';
 import type { DeployPackRequest } from '@/types/signal';
@@ -253,6 +257,72 @@ router.post('/:orgId/clients/:clientId/platforms/sgtm/verify', async (req: Reque
 
     const updated = await markClientPlatformVerified(req.params['clientId'], 'sgtm', true);
     res.json({ verified: true, verified_at: updated.verified_at, platform: updated });
+  } catch (err) {
+    sendInternalError(res, err);
+  }
+});
+
+// ── Google Tag Topology (PRD §6, §11) ─────────────────────────────────────────
+// Mounted under /api/organisations like every other client route (the PRD's
+// literal /api/clients/:id/... path doesn't exist in this codebase).
+
+// GET /api/organisations/:orgId/clients/:clientId/google-tag-topology
+router.get('/:orgId/clients/:clientId/google-tag-topology', async (req: Request, res: Response) => {
+  try {
+    const client = await getClient(req.params['clientId'], req.params['orgId']);
+    if (!client) return res.status(404).json({ error: 'Client not found' });
+
+    const [current, history] = await Promise.all([
+      getCurrentTopologyRows(req.params['clientId']),
+      getTopologyHistory(req.params['clientId']),
+    ]);
+    res.json({ data: { ...computeTopologyVerdict(current), current, history }, error: null, message: 'ok' });
+  } catch (err) {
+    sendInternalError(res, err);
+  }
+});
+
+const googleDestinationId = z
+  .string()
+  .trim()
+  .refine((id) => kindFromGoogleId(id) !== 'unknown', { message: 'Must be a G-, AW-, DC- or GT- ID' });
+
+const declareTopologySchema = z
+  .object({
+    google_tag_id: googleDestinationId,
+    primary_destination_id: googleDestinationId.optional(),
+    destination_ids: z.array(googleDestinationId).min(1).max(20),
+    declaration_source: z.enum(['CLIENT_CONFIRMED', 'OPERATOR_ASSUMED']),
+  })
+  .refine((b) => !b.primary_destination_id || b.destination_ids.includes(b.primary_destination_id), {
+    message: 'primary_destination_id must be one of destination_ids',
+    path: ['primary_destination_id'],
+  });
+
+// POST /api/organisations/:orgId/clients/:clientId/google-tag-topology/declare
+router.post('/:orgId/clients/:clientId/google-tag-topology/declare', async (req: Request, res: Response) => {
+  try {
+    const parsed = declareTopologySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ data: null, error: 'Invalid request', message: parsed.error.issues.map((i) => i.message).join('; ') });
+    }
+    const client = await getClient(req.params['clientId'], req.params['orgId']);
+    if (!client) return res.status(404).json({ error: 'Client not found' });
+
+    const b = parsed.data;
+    await writeTopologySnapshot({
+      organizationId: req.params['orgId'],
+      clientId: req.params['clientId'],
+      rows: [{
+        google_tag_id: b.google_tag_id,
+        primary_destination_id: b.primary_destination_id ?? null,
+        destination_ids: [...new Set(b.destination_ids)],
+        source: 'operator_declared',
+        declaration_source: b.declaration_source,
+      }],
+    });
+    const verdict = computeTopologyVerdict(await getCurrentTopologyRows(req.params['clientId']));
+    res.status(201).json({ data: verdict, error: null, message: 'Declaration recorded' });
   } catch (err) {
     sendInternalError(res, err);
   }

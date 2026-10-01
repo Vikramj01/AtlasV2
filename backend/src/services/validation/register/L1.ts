@@ -29,6 +29,7 @@ import type { AuditData, ValidationRule, ValidationResult, RuleStatus, NetworkRe
 import * as trackingSignals from '@/services/detection/trackingSignals';
 import { detectPossibleServerSideGtm } from '../../audit/siteSetupDetector';
 import { PLATFORM_LABELS, platformTagDetected } from './platformDetection';
+import { destinationOfHit } from '../../google/googleTagTopology';
 
 function gtmScriptSrcs(auditData: AuditData): string[] {
   return (auditData.pageMetadata?.gtm_script_srcs as string[] | undefined) ?? [];
@@ -362,6 +363,36 @@ export const GOOGLE_ADS_AW_ID_PRESENT: ValidationRule = {
     );
     const found = hits.length > 0;
     const gtagPresent = gtagLoaderPresent(auditData);
+
+    // Google Tag Topology PRD §6.3: when a client's Google destinations are
+    // combined on one Google tag, the loader carries only the primary ID
+    // (e.g. G-) and the AW- ID is never in a gtag/js URL, yet Ads hits fire for
+    // it. That is the AW- ID being present, not absent — failing here would
+    // report a critical gap on a client that is measuring (and, via CONF_04,
+    // raise a conflict against the dataLayer's own config(AW-*) call).
+    if (!found) {
+      const adsHitIds = [...new Set(
+        auditData.networkRequests
+          .map((r) => destinationOfHit(r.url))
+          .filter((id): id is string => id !== null && id.startsWith('AW-')),
+      )];
+      if (adsHitIds.length > 0) {
+        return {
+          rule_id: this.rule_id,
+          validation_layer: this.layer,
+          status: 'pass',
+          severity: this.severity,
+          technical_details: {
+            found: `Google Ads conversion ID observed in outbound hits (${adsHitIds.join(', ')}), but not in a gtag.js loader URL`,
+            expected: 'gtag.js loads with an Ads conversion ID (id=AW-XXXXXXXXX)',
+            evidence: [
+              `Outbound Google Ads hits target ${adsHitIds.join(', ')}`,
+              'No gtag.js loader URL carries this AW- ID, which can mean the Ads destination shares a Google tag with another ID',
+            ],
+          },
+        };
+      }
+    }
 
     return {
       rule_id: this.rule_id,

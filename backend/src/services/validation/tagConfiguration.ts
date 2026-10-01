@@ -867,6 +867,26 @@ export const GA4_CROSS_DOMAIN_LINKING_MISSING = {
       };
     }
 
+    // Google Tag Topology (PRD §6.4): container JSON can't see that GA4 is
+    // combined under an Ads-primary Google tag, which is reported to make GA4
+    // cross-domain settings non-editable in the GA4 interface (U4, unverified).
+    // A clean pass would be false comfort exactly where cross-domain is most
+    // likely to be broken, so it passes but asks for confirmation.
+    if (auditData.google_tag_topology?.verdict === 'COMBINED_ADS_PRIMARY') {
+      return {
+        rule_id: this.rule_id,
+        validation_layer: this.validation_layer,
+        status: 'pass',
+        severity: this.severity,
+        technical_details: {
+          found: 'GA4 Config tag has linked_domains configured in the container, but GA4 shares a Google tag with an Ads-primary ID',
+          expected: 'linked_domains present and covering every client-declared secondary domain',
+          evidence: ['linked_domains is set in the container; see GOOGLE_TAG_COMBINED_ADS_PRIMARY — the setting may not be editable or effective in the GA4 interface'],
+        },
+        confidence: 'confirm',
+      };
+    }
+
     return {
       rule_id: this.rule_id,
       validation_layer: this.validation_layer,
@@ -1123,3 +1143,9 @@ export const TAG_CONFIGURATION_RULES_ALL = [
   ...TAG_CONFIGURATION_RULES_PHASE_A,
   ...TAG_CONFIGURATION_RULES_PHASE_B,
 ];
+// NOTE: the Google Tag Topology rules (googleTagTopology.ts) are deliberately
+// NOT in this array: it feeds the legacy v1 engine's ALL_RULES, whose scorer
+// counts every result — skipped included — in its denominator, so four
+// IHC-only rules that skip on any non-IHC run would silently lower every v1
+// audit's score. They are registered for the IHC worker in
+// services/ihc/tagConfigurationRules.ts instead.

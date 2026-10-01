@@ -1,7 +1,7 @@
 # Atlas PRD · Google Tag Topology (combined tag detection, per-destination Google tags, split remediation)
 
 **Target path in repo:** `docs/prd/google-tag-topology.md`
-**Status:** Sprint 0 complete (by-default resolution, no live verification) · Sprint 1 next
+**Status:** Sprints 0–3 built (nothing live-verified; see §17)
 **Owner:** Vikram
 **Date:** 2026-10-01
 **Depends on:** `googleTagArchitecture.ts`, `linkerDecisionEngine.ts`, `consent.renderer.ts`, `services/validation/tagConfiguration.ts` (IHC tag-config rules), `gtmSchemaValidator.ts`, `generation.validator.ts`, `implementationDrift.ts`, `gtmDeployService.ts` + `POST /api/gtm/deploy`, GTM OAuth (`tagmanager.edit.containers`), CSE (`crawl_runs`, `detected_signals`), `register/engine.ts` confidence model (`evidence_class`, `observation_confidence`, `confidence`, `client_question`), `platform_discontinuities` + `discontinuityDiff.ts`, DQM orchestrator + `dqmAlertEvaluator.ts`, `getClientSummaries()`, L11 scoping doc (`docs/ATLAS_L11_RECONCILIATION_SCOPING.md`)
@@ -494,3 +494,16 @@ Each item gets an in-file `UNVERIFIED` marker where it is built in.
 ### 17.3 Consequence for sequencing
 
 §13's gate ("Sprint 2 must not ship before Sprint 0 item (a)") is waived for **building**, not for **client use**: Sprint 2/4 output is built against a best-effort Ads `googtag` shape and must not be given to a real client until U1 is checked against a genuine GTM export.
+
+### 17.4 Sprint 3 build notes and deviations (2026-10-01)
+
+- **D1 outcome.** The GTM API source (`gtm_api`) is **not built**. Tag Manager API v2's destination resources could not be inspected offline (U8), and container JSON alone cannot show combination. The `gtm_api` value stays in the schema and verdict function; rules run on runtime + operator declaration. Revisit when U8 can be tested.
+- **Runtime source is audit-driven, CSE is signals-only.** `crawl_runs`/`detected_signals` are org-scoped (no `client_id`), so a CSE observation can't be attributed to one client. CSE therefore emits `google_tag_destination_observed` signal rows (org-level visibility), while `google_tag_topology` rows are written from audit runs linked to a client (`orchestrator.ts`, non-fatal) and from operator declarations.
+- **`REGISTER_VERSION` 1.3.0 → 1.4.0**, but for a different reason than §6.4 says: the four new rules are IHC `tag_configuration` rules, not Check Register v2 rules. The register changed because `GOOGLE_ADS_AW_ID_PRESENT` (L1.18) now passes when the AW- ID is observed in outbound Ads hits though no `gtag.js` URL carries it (a combined tag), which changes verdicts. This resolves §6.3's "check AW_ID_PRESENT / CONF_01–05": CONF_04 only fires when L1.18 fails, so it no longer raises a false contradiction on a combined client (a control test proves it still fires when nothing carries the ID).
+- **Topology rules are IHC-only**, registered in `services/ihc/tagConfigurationRules.ts`, deliberately not in `TAG_CONFIGURATION_RULES_ALL`: that array feeds the legacy v1 engine whose scorer counts skipped results in its denominator, so adding four always-skipping rules lowered v1 scores (caught by `pipeline.test.ts`).
+- **IHC findings can now carry a per-result severity and `confidence`** (`worker.ts` uses `result.severity ?? rule.severity`), needed for `GOOGLE_ADS_GOOGLE_TAG_MISSING`'s downgrade to `low` when a combined tag covers Ads.
+- **`client_question`** lives on `RuleInterpretation` (IHC), not on the rule object.
+- **Routes** are `GET|POST /api/organisations/:orgId/clients/:clientId/google-tag-topology[/declare]`, the mount every client route already uses, not the PRD's `/api/clients/:id/...`.
+- **`google_tag_topology` gained** `declaration_source`, `inferred` and `audit_id` columns beyond §6.2.
+- **Migration `20260921001` is written but NOT applied** to the connected project (decision §22: let the branching pipeline apply it). Live `detected_signals_signal_type_check` was read first.
+- **Back-scan** (`services/google/googleTagBackscan.ts` + `scripts/googleTagBackscan.ts`) is written and unit-tested but **not run** against production data.

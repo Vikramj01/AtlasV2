@@ -33,6 +33,8 @@ import { buildSiteSetupSummary } from './siteSetupDetector';
 import { sanitizeForJsonb } from '@/utils/sanitizeJsonb';
 import type { AuditData, JourneyStage, RuleStatus, StepUrlSource } from '@/types/audit';
 import { getJourneyStages } from '@/services/database/journeyQueries';
+import { extractGoogleTagObservation, observationToRows } from '@/services/google/googleTagTopology';
+import { writeTopologySnapshot } from '@/services/database/googleTagTopologyQueries';
 import logger from '@/utils/logger';
 
 export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
@@ -287,6 +289,18 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
         });
         await updateAuditStatus(audit_id, 'running', { progress: 50 });
         logger.info({ audit_id, events: auditData.dataLayer.length, rule_set_version: isV2 ? 'v2' : 'v1-legacy' }, 'Journey simulation complete');
+
+        // Google Tag Topology (PRD §6.3): record which Google tags/destinations
+        // this run actually observed, for the client it's linked to. Non-fatal —
+        // a topology write must never fail an audit.
+        if (auditRow?.client_id && orgId) {
+          try {
+            const topologyRows = observationToRows(extractGoogleTagObservation(auditData.networkRequests));
+            await writeTopologySnapshot({ organizationId: orgId, clientId: auditRow.client_id, rows: topologyRows, auditId: audit_id });
+          } catch (err) {
+            logger.warn({ audit_id, err: err instanceof Error ? err.message : String(err) }, 'Failed to write Google tag topology');
+          }
+        }
 
         const validationResults = isV2 ? runRegister(auditData) : runAllRules(auditData);
         await saveValidationResults(audit_id, validationResults);

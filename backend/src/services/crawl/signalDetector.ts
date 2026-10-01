@@ -12,6 +12,7 @@
  */
 import { createBrowserbaseSession, getCDPUrl } from '@/services/browserbase/client';
 import type { DetectedSignal, PageScanResult, PageToScan, SignalIssue } from '@/types/crawl';
+import { extractGoogleTagObservation } from '@/services/google/googleTagTopology';
 import logger from '@/utils/logger';
 
 // Duck-typed Playwright interfaces — avoids hard dependency on playwright types
@@ -145,7 +146,7 @@ export async function scanPageBatch(
 
 // ── Signal detection ──────────────────────────────────────────────────────────
 
-async function detectSignalsOnPage(
+export async function detectSignalsOnPage(
   page: PlaywrightPage,
   networkRequests: { url: string; postData: string | null }[],
 ): Promise<DetectedSignal[]> {
@@ -304,6 +305,33 @@ async function detectSignalsOnPage(
       detected_at:     'page_load',
       firing_triggers: null,
       parameters:      { hit_count: linkedinHits.length },
+      issues:          [],
+    });
+  }
+
+  // ── Google tag destinations (Google Tag Topology PRD §6.3) ───────────────────
+  // Records which Google destination IDs outbound hits target and, where the
+  // hit's destination equals a loaded Google tag's own ID, that attribution.
+  // A destination with no loaded tag carrying its ID is recorded as
+  // unattributable (loaded_tag_id null) — never grouped with a tag from
+  // co-occurrence alone.
+  const googleObs = extractGoogleTagObservation(networkRequests);
+  for (const destId of googleObs.destination_ids) {
+    const attributedTo = googleObs.attributed.find(a => a.destination_id === destId)?.loaded_tag_id ?? null;
+    signals.push({
+      signal_type:     'google_tag_destination_observed',
+      signal_name:     attributedTo,
+      signal_id:       destId,
+      health_status:   'healthy',
+      health_score:    100,
+      detected_at:     'network',
+      firing_triggers: null,
+      parameters:      {
+        destination_id:    destId,
+        loaded_tag_id:     attributedTo,
+        attributed:        attributedTo !== null,
+        loaded_tag_ids:    googleObs.loaded_tag_ids,
+      },
       issues:          [],
     });
   }
