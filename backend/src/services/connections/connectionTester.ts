@@ -10,9 +10,10 @@ import { resolveTokens } from './tokenManager';
 import { getConnectionById } from '@/services/database/connectionQueries';
 import type { Platform } from '@/types/connections';
 import { GOOGLE_ADS_API_VERSION as ADS_API_VERSION } from '@/integrations/google/adsApiVersion';
+import { GA4_ADMIN_BASE_V1BETA } from '@/integrations/google/ga4AdminClient';
 
 const GRAPH_BASE = 'https://graph.facebook.com/v19.0';
-const ADMIN_BASE = 'https://analyticsadmin.googleapis.com/v1beta';
+const ADMIN_BASE = GA4_ADMIN_BASE_V1BETA;
 
 export interface TestResult {
   ok: boolean;

@@ -180,3 +180,51 @@ export async function syncCampaignGoals(connectionId: string, orgId: string): Pr
 
   logger.info({ connectionId, count: rows.length }, 'Google Ads campaign goals synced');
 }
+
+/**
+ * Reads the Ads customer's own currency and time zone (GA4 Admin / L11 / Junk
+ * Gate PRD Part A) so GA4↔Ads alignment rules can compare them. Google Ads REST
+ * (GAQL), `GOOGLE_ADS_API_VERSION` — same API as the rest of this file. Stored
+ * on `platform_connections.metadata.ads_customer` (non-PII, merged, never
+ * replacing other metadata keys).
+ */
+export async function syncCustomerSettings(connectionId: string): Promise<void> {
+  const tokens = await resolveTokens(connectionId);
+  const { data: conn } = await supabaseAdmin
+    .from('platform_connections')
+    .select('account_id, metadata')
+    .eq('id', connectionId)
+    .single();
+  if (!conn) return;
+
+  const { account_id, metadata } = conn as { account_id: string; metadata: Record<string, unknown> | null };
+  const accountId = account_id.replace(/-/g, '');
+
+  const response = await adsPost(
+    `customers/${accountId}/googleAds:searchStream`,
+    { query: 'SELECT customer.id, customer.currency_code, customer.time_zone FROM customer LIMIT 1' },
+    tokens.access_token,
+  ) as { results?: Array<{ customer?: { currencyCode?: string; currency_code?: string; timeZone?: string; time_zone?: string } }> }[];
+
+  const row = (Array.isArray(response) ? response : [response]).flatMap((b) => b.results ?? [])[0]?.customer;
+  if (!row) return;
+
+  const currency = row.currencyCode ?? row.currency_code ?? null;
+  const timeZone = row.timeZone ?? row.time_zone ?? null;
+  if (!currency && !timeZone) return;
+
+  const { error } = await supabaseAdmin
+    .from('platform_connections')
+    .update({
+      metadata: {
+        ...(metadata ?? {}),
+        ads_customer: { currency_code: currency, time_zone: timeZone, observed_at: new Date().toISOString() },
+      },
+    })
+    .eq('id', connectionId);
+  if (error) {
+    logger.warn({ connectionId, err: error.message }, 'Failed to store Google Ads customer settings');
+    return;
+  }
+  logger.info({ connectionId }, 'Google Ads customer settings synced');
+}
