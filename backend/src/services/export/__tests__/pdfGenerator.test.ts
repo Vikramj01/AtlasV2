@@ -429,6 +429,32 @@ describe('generatePDF — signal layer coverage table (P0-02)', () => {
     expect(withCoverage.byteLength).toBeGreaterThan(withoutCoverage.byteLength);
   });
 
+  // L11 Reconciliation (GA4 Admin / L11 / Junk Gate PRD §B.5): the "Against Your
+  // Connected Platforms" page exists only when a disclosure is present, and
+  // never changes anything else about the report. Same buffer-size technique
+  // as the tests around it (the PDF text is compressed, not searchable).
+  it('adds the Against Your Connected Platforms page only when a reconciliation disclosure is present', async () => {
+    const without = await generatePDF(makeMinimalReport());
+    const report = makeMinimalReport();
+    report.reconciliation_disclosure = {
+      run_completed_at: '2026-10-05T10:00:00Z',
+      run_age_days: 1,
+      stale: false,
+      notice: 'These observations describe your connected ad platforms, not this scan.',
+      items: [
+        { rule_id: 'RECONCILIATION_NO_ALIGNMENT_GAPS', label: 'Connected platforms are aligned', outcome: 'flagged', severity: 'high', summary: '1 unresolved alignment gap', details: ['ga4: GA4 property 123 does not list a Google Ads link.'] },
+        { rule_id: 'RECONCILIATION_DELIVERY_HEALTHY', label: 'Delivery is healthy', outcome: 'clear', severity: 'high', summary: 'No unresolved delivery findings observed', details: [] },
+      ],
+      context_notes: ['A shared Google tag is one candidate explanation for differences between GA4 and Google Ads figures.'],
+    };
+    const withDisclosure = await generatePDF(report);
+    expect(isPdfBuffer(withDisclosure)).toBe(true);
+    expect(withDisclosure.byteLength).toBeGreaterThan(without.byteLength);
+    // Absent disclosure = byte-for-byte the same page set as before this feature.
+    const again = await generatePDF(makeMinimalReport());
+    expect(again.byteLength).toBe(without.byteLength);
+  });
+
   it("never doubles up the state label when a layer's own reason already opens with it", () => {
     // Unit-tests the real exported function directly rather than
     // searching compressed PDF bytes.

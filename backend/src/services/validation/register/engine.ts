@@ -43,12 +43,13 @@ import { L7_RULES } from './L7';
 import { L8_RULES } from './L8';
 import { L9_RULES } from './L9';
 import { L10_RULES } from './L10';
+import { L11_RULES } from './L11';
 import { L12_RULES } from './L12';
 
-/** The full Check Register v2 rule library. Populated as each layer (L0-L12) ships. */
+/** The full Check Register v2 rule library. Populated as each layer (L0-L12) ships. L11 is disclosure-only: its results are partitioned out before scoring/issues (see audit/orchestrator.ts). */
 export const REGISTER: ValidationRule[] = [
   ...L0_RULES, ...L1_RULES, ...L2_RULES, ...L3_RULES, ...L4_RULES, ...L5_RULES, ...L6_RULES, ...L7_RULES,
-  ...L8_RULES, ...L9_RULES, ...L10_RULES, ...L12_RULES,
+  ...L8_RULES, ...L9_RULES, ...L10_RULES, ...L11_RULES, ...L12_RULES,
 ];
 
 export function isApplicableToSiteType(
@@ -99,6 +100,8 @@ export function isRuleApplicable(rule: ValidationRule, auditData: AuditData): bo
 const PRECONDITION_CHECKS: Record<RulePrecondition, (auditData: AuditData) => boolean> = {
   conversion_surface: conversionSurfaceReached,
   distinct_product_domain: (auditData) => auditData.product_domain_reachable === true,
+  client_linked: (auditData) => auditData.client_linked === true,
+  reconciliation_data_available: (auditData) => auditData.reconciliation_summary !== undefined,
 };
 
 function unmetPreconditions(rule: ValidationRule, auditData: AuditData): RulePrecondition[] {
@@ -118,6 +121,8 @@ function unmetPreconditionEvidence(precondition: RulePrecondition, auditData: Au
     }
     return 'The crawl never progressed past the landing page';
   }
+  if (precondition === 'client_linked') return 'This audit is not linked to a client';
+  if (precondition === 'reconciliation_data_available') return 'No completed reconciliation run exists for the linked client';
   return auditData.product_domain
     ? `${auditData.product_domain} was not confirmed as a distinct, reachable host`
     : 'No distinct product_domain was declared';

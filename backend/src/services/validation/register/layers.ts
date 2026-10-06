@@ -25,7 +25,11 @@ import type { ValidationLayerV2 } from '@/types/audit';
 // passes when the AW- ID is observed in outbound Ads hits even though no gtag.js
 // loader URL carries it (a combined Google tag), which changes verdicts and so
 // scores across the version boundary.
-export const REGISTER_VERSION = '1.4.0';
+// 1.5.0 — GA4 Admin / L11 / Junk Gate PRD Part B: L11 Reconciliation ships its
+// first five rules (disclosure-only: never scored, partitioned out of issues,
+// breakdowns and the appendix). No existing rule's verdict changes; the bump is
+// the rule-addition contract (Key Technical Decision §17).
+export const REGISTER_VERSION = '1.5.0';
 
 export const ALL_V2_LAYERS: ValidationLayerV2[] = [
   'scope_configuration', 'foundation_tags', 'click_id_capture', 'storage_durability',

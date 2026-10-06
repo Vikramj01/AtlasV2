@@ -155,7 +155,38 @@ export type DetectionMethod = 'crawl' | 'second_pass' | 'credentials' | 'connect
  * that (see L0.ts) — declared here as an open union so a future phase can
  * add another precondition without changing this shape.
  */
-export type RulePrecondition = 'conversion_surface' | 'distinct_product_domain';
+/** One unresolved reconciliation finding as L11 reads it — narrative is Atlas-authored copy, never raw platform data. */
+export interface ReconciliationSummaryFinding {
+  platform: string;
+  dimension: 'delivery' | 'config' | 'alignment' | 'volume' | 'discontinuity';
+  severity: 'info' | 'warning' | 'error' | 'critical';
+  finding_code: string;
+  resolved_at: string | null;
+  narrative: string;
+}
+
+export interface ReconciliationSummary {
+  run_id: string;
+  run_completed_at: string;
+  findings: ReconciliationSummaryFinding[];
+  /** Google tag topology of this client (Google Tag Topology PRD; scoping doc §7). */
+  google_tag_topology?: {
+    verdict: 'SPLIT' | 'COMBINED' | 'COMBINED_ADS_PRIMARY' | 'UNKNOWN';
+    strength: 'declared' | 'observed' | 'assumed' | 'none';
+  };
+  /** Client-scoped `client_tracking_change` discontinuities (platform_discontinuities, migration 20260921003). */
+  tracking_changes?: Array<{ platform: string; title: string; effective_date: string | null }>;
+}
+
+export type RulePrecondition =
+  | 'conversion_surface'
+  | 'distinct_product_domain'
+  // L11 Reconciliation (GA4 Admin / L11 / Junk Gate PRD §B.3) — the audit is
+  // linked to a client, and that client has a completed reconciliation run.
+  // A bare-URL scan, a public no-login scan, or a client who has never run a
+  // reconciliation gets `skipped`, never `fail`.
+  | 'client_linked'
+  | 'reconciliation_data_available';
 
 // ─── Confidence tiering (Pre-Connection Scan Confidence Tiering PRD §4) ──────
 //
@@ -920,6 +951,17 @@ export interface AuditData {
    */
   connected_gtm_container_id?: string;
   /**
+   * L11 Reconciliation input (GA4 Admin / L11 / Junk Gate PRD §B.3) — the
+   * linked client's most recent completed reconciliation run and its
+   * unresolved findings, resolved by the orchestrator BEFORE runRegister()
+   * ("resolve outside, read inside", Key Technical Decision §16). Undefined
+   * for a bare-URL/public scan, or a client with no completed run. Never read
+   * by scoring: L11 is disclosure-only.
+   */
+  reconciliation_summary?: ReconciliationSummary;
+  /** True when this audit is linked to a client (audits.client_id set) — the `client_linked` precondition. Resolved by the orchestrator; absent/false for a bare-URL or public scan. */
+  client_linked?: boolean;
+  /**
    * Every journey step name the simulator actually navigated to, regardless
    * of whether any tracking request fired there — the canonical "pages
    * sampled" list. networkRequests only contains requests matching a
@@ -1475,6 +1517,30 @@ export interface RuleConfirmation {
   created_at: string;
 }
 
+export interface ReconciliationDisclosureItem {
+  rule_id: string;
+  /** Rule label, e.g. "Delivery health". */
+  label: string;
+  /** pass = nothing unresolved observed; flagged = one or more unresolved findings (or a stale run). */
+  outcome: 'clear' | 'flagged';
+  severity: Severity;
+  summary: string;
+  /** One line per unresolved finding (Atlas-authored narrative). */
+  details: string[];
+}
+
+export interface ReconciliationDisclosure {
+  run_completed_at: string;
+  /** Days between the run and this audit. */
+  run_age_days: number;
+  stale: boolean;
+  /** Always the same fixed notice: this section is context, never a score input. */
+  notice: string;
+  items: ReconciliationDisclosureItem[];
+  /** Candidate-explanation / needs-confirmation / known-change lines (topology + discontinuities). Never states a cause. */
+  context_notes: string[];
+}
+
 export interface ReportJSON {
   audit_id: string;
   website_url: string;
@@ -1542,6 +1608,16 @@ export interface ReportJSON {
    * resolve here. Omitted (not an empty array) when nothing applies.
    */
   with_access?: WithAccessEntry[];
+  /**
+   * L11 Reconciliation (GA4 Admin / L11 / Junk Gate PRD Part B) — the
+   * "Against your connected platforms" section. DISCLOSURE ONLY: these
+   * findings are about the client's connected platforms, not about the scan,
+   * so they never enter any score, issue count, journey/platform breakdown or
+   * the could_not_be_assessed bucket (they WERE assessed). Omitted entirely
+   * (no empty heading) when L11 was skipped: bare-URL/public scan, or no
+   * completed reconciliation run for the linked client.
+   */
+  reconciliation_disclosure?: ReconciliationDisclosure;
   /**
    * Signal vs Implementation PRD P1-05 — how each declared platform's
    * signal actually reaches the network (GTM/direct script/Shopify Web

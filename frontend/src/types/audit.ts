@@ -374,6 +374,24 @@ export interface UnassessableFinding {
 }
 
 /** Pre-Connection Scan Confidence Tiering PRD §6 — one fired cross-signal consistency assertion (CONF_01–CONF_05). */
+export interface ReconciliationDisclosureItem {
+  rule_id: string;
+  label: string;
+  outcome: 'clear' | 'flagged';
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  summary: string;
+  details: string[];
+}
+
+export interface ReconciliationDisclosure {
+  run_completed_at: string;
+  run_age_days: number;
+  stale: boolean;
+  notice: string;
+  items: ReconciliationDisclosureItem[];
+  context_notes: string[];
+}
+
 export interface SignalConflict {
   assertion_id: 'CONF_01' | 'CONF_02' | 'CONF_03' | 'CONF_04' | 'CONF_05';
   entity: string;
@@ -431,6 +449,8 @@ export interface ReportJSON {
   could_not_be_assessed?: UnassessableFinding[];
   /** Pre-Connection Scan Confidence Tiering PRD §6 — every conflict fired this run. Omitted when nothing conflicted. */
   signal_conflicts?: SignalConflict[];
+  /** L11 Reconciliation — "Against your connected platforms". Disclosure only; never counted in any score. Omitted when L11 was skipped. */
+  reconciliation_disclosure?: ReconciliationDisclosure;
   /** Pre-Connection Scan Confidence Tiering PRD §12 — connected-tier checks that would resolve something raised in this run. Omitted when nothing applies. */
   with_access?: WithAccessEntry[];
   /** Signal vs Implementation PRD P1-05 — how each declared platform's signal actually reaches the network, plus P1-06's duplicate-implementation findings. Omitted when the scan captured no request_provenance at all. */
