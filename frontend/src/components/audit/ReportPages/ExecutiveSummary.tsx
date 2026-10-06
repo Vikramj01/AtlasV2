@@ -3,14 +3,15 @@ import { ScoreCard } from '@/components/common/ScoreCard';
 import { TOOLTIPS } from '@/lib/ui-copy';
 import type { ReportJSON, AuditScores, ValidationLayerFilter } from '@/types/audit';
 
-// Fixed 13-layer order + labels, mirroring backend/src/services/validation/
-// register/layers.ts's ALL_V2_LAYERS/LAYER_LABELS exactly — the single
+// Fixed 12-layer scored order + labels, mirroring backend/src/services/validation/
+// register/layers.ts's SCORED_V2_LAYERS/LAYER_LABELS exactly (L11 Reconciliation
+// is disclosure-only and never counted — GA4 Admin / L11 / Junk Gate PRD Part B) — the single
 // source of truth for "how many layers does this rule set define" lives
 // backend-side, but the report needs the same fixed list to render every
 // layer, not just the ones ReportCoverage.layers_not_tested happens to
 // name. Signal vs Implementation PRD P0-02 — previously this page showed a
 // count plus two comma-joined name lists, so a reader couldn't reconstruct
-// the coverage percentage without inference; this table makes all 13 rows
+// the coverage percentage without inference; this table makes all 12 rows
 // visible, assessed or not, so the arithmetic is on the page itself.
 const V2_LAYER_ORDER: { layer: ValidationLayerFilter; label: string }[] = [
   { layer: 'scope_configuration', label: 'L0 · Scope & Configuration' },
@@ -24,7 +25,6 @@ const V2_LAYER_ORDER: { layer: ValidationLayerFilter; label: string }[] = [
   { layer: 'consent', label: 'L8 · Consent' },
   { layer: 'server_side_delivery', label: 'L9 · Server-Side Delivery' },
   { layer: 'deduplication', label: 'L10 · Deduplication' },
-  { layer: 'reconciliation', label: 'L11 · Reconciliation' },
   { layer: 'hygiene_integrity', label: 'L12 · Hygiene & Integrity' },
 ];
 
@@ -104,7 +104,7 @@ export function ExecutiveSummary({ report }: Props) {
         <div className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-4">
           <p className="text-sm font-semibold text-slate-900">Coverage Gate — Signal Health score withheld</p>
           <p className="mt-1 text-sm leading-relaxed text-slate-700">
-            This scan assessed {conversionCoverage?.layers_tested ?? 0} of {conversionCoverage?.layers_total ?? 13} signal layers, below the 60 per cent
+            This scan assessed {conversionCoverage?.layers_tested ?? 0} of {conversionCoverage?.layers_total ?? 12} signal layers, below the 60 per cent
             coverage this score requires. A partial score would imply confidence the run does not support. The layers assessed are reported individually below.
           </p>
         </div>

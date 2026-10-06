@@ -8,7 +8,7 @@
  */
 import PDFDocument from 'pdfkit';
 import type { ReportJSON, ValidationResult, ReportIssue, StepCoverage, StepUrlSource, ScoreCoverage, ImplementationPath } from '@/types/audit';
-import { ALL_V2_LAYERS, LAYER_LABELS } from '@/services/validation/register/layers';
+import { SCORED_V2_LAYERS as ALL_V2_LAYERS, LAYER_LABELS } from '@/services/validation/register/layers';
 import { PLATFORM_LABELS as DECLARED_PLATFORM_LABELS } from '@/services/validation/register/platformDetection';
 
 /** Per-step provenance label for the Scan Coverage section — see StepUrlSource's docstring in types/audit.ts. */

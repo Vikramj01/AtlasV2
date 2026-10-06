@@ -4,7 +4,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { buildCoverageSummary, computeCoverageFingerprint, computeRunQuality } from '../coverage';
-import { ALL_V2_LAYERS } from '@/services/validation/register/layers';
+import { SCORED_V2_LAYERS as ALL_V2_LAYERS } from '@/services/validation/register/layers';
 import type { AuditData, StepCoverage, ValidationResult } from '@/types/audit';
 
 function makeStep(overrides: Partial<StepCoverage> = {}): StepCoverage {
@@ -175,15 +175,14 @@ describe('buildCoverageSummary', () => {
       expect(l4?.reason).not.toContain('crawl');
     });
 
-    it('marks reconciliation (L11) not_applicable — the register has no shipped rules for it yet', () => {
+    it('never lists reconciliation (L11) — it is disclosure-only and outside the scored-layer denominator', () => {
       const auditData = makeAuditData({
         rule_set_version: 'v2', site_type: 'ecommerce', declared_platforms: ['google_ads'],
         step_coverage: [makeStep()],
       });
       const layersNotTested = buildCoverageSummary(auditData, [])?.layers_not_tested ?? [];
-      const l11 = layersNotTested.find((l) => l.layer === 'reconciliation');
-      expect(l11?.state).toBe('not_applicable');
-      expect(l11?.reason.toLowerCase()).toContain('not yet built');
+      expect(layersNotTested.find((l) => l.layer === 'reconciliation')).toBeUndefined();
+      expect(layersNotTested).toHaveLength(12);
     });
 
     it('marks event_firing (L5) not_scanned, distinct from an inapplicable layer, when its rules were coverage-skipped', () => {
@@ -422,8 +421,8 @@ describe('computeCoverageFingerprint', () => {
 // Signal vs Implementation PRD P0-02 — "a reader can reconstruct the
 // coverage percentage from the report itself without inference." Asserts
 // the reconciliation the PRD's own defect claimed didn't visibly hold:
-// every one of the register's 13 layers lands in exactly one bucket.
-describe('layers_not_tested reconciles against the fixed 13-layer denominator (P0-02)', () => {
+// every one of the register's 12 scored layers lands in exactly one bucket.
+describe('layers_not_tested reconciles against the fixed 12-scored-layer denominator (P0-02; L11 is disclosure-only)', () => {
   it('assessed-layer count plus layers_not_tested.length always equals ALL_V2_LAYERS.length', () => {
     // A mixed scenario touching most layers with a mix of pass/fail/skip,
     // deliberately leaving several layers with zero results (declared-
@@ -452,7 +451,7 @@ describe('layers_not_tested reconciles against the fixed 13-layer denominator (P
     expect(notTestedLayers.has('scope_configuration')).toBe(false);
     expect(notTestedLayers.has('foundation_tags')).toBe(false);
     expect(notTestedLayers.has('click_id_capture')).toBe(false);
-    // Every other one of the 13 layers is accounted for in layers_not_tested.
+    // Every other one of the 12 scored layers is accounted for in layers_not_tested.
     for (const layer of ALL_V2_LAYERS) {
       const assessed = !notTestedLayers.has(layer);
       const inNotTested = notTestedLayers.has(layer);

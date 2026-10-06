@@ -25,7 +25,7 @@
  */
 import type { AuditScores, ValidationResult, ValidationLayerV2, Severity, ScoreCoverage } from '@/types/audit';
 import { DEFAULT_SEVERITY_WEIGHTS } from '@/config/scoringWeights';
-import { ALL_V2_LAYERS, LAYER_WEIGHT, MIN_CONFIRMED_RATIO, COVERAGE_GATE_THRESHOLD } from './layers';
+import { SCORED_V2_LAYERS, LAYER_WEIGHT, MIN_CONFIRMED_RATIO, COVERAGE_GATE_THRESHOLD } from './layers';
 
 function layerResults(results: ValidationResult[], layers: ValidationLayerV2[]): ValidationResult[] {
   return results.filter((r) => layers.includes(r.validation_layer as ValidationLayerV2));
@@ -76,7 +76,7 @@ export interface LayerScoringDecision {
  */
 export function layerScoringDecisions(
   results: ValidationResult[],
-  layers: ValidationLayerV2[] = ALL_V2_LAYERS,
+  layers: ValidationLayerV2[] = SCORED_V2_LAYERS,
 ): LayerScoringDecision[] {
   return layers.map((layer) => {
     const inLayer = layerResults(results, [layer]);
@@ -92,7 +92,7 @@ export function layerScoringDecisions(
   });
 }
 
-/** PRD §9.1 rule 3 — Σ(weight of scored layers) / Σ(weight of all layers), evaluated over whatever layer subset the caller passed to layerScoringDecisions (all 13 for the overall score, a smaller subset for each sub-score). */
+/** PRD §9.1 rule 3 — Σ(weight of scored layers) / Σ(weight of all layers), evaluated over whatever layer subset the caller passed to layerScoringDecisions (all 12 scored layers for the overall score, a smaller subset for each sub-score). */
 export function coverageRatio(
   decisions: LayerScoringDecision[],
   weights: Record<ValidationLayerV2, number> = LAYER_WEIGHT,
@@ -183,8 +183,8 @@ export function calculateV2Scores(
   results: ValidationResult[],
   severityWeights: Record<Severity, number> = DEFAULT_SEVERITY_WEIGHTS,
 ): AuditScores {
-  // ── Overall — Conversion Signal Health, all 13 layers ────────────────────
-  const overallDecisions = layerScoringDecisions(results, ALL_V2_LAYERS);
+  // ── Overall — Conversion Signal Health, all 12 scored layers (L11 is disclosure-only) ────────────────────
+  const overallDecisions = layerScoringDecisions(results, SCORED_V2_LAYERS);
   const overallWithheld = coverageRatio(overallDecisions) < COVERAGE_GATE_THRESHOLD;
   const overallScoredLayers = scoredLayerSet(overallDecisions);
   const signalHealth = weightedSignalHealth(inScoredLayers(scored(results), overallScoredLayers), severityWeights);
@@ -217,8 +217,8 @@ export function calculateV2Scores(
     optimization_strength: optimizationStrength,
     data_consistency_score: dataConsistencyScore,
     // Fixed denominator (Report Correctness Programme PRD Part D1) — every
-    // report's header composite is "N of 13 layers scanned," 13 being the
-    // ValidationLayerV2 enum's own length, never however many layers
+    // report's header composite is "N of 12 layers scanned," 12 being
+    // SCORED_V2_LAYERS' own length (the enum minus disclosure-only L11), never however many layers
     // happened to produce a result this run.
     conversion_signal_health_coverage: layerCoverageFromDecisions(overallDecisions),
     attribution_risk_coverage: layerCoverageFromDecisions(attributionDecisions),

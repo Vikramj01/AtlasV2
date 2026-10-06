@@ -11,7 +11,7 @@ import crypto from 'crypto';
 import type { AuditData, ValidationResult, ValidationLayerV2, StepCoverage, ReportCoverage, CoverageLayerNotTested, RunQuality } from '@/types/audit';
 import { normalizeUrlForCoverage } from '@/services/audit/journeySimulator';
 import { REGISTER, isRuleApplicable } from '@/services/validation/register/engine';
-import { ALL_V2_LAYERS } from '@/services/validation/register/layers';
+import { SCORED_V2_LAYERS as ALL_V2_LAYERS } from '@/services/validation/register/layers';
 
 /**
  * The exact evidence prefix engine.ts's skippedForPrecondition() writes for

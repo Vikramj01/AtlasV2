@@ -179,10 +179,10 @@ describe('Acceptance replay — audit c9486929 (openart.ai, Pre-Connection Scan 
     expect(conflicts.some((c) => c.assertion_id === 'CONF_05' && c.entity === 'Meta click ID capture')).toBe(false);
   });
 
-  it('6. Overall score is withheld with INSUFFICIENT_LAYER_COVERAGE (5 of 13 layers). Optimisation Strength renders "Not assessed", not "Moderate"', () => {
+  it('6. Overall score is withheld with INSUFFICIENT_LAYER_COVERAGE (5 of 12 layers). Optimisation Strength renders "Not assessed", not "Moderate"', () => {
     expect(scores.conversion_signal_health).toBeNull();
     expect(scores.score_withheld_reason).toBe('INSUFFICIENT_LAYER_COVERAGE');
-    expect(scores.conversion_signal_health_coverage).toEqual({ layers_tested: 5, layers_total: 13 });
+    expect(scores.conversion_signal_health_coverage).toEqual({ layers_tested: 5, layers_total: 12 });
     // 'Not assessed' is the frontend/PDF's rendering of a null
     // optimization_strength (ExecutiveSummary.tsx / pdfGenerator.ts) — at
     // the data layer that's simply null, never the string 'Moderate'.

@@ -205,7 +205,7 @@ describe('ExecutiveSummary — coverage banner', () => {
 // coverage percentage from the report itself without inference." Before
 // this, the page showed only a count plus two comma-joined name lists.
 describe('ExecutiveSummary — Signal layer coverage table (P0-02)', () => {
-  it('renders all 13 layers, with a real skip reason shown for each not-tested one', () => {
+  it('renders all 12 scored layers, with a real skip reason shown for each not-tested one', () => {
     const coverage: ReportCoverage = {
       pages_requested: 4,
       pages_distinct: 4,
@@ -213,7 +213,6 @@ describe('ExecutiveSummary — Signal layer coverage table (P0-02)', () => {
       layers_not_tested: [
         { layer: 'consent', label: 'L8 · Consent', reason: 'No CMP declared and no EEA/UK/Switzerland traffic declared — a consent banner is not expected', state: 'not_applicable' },
         { layer: 'event_firing', label: 'L5 · Event Firing', reason: 'The crawl never reached a page distinct from the landing page', state: 'not_scanned' },
-        { layer: 'reconciliation', label: 'L11 · Reconciliation', reason: 'Not yet built into the Check Register', state: 'not_applicable' },
       ],
       rules_tested: 60,
       rules_not_tested: 10,
@@ -224,24 +223,24 @@ describe('ExecutiveSummary — Signal layer coverage table (P0-02)', () => {
     render(<ExecutiveSummary report={makeReport(coverage)} />);
 
     expect(screen.getByText('Signal layer coverage')).not.toBeNull();
-    expect(screen.getByText('10 of 13 signal layers assessed.')).not.toBeNull();
+    expect(screen.getByText('10 of 12 signal layers assessed.')).not.toBeNull();
 
-    // Every one of the 13 layers gets its own row.
+    // Every one of the 12 scored layers gets its own row.
     expect(screen.getByText('L0 · Scope & Configuration')).not.toBeNull();
     expect(screen.getByText('L12 · Hygiene & Integrity')).not.toBeNull();
 
     // A not-tested layer shows its real, specific reason.
     expect(screen.getByText(/No CMP declared and no EEA\/UK\/Switzerland traffic declared/)).not.toBeNull();
     expect(screen.getByText('The crawl never reached a page distinct from the landing page')).not.toBeNull();
-    expect(screen.getByText('Not yet built into the Check Register')).not.toBeNull();
+    expect(screen.queryByText('L11 · Reconciliation')).toBeNull(); // disclosure-only, never a scored-layer row
 
     // Status labels distinguish assessed from not_applicable from not_scanned.
     expect(screen.getAllByText('Assessed').length).toBe(10);
-    expect(screen.getAllByText('Not applicable').length).toBe(2);
+    expect(screen.getAllByText('Not applicable').length).toBe(1);
     expect(screen.getAllByText('Not scanned').length).toBe(1);
   });
 
-  it('renders "13 of 13 signal layers assessed" and no not-tested rows when every layer ran', () => {
+  it('renders "12 of 12 signal layers assessed" and no not-tested rows when every layer ran', () => {
     const coverage: ReportCoverage = {
       pages_requested: 4,
       pages_distinct: 4,
@@ -254,8 +253,8 @@ describe('ExecutiveSummary — Signal layer coverage table (P0-02)', () => {
       run_quality: 'COMPLETE',
     };
     render(<ExecutiveSummary report={makeReport(coverage)} />);
-    expect(screen.getByText('13 of 13 signal layers assessed.')).not.toBeNull();
-    expect(screen.getAllByText('Assessed').length).toBe(13);
+    expect(screen.getByText('12 of 12 signal layers assessed.')).not.toBeNull();
+    expect(screen.getAllByText('Assessed').length).toBe(12);
     expect(screen.queryByText('Not applicable')).toBeNull();
     expect(screen.queryByText('Not scanned')).toBeNull();
   });
@@ -278,12 +277,12 @@ describe('ExecutiveSummary — Coverage Gate', () => {
       attribution_risk_level: 'Medium',
       optimization_strength: 'Moderate',
       data_consistency_score: 'Medium',
-      conversion_signal_health_coverage: { layers_tested: 5, layers_total: 13 },
+      conversion_signal_health_coverage: { layers_tested: 5, layers_total: 12 },
     };
     render(<ExecutiveSummary report={report} />);
     expect(screen.queryByText('Coverage Gate — Signal Health score withheld')).not.toBeNull();
     const panel = screen.getByText(/This scan assessed/);
-    expect(panel.textContent).toContain('5 of 13 signal layers');
+    expect(panel.textContent).toContain('5 of 12 signal layers');
     expect(screen.getByText('Not assessed')).not.toBeNull();
   });
 
