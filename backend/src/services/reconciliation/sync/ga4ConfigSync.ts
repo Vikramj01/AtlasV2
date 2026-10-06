@@ -44,6 +44,7 @@ export interface Ga4ConfigSnapshot {
 
 export interface Ga4ConfigSyncResult {
   changed: boolean;
+  client_id: string | null;
   snapshot: Ga4ConfigSnapshot;
   previous: Ga4ConfigSnapshot | null;
   hash: string;
@@ -213,7 +214,7 @@ export async function syncGa4Config(connectionId: string, orgId: string): Promis
   const hash = hashSnapshot(snapshot);
 
   if (previousRow && previousRow.snapshot_hash === hash) {
-    return { changed: false, snapshot, previous, hash, carried_forward: carried };
+    return { changed: false, client_id: clientId ?? null, snapshot, previous, hash, carried_forward: carried };
   }
 
   const { error } = await supabaseAdmin.from('ga4_config_snapshots').insert({
@@ -227,5 +228,5 @@ export async function syncGa4Config(connectionId: string, orgId: string): Promis
   if (error) throw new Error(`ga4_config_snapshots insert failed: ${error.message}`);
 
   logger.info({ connectionId, propertyId, firstSnapshot: !previousRow }, 'GA4 config snapshot written');
-  return { changed: true, snapshot, previous, hash, carried_forward: carried };
+  return { changed: true, client_id: clientId ?? null, snapshot, previous, hash, carried_forward: carried };
 }

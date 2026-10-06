@@ -19,7 +19,15 @@ export type FindingCode =
   | 'VOLUME_DELTA_EXCEEDED'
   | 'GA4_VOLUME_DIVERGENCE'
   // Discontinuity (Phase 3, B10)
-  | 'KNOWN_PLATFORM_DISCONTINUITY';
+  | 'KNOWN_PLATFORM_DISCONTINUITY'
+  // GA4 Admin configuration (GA4 Admin / L11 / Junk Gate PRD Part A)
+  | 'GA4_STREAM_ID_NOT_IN_PROPERTY'
+  | 'GA4_STREAM_DOMAIN_MISMATCH'
+  | 'GA4_ENHANCED_FORM_DOUBLE_COUNT'
+  | 'GA4_ADS_LINK_MISSING'
+  | 'GA4_ADS_CURRENCY_MISMATCH'
+  | 'GA4_ADS_TIMEZONE_MISMATCH'
+  | 'GA4_SIGNAL_NOT_KEY_EVENT';
 
 export type FindingDimension = 'delivery' | 'config' | 'alignment' | 'volume' | 'discontinuity';
 export type FindingSeverity = 'info' | 'warning' | 'error' | 'critical';
@@ -127,6 +135,52 @@ export const FINDING_META: Record<FindingCode, FindingMeta> = {
     severity: 'info',
     narrative: (ctx) => `${ctx.platform} had a known reporting change — "${ctx.title}"${ctx.effective_date ? ` (effective ${ctx.effective_date})` : ''}. ${ctx.description}`,
     remediation: () => 'Any volume or alignment drift on this platform around this change may reflect the platform-side redefinition rather than a delivery or tagging problem — check this finding before troubleshooting other findings on the same platform.',
+  },
+  // ── GA4 Admin configuration findings ────────────────────────────────────────
+  // Wording rule (PRD §A.4): state what was observed in the property's
+  // configuration, never a cause or an outcome it cannot see. "can count" /
+  // "does not list" — never "is missing"/"broken" (outputLint banned tokens).
+  GA4_STREAM_ID_NOT_IN_PROPERTY: {
+    dimension: 'config',
+    severity: 'error',
+    narrative: (ctx) => `The GA4 measurement ID ${ctx.measurement_id} in this client's GTM container does not match any web data stream on the connected GA4 property (${ctx.property_id}). Streams listed on the property: ${ctx.stream_ids}.`,
+    remediation: (ctx) => `Confirm which GA4 property ${ctx.measurement_id} belongs to. Either update the container's GA4 tag to a measurement ID from the connected property, or connect the property that owns ${ctx.measurement_id}.`,
+  },
+  GA4_STREAM_DOMAIN_MISMATCH: {
+    dimension: 'config',
+    severity: 'warning',
+    narrative: (ctx) => `No web data stream on GA4 property ${ctx.property_id} lists a default URL on this client's domains (${ctx.client_domains}). Stream URLs observed: ${ctx.stream_domains}.`,
+    remediation: () => 'Check that the connected property is the one used for this client. If it is, the stream default URL may simply be a different hostname than the one Atlas knows; add any additional hostnames to the client record.',
+  },
+  GA4_ENHANCED_FORM_DOUBLE_COUNT: {
+    dimension: 'alignment',
+    severity: 'warning',
+    narrative: (ctx) => `Enhanced measurement form interactions are enabled on GA4 stream ${ctx.stream_id}, and this client also sends a form or lead event (${ctx.signal_events}) to GA4. This configuration can count the same form submission twice.`,
+    remediation: () => 'Review the form events GA4 reports for this stream. If the automatic form interaction events overlap with the Atlas lead event, consider turning off form interactions in enhanced measurement, or confirm the two are distinguishable in reports.',
+  },
+  GA4_ADS_LINK_MISSING: {
+    dimension: 'alignment',
+    severity: 'error',
+    narrative: (ctx) => `This client has a connected Google Ads account (${ctx.ads_customer_id}), and GA4 property ${ctx.property_id} does not list a Google Ads link to it. Linked Ads accounts observed: ${ctx.linked_customers}.`,
+    remediation: () => 'Link the Google Ads account to the GA4 property in GA4 Admin (Product links → Google Ads links), so conversions and audiences can be shared between the two.',
+  },
+  GA4_ADS_CURRENCY_MISMATCH: {
+    dimension: 'config',
+    severity: 'warning',
+    narrative: (ctx) => `GA4 property ${ctx.property_id} reports in ${ctx.ga4_currency}, while the linked Google Ads account reports in ${ctx.ads_currency}. Revenue figures can differ between the two for the same conversion.`,
+    remediation: () => 'Decide which currency is the reporting standard. GA4 property currency can be changed in GA4 Admin; the Google Ads account currency is fixed at creation, so alignment usually means updating GA4 or converting at reporting time.',
+  },
+  GA4_ADS_TIMEZONE_MISMATCH: {
+    dimension: 'config',
+    severity: 'info',
+    narrative: (ctx) => `GA4 property ${ctx.property_id} uses time zone ${ctx.ga4_time_zone}, while the linked Google Ads account uses ${ctx.ads_time_zone}. Daily totals can fall on different days in the two platforms.`,
+    remediation: () => 'Keep this in mind when comparing day-level figures between GA4 and Google Ads. Aligning the GA4 property time zone to the Ads account removes the day-boundary difference.',
+  },
+  GA4_SIGNAL_NOT_KEY_EVENT: {
+    dimension: 'alignment',
+    severity: 'warning',
+    narrative: (ctx) => `A conversion stage in this client's journey sends the GA4 event "${ctx.event_name}", which is not listed as a key event on GA4 property ${ctx.property_id}. Key events observed: ${ctx.key_events}.`,
+    remediation: (ctx) => `Mark "${ctx.event_name}" as a key event in GA4 Admin (Events → Mark as key event) so it is reported and importable as a conversion.`,
   },
 };
 

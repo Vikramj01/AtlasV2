@@ -5,6 +5,7 @@ import { runAlignmentDiff } from './engine/alignmentDiff';
 import { runDeliveryDiff } from './engine/deliveryDiff';
 import { runVolumeDiff } from './engine/volumeDiff';
 import { runIdentityDiff } from './engine/identityDiff';
+import { runGa4ConfigDiff } from './engine/ga4ConfigDiff';
 import { finaliseRun } from './engine/findingWriter';
 import logger from '@/utils/logger';
 
@@ -95,6 +96,14 @@ export async function executeRun(job: ReconciliationJobData): Promise<void> {
     await runIdentityDiff(runId, clientId, briefId ?? null, organizationId).catch((err: Error) => {
       errors.push(`identity: ${err.message}`);
       logger.error({ runId, err: err.message }, 'Identity diff failed');
+    });
+
+    // GA4 Admin configuration checks (GA4 Admin PRD Part A2): compares the
+    // client's latest GA4 config snapshot against what Atlas knows. Runs on all
+    // run types; a no-op without a GA4 connection + snapshot.
+    await runGa4ConfigDiff(runId, clientId, organizationId).catch((err: Error) => {
+      errors.push(`ga4_config: ${err.message}`);
+      logger.error({ runId, err: err.message }, 'GA4 config diff failed');
     });
 
     const status = errors.length === 0 ? 'succeeded' : 'partial';

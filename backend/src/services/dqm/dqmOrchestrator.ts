@@ -4,8 +4,9 @@ import { probeGTGPath, saveGTGCheck } from './gtgProbe';
 import { probeSgtmHealth, saveSgtmCheck } from './sgtmProbe';
 import { pollDMADiagnostics, upsertDMAPollState, updateDMABackoff, getDMAPollState } from './dmaPolling';
 import { pollMetaEmqForOrg, saveMetaEmqOutcome } from './metaEmqPolling';
-import { evaluateGTGAlert, evaluateDMAAlert, evaluateSgtmAlert, evaluateOutcomeSyncAlert, evaluateGoogleTagTopologyAlert } from './dqmAlertEvaluator';
+import { evaluateGTGAlert, evaluateDMAAlert, evaluateSgtmAlert, evaluateOutcomeSyncAlert, evaluateGoogleTagTopologyAlert, evaluateGa4ConfigChangeAlert } from './dqmAlertEvaluator';
 import { computeGoogleTagTopologySignals } from './googleTagTopologyMonitor';
+import { computeGa4ConfigChangeSignals } from './ga4ConfigChangeMonitor';
 import type { GTGStatus } from './dqmAlertEvaluator';
 import { sendDQMAlertNotification } from './dqmAlertDelivery';
 import { computeOutcomeSyncHealthSignals } from '@/services/outcomes/syncHealthCheck';
@@ -57,7 +58,7 @@ async function loadOrgConfig(orgId: string): Promise<OrgConfig> {
 
 async function writeDQMRunLog(
   orgId: string,
-  checkType: 'gtg' | 'dma' | 'sgtm' | 'meta_emq' | 'outcome_sync' | 'google_tag_topology',
+  checkType: 'gtg' | 'dma' | 'sgtm' | 'meta_emq' | 'outcome_sync' | 'google_tag_topology' | 'ga4_config',
   status: string,
   latencyMs: number | null,
   triggeredBy: 'scheduled' | 'manual',
@@ -77,7 +78,7 @@ async function writeDQMRunLog(
 
 async function applyAlertDecision(
   orgId: string,
-  checkType: 'gtg' | 'dma' | 'sgtm' | 'outcome_sync' | 'google_tag_topology',
+  checkType: 'gtg' | 'dma' | 'sgtm' | 'outcome_sync' | 'google_tag_topology' | 'ga4_config',
   decision: import('./dqmAlertEvaluator').AlertEvalResult,
 ): Promise<string> {
   const alertType =
@@ -85,6 +86,7 @@ async function applyAlertDecision(
     checkType === 'dma' ? 'dqm_dma' :
     checkType === 'sgtm' ? 'dqm_sgtm' :
     checkType === 'google_tag_topology' ? 'dqm_google_tag_topology' :
+    checkType === 'ga4_config' ? 'ga4_config_changed' :
     'dqm_outcome_sync';
 
   if (decision.decision === 'open') {
@@ -233,6 +235,22 @@ export async function runDQMForOrg(
   } else if (existingTopologyAlert) {
     const topologyAction = await applyAlertDecision(orgId, 'google_tag_topology', { decision: 'resolve', severity: null, title: '', message: '' });
     await writeDQMRunLog(orgId, 'google_tag_topology', 'not-applicable', null, triggeredBy, topologyAction);
+  }
+
+  // ── GA4 config change — one rolled-up alert across the org's GA4 properties ──
+  // (GA4 Admin / L11 / Junk Gate PRD §A.5). Stateless over ga4_config_snapshots;
+  // a failed check never blocks the rest of the run.
+  const existingGa4ConfigAlert = await getAlertByType(orgId, 'ga4_config_changed');
+  const ga4ConfigSignals = await computeGa4ConfigChangeSignals(orgId, !!existingGa4ConfigAlert).catch((err) => {
+    logger.error({ err, orgId }, 'DQM: GA4 config change check failed');
+    return null;
+  });
+  if (ga4ConfigSignals) {
+    const ga4ConfigDecision = evaluateGa4ConfigChangeAlert(ga4ConfigSignals);
+    if (ga4ConfigDecision.decision !== 'none') {
+      const ga4ConfigAction = await applyAlertDecision(orgId, 'ga4_config', ga4ConfigDecision);
+      await writeDQMRunLog(orgId, 'ga4_config', ga4ConfigDecision.title || 'ok', null, triggeredBy, ga4ConfigAction);
+    }
   }
 
   // ── Meta EMQ poll — one Dataset Quality API call per connected Meta provider ─

@@ -3,6 +3,8 @@ import { syncConversionActions, syncCampaignGoals, syncCustomerSettings } from '
 import { syncCustomConversions, syncAemPriorities, syncMetaCampaigns } from './metaSync';
 import { syncKeyEvents } from './ga4Sync';
 import { syncGa4Config } from './ga4ConfigSync';
+import { diffGa4Snapshots, buildGa4DiscontinuityRows } from './ga4ConfigDrift';
+import { writeClientDiscontinuities } from '@/services/database/discontinuityQueries';
 import { syncConversionStats } from './googleAdsStatsSync';
 import { syncAdAccountStats } from './metaStatsSync';
 import { syncKeyEventStats } from './ga4StatsSync';
@@ -110,7 +112,18 @@ export async function runConfigSyncForConnection(job: SyncJobData): Promise<void
       // Snapshot of the property's configuration (GA4 Admin PRD Part A1).
       // Additive: a config-snapshot failure never fails the key-event sync.
       try {
-        await syncGa4Config(connectionId, orgId);
+        const snap = await syncGa4Config(connectionId, orgId);
+        if (snap?.changed && snap.previous && snap.client_id) {
+          // A config change that alters how data is collected is also a client-scoped
+          // tracking discontinuity, so later volume shifts read as a known change.
+          const rows = buildGa4DiscontinuityRows({
+            organizationId: orgId,
+            clientId: snap.client_id,
+            changes: diffGa4Snapshots(snap.previous, snap.snapshot),
+            effectiveDate: new Date().toISOString().slice(0, 10),
+          });
+          await writeClientDiscontinuities(rows);
+        }
       } catch (err) {
         logger.warn({ connectionId, err: (err as Error).message }, 'GA4 config snapshot failed — continuing');
       }
