@@ -267,6 +267,7 @@ describe('POST /api/gtm/callback/finalize', () => {
 
   it('persists the connection, queues sync, and returns 201', async () => {
     const chain = makeChain([], { id: 'conn-001' });
+    chain.maybeSingle.mockResolvedValue({ data: null, error: null }); // no existing connection for this container
     vi.mocked(supabaseAdmin.from).mockImplementation((table: string) => {
       if (table === 'profiles') return makeChain([], { organization_id: 'org-001' }) as any;
       return chain as any;
@@ -293,6 +294,34 @@ describe('POST /api/gtm/callback/finalize', () => {
       auth_method: 'oauth',
     }));
     expect(gtmContainerSyncQueue.add).toHaveBeenCalledOnce();
+  });
+
+  // GA4 Admin / L11 / Junk Gate PRD §A.6: "reconnect to enable publishing" must
+  // upgrade the existing connection, not create a second row for the container.
+  it('reconnecting an already-connected container re-authorises it in place: same id, new credentials, no second row', async () => {
+    const chain = makeChain([], { id: 'conn-old', client_id: 'client-old' });
+    vi.mocked(supabaseAdmin.from).mockImplementation((table: string) => {
+      if (table === 'profiles') return makeChain([], { organization_id: 'org-001' }) as any;
+      return chain as any;
+    });
+    mockDedupRedis.get.mockResolvedValue(JSON.stringify({
+      orgId: 'org-001', clientId: null, credentials: { access_token: 'at', refresh_token: 'rt', expires_at: 0, scope: 'widened' },
+    }));
+
+    const res = await buildApp().post('/api/gtm/callback/finalize').send({
+      ref: '00000000-0000-0000-0000-000000000009',
+      account_id: 'acct1',
+      container_id: 'cont1',
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toMatchObject({ connection_id: 'conn-old', reconnected: true });
+    expect(chain.insert).not.toHaveBeenCalled();
+    expect(chain.update).toHaveBeenCalledWith(expect.objectContaining({
+      oauth_credentials_encrypted: 'encrypted-blob',
+      client_id: 'client-old', // an org-level reconnect does not unlink the client
+    }));
+    expect(gtmCredentials.encryptGtmCredentials).toHaveBeenCalledWith(expect.objectContaining({ scope: 'widened' }));
   });
 });
 

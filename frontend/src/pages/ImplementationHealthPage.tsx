@@ -220,7 +220,16 @@ export function GTMContainersSection() {
                     {c.last_synced_at && (
                       <> · Last synced {new Date(c.last_synced_at).toLocaleDateString()}</>
                     )}
+                    {c.auth_method === 'oauth' && c.can_publish === true && <> · Publishing enabled</>}
                   </p>
+                  {c.auth_method === 'oauth' && c.can_publish === false && (
+                    <p className="mt-1 text-xs text-amber-700">
+                      Publishing is not enabled for this connection.{' '}
+                      <button type="button" className="underline" onClick={handleConnect} disabled={connecting || discovering}>
+                        Reconnect to enable publishing
+                      </button>
+                    </p>
+                  )}
                 </div>
                 <Button
                   variant="ghost"

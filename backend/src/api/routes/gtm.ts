@@ -9,6 +9,9 @@
  * POST /api/gtm/callback/finalize    — user's account/container pick; persists the connection
  * POST /api/gtm/upload               — manual container JSON upload
  * POST /api/gtm/deploy               — push a generated container into a live GTM workspace (OAuth only)
+ * POST /api/gtm/publish             — create a version from an Atlas-deployed workspace and publish it (explicit confirm, human session, widened OAuth scope)
+ * POST /api/gtm/publish/:logId/rollback — re-publish the version that was live before a logged publish
+ * GET  /api/gtm/publish-log         — recent publishes/rollbacks for this org (optionally one connection)
  * POST /api/gtm/split-plan          — build a Google tag split delta + diff + guidance (no side effects unless persist)
  * POST /api/gtm/split-plan/deploy   — deploy that delta as a GTM draft workspace (OAuth only, never publishes)
  * POST /api/gtm/split-plan/:id/verify   — verify the split actually happened (needs fresh observations)
@@ -41,6 +44,9 @@ import { env } from '@/config/env';
 import { encryptGtmCredentials, decryptGtmCredentials, type GtmOAuthCredentials } from '@/services/gtm/gtmCredentials';
 import { parseContainerJson, validateContainerJsonShape } from '@/services/gtm/containerParser';
 import { deployContainerToGtm } from '@/services/gtm/gtmDeployService';
+import { GTM_SCOPE, scopeCapabilities } from '@/services/gtm/gtmScopes';
+import { publishAtlasWorkspace, republishVersion, GtmPublishRefused } from '@/services/gtm/gtmPublishService';
+import { insertPublishLog, getPublishLog, listPublishLog, markRolledBack } from '@/services/database/gtmPublishLogQueries';
 import type { GTMContainerJSON } from '@/services/planning/generators/gtmContainerGenerator';
 import { gtmContainerSyncQueue } from '@/services/queue/jobQueue';
 import { loadSplitPlanContext, buildSplitPlan } from '@/services/google/googleTagSplitService';
@@ -57,11 +63,14 @@ gtmRouter.use(authMiddleware, planGuard('pro'));
 
 const GTM_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GTM_TOKEN_URL = 'https://oauth2.googleapis.com/token';
-// tagmanager.edit.containers (not tagmanager.publish) — /deploy below creates/
-// updates a draft workspace only. The client still reviews and publishes
-// manually in GTM; requesting publish scope too would be a materially bigger
-// OAuth consent ask and isn't needed for this deploy path.
-const GTM_SCOPE = 'https://www.googleapis.com/auth/tagmanager.readonly https://www.googleapis.com/auth/tagmanager.edit.containers';
+// Scopes live in services/gtm/gtmScopes.ts. This used to request only
+// tagmanager.edit.containers, deliberately deferring publish as a materially
+// bigger consent ask (draft-only deploy; a human published in GTM). GA4 Admin /
+// L11 / Junk Gate PRD §A.6 reverses that: publishing is now supported, but only
+// via POST /publish below (explicit confirmation flag, human session, logged,
+// roll-backable). /deploy and /split-plan/deploy still create drafts only and
+// never publish. An existing connection granted the old scopes keeps working
+// for drafts and reports can_publish:false until the user reconnects.
 
 function buildRedirectUri(): string {
   return `${env.FRONTEND_URL.replace(/\/$/, '')}/settings/implementation-health/gtm/callback`;
@@ -355,6 +364,34 @@ gtmRouter.post('/callback/finalize', async (req: Request, res: Response): Promis
 
     if (pending.orgId !== orgId) {
       res.status(403).json({ error: 'This connection attempt belongs to a different organization.' });
+      return;
+    }
+
+    // Reconnecting a container Atlas already has an OAuth connection for
+    // (typically to enable publishing under the widened scopes) upgrades THAT
+    // connection's credentials in place — a second row for the same container
+    // would split its snapshots, publish log and client link in two.
+    const { data: existing } = await supabaseAdmin
+      .from('gtm_container_connections')
+      .select('id, client_id')
+      .eq('organization_id', orgId)
+      .eq('account_id', account_id)
+      .eq('container_id', container_id)
+      .eq('auth_method', 'oauth')
+      .maybeSingle();
+    if (existing) {
+      const prior = existing as { id: string; client_id: string | null };
+      const { error: updErr } = await supabaseAdmin
+        .from('gtm_container_connections')
+        .update({
+          oauth_credentials_encrypted: encryptGtmCredentials(pending.credentials),
+          client_id: pending.clientId ?? prior.client_id,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', prior.id);
+      if (updErr) throw new Error(`Failed to update GTM connection: ${updErr.message}`);
+      logger.info({ connectionId: prior.id, orgId }, 'GTM connection re-authorised in place');
+      res.status(200).json({ data: { connection_id: prior.id, reconnected: true, message: 'GTM reconnected. Permissions updated.' } });
       return;
     }
 
@@ -765,14 +802,19 @@ gtmRouter.get('/containers', async (req: Request, res: Response): Promise<void> 
     const { data, error } = await supabaseAdmin
       .from('gtm_container_connections')
       .select(
-        'id, client_id, property_id, container_id, account_id, auth_method, last_synced_at, created_at',
+        'id, client_id, property_id, container_id, account_id, auth_method, last_synced_at, created_at, oauth_credentials_encrypted',
       )
       .eq('organization_id', orgId)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
 
-    res.json({ data: data ?? [] });
+    // Credentials never leave the server: only what the stored grant can do.
+    const rows = (data ?? []).map(({ oauth_credentials_encrypted, ...row }) => ({
+      ...row,
+      ...grantCapabilities(row.auth_method, oauth_credentials_encrypted),
+    }));
+    res.json({ data: rows });
   } catch (err) {
     sendInternalError(res, err, 'GET /api/gtm/containers');
   }
@@ -804,6 +846,229 @@ gtmRouter.delete('/containers/:id', async (req: Request, res: Response): Promise
     res.json({ data: { message: 'Container disconnected' } });
   } catch (err) {
     sendInternalError(res, err, 'DELETE /api/gtm/containers/:id');
+  }
+});
+
+/** What a connection's stored OAuth grant can do. Manual uploads have no grant, so neither. A grant that cannot be decrypted reports neither rather than throwing. */
+export function grantCapabilities(
+  authMethod: string,
+  encrypted: string | null | undefined,
+): { can_deploy: boolean; can_publish: boolean } {
+  if (authMethod !== 'oauth' || !encrypted) return { can_deploy: false, can_publish: false };
+  try {
+    return scopeCapabilities(decryptGtmCredentials(encrypted).scope);
+  } catch {
+    return { can_deploy: false, can_publish: false };
+  }
+}
+
+// ── Publish / rollback (GA4 Admin / L11 / Junk Gate PRD §A.6) ─────────────────
+// The only code path that changes a LIVE container. Human session only (the
+// authMiddleware above is a Supabase user JWT; nothing in queue/worker imports
+// gtmPublishService — asserted by a test). Requires `confirm: true` in the
+// body, an OAuth connection granted the widened scopes, and a workspace Atlas
+// itself created. Every publish is logged with the version it replaced, and
+// POST /publish/:logId/rollback re-publishes that version.
+
+const publishSchema = z.object({
+  connection_id: z.string().uuid(),
+  workspace_id: z.string().min(1),
+  confirm: z.boolean().optional(),
+  version_name: z.string().max(120).optional(),
+  notes: z.string().max(500).optional(),
+});
+const rollbackSchema = z.object({ confirm: z.boolean().optional() });
+
+const CONFIRM_REQUIRED = 'CONFIRMATION_REQUIRED';
+const RECONNECT_REQUIRED = 'GTM_RECONNECT_REQUIRED';
+
+interface PublishConnection {
+  id: string; client_id: string | null; account_id: string | null; container_id: string; auth_method: string;
+  oauth_credentials_encrypted: string | null;
+}
+
+/** Loads the org's connection and enforces OAuth + account + widened scope. Sends the response and returns null when it refuses. */
+async function loadPublishableConnection(orgId: string, connectionId: string, res: Response): Promise<(PublishConnection & { account_id: string }) | null> {
+  const { data: connection } = await supabaseAdmin
+    .from('gtm_container_connections')
+    .select('id, client_id, account_id, container_id, auth_method, oauth_credentials_encrypted')
+    .eq('id', connectionId)
+    .eq('organization_id', orgId)
+    .maybeSingle();
+  const conn = connection as PublishConnection | null;
+  if (!conn) { res.status(404).json({ error: 'GTM connection not found' }); return null; }
+  if (conn.auth_method !== 'oauth' || !conn.account_id) {
+    res.status(400).json({ error: 'Publishing needs an OAuth-connected container.' });
+    return null;
+  }
+  if (!grantCapabilities(conn.auth_method, conn.oauth_credentials_encrypted).can_publish) {
+    res.status(403).json({
+      error: 'This connection was authorised before publishing was supported. Reconnect via OAuth to enable publishing.',
+      code: RECONNECT_REQUIRED,
+    });
+    return null;
+  }
+  return conn as PublishConnection & { account_id: string };
+}
+
+function refusalStatus(err: GtmPublishRefused): number {
+  return err.code === 'NOT_ATLAS_WORKSPACE' ? 403 : 409;
+}
+
+/** Re-sync the container so IHC baselines/drift reflect the new live version. Never fails the publish. */
+async function queueSnapshot(connectionId: string, orgId: string): Promise<boolean> {
+  try {
+    await gtmContainerSyncQueue.add({ connection_id: connectionId, organization_id: orgId });
+    return true;
+  } catch (err) {
+    logger.warn({ connectionId, err: err instanceof Error ? err.message : String(err) }, 'GTM post-publish snapshot could not be queued');
+    return false;
+  }
+}
+
+gtmRouter.post('/publish', async (req: Request, res: Response): Promise<void> => {
+  const parse = publishSchema.safeParse(req.body);
+  if (!parse.success) {
+    res.status(400).json({ error: 'Invalid request', details: parse.error.flatten() });
+    return;
+  }
+  if (parse.data.confirm !== true) {
+    res.status(400).json({ error: 'Publishing changes the LIVE container. Resend with confirm: true to proceed.', code: CONFIRM_REQUIRED });
+    return;
+  }
+
+  try {
+    const orgId = await resolveOrgId(req.user.id);
+    const conn = await loadPublishableConnection(orgId, parse.data.connection_id, res);
+    if (!conn) return;
+
+    const accessToken = await refreshGtmToken(conn.id);
+    const outcome = await publishAtlasWorkspace({
+      accessToken,
+      accountId: conn.account_id,
+      containerId: conn.container_id,
+      workspaceId: parse.data.workspace_id,
+      versionName: parse.data.version_name,
+      notes: parse.data.notes,
+    });
+
+    // The container is already live: a logging failure must not hide that.
+    let logId: string | null = null;
+    try {
+      const row = await insertPublishLog({
+        organization_id: orgId,
+        client_id: conn.client_id,
+        connection_id: conn.id,
+        account_id: conn.account_id,
+        container_id: conn.container_id,
+        workspace_id: parse.data.workspace_id,
+        action: 'publish',
+        published_version_id: outcome.published_version_id,
+        previous_version_id: outcome.previous_version_id,
+        rollback_of: null,
+        user_id: req.user.id,
+      });
+      logId = row.id;
+    } catch (logErr) {
+      logger.error({ connectionId: conn.id, orgId, ...outcome, err: logErr instanceof Error ? logErr.message : String(logErr) }, 'GTM published but the publish log write FAILED — record these ids to roll back manually');
+    }
+
+    const snapshotQueued = await queueSnapshot(conn.id, orgId);
+    logger.info({ connectionId: conn.id, orgId, logId, ...outcome }, 'GTM container published');
+    res.status(201).json({
+      data: { log_id: logId, ...outcome, rollback_available: outcome.previous_version_id !== null && logId !== null, snapshot_queued: snapshotQueued },
+      error: null,
+      message: logId
+        ? 'Published. The previous live version was recorded so this can be rolled back.'
+        : 'Published, but the publish log could not be written — rollback from Atlas is unavailable for this publish.',
+    });
+  } catch (err) {
+    if (err instanceof GtmPublishRefused) {
+      res.status(refusalStatus(err)).json({ error: err.message, code: err.code });
+      return;
+    }
+    sendInternalError(res, err, 'POST /api/gtm/publish');
+  }
+});
+
+gtmRouter.post('/publish/:logId/rollback', async (req: Request, res: Response): Promise<void> => {
+  const parse = rollbackSchema.safeParse(req.body ?? {});
+  if (!parse.success) {
+    res.status(400).json({ error: 'Invalid request', details: parse.error.flatten() });
+    return;
+  }
+  if (parse.data.confirm !== true) {
+    res.status(400).json({ error: 'Rolling back changes the LIVE container. Resend with confirm: true to proceed.', code: CONFIRM_REQUIRED });
+    return;
+  }
+
+  try {
+    const orgId = await resolveOrgId(req.user.id);
+    const log = await getPublishLog(req.params['logId'], orgId);
+    if (!log) { res.status(404).json({ error: 'Publish record not found' }); return; }
+    if (log.action !== 'publish') { res.status(409).json({ error: 'Only a publish can be rolled back.', code: 'NOT_A_PUBLISH' }); return; }
+    if (log.rolled_back_at) { res.status(409).json({ error: 'This publish has already been rolled back.', code: 'ALREADY_ROLLED_BACK' }); return; }
+    if (!log.previous_version_id) {
+      res.status(409).json({ error: 'This container had no live version before this publish, so there is nothing to roll back to. Unpublish or fix forward in Tag Manager.', code: 'NO_PREVIOUS_VERSION' });
+      return;
+    }
+
+    const conn = await loadPublishableConnection(orgId, log.connection_id, res);
+    if (!conn) return;
+
+    const accessToken = await refreshGtmToken(conn.id);
+    const { previous_version_id: replaced } = await republishVersion({
+      accessToken,
+      accountId: conn.account_id,
+      containerId: conn.container_id,
+      versionId: log.previous_version_id,
+      expectedLiveVersionId: log.published_version_id,
+    });
+
+    let rollbackLogId: string | null = null;
+    try {
+      const row = await insertPublishLog({
+        organization_id: orgId,
+        client_id: conn.client_id,
+        connection_id: conn.id,
+        account_id: conn.account_id,
+        container_id: conn.container_id,
+        workspace_id: null,
+        action: 'rollback',
+        published_version_id: log.previous_version_id,
+        previous_version_id: replaced,
+        rollback_of: log.id,
+        user_id: req.user.id,
+      });
+      rollbackLogId = row.id;
+      await markRolledBack(log.id);
+    } catch (logErr) {
+      logger.error({ connectionId: conn.id, orgId, logId: log.id, err: logErr instanceof Error ? logErr.message : String(logErr) }, 'GTM rolled back but the log write FAILED');
+    }
+
+    const snapshotQueued = await queueSnapshot(conn.id, orgId);
+    logger.info({ connectionId: conn.id, orgId, logId: log.id, rollbackLogId }, 'GTM container rolled back');
+    res.status(201).json({
+      data: { log_id: rollbackLogId, restored_version_id: log.previous_version_id, snapshot_queued: snapshotQueued },
+      error: null,
+      message: 'Rolled back. The previous version is live again.',
+    });
+  } catch (err) {
+    if (err instanceof GtmPublishRefused) {
+      res.status(refusalStatus(err)).json({ error: err.message, code: err.code });
+      return;
+    }
+    sendInternalError(res, err, 'POST /api/gtm/publish/:logId/rollback');
+  }
+});
+
+gtmRouter.get('/publish-log', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const orgId = await resolveOrgId(req.user.id);
+    const connectionId = typeof req.query['connection_id'] === 'string' ? req.query['connection_id'] : undefined;
+    res.json({ data: await listPublishLog(orgId, connectionId) });
+  } catch (err) {
+    sendInternalError(res, err, 'GET /api/gtm/publish-log');
   }
 });
 
