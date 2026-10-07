@@ -48,6 +48,8 @@ export const DEFAULT_THRESHOLDS: JunkThresholds = {
 };
 
 export type JunkGateMode = 'off' | 'observe' | 'enforce';
+export type JunkAction = 'hold' | 'drop' | 'send';
+export type TimeoutAction = 'release' | 'drop';
 
 export interface JunkGateConfig {
   mode: JunkGateMode;
@@ -56,6 +58,13 @@ export interface JunkGateConfig {
   /** Per-rule enable flags; an absent rule is enabled. */
   rule_flags: Partial<Record<JunkRuleId, boolean>>;
   thresholds: JunkThresholds;
+  /** Enforce mode only (C2): what happens to a `junk` / `suspect` verdict. */
+  action_junk: JunkAction;
+  action_suspect: JunkAction;
+  /** Requested hold length; clamped per destination window (holdWindows.ts). */
+  hold_timeout_hours: number;
+  /** What an unreviewed hold becomes at expiry. Default `release` (fail open). */
+  timeout_action: TimeoutAction;
 }
 
 /**

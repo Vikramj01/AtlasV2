@@ -33,6 +33,8 @@ export interface VerdictMemo {
   hits: RuleHit[];
   /** conversion_holds row id, so later provider calls append themselves to it. */
   record_id: string | null;
+  /** What the gate decided for this event (C2). Absent in C1-era memos = 'send'. */
+  action?: 'send' | 'hold' | 'drop';
 }
 
 export type ClaimResult =

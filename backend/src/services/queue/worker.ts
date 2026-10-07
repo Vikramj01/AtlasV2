@@ -1,4 +1,5 @@
-import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue, crawlQueue, reconciliationSyncQueue, reconciliationRunQueue, reconciliationStatsQueue, reconciliationStaleResyncQueue, gtmContainerSyncQueue, ihcRulesQueue, ihcDriftQueue, ihcAlertQueue, ihcDigestQueue, dmaIngestQueue, dqmQueue, signalMvRefreshQueue, airIngestionQueue, shopifyWebhookEventQueue, googleDeliveryConfirmationQueue, outcomeSyncQueue, outcomeDerivedValueQueue } from './jobQueue';
+import { processHoldTimeout, sweepExpiredHolds } from '@/services/capi/junkGate/timeout';
+import { auditQueue, planningQueue, healthQueue, channelQueue, scheduleRunnerQueue, offlineConversionQueue, googleOAuthRefreshQueue, usageSummaryQueue, crawlQueue, reconciliationSyncQueue, reconciliationRunQueue, reconciliationStatsQueue, reconciliationStaleResyncQueue, gtmContainerSyncQueue, ihcRulesQueue, ihcDriftQueue, ihcAlertQueue, ihcDigestQueue, dmaIngestQueue, dqmQueue, signalMvRefreshQueue, airIngestionQueue, shopifyWebhookEventQueue, googleDeliveryConfirmationQueue, outcomeSyncQueue, outcomeDerivedValueQueue, junkHoldTimeoutQueue } from './jobQueue';
 import { runSync as runOutcomeSync } from '@/services/outcomes/syncOrchestrator';
 import { computeDerivedValuesForConfig } from '@/services/outcomes/derivedValueCalculator';
 import { listDerivedModeConfigIds } from '@/services/database/outcomeQueries';
@@ -1819,3 +1820,28 @@ outcomeDerivedValueQueue.add(
   { trigger: 'scheduled' },
   { repeat: { cron: '0 4 * * 0' }, jobId: 'outcome-derived-value-weekly' },
 ).catch((err) => logger.error({ err }, 'Failed to schedule outcome derived-value job'));
+
+// ── Junk Hold Timeout Queue ──────────────────────────────────────────────────────
+// GA4 Admin / L11 / Junk Gate PRD §C.6 (C2). A job with a hold_id applies the client's
+// timeout_action to that one hold; a `sweep` job (every 5 minutes) catches any open hold past
+// its expiry whose delayed job was lost or whose expiry was shortened after scheduling.
+
+junkHoldTimeoutQueue.process(async (job) => {
+  const { hold_id, sweep } = job.data;
+  if (hold_id) {
+    const result = await processHoldTimeout(hold_id);
+    logger.info({ holdId: hold_id, outcome: result.outcome }, 'Junk hold timeout job finished');
+    return;
+  }
+  if (sweep) {
+    const handled = await sweepExpiredHolds();
+    if (handled > 0) logger.info({ handled }, 'Junk hold sweep finished');
+  }
+});
+
+junkHoldTimeoutQueue.add(
+  { sweep: true },
+  { repeat: { cron: '*/5 * * * *' }, jobId: 'junk-hold-sweep' },
+).catch((err) => logger.error({ err }, 'Failed to schedule junk hold sweep'));
+
+logger.info('Junk hold timeout queue worker registered');

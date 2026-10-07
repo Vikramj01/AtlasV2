@@ -27,7 +27,10 @@ describe('explicit scope', () => {
 
 describe('resolveGateConfig', () => {
   it('no saved config = observe + default scope + default thresholds (PRD §C.8)', () => {
-    expect(resolveGateConfig(null)).toEqual({ mode: 'observe', event_names: [], rule_flags: {}, thresholds: DEFAULT_THRESHOLDS });
+    expect(resolveGateConfig(null)).toEqual({
+      mode: 'observe', event_names: [], rule_flags: {}, thresholds: DEFAULT_THRESHOLDS,
+      action_junk: 'hold', action_suspect: 'hold', hold_timeout_hours: 24, timeout_action: 'release',
+    });
   });
   it('merges a partial row over the defaults', () => {
     const c = resolveGateConfig({ mode: 'off', thresholds: { velocity_max: 9 } });
@@ -37,5 +40,16 @@ describe('resolveGateConfig', () => {
   it('an invalid threshold (zero, negative, NaN, string) falls back to the default instead of disabling a rule', () => {
     const c = resolveGateConfig({ thresholds: { velocity_max: 0, duplicate_window_minutes: -5, suspect_soft_hits: Number.NaN, velocity_window_minutes: '60' as unknown as number } });
     expect(c.thresholds).toEqual(DEFAULT_THRESHOLDS);
+  });
+  it('C2 fields: valid values pass through, invalid ones fall back to the safe default', () => {
+    const ok = resolveGateConfig({ action_junk: 'drop', action_suspect: 'send', hold_timeout_hours: 48, timeout_action: 'drop' });
+    expect(ok).toMatchObject({ action_junk: 'drop', action_suspect: 'send', hold_timeout_hours: 48, timeout_action: 'drop' });
+    const bad = resolveGateConfig({ action_junk: 'nuke' as never, hold_timeout_hours: 9999, timeout_action: 'explode' as never });
+    expect(bad).toMatchObject({ action_junk: 'hold', hold_timeout_hours: 72, timeout_action: 'release' });
+    expect(resolveGateConfig({ hold_timeout_hours: -3 }).hold_timeout_hours).toBe(24);
+  });
+  it('the timeout action fails open: only an explicit drop drops', () => {
+    expect(resolveGateConfig({ timeout_action: null }).timeout_action).toBe('release');
+    expect(resolveGateConfig({}).timeout_action).toBe('release');
   });
 });

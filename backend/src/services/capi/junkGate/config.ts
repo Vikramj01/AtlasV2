@@ -6,7 +6,7 @@
  * and is what gives real hit-rate data before anyone opts into `enforce`.
  */
 import { ACTION_PRIMITIVES } from '@/services/journey/actionPrimitives';
-import { DEFAULT_THRESHOLDS, type JunkGateConfig } from './types';
+import { DEFAULT_THRESHOLDS, type JunkGateConfig, type JunkAction, type TimeoutAction } from './types';
 
 /**
  * Default scope: the lead-type events of the Journey Builder's own vocabulary — every
@@ -36,7 +36,15 @@ interface RawConfigRow {
   event_names?: string[] | null;
   rule_flags?: JunkGateConfig['rule_flags'] | null;
   thresholds?: Partial<JunkGateConfig['thresholds']> | null;
+  action_junk?: JunkAction | null;
+  action_suspect?: JunkAction | null;
+  hold_timeout_hours?: number | null;
+  timeout_action?: TimeoutAction | null;
 }
+
+export const DEFAULT_HOLD_TIMEOUT_HOURS = 24;
+const ACTIONS: readonly JunkAction[] = ['hold', 'drop', 'send'];
+const pickAction = (v: unknown): JunkAction => (ACTIONS.includes(v as JunkAction) ? (v as JunkAction) : 'hold');
 
 /** Merges a stored row over the defaults; a missing/partial row can never produce an invalid config. */
 export function resolveGateConfig(row: RawConfigRow | null | undefined): JunkGateConfig {
@@ -52,5 +60,10 @@ export function resolveGateConfig(row: RawConfigRow | null | undefined): JunkGat
       velocity_window_minutes: pos(t.velocity_window_minutes, DEFAULT_THRESHOLDS.velocity_window_minutes),
       suspect_soft_hits: pos(t.suspect_soft_hits, DEFAULT_THRESHOLDS.suspect_soft_hits),
     },
+    action_junk: pickAction(row?.action_junk),
+    action_suspect: pickAction(row?.action_suspect),
+    hold_timeout_hours: Math.min(72, Math.max(1, Math.round(pos(row?.hold_timeout_hours, DEFAULT_HOLD_TIMEOUT_HOURS)))),
+    // Fail open: anything but an explicit 'drop' releases.
+    timeout_action: row?.timeout_action === 'drop' ? 'drop' : 'release',
   };
 }

@@ -15,23 +15,24 @@
  * Supports: Meta CAPI, Google Enhanced Conversions
  */
 
-import { createHash, randomUUID } from 'crypto';
+import { randomUUID } from 'crypto';
 import type {
   AtlasEvent,
   CAPIProviderConfig,
   CAPIProvider,
   HashedIdentifier,
-  IdentifierType,
   DeliveryResult,
   EventMapping,
 } from '@/types/capi';
 import { safeDecryptCredentials } from './credentials';
 import { isEventDuplicate, createCAPIEvent, incrementProviderCounters } from '@/services/database/capiQueries';
-import { googleDeliveryConfirmationQueue } from '@/services/queue/jobQueue';
+import { googleDeliveryConfirmationQueue, junkHoldTimeoutQueue } from '@/services/queue/jobQueue';
 import { getClientIdentityConfig, listSignalEnrichmentConfigs } from '@/services/database/enrichmentQueries';
 import { applyIdentityConfig, applySignalEnrichment } from '@/services/enrichment/enrichmentConfigService';
 import { runJunkGate } from './junkGate/gate';
-import { sendMetaEvents, checkUserParamCompleteness } from './metaDelivery';
+import { holdEventTarget } from './junkGate/hold';
+import { sendMetaEvents } from './metaDelivery';
+import { prepareForDelivery, type PreparedDelivery } from './prepare';
 import { sendGoogleEvents } from './googleDelivery';
 import { sendLinkedInEvents } from './linkedinDelivery';
 import { sendAmazonEvents } from './amazonDelivery';
@@ -53,69 +54,6 @@ const NATIVE_ID_FIELD: Partial<Record<CAPIProvider, string>> = {
   microsoft: 'clientDedupeId',
   openai: 'event_id',
 };
-
-// ── PII Hashing ───────────────────────────────────────────────────────────────
-
-function sha256hex(input: string): string {
-  return createHash('sha256').update(input, 'utf8').digest('hex');
-}
-
-function normaliseEmail(v: string): string { return v.trim().toLowerCase(); }
-function normalisePhone(v: string): string {
-  const hasPlus = v.trim().startsWith('+');
-  const digits = v.replace(/\D/g, '');
-  return hasPlus ? `+${digits}` : digits;
-}
-function normaliseName(v: string): string {
-  return v.trim().toLowerCase().replace(/[^a-z\u00C0-\u024F\s-]/g, '').replace(/\s+/g, ' ').trim();
-}
-function normaliseCity(v: string): string { return v.trim().toLowerCase().replace(/\s+/g, ''); }
-function normaliseState(v: string): string { return v.trim().toLowerCase(); }
-function normaliseZip(v: string): string { return v.trim().toLowerCase(); }
-function normaliseCountry(v: string): string { return v.trim().toLowerCase().slice(0, 2); }
-
-function buildHashedIdentifiers(
-  event: AtlasEvent,
-  enabledIdentifiers: IdentifierType[],
-): HashedIdentifier[] {
-  const enabled = new Set(enabledIdentifiers);
-  const results: HashedIdentifier[] = [];
-
-  function pushHashed(type: IdentifierType, raw: string | undefined, normalise: (v: string) => string): void {
-    if (!enabled.has(type) || !raw || raw.trim() === '') return;
-    results.push({ type, value: sha256hex(normalise(raw)), is_hashed: true });
-  }
-
-  function pushRaw(type: IdentifierType, raw: string | undefined): void {
-    if (!enabled.has(type) || !raw || raw.trim() === '') return;
-    results.push({ type, value: raw.trim(), is_hashed: false });
-  }
-
-  const ud = event.user_data;
-  pushHashed('email',   ud.email,      normaliseEmail);
-  pushHashed('phone',   ud.phone,      normalisePhone);
-  pushHashed('fn',      ud.first_name, normaliseName);
-  pushHashed('ln',      ud.last_name,  normaliseName);
-  pushHashed('ct',      ud.city,       normaliseCity);
-  pushHashed('st',      ud.state,      normaliseState);
-  pushHashed('zp',      ud.zip,        normaliseZip);
-  pushHashed('country', ud.country,    normaliseCountry);
-
-  if (enabled.has('external_id') && ud.external_id) {
-    results.push({ type: 'external_id', value: sha256hex(ud.external_id), is_hashed: true });
-  }
-
-  // Click IDs — raw
-  pushRaw('fbc',    ud.fbc);
-  pushRaw('fbp',    ud.fbp);
-  pushRaw('gclid',  ud.gclid);
-  pushRaw('wbraid', ud.wbraid);
-  pushRaw('gbraid', ud.gbraid);
-  pushRaw('ttclid', ud.ttclid);
-  pushRaw('oppref', ud.oppref);
-
-  return results;
-}
 
 // ── Consent gate ──────────────────────────────────────────────────────────────
 
@@ -222,9 +160,58 @@ export async function processEvent(
   // 1a. Junk gate (GA4 Admin / L11 / Junk Gate PRD §C.4) — after consent, before dedup. C1 is
   // observe-only: it records a verdict and always lets the event continue unchanged. It never
   // throws and fails open, so it cannot affect delivery.
-  await runJunkGate(event, providerConfig);
+  const gate = await runJunkGate(event, providerConfig);
+
+  let action = gate.action;
+  if (action === 'hold' && gate.record_id) {
+    try {
+      const held = await holdEventTarget(gate.record_id, event, providerConfig);
+      if (held === 'held') {
+        if (gate.expires_at) {
+          const delay = Math.max(0, new Date(gate.expires_at).getTime() - Date.now());
+          // One job per hold (jobId), carrying only the hold id. A lost / failed enqueue is covered by
+          // the periodic sweep, so it never fails the request.
+          void junkHoldTimeoutQueue
+            .add({ hold_id: gate.record_id }, { delay, jobId: `junk-hold-${gate.record_id}`, removeOnComplete: true })
+            .catch((err) => logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'Junk gate: could not schedule hold timeout (sweep will cover it)'));
+        }
+        return { event_id: event.event_id, status: 'junk_held' };
+      }
+      // A reviewer already decided this hold before this provider's call arrived: follow it.
+      action = held;
+    } catch (err) {
+      // Could not store the held copy: send rather than lose a real lead.
+      logger.error({ event_id: event.event_id, err: err instanceof Error ? err.message : String(err) }, 'Junk gate: hold failed — failing open and sending');
+      action = 'send';
+    }
+  }
+
+  if (action === 'drop') {
+    await createCAPIEvent({
+      provider_config_id: providerId,
+      organization_id,
+      atlas_event_id: event.event_id,
+      provider_event_name: resolveProviderEvent(event.event_name, event_mapping),
+      status: 'junk_rejected',
+      consent_state: event.consent_state as Record<string, string>,
+      identifiers_sent: 0,
+    });
+    return { event_id: event.event_id, status: 'junk_rejected' };
+  }
 
   return runFromDedup(event, providerConfig);
+}
+
+/**
+ * Release path for a held conversion: re-enters at dedup with the event and identifiers captured
+ * at hold time (never re-derived), then delivers + logs exactly like a first-time event.
+ */
+export async function releasePreparedEvent(
+  event: AtlasEvent,
+  identifiers: HashedIdentifier[],
+  providerConfig: CAPIProviderConfig,
+): Promise<PipelineResult> {
+  return runFromDedup(event, providerConfig, { event, identifiers });
 }
 
 // ── Server-sourced events (no live browser session) ───────────────────────────
@@ -264,6 +251,7 @@ export async function processServerSourcedEvent(
 async function runFromDedup(
   event: AtlasEvent,
   providerConfig: CAPIProviderConfig,
+  preparedOverride?: PreparedDelivery,
 ): Promise<PipelineResult> {
   const { id: providerId, provider, organization_id, identifier_config, dedup_config, event_mapping } = providerConfig;
 
@@ -276,34 +264,11 @@ async function runFromDedup(
     }
   }
 
-  // 3. Hash PII
-  const identifiers = buildHashedIdentifiers(event, identifier_config.enabled_identifiers);
-
-  // 3a. Meta-specific pre-flight checks
-  if (provider === 'meta') {
-    // Fallback: use email as external_id when external_id is absent
-    if (!event.user_data.external_id && event.user_data.email) {
-      event = { ...event, user_data: { ...event.user_data, external_id: event.user_data.email } };
-      // Re-hash identifiers with the new external_id
-      identifiers.push({ type: 'external_id', value: identifiers.find(i => i.type === 'email')?.value ?? '', is_hashed: true });
-      logger.info({ event_id: event.event_id }, 'Meta: using hashed email as external_id fallback');
-    } else if (!event.user_data.external_id) {
-      logger.warn({ event_id: event.event_id }, 'Meta: external_id missing and no email for fallback');
-    }
-
-    // Warn on low user param count
-    const completeness = checkUserParamCompleteness(
-      identifiers,
-      !!event.user_data.client_user_agent,
-      !!event.user_data.client_ip_address,
-    );
-    if (completeness) {
-      logger.warn(
-        { event_id: event.event_id, param_count: completeness.param_count, missing: completeness.missing_recommended },
-        'Meta: low user parameter count — match quality may be reduced',
-      );
-    }
-  }
+  // 3 + 3a. Hash PII + Meta pre-flight (skipped for a released hold, which carries the
+  // identifiers it was prepared with at hold time).
+  const prepared = preparedOverride ?? prepareForDelivery(event, providerConfig);
+  event = prepared.event;
+  const identifiers = prepared.identifiers;
 
   // 4 + 5. Format + deliver (provider-specific)
   let results: DeliveryResult[];

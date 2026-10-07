@@ -10,6 +10,8 @@ import { join } from 'path';
 
 const root = join(__dirname, '../../../../../..');
 const sql = readFileSync(join(root, 'supabase/migrations/20260922004_junk_gate.sql'), 'utf8');
+// The newest migration that rewrites the capi_events status CHECK is the live definition.
+const sql5 = readFileSync(join(root, 'supabase/migrations/20260922005_junk_gate_enforce.sql'), 'utf8');
 
 const list = (re: RegExp, text: string): string[] => {
   const m = re.exec(text);
@@ -17,8 +19,8 @@ const list = (re: RegExp, text: string): string[] => {
   return [...m[1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1]);
 };
 
-describe('migration 20260922004', () => {
-  const allowed = list(/ADD CONSTRAINT capi_events_status_check CHECK \(status IN \(([\s\S]*?)\)\);/, sql);
+describe('migrations 20260922004 / 20260922005', () => {
+  const allowed = list(/ADD CONSTRAINT capi_events_status_check CHECK \(status IN \(([\s\S]*?)\)\);/, sql5);
 
   it('keeps every capi_events status that was live when it was written', () => {
     for (const s of ['received', 'consent_valid', 'consent_blocked', 'validated', 'prepared', 'delivered', 'delivery_failed', 'dead_letter']) {
@@ -32,6 +34,7 @@ describe('migration 20260922004', () => {
     const codeStatuses = [...union.matchAll(/'([a-z_]+)'/g)].map((x) => x[1]);
     expect(codeStatuses).toContain('junk_held');
     expect(codeStatuses).toContain('junk_rejected');
+    expect(codeStatuses).toContain('junk_released');
     for (const s of codeStatuses) expect(allowed, s).toContain(s);
   });
 
@@ -53,5 +56,22 @@ describe('migration 20260922004', () => {
 
   it('the migration filename follows the repo\'s YYYYMMDDNNN_name.sql form (Key Technical Decision §21)', () => {
     expect('20260922004_junk_gate.sql').toMatch(/^\d{11}_[a-z_]+\.sql$/);
+  });
+});
+
+describe('migration 20260922005', () => {
+  it('keeps every status 004 allowed and adds junk_released', () => {
+    const before = list(/ADD CONSTRAINT capi_events_status_check CHECK \(status IN \(([\s\S]*?)\)\);/, sql);
+    const after = list(/ADD CONSTRAINT capi_events_status_check CHECK \(status IN \(([\s\S]*?)\)\);/, sql5);
+    for (const s of before) expect(after).toContain(s);
+    expect(after).toContain('junk_released');
+  });
+  it('creates the per-destination targets table with RLS and one target per provider config', () => {
+    expect(sql5).toMatch(/CREATE TABLE IF NOT EXISTS conversion_hold_targets/);
+    expect(sql5).toMatch(/UNIQUE \(hold_id, provider_config_id\)/);
+    expect(sql5).toMatch(/ALTER TABLE conversion_hold_targets ENABLE ROW LEVEL SECURITY/);
+  });
+  it('filename follows YYYYMMDDNNN_name.sql', () => {
+    expect('20260922005_junk_gate_enforce.sql').toMatch(/^\d{11}_[a-z_]+\.sql$/);
   });
 });

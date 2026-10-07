@@ -19,6 +19,7 @@ vi.mock('@/utils/logger', () => ({
 // The gate's default deps import the real DB/Redis modules; every test injects its own.
 vi.mock('@/services/database/junkGateQueries', () => ({
   getClientIdForProvider: vi.fn(), getJunkGateConfigRow: vi.fn(), insertObservedRecord: vi.fn(), appendProviderConfigId: vi.fn(),
+  getHoldById: vi.fn(), updateHoldBinding: vi.fn(),
 }));
 vi.mock('@/services/capi/dedupStore', () => ({ dedupRedis: {} }));
 
@@ -50,6 +51,7 @@ const provider = (id: string): CAPIProviderConfig => ({ id, organization_id: 'or
 let redis: FakeRedis;
 let records: Array<Record<string, unknown>>;
 let appended: Array<[string, string]>;
+let bound: Array<[string, string]>;
 let configRow: Record<string, unknown> | null;
 let deps: GateDeps;
 
@@ -59,6 +61,7 @@ beforeEach(() => {
   redis = new FakeRedis();
   records = [];
   appended = [];
+  bound = [];
   configRow = null;
   deps = {
     store: new JunkGateStore(async () => redis),
@@ -66,6 +69,7 @@ beforeEach(() => {
     getConfigRow: async () => configRow as never,
     insertRecord: async (rec) => { records.push(rec as never); return { id: `rec-${records.length}`, created: true }; },
     appendProvider: async (id, p) => { appended.push([id, p]); },
+    bindHold: async (id, p) => { bound.push([id, p.id]); },
     now: Date.now,
   };
 });
@@ -117,11 +121,96 @@ describe('AC 3 — observe mode never delays or blocks, and records verdicts', (
     expect((await runJunkGate(event(), provider('p1'), deps)).mode).toBe('observe');
   });
 
-  it('a saved `enforce` is evaluated and recorded but still never held in C1', async () => {
-    configRow = { mode: 'enforce' };
+  it('a client with NO saved config is never held or dropped, however junky the event', async () => {
     const r = await runJunkGate(event(), provider('p1'), deps);
-    expect(r).toMatchObject({ action: 'send', evaluated: true, mode: 'enforce', verdict: 'junk' });
+    expect(r.action).toBe('send');
+    expect(records[0]).not.toHaveProperty('status');
+  });
+});
+
+describe('C2 — enforce mode', () => {
+  it('junk + default action_junk(hold) → hold, record created as held with expiry, class and clamp info', async () => {
+    configRow = { mode: 'enforce' };
+    const t0 = 1_800_000_000_000;
+    deps.now = () => t0;
+    const r = await runJunkGate(event(), provider('p1'), deps);
+    expect(r).toMatchObject({ action: 'hold', record_id: 'rec-1', verdict: 'junk', mode: 'enforce' });
+    expect(records[0]).toMatchObject({
+      status: 'held', delivery_class: 'hybrid', timeout_hours_applied: 24, timeout_clamped: false,
+      expires_at: new Date(t0 + 24 * 3_600_000).toISOString(),
+    });
+    expect(r.expires_at).toBe(records[0].expires_at);
+  });
+
+  it('a saved timeout above the destination ceiling is clamped, and the clamp is recorded', async () => {
+    configRow = { mode: 'enforce', hold_timeout_hours: 72 };
+    await runJunkGate(event(), provider('p1'), deps); // meta: 7d → 156h ceiling, so 72h stands
+    expect(records[0]).toMatchObject({ timeout_hours_applied: 72, timeout_clamped: false });
+  });
+
+  it('action_junk drop → drop, record created as rejected', async () => {
+    configRow = { mode: 'enforce', action_junk: 'drop' };
+    const r = await runJunkGate(event(), provider('p1'), deps);
+    expect(r).toMatchObject({ action: 'drop', record_id: 'rec-1' });
+    expect(records[0]).toMatchObject({ status: 'rejected' });
+  });
+
+  it('action send → the event is sent and recorded as observed', async () => {
+    configRow = { mode: 'enforce', action_junk: 'send' };
+    const r = await runJunkGate(event(), provider('p1'), deps);
+    expect(r.action).toBe('send');
+    expect(records[0]).not.toHaveProperty('status');
+  });
+
+  it('a clean verdict is never acted on in enforce mode', async () => {
+    configRow = { mode: 'enforce', action_junk: 'drop', action_suspect: 'drop' };
+    const r = await runJunkGate(event({ user_data: { email: 'jane@acme.co.uk', first_name: 'Jane', last_name: 'Visitor' } }), provider('p1'), deps);
+    expect(r).toMatchObject({ action: 'send', verdict: 'clean' });
+  });
+
+  it('suspect uses action_suspect, not action_junk', async () => {
+    configRow = { mode: 'enforce', action_junk: 'drop', action_suspect: 'hold' };
+    // Disposable domain (soft) + an obvious test name (soft), nothing hard → suspect.
+    const r = await runJunkGate(event({ user_data: { email: 'real.person@mailinator.com', first_name: 'Test', last_name: 'Test' } }), provider('p1'), deps);
+    expect(r).toMatchObject({ verdict: 'suspect', action: 'hold' });
+    expect(records[0]).toMatchObject({ verdict: 'suspect', status: 'held' });
+  });
+
+  it('three provider calls: ONE record; the later two reuse the hold decision and re-clamp it', async () => {
+    configRow = { mode: 'enforce' };
+    const a = await runJunkGate(event(), provider('p-meta'), deps);
+    const b = await runJunkGate(event(), provider('p-google'), deps);
+    const c = await runJunkGate(event(), provider('p-linkedin'), deps);
     expect(records).toHaveLength(1);
+    expect([a.action, b.action, c.action]).toEqual(['hold', 'hold', 'hold']);
+    expect(b.record_id).toBe('rec-1');
+    expect(bound).toEqual([['rec-1', 'p-google'], ['rec-1', 'p-linkedin']]);
+    expect(b.expires_at).toBeUndefined(); // only the creating call schedules the timeout job
+  });
+
+  it('a later call for a DROPPED event is dropped too', async () => {
+    configRow = { mode: 'enforce', action_junk: 'drop' };
+    await runJunkGate(event(), provider('p1'), deps);
+    expect((await runJunkGate(event(), provider('p2'), deps)).action).toBe('drop');
+    expect(bound).toEqual([]);
+  });
+
+  it('FAILS OPEN: if the record cannot be written, the event is sent rather than held or dropped', async () => {
+    configRow = { mode: 'enforce', action_junk: 'drop' };
+    deps.insertRecord = async () => { throw new Error('db down'); };
+    expect((await runJunkGate(event(), provider('p1'), deps)).action).toBe('send');
+  });
+
+  it('observe mode with action_junk=drop still sends (the actions are enforce-only)', async () => {
+    configRow = { mode: 'observe', action_junk: 'drop' };
+    expect((await runJunkGate(event(), provider('p1'), deps)).action).toBe('send');
+  });
+
+  it('the logs never contain the e-mail, phone, IP or user agent of an enforced verdict', async () => {
+    configRow = { mode: 'enforce' };
+    await runJunkGate(event(), provider('p1'), deps);
+    const blob = JSON.stringify(logged);
+    for (const pii of [EMAIL, PHONE, IP, UA, 'Jane', 'Visitor']) expect(blob).not.toContain(pii);
   });
 });
 
