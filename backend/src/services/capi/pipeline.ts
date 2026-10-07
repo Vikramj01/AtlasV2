@@ -4,6 +4,7 @@
  * For each incoming AtlasEvent:
  *   0. Enrichment    — resolve identity + signal field mappings from raw event data
  *   1. Consent gate  — reject if required categories are denied
+ *   1a. Junk gate    — observe-only (C1): evaluate + record a verdict, never delay or block
  *   2. Dedup check   — skip if event_id seen within dedup window
  *   3. Hash PII      — normalise + SHA-256 hash user_data fields
  *   4. Format        — build provider-specific payload
@@ -29,6 +30,7 @@ import { isEventDuplicate, createCAPIEvent, incrementProviderCounters } from '@/
 import { googleDeliveryConfirmationQueue } from '@/services/queue/jobQueue';
 import { getClientIdentityConfig, listSignalEnrichmentConfigs } from '@/services/database/enrichmentQueries';
 import { applyIdentityConfig, applySignalEnrichment } from '@/services/enrichment/enrichmentConfigService';
+import { runJunkGate } from './junkGate/gate';
 import { sendMetaEvents, checkUserParamCompleteness } from './metaDelivery';
 import { sendGoogleEvents } from './googleDelivery';
 import { sendLinkedInEvents } from './linkedinDelivery';
@@ -142,7 +144,7 @@ export function isConsentGranted(event: AtlasEvent, provider: CAPIProvider): boo
 
 export interface PipelineResult {
   event_id: string;
-  status: 'delivered' | 'failed' | 'consent_blocked' | 'dedup_skipped';
+  status: 'delivered' | 'failed' | 'consent_blocked' | 'dedup_skipped' | 'junk_held' | 'junk_rejected';
   provider_response?: unknown;
   error_code?: string;
   error_message?: string;
@@ -216,6 +218,11 @@ export async function processEvent(
     });
     return { event_id: event.event_id, status: 'consent_blocked' };
   }
+
+  // 1a. Junk gate (GA4 Admin / L11 / Junk Gate PRD §C.4) — after consent, before dedup. C1 is
+  // observe-only: it records a verdict and always lets the event continue unchanged. It never
+  // throws and fails open, so it cannot affect delivery.
+  await runJunkGate(event, providerConfig);
 
   return runFromDedup(event, providerConfig);
 }

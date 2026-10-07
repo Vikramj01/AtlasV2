@@ -31,7 +31,10 @@ export type CAPIEventStatus =
   | 'prepared'
   | 'delivered'
   | 'delivery_failed'
-  | 'dead_letter';
+  | 'dead_letter'
+  // Junk conversion gate (GA4 Admin / L11 / Junk Gate PRD §C.6) — held for review / rejected by a reviewer.
+  | 'junk_held'
+  | 'junk_rejected';
 
 export type QueueStatus = 'pending' | 'processing' | 'completed' | 'failed';
 

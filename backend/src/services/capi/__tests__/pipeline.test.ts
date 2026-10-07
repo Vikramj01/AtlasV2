@@ -45,6 +45,11 @@ vi.mock('@/utils/logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
+// The real gate reaches Redis and the DB; its own behaviour is covered in junkGate/__tests__.
+vi.mock('@/services/capi/junkGate/gate', () => ({
+  runJunkGate: vi.fn().mockResolvedValue({ action: 'send', evaluated: false, mode: 'observe', skipped: 'out_of_scope' }),
+}));
+
 vi.mock('@/services/queue/jobQueue', () => ({
   googleDeliveryConfirmationQueue: { add: vi.fn().mockResolvedValue(undefined) },
 }));
@@ -53,6 +58,7 @@ import * as capiQueries from '@/services/database/capiQueries';
 import * as metaDelivery from '@/services/capi/metaDelivery';
 import * as googleDelivery from '@/services/capi/googleDelivery';
 import { googleDeliveryConfirmationQueue } from '@/services/queue/jobQueue';
+import { runJunkGate } from '@/services/capi/junkGate/gate';
 import { processEvent } from '../pipeline';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -396,3 +402,54 @@ describe('CAPI pipeline — Google delivery confirmation poll (Sprint 8)', () =>
     expect(googleDeliveryConfirmationQueue.add).not.toHaveBeenCalled();
   });
 });
+
+// ── Junk gate placement (GA4 Admin / L11 / Junk Gate PRD §C.4, C1) ────────────────
+
+describe('CAPI pipeline — junk gate placement (observe-only in C1)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(runJunkGate).mockResolvedValue({ action: 'send', evaluated: false, mode: 'observe', skipped: 'out_of_scope' });
+    vi.mocked(capiQueries.isEventDuplicate).mockResolvedValue(false);
+    vi.mocked(metaDelivery.sendMetaEvents).mockResolvedValue([
+      { event_id: 'evt-001', status: 'delivered', provider_response: { events_received: 1 } },
+    ] as any);
+    vi.mocked(capiQueries.createCAPIEvent).mockResolvedValue(undefined);
+    vi.mocked(capiQueries.incrementProviderCounters).mockResolvedValue(undefined);
+  });
+
+  it('runs after the consent gate: a consent-blocked event never reaches it', async () => {
+    const event = makeEvent({ consent_state: { marketing: 'denied', analytics: 'denied' } });
+    const result = await processEvent(event as any, META_PROVIDER_CONFIG);
+    expect(result.status).toBe('consent_blocked');
+    expect(runJunkGate).not.toHaveBeenCalled();
+  });
+
+  it('runs for a consented event, with the enriched event and the provider config', async () => {
+    await processEvent(makeEvent() as any, META_PROVIDER_CONFIG);
+    expect(runJunkGate).toHaveBeenCalledOnce();
+    expect(vi.mocked(runJunkGate).mock.calls[0][1]).toBe(META_PROVIDER_CONFIG);
+  });
+
+  it('runs before dedup and delivery', async () => {
+    const order: string[] = [];
+    vi.mocked(runJunkGate).mockImplementation(async () => { order.push('gate'); return { action: 'send', evaluated: false, mode: 'observe' }; });
+    vi.mocked(capiQueries.isEventDuplicate).mockImplementation(async () => { order.push('dedup'); return false; });
+    vi.mocked(metaDelivery.sendMetaEvents).mockImplementation(async () => { order.push('deliver'); return [{ event_id: 'evt-001', status: 'delivered', provider_response: {} }] as any; });
+    await processEvent(makeEvent() as any, META_PROVIDER_CONFIG);
+    expect(order).toEqual(['gate', 'dedup', 'deliver']);
+  });
+
+  it('observe-only: a junk verdict from the gate does not change delivery', async () => {
+    vi.mocked(runJunkGate).mockResolvedValue({ action: 'send', evaluated: true, mode: 'observe', verdict: 'junk', hits: [{ rule_id: 'JC_NON_HUMAN_UA', class: 'hard', evidence: 'x' }] });
+    const flagged = await processEvent(makeEvent() as any, META_PROVIDER_CONFIG);
+    expect(flagged.status).toBe('delivered');
+    expect(metaDelivery.sendMetaEvents).toHaveBeenCalledOnce();
+  });
+
+  it('is not part of the server-sourced path (Shopify/outcomes are out of scope)', async () => {
+    const { processServerSourcedEvent } = await import('../pipeline');
+    await processServerSourcedEvent(makeEvent() as any, META_PROVIDER_CONFIG);
+    expect(runJunkGate).not.toHaveBeenCalled();
+  });
+});
+
