@@ -72,6 +72,7 @@ const IdentityConfigSchema = z.object({
   gbraid_field: z.string().optional(),
   ttclid_field: z.string().optional(),
   oppref_field: z.string().optional(),
+  honeypot_field: z.string().max(200).nullable().optional(),
   auto_capture_ip: z.boolean().optional(),
   auto_capture_ua: z.boolean().optional(),
   enabled_identifiers: z.array(z.string()).optional(),

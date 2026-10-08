@@ -5,7 +5,7 @@ import request from 'supertest';
 
 const q = {
   clientBelongsToOrg: vi.fn(), getFullJunkGateConfig: vi.fn(), upsertJunkGateConfig: vi.fn(),
-  listHolds: vi.fn(), listProvidersForClient: vi.fn(),
+  listHolds: vi.fn(), listProvidersForClient: vi.fn(), listMetricRows: vi.fn(),
 };
 vi.mock('@/services/database/junkGateQueries', () => ({
   clientBelongsToOrg: (...a: unknown[]) => q.clientBelongsToOrg(...a),
@@ -13,6 +13,7 @@ vi.mock('@/services/database/junkGateQueries', () => ({
   upsertJunkGateConfig: (...a: unknown[]) => q.upsertJunkGateConfig(...a),
   listHolds: (...a: unknown[]) => q.listHolds(...a),
   listProvidersForClient: (...a: unknown[]) => q.listProvidersForClient(...a),
+  listMetricRows: (...a: unknown[]) => q.listMetricRows(...a),
 }));
 const release = vi.fn();
 const reject = vi.fn();
@@ -150,3 +151,46 @@ describe('release / reject', () => {
     expect((await app().post('/api/junk-gate/holds/bulk').send({ ids: many, action: 'reject' })).status).toBe(400);
   });
 });
+
+describe('C3 config fields', () => {
+  it('accepts min_submit_ms and hold_rate_alert_pct and the new rule flags', async () => {
+    q.upsertJunkGateConfig.mockResolvedValue({});
+    const body = { client_id: CLIENT, thresholds: { min_submit_ms: 3000 }, hold_rate_alert_pct: 45, rule_flags: { JC_SUBMIT_TOO_FAST: false, JC_HONEYPOT_FILLED: true } };
+    const r = await app().put('/api/junk-gate/config').send(body);
+    expect(r.status).toBe(200);
+    expect(q.upsertJunkGateConfig).toHaveBeenCalledWith('org-1', body);
+  });
+  it.each([[{ thresholds: { min_submit_ms: 50 } }], [{ thresholds: { min_submit_ms: 61_000 } }], [{ hold_rate_alert_pct: 0 }], [{ hold_rate_alert_pct: 101 }], [{ hold_rate_alert_pct: 12.5 }]])(
+    'rejects %j', async (body) => {
+      expect((await app().put('/api/junk-gate/config').send({ client_id: CLIENT, ...body })).status).toBe(400);
+      expect(q.upsertJunkGateConfig).not.toHaveBeenCalled();
+    });
+});
+
+describe('GET /metrics', () => {
+  it('computes metrics for the window from the client rows', async () => {
+    q.listMetricRows.mockResolvedValue({
+      rows: [
+        { verdict: 'junk', status: 'released', rule_hits: [{ rule_id: 'JC_SUBMIT_TOO_FAST' }] },
+        { verdict: 'clean', status: 'observed', rule_hits: [] },
+      ],
+      truncated: false,
+    });
+    const r = await app().get(`/api/junk-gate/metrics?client_id=${CLIENT}&days=7`);
+    expect(r.status).toBe(200);
+    expect(r.body.data).toMatchObject({ window_days: 7, evaluated: 2, flagged: 1, held: 1, reviewed_released: 1, overturn_rate: 1 });
+    expect(q.listMetricRows).toHaveBeenCalledWith('org-1', CLIENT, expect.any(String));
+  });
+  it('defaults to 30 days, and validates client_id / days', async () => {
+    q.listMetricRows.mockResolvedValue({ rows: [], truncated: false });
+    expect((await app().get(`/api/junk-gate/metrics?client_id=${CLIENT}`)).body.data.window_days).toBe(30);
+    expect((await app().get('/api/junk-gate/metrics')).status).toBe(400);
+    expect((await app().get(`/api/junk-gate/metrics?client_id=${CLIENT}&days=400`)).status).toBe(400);
+  });
+  it("404s for another org's client without reading rows", async () => {
+    q.clientBelongsToOrg.mockResolvedValue(false);
+    expect((await app().get(`/api/junk-gate/metrics?client_id=${CLIENT}`)).status).toBe(404);
+    expect(q.listMetricRows).not.toHaveBeenCalled();
+  });
+});
+

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { JunkGateStore, MEMO_TTL_SECONDS, sha256, type GateRedis, type VerdictMemo } from '../store';
+import { JunkGateStore, MEMO_TTL_SECONDS, BEACON_TTL_SECONDS, sha256, type GateRedis, type VerdictMemo } from '../store';
 
 /** Minimal Redis fake: strings with NX/EX semantics, incr/expire, and recorded TTLs. */
 class FakeRedis implements GateRedis {
@@ -106,5 +106,20 @@ describe('countVelocity', () => {
   it('keys contain a hash, never the address', async () => {
     await store.countVelocity('s', 'Lead', sha256('203.0.113.9'), 60);
     expect([...redis.data.keys()].join(' ')).not.toContain('203.0.113.9');
+  });
+});
+
+describe('beacon signals (C3)', () => {
+  it('round-trips booleans/counts keyed by org + event id, with a TTL', async () => {
+    await store.saveBeaconSignals('org-1', 'evt-1', { ms_to_submit: 800, honeypot_filled: true });
+    expect(await store.getBeaconSignals('org-1', 'evt-1')).toEqual({ ms_to_submit: 800, honeypot_filled: true });
+    expect(redis.ttls.get('junk:beacon:org-1:evt-1')).toBe(BEACON_TTL_SECONDS);
+  });
+  it('returns null when nothing arrived, for another org, or when the stored value is corrupt', async () => {
+    expect(await store.getBeaconSignals('org-1', 'evt-x')).toBeNull();
+    await store.saveBeaconSignals('org-1', 'evt-1', { ms_to_submit: 1 });
+    expect(await store.getBeaconSignals('org-2', 'evt-1')).toBeNull();
+    redis.data.set('junk:beacon:org-1:bad', '{not json');
+    expect(await store.getBeaconSignals('org-1', 'bad')).toBeNull();
   });
 });

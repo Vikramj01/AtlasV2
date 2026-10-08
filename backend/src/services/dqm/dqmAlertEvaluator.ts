@@ -411,3 +411,40 @@ export function evaluateGa4ConfigChangeAlert(input: Ga4ConfigChangeAlertInput): 
     : { decision: 'open', severity: 'warning', title, message };
 }
 
+
+// ── Junk conversion gate (GA4 Admin / L11 / Junk Gate PRD §C.10) ──────────────
+// One rolled-up alert per org. `warning` severity: held conversions awaiting review, or an
+// unusual flagged rate, are things to look at — not evidence that measurement is broken.
+
+export interface JunkGateAlertInput {
+  /** Open holds expiring within the near-timeout window with no reviewer action. */
+  holdsNearTimeout: number;
+  /** Clients whose flagged share of the last 24h exceeds their configured threshold. */
+  spikeClients: number;
+  worstFlaggedPct: number;
+  thresholdPct: number;
+  existingAlertActive: boolean;
+}
+
+export function evaluateJunkGateAlert(input: JunkGateAlertInput): AlertEvalResult {
+  const { holdsNearTimeout, spikeClients, worstFlaggedPct, thresholdPct, existingAlertActive } = input;
+  if (holdsNearTimeout === 0 && spikeClients === 0) {
+    return existingAlertActive
+      ? { decision: 'resolve', severity: null, title: '', message: '' }
+      : { decision: 'none', severity: null, title: '', message: '' };
+  }
+  const parts: string[] = [];
+  if (holdsNearTimeout > 0) {
+    parts.push(`${holdsNearTimeout} held conversion${holdsNearTimeout !== 1 ? 's are' : ' is'} due to reach the end of the hold period within 2 hours with no review — they will be released or dropped automatically per your timeout setting.`);
+  }
+  if (spikeClients > 0) {
+    parts.push(`${spikeClients} client${spikeClients !== 1 ? 's have' : ' has'} had more than ${thresholdPct}% of conversions flagged in the last 24 hours (highest ${worstFlaggedPct}%). This could be a spam or bot wave, or a rule flagging good leads — review the flagged conversions to tell which.`);
+  }
+  const title = holdsNearTimeout > 0 && spikeClients > 0
+    ? 'Junk Gate: Holds Awaiting Review and Flagged-Rate Spike'
+    : holdsNearTimeout > 0 ? 'Junk Gate: Held Conversions Awaiting Review' : 'Junk Gate: Flagged-Rate Spike';
+  const message = parts.join(' ');
+  return existingAlertActive
+    ? { decision: 'update', severity: 'warning', title, message }
+    : { decision: 'open', severity: 'warning', title, message };
+}

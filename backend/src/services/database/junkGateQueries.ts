@@ -22,12 +22,13 @@ interface ConfigRow {
   action_suspect: JunkGateConfig['action_suspect'] | null;
   hold_timeout_hours: number | null;
   timeout_action: JunkGateConfig['timeout_action'] | null;
+  hold_rate_alert_pct: number | null;
 }
 
 /** The client's stored config, or null when none was ever saved (the caller applies defaults). */
 export async function getJunkGateConfigRow(clientId: string): Promise<ConfigRow | null> {
   const { data } = await supabase
-    .from('junk_gate_configs').select('mode, event_names, rule_flags, thresholds, action_junk, action_suspect, hold_timeout_hours, timeout_action').eq('client_id', clientId).maybeSingle();
+    .from('junk_gate_configs').select('mode, event_names, rule_flags, thresholds, action_junk, action_suspect, hold_timeout_hours, timeout_action, hold_rate_alert_pct').eq('client_id', clientId).maybeSingle();
   return (data as ConfigRow | null) ?? null;
 }
 
@@ -107,6 +108,7 @@ export interface FullGateConfigRow {
   action_suspect: JunkGateConfig['action_suspect'];
   hold_timeout_hours: number;
   timeout_action: JunkGateConfig['timeout_action'];
+  hold_rate_alert_pct: number;
 }
 
 export async function upsertJunkGateConfig(organizationId: string, row: Partial<FullGateConfigRow> & { client_id: string }): Promise<FullGateConfigRow> {
@@ -269,4 +271,58 @@ export async function listProvidersForClient(organizationId: string, clientId: s
   const { data } = await supabase.from('capi_providers').select('provider')
     .eq('organization_id', organizationId).eq('identity_config_id', identityId);
   return ((data ?? []) as Array<{ provider: 'meta' }>).map((r) => r.provider);
+}
+
+// ── C3: metrics + DQM inputs ─────────────────────────────────────────────────
+
+export const METRICS_ROW_CAP = 20_000;
+const PAGE = 1000;
+
+/** verdict / status / rule ids for a client's records since `sinceIso`, newest first, capped. */
+export async function listMetricRows(
+  organizationId: string, clientId: string, sinceIso: string,
+): Promise<{ rows: Array<{ verdict: 'junk' | 'suspect' | 'clean'; status: HoldRow['status']; rule_hits: Array<{ rule_id: string }> | null }>; truncated: boolean }> {
+  const rows: Array<{ verdict: 'junk' | 'suspect' | 'clean'; status: HoldRow['status']; rule_hits: Array<{ rule_id: string }> | null }> = [];
+  for (let from = 0; from < METRICS_ROW_CAP; from += PAGE) {
+    const { data, error } = await supabase.from('conversion_holds').select('verdict, status, rule_hits')
+      .eq('organization_id', organizationId).eq('client_id', clientId).gte('created_at', sinceIso)
+      .order('created_at', { ascending: false }).range(from, from + PAGE - 1);
+    if (error) throw new Error(`conversion_holds metrics read failed: ${error.message}`);
+    const page = (data ?? []) as typeof rows;
+    rows.push(...page);
+    if (page.length < PAGE) return { rows, truncated: false };
+  }
+  return { rows, truncated: true };
+}
+
+export interface AlertConfigRow { client_id: string; mode: JunkGateConfig['mode']; hold_rate_alert_pct: number | null }
+
+/** The org's gate configs that are not off — the clients the DQM check applies to. */
+export async function listActiveGateConfigs(organizationId: string): Promise<AlertConfigRow[]> {
+  const { data, error } = await supabase.from('junk_gate_configs').select('client_id, mode, hold_rate_alert_pct')
+    .eq('organization_id', organizationId).neq('mode', 'off');
+  if (error) throw new Error(`junk_gate_configs read failed: ${error.message}`);
+  return (data ?? []) as AlertConfigRow[];
+}
+
+/** verdict-only rows for one client in the last 24h (spike check); capped. */
+export async function listRecentVerdicts(organizationId: string, clientId: string, sinceIso: string, cap = 5000): Promise<Array<'junk' | 'suspect' | 'clean'>> {
+  const out: Array<'junk' | 'suspect' | 'clean'> = [];
+  for (let from = 0; from < cap; from += PAGE) {
+    const { data, error } = await supabase.from('conversion_holds').select('verdict')
+      .eq('organization_id', organizationId).eq('client_id', clientId).gte('created_at', sinceIso).range(from, from + PAGE - 1);
+    if (error) throw new Error(`conversion_holds verdict read failed: ${error.message}`);
+    const page = (data ?? []) as Array<{ verdict: 'junk' | 'suspect' | 'clean' }>;
+    out.push(...page.map((r) => r.verdict));
+    if (page.length < PAGE) break;
+  }
+  return out;
+}
+
+/** Open holds due to expire before `beforeIso` — i.e. no reviewer action and the clock is nearly out. */
+export async function countHoldsExpiringBefore(organizationId: string, beforeIso: string): Promise<number> {
+  const { count, error } = await supabase.from('conversion_holds').select('id', { count: 'exact', head: true })
+    .eq('organization_id', organizationId).eq('status', 'held').lte('expires_at', beforeIso);
+  if (error) throw new Error(`conversion_holds expiry count failed: ${error.message}`);
+  return count ?? 0;
 }

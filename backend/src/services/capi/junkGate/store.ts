@@ -21,6 +21,13 @@ const PENDING_TTL_SECONDS = 30;
 const PENDING_POLL_MS = 100;
 const PENDING_MAX_WAIT_MS = 1500;
 
+export const BEACON_TTL_SECONDS = 24 * 60 * 60;
+
+export interface BeaconSignals {
+  ms_to_submit?: number;
+  honeypot_filled?: boolean;
+}
+
 export interface GateRedis {
   get(key: string): Promise<string | null>;
   set(key: string, value: string, ...args: Array<string | number>): Promise<unknown>;
@@ -68,6 +75,20 @@ export class JunkGateStore {
       if (Date.now() >= deadline) return { kind: 'pending_timeout' };
       await new Promise((r) => setTimeout(r, PENDING_POLL_MS));
     }
+  }
+
+  /** Browser-side signals the GTM Signal Tag beacons ahead of the server event (C3). Booleans / counts only. */
+  async saveBeaconSignals(orgId: string, eventId: string, signals: BeaconSignals): Promise<void> {
+    const redis = await this.getRedis();
+    await redis.set(`junk:beacon:${orgId}:${eventId}`, JSON.stringify(signals), 'EX', BEACON_TTL_SECONDS);
+  }
+
+  /** null when the beacon has not arrived (or expired): the dependent rules simply cannot fire. */
+  async getBeaconSignals(orgId: string, eventId: string): Promise<BeaconSignals | null> {
+    const redis = await this.getRedis();
+    const raw = await redis.get(`junk:beacon:${orgId}:${eventId}`);
+    if (!raw) return null;
+    try { return JSON.parse(raw) as BeaconSignals; } catch { return null; }
   }
 
   async saveMemo(orgId: string, eventId: string, memo: VerdictMemo): Promise<void> {

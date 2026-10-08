@@ -117,11 +117,20 @@ export function applyIdentityConfig(
     if (typeof v === 'string' && v) ud.oppref = v;
   }
 
+  // Junk gate (C3): a mapped honeypot field that holds ANY value is recorded as a boolean only —
+  // the value itself (arbitrary bot text) is never copied onto the event.
+  let junkSignals = event.junk_signals;
+  if (identityConfig.honeypot_field) {
+    const v = resolve(identityConfig.honeypot_field);
+    const filled = v !== undefined && v !== null && String(v).trim() !== '';
+    if (filled) junkSignals = { ...(junkSignals ?? {}), honeypot_filled: true };
+  }
+
   // Auto-capture from request context
   if (identityConfig.auto_capture_ip && requestIp) ud.client_ip_address = requestIp;
   if (identityConfig.auto_capture_ua && requestUa) ud.client_user_agent = requestUa;
 
-  return { ...event, user_data: ud };
+  return { ...event, user_data: ud, ...(junkSignals ? { junk_signals: junkSignals } : {}) };
 }
 
 // ─── Signal Enrichment ────────────────────────────────────────────────────────

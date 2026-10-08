@@ -14,6 +14,7 @@
  * All routes require authMiddleware.
  */
 
+import { createDefaultStore } from '@/services/capi/junkGate/store';
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { z } from 'zod';
@@ -73,6 +74,10 @@ const BrowserEventSchema = z.object({
   session_id: z.string().nullable().optional(),
   timestamp:  z.number().int().positive(),
   event_data: z.record(z.unknown()).optional(),
+  // Junk gate (C3): form-capture signals the Signal Tag adds when the generator emitted the timer.
+  // Numbers / booleans only — the beacon never carries a form value.
+  ms_to_submit:    z.number().int().min(0).max(86_400_000).optional(),
+  honeypot_filled: z.boolean().optional(),
 });
 
 capiRouter.post('/browser-event', async (req: Request, res: Response): Promise<void> => {
@@ -100,7 +105,7 @@ capiRouter.post('/browser-event', async (req: Request, res: Response): Promise<v
       return;
     }
 
-    const { event_id, event_name, fbc, gclid, session_id, timestamp, event_data } = parsed.data;
+    const { event_id, event_name, fbc, gclid, session_id, timestamp, event_data, ms_to_submit, honeypot_filled } = parsed.data;
     const entry = { event_id, timestamp };
 
     // Write to Redis for whichever click IDs / identifiers are present
@@ -119,6 +124,17 @@ capiRouter.post('/browser-event', async (req: Request, res: Response): Promise<v
     // OAIQ has no oppref capture yet either — deduplicate on event_id
     if (provider.provider === 'openai') {
       writes.push(setDedupEntry('openai', provider.id, event_id, event_name, entry));
+    }
+    // Junk gate (C3): park the browser-side signals for the gate to read when /process arrives.
+    if (ms_to_submit !== undefined || honeypot_filled !== undefined) {
+      writes.push(
+        createDefaultStore()
+          .saveBeaconSignals(provider.organization_id, event_id, {
+            ...(ms_to_submit !== undefined && { ms_to_submit }),
+            ...(honeypot_filled !== undefined && { honeypot_filled }),
+          })
+          .catch((err: unknown) => { logger.warn({ err }, 'junk gate: could not store beacon signals'); }),
+      );
     }
     await Promise.all(writes);
 

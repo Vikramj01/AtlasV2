@@ -4,9 +4,10 @@ import { probeGTGPath, saveGTGCheck } from './gtgProbe';
 import { probeSgtmHealth, saveSgtmCheck } from './sgtmProbe';
 import { pollDMADiagnostics, upsertDMAPollState, updateDMABackoff, getDMAPollState } from './dmaPolling';
 import { pollMetaEmqForOrg, saveMetaEmqOutcome } from './metaEmqPolling';
-import { evaluateGTGAlert, evaluateDMAAlert, evaluateSgtmAlert, evaluateOutcomeSyncAlert, evaluateGoogleTagTopologyAlert, evaluateGa4ConfigChangeAlert } from './dqmAlertEvaluator';
+import { evaluateGTGAlert, evaluateDMAAlert, evaluateSgtmAlert, evaluateOutcomeSyncAlert, evaluateGoogleTagTopologyAlert, evaluateGa4ConfigChangeAlert, evaluateJunkGateAlert } from './dqmAlertEvaluator';
 import { computeGoogleTagTopologySignals } from './googleTagTopologyMonitor';
 import { computeGa4ConfigChangeSignals } from './ga4ConfigChangeMonitor';
+import { computeJunkGateAlertSignals } from './junkGateMonitor';
 import type { GTGStatus } from './dqmAlertEvaluator';
 import { sendDQMAlertNotification } from './dqmAlertDelivery';
 import { computeOutcomeSyncHealthSignals } from '@/services/outcomes/syncHealthCheck';
@@ -58,7 +59,7 @@ async function loadOrgConfig(orgId: string): Promise<OrgConfig> {
 
 async function writeDQMRunLog(
   orgId: string,
-  checkType: 'gtg' | 'dma' | 'sgtm' | 'meta_emq' | 'outcome_sync' | 'google_tag_topology' | 'ga4_config',
+  checkType: 'gtg' | 'dma' | 'sgtm' | 'meta_emq' | 'outcome_sync' | 'google_tag_topology' | 'ga4_config' | 'junk_gate',
   status: string,
   latencyMs: number | null,
   triggeredBy: 'scheduled' | 'manual',
@@ -78,7 +79,7 @@ async function writeDQMRunLog(
 
 async function applyAlertDecision(
   orgId: string,
-  checkType: 'gtg' | 'dma' | 'sgtm' | 'outcome_sync' | 'google_tag_topology' | 'ga4_config',
+  checkType: 'gtg' | 'dma' | 'sgtm' | 'outcome_sync' | 'google_tag_topology' | 'ga4_config' | 'junk_gate',
   decision: import('./dqmAlertEvaluator').AlertEvalResult,
 ): Promise<string> {
   const alertType =
@@ -87,6 +88,7 @@ async function applyAlertDecision(
     checkType === 'sgtm' ? 'dqm_sgtm' :
     checkType === 'google_tag_topology' ? 'dqm_google_tag_topology' :
     checkType === 'ga4_config' ? 'ga4_config_changed' :
+    checkType === 'junk_gate' ? 'dqm_junk_gate' :
     'dqm_outcome_sync';
 
   if (decision.decision === 'open') {
@@ -251,6 +253,26 @@ export async function runDQMForOrg(
       const ga4ConfigAction = await applyAlertDecision(orgId, 'ga4_config', ga4ConfigDecision);
       await writeDQMRunLog(orgId, 'ga4_config', ga4ConfigDecision.title || 'ok', null, triggeredBy, ga4ConfigAction);
     }
+  }
+
+  // ── Junk conversion gate — one rolled-up alert across the org's gate-enabled clients ──
+  // (GA4 Admin / L11 / Junk Gate PRD §C.10). Holds near timeout + flagged-rate spike. Stateless
+  // over conversion_holds; a failed check never blocks the rest of the run. No active gate config
+  // resolves any open alert.
+  const existingJunkGateAlert = await getAlertByType(orgId, 'dqm_junk_gate');
+  const junkGateSignals = await computeJunkGateAlertSignals(orgId, !!existingJunkGateAlert).catch((err) => {
+    logger.error({ err, orgId }, 'DQM: junk gate check failed');
+    return undefined;
+  });
+  if (junkGateSignals) {
+    const junkDecision = evaluateJunkGateAlert(junkGateSignals);
+    if (junkDecision.decision !== 'none') {
+      const junkAction = await applyAlertDecision(orgId, 'junk_gate', junkDecision);
+      await writeDQMRunLog(orgId, 'junk_gate', junkDecision.title || 'ok', null, triggeredBy, junkAction);
+    }
+  } else if (junkGateSignals === null && existingJunkGateAlert) {
+    const junkAction = await applyAlertDecision(orgId, 'junk_gate', { decision: 'resolve', severity: null, title: '', message: '' });
+    await writeDQMRunLog(orgId, 'junk_gate', 'not-applicable', null, triggeredBy, junkAction);
   }
 
   // ── Meta EMQ poll — one Dataset Quality API call per connected Meta provider ─

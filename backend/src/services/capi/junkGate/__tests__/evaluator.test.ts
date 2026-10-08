@@ -56,3 +56,24 @@ describe('evaluateJunkRules', () => {
     expect(evaluateJunkRules(junkInput, cfg())).toEqual(evaluateJunkRules(junkInput, cfg()));
   });
 });
+
+describe('C3 capture rules in the evaluator', () => {
+  const clean = { email: 'jane@acme.co.uk', firstName: 'Jane', lastName: 'Visitor' };
+  it('a too-fast submit alone is a hard hit → junk', () => {
+    const r = evaluateJunkRules({ ...clean, msToSubmit: 600 }, cfg());
+    expect(r.verdict).toBe('junk');
+    expect(r.hits.map((h) => h.rule_id)).toEqual(['JC_SUBMIT_TOO_FAST']);
+  });
+  it('a filled honeypot alone is a hard hit → junk', () => {
+    expect(evaluateJunkRules({ ...clean, honeypotFilled: true }, cfg()).hits.map((h) => h.rule_id)).toEqual(['JC_HONEYPOT_FILLED']);
+  });
+  it('no capture data → both rules stay silent and a clean lead stays clean', () => {
+    expect(evaluateJunkRules(clean, cfg()).verdict).toBe('clean');
+  });
+  it('the per-rule flag switches each off, and min_submit_ms is read from the client thresholds', () => {
+    expect(evaluateJunkRules({ ...clean, msToSubmit: 600 }, cfg({ rule_flags: { JC_SUBMIT_TOO_FAST: false } })).verdict).toBe('clean');
+    expect(evaluateJunkRules({ ...clean, honeypotFilled: true }, cfg({ rule_flags: { JC_HONEYPOT_FILLED: false } })).verdict).toBe('clean');
+    expect(evaluateJunkRules({ ...clean, msToSubmit: 3000 }, cfg({ thresholds: { ...DEFAULT_THRESHOLDS, min_submit_ms: 5000 } })).verdict).toBe('junk');
+  });
+});
+

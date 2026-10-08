@@ -51,6 +51,7 @@ const baseIdentityConfig = (): ClientIdentityConfig => ({
   gbraid_field: 'gbraid',
   ttclid_field: 'ttclid',
   oppref_field: 'oppref',
+  honeypot_field: null,
   auto_capture_ip: true,
   auto_capture_ua: true,
   enabled_identifiers: ['email', 'phone', 'fn', 'ln', 'zp', 'country', 'external_id', 'fbc', 'fbp', 'gclid'],
@@ -219,6 +220,28 @@ describe('applyIdentityConfig', () => {
 });
 
 // ─── applySignalEnrichment ────────────────────────────────────────────────────
+
+describe('applyIdentityConfig — junk gate honeypot mapping (C3)', () => {
+  const cfg = (honeypot_field: string | null) => ({ ...baseIdentityConfig(), honeypot_field });
+
+  it('records ONLY a boolean when the mapped honeypot holds a value — never the value', () => {
+    const r = applyIdentityConfig(baseAtlasEvent(), { form: { website: 'http://spam.example/buy' } }, cfg('form.website'));
+    expect(r.junk_signals).toEqual({ honeypot_filled: true });
+    expect(JSON.stringify(r)).not.toContain('spam.example');
+  });
+  it.each([[''], ['   '], [undefined], [null]])('an empty honeypot (%j) sets no signal', (value) => {
+    const r = applyIdentityConfig(baseAtlasEvent(), { form: { website: value } }, cfg('form.website'));
+    expect(r.junk_signals).toBeUndefined();
+  });
+  it('an unmapped honeypot (null) does nothing even when a field of that name exists', () => {
+    const r = applyIdentityConfig(baseAtlasEvent(), { website: 'x' }, cfg(null));
+    expect(r.junk_signals).toBeUndefined();
+  });
+  it('preserves other junk_signals already on the event', () => {
+    const r = applyIdentityConfig({ ...baseAtlasEvent(), junk_signals: {} }, { hp: '1' }, cfg('hp'));
+    expect(r.junk_signals).toEqual({ honeypot_filled: true });
+  });
+});
 
 describe('applySignalEnrichment', () => {
   const rawData = {

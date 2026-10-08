@@ -43,7 +43,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
-import { generateGTMContainer } from '../gtmContainerGenerator';
+import { generateGTMContainer, sanitiseHoneypotSelector } from '../gtmContainerGenerator';
 import type { GTMTagDef, GTMParameter, GTMContainerJSON } from '../gtmContainerGenerator';
 import { validateGTMContainer } from '../gtmSchemaValidator';
 import { classifyGoogleTag } from '../../../google/googleTagClassifier';
@@ -460,5 +460,95 @@ describe('Every generated container with a Google Ads destination has a classifi
     expect(adsTags).toHaveLength(1);
     const trigger = container.containerVersion.trigger.find((tr) => tr.triggerId === adsTags[0].firingTriggerId[0]);
     expect(trigger?.type).toBe('PAGEVIEW');
+  });
+});
+
+// ── Scenario G: junk gate capture (GA4 Admin / L11 / Junk Gate PRD §C.5b, C3) ─
+// The Signal Tag beacons `ms_to_submit` (and, only when a honeypot selector is mapped, a boolean
+// `honeypot_filled`) so JC_SUBMIT_TOO_FAST / JC_HONEYPOT_FILLED have an input. The beacon is the
+// ONLY browser path into the gate, so these fixtures pin the contract on both ends.
+
+describe('Scenario: junk gate capture (Atlas Signal Tag + Form Interaction Timer)', () => {
+  const recs: PlanningRecommendation[] = [
+    makeRec('r1', 'p1', 'generate_lead', 'form_submit', [], [], ['ga4', 'meta']),
+  ];
+  const withMeta = generateGTMContainer(recs, makeSession('lead_gen', ['ga4', 'meta']));
+  const scriptOf = (c: GTMContainerJSON, name: string) => flattenParams(findTagByName(c, name).parameter).html as string;
+
+  it('emits a Form Interaction Timer on All Pages whenever the Signal Tag is emitted', () => {
+    const timer = findTagByName(withMeta, 'Atlas - Form Interaction Timer');
+    expect(timer.type).toBe('html');
+    const triggers = resolveFiringTriggers(withMeta, timer);
+    expect(triggers.map((t) => t.type)).toEqual(['PAGEVIEW']);
+    const html = scriptOf(withMeta, 'Atlas - Form Interaction Timer');
+    expect(html).toContain("addEventListener('focusin'");
+    expect(html).toContain("sessionStorage.setItem('atlas_first_interaction'");
+  });
+
+  it('the timer stores one timestamp and never reads a field value; it is ads-consent gated like the Signal Tag', () => {
+    const html = scriptOf(withMeta, 'Atlas - Form Interaction Timer');
+    expect(html).not.toMatch(/\.value\b/);
+    expect(html).toContain('adsConsentGranted()');
+    expect(findTagByName(withMeta, 'Atlas - Form Interaction Timer').consentSettings)
+      .toEqual(findTagByName(withMeta, 'Atlas - Signal Tag').consentSettings);
+  });
+
+  it('the Signal Tag beacons ms_to_submit from the same storage key and clears it', () => {
+    const html = scriptOf(withMeta, 'Atlas - Signal Tag');
+    expect(html).toContain("sessionStorage.getItem('atlas_first_interaction')");
+    expect(html).toContain("sessionStorage.removeItem('atlas_first_interaction')");
+    expect(html).toContain('payload.ms_to_submit = junk.ms_to_submit');
+  });
+
+  it('the timer WRITES the exact storage key the Signal Tag READS and CLEARS (they cannot drift apart)', () => {
+    const key = (html: string, fn: string) => new RegExp(`sessionStorage\\.${fn}\\('([^']+)'`).exec(html)?.[1];
+    const timer = scriptOf(withMeta, 'Atlas - Form Interaction Timer');
+    const signal = scriptOf(withMeta, 'Atlas - Signal Tag');
+    const written = key(timer, 'setItem');
+    expect(written).toBeTruthy();
+    expect(key(timer, 'getItem')).toBe(written);
+    expect(key(signal, 'getItem')).toBe(written);
+    expect(key(signal, 'removeItem')).toBe(written);
+  });
+
+  it('with no honeypot selector the beacon has no honeypot logic at all (Atlas never injects a field)', () => {
+    const html = scriptOf(withMeta, 'Atlas - Signal Tag');
+    expect(html).not.toContain('querySelector');
+    expect(html).toContain('payload.honeypot_filled = junk.honeypot_filled'); // guarded: only set when computed
+  });
+
+  it('a mapped honeypot selector yields a boolean only, JSON-encoded into the script', () => {
+    const c = generateGTMContainer(recs, makeSession('lead_gen', ['ga4', 'meta']), { junk_honeypot_selector: 'input[name="website"]' });
+    const html = scriptOf(c, 'Atlas - Signal Tag');
+    expect(html).toContain('document.querySelector("input[name=\\"website\\"]")');
+    expect(html).toContain("junk.honeypot_filled = String(hp.value || '').trim() !== ''");
+    expect(html).not.toMatch(/payload\.honeypot_value/);
+  });
+
+  it('an unsafe selector is dropped rather than embedded', () => {
+    const c = generateGTMContainer(recs, makeSession('lead_gen', ['ga4', 'meta']), { junk_honeypot_selector: "x');alert(1);//" });
+    expect(scriptOf(c, 'Atlas - Signal Tag')).not.toContain('alert(1)');
+    expect(scriptOf(c, 'Atlas - Signal Tag')).not.toContain('querySelector');
+  });
+
+  it('sanitiseHoneypotSelector accepts ordinary selectors and rejects script-breaking input', () => {
+    for (const ok of ['input[name="website"]', '#hp_field', '.hp-trap', 'form input[name=url_confirm]']) expect(sanitiseHoneypotSelector(ok)).toBe(ok);
+    for (const bad of ["x');alert(1);//", 'a`b', 'a;b', '</script>', '', undefined, 'x'.repeat(101)]) expect(sanitiseHoneypotSelector(bad as string | undefined)).toBeNull();
+  });
+
+  it('no Meta destination → no Signal Tag and no timer', () => {
+    const c = generateGTMContainer(recs, makeSession('lead_gen', ['ga4']));
+    expect(c.containerVersion.tag.some((t) => t.name === 'Atlas - Form Interaction Timer')).toBe(false);
+    expect(c.containerVersion.tag.some((t) => t.name === 'Atlas - Signal Tag')).toBe(false);
+  });
+
+  it("the beacon's field names match what /api/capi/browser-event actually accepts (cross-module contract)", () => {
+    const route = readFileSync(join(__dirname, '../../../../api/routes/capi.ts'), 'utf8');
+    expect(route).toMatch(/ms_to_submit:\s+z\.number\(\)\.int\(\)/);
+    expect(route).toMatch(/honeypot_filled:\s+z\.boolean\(\)/);
+  });
+
+  it('passes the schema validator', () => {
+    expect(validateGTMContainer(withMeta).errors).toEqual([]);
   });
 });

@@ -214,6 +214,57 @@ describe('C2 — enforce mode', () => {
   });
 });
 
+describe('C3 — capture rules via the beacon / event signals', () => {
+  const cleanUser = { email: 'jane@acme.co.uk', first_name: 'Jane', last_name: 'Visitor' };
+
+  it('a beacon with a too-fast submit makes the event junk with non-PII evidence', async () => {
+    await deps.store.saveBeaconSignals('org-1', 'evt-1', { ms_to_submit: 900 });
+    const r = await runJunkGate(event({ user_data: cleanUser }), provider('p1'), deps);
+    expect(r.verdict).toBe('junk');
+    expect(r.hits).toEqual([{ rule_id: 'JC_SUBMIT_TOO_FAST', class: 'hard', evidence: 'submitted 0.9s after first interaction' }]);
+    expect(records[0]).toMatchObject({ verdict: 'junk' });
+  });
+
+  it('a normal-speed beacon leaves a clean lead clean', async () => {
+    await deps.store.saveBeaconSignals('org-1', 'evt-1', { ms_to_submit: 14_000 });
+    expect((await runJunkGate(event({ user_data: cleanUser }), provider('p1'), deps)).verdict).toBe('clean');
+  });
+
+  it('NO beacon (lost the race, or no Signal Tag) → the rule simply cannot fire; nothing is invented', async () => {
+    expect((await runJunkGate(event({ user_data: cleanUser }), provider('p1'), deps)).verdict).toBe('clean');
+  });
+
+  it('a honeypot flag from the beacon or from the event (identity-config mapping) is a hard hit', async () => {
+    await deps.store.saveBeaconSignals('org-1', 'evt-a', { honeypot_filled: true });
+    const viaBeacon = await runJunkGate(event({ event_id: 'evt-a', user_data: cleanUser }), provider('p1'), deps);
+    const viaEvent = await runJunkGate(event({ event_id: 'evt-b', user_data: { ...cleanUser, email: 'other@acme.co.uk' }, junk_signals: { honeypot_filled: true } }), provider('p1'), deps);
+    expect(viaBeacon.hits?.map((h) => h.rule_id)).toEqual(['JC_HONEYPOT_FILLED']);
+    expect(viaEvent.hits?.map((h) => h.rule_id)).toEqual(['JC_HONEYPOT_FILLED']);
+  });
+
+  it('a beacon honeypot_filled:false does not override an event-level true', async () => {
+    await deps.store.saveBeaconSignals('org-1', 'evt-1', { honeypot_filled: false });
+    const r = await runJunkGate(event({ user_data: cleanUser, junk_signals: { honeypot_filled: true } }), provider('p1'), deps);
+    expect(r.hits?.map((h) => h.rule_id)).toContain('JC_HONEYPOT_FILLED');
+  });
+
+  it('a Redis failure reading the beacon never blocks evaluation', async () => {
+    const orig = deps.store.getBeaconSignals.bind(deps.store);
+    deps.store.getBeaconSignals = async () => { throw new Error('redis down'); };
+    expect((await runJunkGate(event({ user_data: cleanUser }), provider('p1'), deps)).verdict).toBe('clean');
+    deps.store.getBeaconSignals = orig;
+  });
+
+  it('in enforce mode a too-fast submit is held; in observe it is only recorded', async () => {
+    await deps.store.saveBeaconSignals('org-1', 'evt-1', { ms_to_submit: 300 });
+    expect((await runJunkGate(event({ user_data: cleanUser }), provider('p1'), deps)).action).toBe('send');
+    clearGateCaches();
+    await deps.store.saveBeaconSignals('org-1', 'evt-2', { ms_to_submit: 300 });
+    configRow = { mode: 'enforce' };
+    expect((await runJunkGate(event({ event_id: 'evt-2', user_data: cleanUser }), provider('p1'), deps)).action).toBe('hold');
+  });
+});
+
 describe('scope and switches', () => {
   it('mode off evaluates nothing and touches neither Redis nor the DB', async () => {
     configRow = { mode: 'off' };

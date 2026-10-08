@@ -1,6 +1,6 @@
 /** Junk conversion gate — API client (GA4 Admin / L11 / Junk Gate PRD Part C). */
 import { supabase } from '@/lib/supabase';
-import type { BulkHoldResult, HeldConversionList, HoldStatus, JunkGateConfig, JunkGateConfigView, JunkVerdict } from '@/types/junkGate';
+import type { BulkHoldResult, HeldConversionList, HoldStatus, JunkGateConfig, JunkGateConfigView, JunkGateMetrics, JunkVerdict } from '@/types/junkGate';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
 
@@ -29,6 +29,9 @@ export const junkGateApi = {
 
   saveConfig: (clientId: string, patch: Partial<JunkGateConfig>) =>
     apiFetch<JunkGateConfigView>('/config', { method: 'PUT', body: JSON.stringify({ client_id: clientId, ...patch }) }),
+
+  getMetrics: (clientId: string, days = 30) =>
+    apiFetch<JunkGateMetrics>(`/metrics?client_id=${encodeURIComponent(clientId)}&days=${days}`),
 
   listHolds: (p: ListHoldsParams) => {
     const qs = new URLSearchParams();

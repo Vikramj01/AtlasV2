@@ -20,7 +20,7 @@ import { junkGateApi } from '@/lib/api/junkGateApi';
 import { clientApi } from '@/lib/api/organisationApi';
 import { useOrganisationStore } from '@/store/organisationStore';
 import type { Client } from '@/types/organisation';
-import type { HeldConversion, HoldStatus, JunkAction, JunkGateConfig, JunkGateConfigView, JunkGateMode, JunkTimeoutAction } from '@/types/junkGate';
+import type { HeldConversion, HoldStatus, JunkAction, JunkGateConfig, JunkGateConfigView, JunkGateMetrics, JunkGateMode, JunkTimeoutAction } from '@/types/junkGate';
 
 type View = 'held' | 'decided' | 'observed';
 
@@ -89,6 +89,9 @@ function ConfigPanel({ clientId }: { clientId: string }) {
       const v = await junkGateApi.saveConfig(clientId, {
         mode: draft.mode, action_junk: draft.action_junk, action_suspect: draft.action_suspect,
         hold_timeout_hours: draft.hold_timeout_hours, timeout_action: draft.timeout_action,
+        hold_rate_alert_pct: draft.hold_rate_alert_pct,
+        // The server replaces the whole thresholds object, so send the full set back with the one edit.
+        thresholds: draft.thresholds,
       });
       setView(v);
       setDraft(v.config);
@@ -164,6 +167,33 @@ function ConfigPanel({ clientId }: { clientId: string }) {
           </Select>
         </label>
 
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="space-y-1 text-xs text-console-fg-muted">Flag a submit faster than
+            <div className="flex items-center gap-2">
+              <input
+                type="number" min={0.1} max={60} step={0.1} value={draft.thresholds.min_submit_ms / 1000}
+                onChange={(e) => setDraft({ ...draft, thresholds: { ...draft.thresholds, min_submit_ms: Math.min(60_000, Math.max(100, Math.round((Number(e.target.value) || 2) * 1000))) } })}
+                className="w-20 rounded-md border border-console-border bg-console-chip px-2 py-1.5 font-mono text-sm text-console-fg"
+              />
+              <span className="text-console-fg-muted">seconds after first form interaction</span>
+            </div>
+          </label>
+          <label className="space-y-1 text-xs text-console-fg-muted">Alert me when more than
+            <div className="flex items-center gap-2">
+              <input
+                type="number" min={1} max={100} value={draft.hold_rate_alert_pct}
+                onChange={(e) => setDraft({ ...draft, hold_rate_alert_pct: Math.min(100, Math.max(1, Math.round(Number(e.target.value) || 30))) })}
+                className="w-20 rounded-md border border-console-border bg-console-chip px-2 py-1.5 font-mono text-sm text-console-fg"
+              />
+              <span className="text-console-fg-muted">% of the last 24h is flagged</span>
+            </div>
+          </label>
+        </div>
+        <p className="text-xs text-console-fg-muted">
+          The submit-timing and honeypot checks only see conversions whose page runs the Atlas Signal Tag (generated for Meta
+          containers); a fast autofill-and-submit can look like a bot, so check the overturn figures below before enforcing.
+        </p>
+
         {view.hold_ceiling_hours !== null && (
           <p className="text-xs text-console-fg-muted">
             Holds are capped at {view.hold_ceiling_hours} hours for this client: the shortest ad-platform ingest window among its
@@ -176,6 +206,74 @@ function ConfigPanel({ clientId }: { clientId: string }) {
         <Button size="sm" onClick={save} disabled={!dirty || saving}>
           {saving ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}Save settings
         </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+const pct = (v: number | null): string => (v === null ? '—' : `${Math.round(v * 1000) / 10}%`);
+
+function MetricsPanel({ metrics, loading }: { metrics: JunkGateMetrics | null; loading: boolean }) {
+  if (loading && !metrics) return <div className="flex items-center gap-2 text-sm text-console-fg-muted"><Loader2 className="h-4 w-4 animate-spin" /> Loading metrics…</div>;
+  if (!metrics) return null;
+  const stat = (label: string, value: string) => (
+    <div className="rounded-md border border-console-border bg-console-chip px-3 py-2">
+      <div className="font-mono text-lg text-console-fg">{value}</div>
+      <div className="text-[11px] text-console-fg-muted">{label}</div>
+    </div>
+  );
+  return (
+    <Card className="border-console-border bg-console-surface">
+      <CardHeader className="pb-3">
+        <CardTitle className="font-heading text-base text-console-fg">Last {metrics.window_days} days</CardTitle>
+        <p className="text-sm text-console-fg-muted">
+          {metrics.evaluated.toLocaleString()} conversions evaluated.
+          {metrics.truncated && ' Showing the newest 20,000 only.'}
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          {stat('Flagged', pct(metrics.flagged_rate))}
+          {stat('Held', pct(metrics.hold_rate))}
+          {stat('Auto-released', String(metrics.auto_released))}
+          {stat('Auto-dropped', String(metrics.auto_dropped))}
+          {stat('Released by review', String(metrics.reviewed_released))}
+          {stat('Overturned', pct(metrics.overturn_rate))}
+        </div>
+        {metrics.rules.length === 0 ? (
+          <p className="text-sm text-console-fg-muted">No rule has fired in this window.</p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Rule</TableHead>
+                <TableHead className="text-right">Hits</TableHead>
+                <TableHead className="text-right">Hit rate</TableHead>
+                <TableHead className="text-right">Reviewed</TableHead>
+                <TableHead className="text-right">Released on review</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {metrics.rules.map((r) => (
+                <TableRow key={r.rule_id}>
+                  <TableCell className="font-mono text-xs text-console-fg">
+                    {r.rule_id}
+                    {r.likely_holding_good_leads && (
+                      <span
+                        title="Reviewers released at least half of the conversions this rule held. It may be flagging good leads."
+                        className="ml-2 inline-flex rounded-full bg-severity-warning-bg px-2 py-0.5 font-sans text-[10px] font-medium text-severity-warning"
+                      >Often released — may hold good leads</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right font-mono text-xs">{r.hits}</TableCell>
+                  <TableCell className="text-right font-mono text-xs">{pct(r.hit_rate)}</TableCell>
+                  <TableCell className="text-right font-mono text-xs">{r.reviewed}</TableCell>
+                  <TableCell className="text-right font-mono text-xs">{r.reviewed > 0 ? pct(r.overturn_rate) : '—'}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
       </CardContent>
     </Card>
   );
@@ -195,6 +293,8 @@ export function HeldConversionsTab() {
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [acting, setActing] = useState(false);
+  const [metrics, setMetrics] = useState<JunkGateMetrics | null>(null);
+  const [metricsLoading, setMetricsLoading] = useState(false);
 
   useEffect(() => {
     if (!currentOrg) { setLoadingClients(false); return; }
@@ -214,6 +314,17 @@ export function HeldConversionsTab() {
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load conversions'))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (!clientId) return;
+    let cancelled = false;
+    setMetricsLoading(true);
+    junkGateApi.getMetrics(clientId, 30)
+      .then((m) => { if (!cancelled) setMetrics(m); })
+      .catch(() => { if (!cancelled) setMetrics(null); })
+      .finally(() => { if (!cancelled) setMetricsLoading(false); });
+    return () => { cancelled = true; };
+  }, [clientId]);
 
   useEffect(() => {
     if (!clientId) return;
@@ -241,6 +352,7 @@ export function HeldConversionsTab() {
   }
 
   const actionable = view === 'held';
+  const flaggedRules = new Set((metrics?.rules ?? []).filter((r) => r.likely_holding_good_leads).map((r) => r.rule_id));
   const allSelected = rows.length > 0 && rows.every((r) => selected.has(r.id));
   const toggle = (id: string) => setSelected((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
@@ -259,6 +371,8 @@ export function HeldConversionsTab() {
       </div>
 
       <ConfigPanel clientId={clientId} />
+
+      <MetricsPanel metrics={metrics} loading={metricsLoading} />
 
       <Card className="border-console-border bg-console-surface">
         <CardHeader className="pb-3">
@@ -329,7 +443,10 @@ export function HeldConversionsTab() {
                     <TableCell>
                       <ul className="space-y-0.5 text-xs text-console-fg-muted">
                         {r.rule_hits.map((h) => (
-                          <li key={h.rule_id}><span className="font-mono text-console-fg">{h.rule_id}</span> — {h.evidence}</li>
+                          <li key={h.rule_id}>
+                            <span className="font-mono text-console-fg">{h.rule_id}</span> — {h.evidence}
+                            {flaggedRules.has(h.rule_id) && <span className="ml-1 text-[10px] text-severity-warning">(often released on review)</span>}
+                          </li>
                         ))}
                       </ul>
                     </TableCell>
