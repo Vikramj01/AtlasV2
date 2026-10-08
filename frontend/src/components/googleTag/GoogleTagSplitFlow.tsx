@@ -1,13 +1,15 @@
 // GoogleTagSplitFlow — Google Tag Topology PRD §7/§12. Guidance steps, the
-// delta diff, deploy-as-GTM-draft or download, then verify. Atlas never
-// publishes: a draft deploy only creates a workspace, and a plan is "verified"
-// only after the backend sees a fresh topology observation showing the split.
+// delta diff, deploy-as-GTM-draft or download, then verify. A draft deploy
+// only creates a workspace; publishing it is a separate, explicitly confirmed
+// step (GtmPublishControl). A plan is "verified" only after the backend sees a
+// fresh topology observation showing the split.
 
 import { useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Download, ExternalLink, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { googleTagTopologyApi } from '@/lib/api/googleTagTopologyApi';
+import { GtmPublishControl } from '@/components/googleTag/GtmPublishControl';
 import type { GTMContainer } from '@/types/ihc';
 import type { SplitDeployResponse, SplitDiff, SplitPlanResponse, SplitVerifyResponse } from '@/types/googleTagTopology';
 
@@ -240,6 +242,7 @@ export function GoogleTagSplitFlow({ clientId }: GoogleTagSplitFlowProps) {
                 >
                   Open the draft in GTM <ExternalLink className="h-3.5 w-3.5" />
                 </a>
+                <GtmPublishControl connection={containers?.find((c) => c.id === connectionId)} workspaceId={deployed.workspace_id} />
                 <label className="block text-sm text-console-fg">
                   Date you split the tags in Google (optional — defaults to today)
                   <input

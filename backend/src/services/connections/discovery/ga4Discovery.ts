@@ -1,6 +1,6 @@
 import type { OAuthTokens, DiscoveredAccount, PlatformConnectionPublic } from '@/types/connections';
 
-const ADMIN_BASE = 'https://analyticsadmin.googleapis.com/v1beta';
+import { GA4_ADMIN_BASE_V1BETA as ADMIN_BASE } from '@/integrations/google/ga4AdminClient';
 
 interface GA4AccountSummary {
   name: string;           // "accountSummaries/123456"

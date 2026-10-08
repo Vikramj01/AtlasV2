@@ -732,3 +732,24 @@ outcomeDerivedValueQueue.on('failed', (job, err) => {
   logger.error({ jobId: job?.id, configId: job?.data?.config_id, err: err.message }, 'Outcome derived-value job failed');
 });
 
+
+// ── Junk Hold Timeout Queue ──────────────────────────────────────────────────────
+// GA4 Admin / L11 / Junk Gate PRD §C.6 (C2). One delayed job per hold (jobId `junk-hold-<id>`)
+// whose payload is the hold id ONLY — never event data. A periodic `{ sweep: true }` job is the
+// safety net for a lost job or an expiry shortened after scheduling.
+
+export interface JunkHoldTimeoutJobData {
+  hold_id?: string;
+  sweep?: boolean;
+}
+
+export const junkHoldTimeoutQueue = new Bull<JunkHoldTimeoutJobData>('junk-hold-timeout', makeBullOpts({
+  attempts: 2,
+  backoff: { type: 'exponential', delay: 30_000 },
+  removeOnComplete: 100,
+  removeOnFail: 50,
+}));
+
+junkHoldTimeoutQueue.on('failed', (job, err) => {
+  logger.error({ jobId: job?.id, holdId: job?.data?.hold_id, err: err.message }, 'Junk hold timeout job failed');
+});

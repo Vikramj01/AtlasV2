@@ -14,6 +14,7 @@ import type {
   SiteSetupSummary,
   UnassessableFinding,
   SignalConflict,
+  ReconciliationDisclosure,
 } from '@/types/audit';
 import { generateBusinessSummary, determineOverallStatus, getIssueHeadline, getIssueImpact } from '@/services/interpretation/engine';
 import { buildCoverageSummary } from './coverage';
@@ -167,6 +168,7 @@ export function generateReport(
   customPlatformBreakdown?: PlatformBreakdown[],
   unassessable?: UnassessableFinding[],
   signalConflicts?: SignalConflict[],
+  reconciliationDisclosure?: ReconciliationDisclosure,
 ): ReportJSON {
   assertNoUnsuppressedContradictions(results);
   const resultMap = new Map(results.map((r) => [r.rule_id, r]));
@@ -208,6 +210,12 @@ export function generateReport(
   // conflicted, matching could_not_be_assessed's convention above.
   if (signalConflicts && signalConflicts.length > 0) {
     report.signal_conflicts = signalConflicts;
+  }
+
+  // L11 Reconciliation (GA4 Admin / L11 / Junk Gate PRD §B.5) — omitted
+  // entirely (no empty heading) when L11 was skipped; never feeds a score.
+  if (reconciliationDisclosure) {
+    report.reconciliation_disclosure = reconciliationDisclosure;
   }
 
   const openQuestions = buildOpenQuestions(auditData, results, unassessable);

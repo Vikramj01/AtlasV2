@@ -27,6 +27,8 @@ import { partitionCoverageAffected } from '@/services/reporting/coverageSuppress
 import { partitionDegradedRuns } from '@/services/reporting/degradationSuppression';
 import { partitionClickIdContention } from '@/services/validation/register/clickIdContention';
 import { partitionSignalConflicts } from '@/services/validation/register/signalConsistency';
+import { attachReconciliationInputs } from '@/services/reconciliation/auditSummary';
+import { partitionReconciliation, buildReconciliationDisclosure } from '@/services/reporting/reconciliationDisclosure';
 import { getConnectedGtmContainerId } from '@/services/database/gtmConnectionQueries';
 import { getNamingConvention } from '@/services/database/namingConventionQueries';
 import { buildSiteSetupSummary } from './siteSetupDetector';
@@ -302,7 +304,20 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
           }
         }
 
-        const validationResults = isV2 ? runRegister(auditData) : runAllRules(auditData);
+        // L11 Reconciliation (GA4 Admin / L11 / Junk Gate PRD §B.3) — resolved
+        // BEFORE runRegister() so the rules stay pure ("resolve outside, read
+        // inside", Key Technical Decision §16). A bare-URL/public audit has no
+        // client_id: client_linked stays false and the L11 rules are skipped.
+        // Non-fatal — a failed lookup just means L11 is skipped.
+        if (isV2) await attachReconciliationInputs(auditData, auditRow?.client_id);
+
+        // L11 is disclosure-only: its results are split off here, so scores,
+        // issues, breakdowns, coverage counts, the appendix and the stored
+        // validation results (and everything keyed off them) only ever see
+        // `core`. They surface solely via report.reconciliation_disclosure.
+        const { core: validationResults, reconciliation: reconciliationResults } = isV2
+          ? partitionReconciliation(runRegister(auditData))
+          : { core: runAllRules(auditData), reconciliation: [] };
         await saveValidationResults(audit_id, validationResults);
         await updateAuditStatus(audit_id, 'running', { progress: 75 });
 
@@ -365,7 +380,8 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
         const issues = interpretResults(assessable);
         const customJourneyStages = isV2 ? buildV2LayerStages(assessable) : undefined;
         const customPlatformBreakdown = isV2 ? buildV2PlatformBreakdown(assessable, auditData.declared_platforms) : undefined;
-        const report = generateReport(auditData, scores, issues, assessable, siteSetup, customJourneyStages, customPlatformBreakdown, unassessable, signalConflicts);
+        const reconciliationDisclosure = isV2 ? buildReconciliationDisclosure(reconciliationResults, auditData.reconciliation_summary) : undefined;
+        const report = generateReport(auditData, scores, issues, assessable, siteSetup, customJourneyStages, customPlatformBreakdown, unassessable, signalConflicts, reconciliationDisclosure);
         await saveReport(audit_id, report);
 
         // signal_conflicts (PRD §6) — auxiliary audit/debugging record of

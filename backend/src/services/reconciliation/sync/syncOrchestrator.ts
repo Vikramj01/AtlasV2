@@ -1,7 +1,10 @@
 import { supabaseAdmin } from '@/services/database/supabase';
-import { syncConversionActions, syncCampaignGoals } from './googleAdsSync';
+import { syncConversionActions, syncCampaignGoals, syncCustomerSettings } from './googleAdsSync';
 import { syncCustomConversions, syncAemPriorities, syncMetaCampaigns } from './metaSync';
 import { syncKeyEvents } from './ga4Sync';
+import { syncGa4Config } from './ga4ConfigSync';
+import { diffGa4Snapshots, buildGa4DiscontinuityRows } from './ga4ConfigDrift';
+import { writeClientDiscontinuities } from '@/services/database/discontinuityQueries';
 import { syncConversionStats } from './googleAdsStatsSync';
 import { syncAdAccountStats } from './metaStatsSync';
 import { syncKeyEventStats } from './ga4StatsSync';
@@ -93,12 +96,37 @@ export async function runConfigSyncForConnection(job: SyncJobData): Promise<void
     if (platform === 'google_ads') {
       await syncConversionActions(connectionId, orgId);
       await syncCampaignGoals(connectionId, orgId);
+      // Customer currency/time zone feed GA4↔Ads alignment checks (GA4 Admin PRD
+      // Part A). Additive read: a failure never fails the existing config sync.
+      try {
+        await syncCustomerSettings(connectionId);
+      } catch (err) {
+        logger.warn({ connectionId, err: (err as Error).message }, 'Google Ads customer settings sync failed — continuing');
+      }
     } else if (platform === 'meta') {
       await syncCustomConversions(connectionId, orgId);
       await syncAemPriorities(connectionId, orgId);
       await syncMetaCampaigns(connectionId, orgId);
     } else if (platform === 'ga4') {
       await syncKeyEvents(connectionId, orgId);
+      // Snapshot of the property's configuration (GA4 Admin PRD Part A1).
+      // Additive: a config-snapshot failure never fails the key-event sync.
+      try {
+        const snap = await syncGa4Config(connectionId, orgId);
+        if (snap?.changed && snap.previous && snap.client_id) {
+          // A config change that alters how data is collected is also a client-scoped
+          // tracking discontinuity, so later volume shifts read as a known change.
+          const rows = buildGa4DiscontinuityRows({
+            organizationId: orgId,
+            clientId: snap.client_id,
+            changes: diffGa4Snapshots(snap.previous, snap.snapshot),
+            effectiveDate: new Date().toISOString().slice(0, 10),
+          });
+          await writeClientDiscontinuities(rows);
+        }
+      } catch (err) {
+        logger.warn({ connectionId, err: (err as Error).message }, 'GA4 config snapshot failed — continuing');
+      }
     }
 
     await updateLastSynced(connectionId);

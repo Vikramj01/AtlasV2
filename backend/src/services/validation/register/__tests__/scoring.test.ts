@@ -17,7 +17,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { calculateV2Scores, layerScoringDecisions, coverageRatio } from '../scoring';
-import { ALL_V2_LAYERS, LAYER_WEIGHT, COVERAGE_GATE_THRESHOLD } from '../layers';
+import { ALL_V2_LAYERS as ALL_LAYERS_INCL_L11, SCORED_V2_LAYERS, SCORED_V2_LAYERS as ALL_V2_LAYERS, LAYER_WEIGHT, COVERAGE_GATE_THRESHOLD } from '../layers';
 import type { ValidationResult, ValidationLayerV2 } from '@/types/audit';
 
 function makeResult(overrides: Partial<ValidationResult> & { rule_id: string }): ValidationResult {
@@ -36,7 +36,7 @@ const NEUTRAL_WEIGHTS = { critical: 1, high: 1, medium: 1, low: 0 };
 /**
  * Enough confirmed (pass), weight-neutral (severity 'low', paired with
  * NEUTRAL_WEIGHTS) results in layers other than `usedLayers` to clear the
- * overall 60% coverage floor (8 of 13 layers, equally weighted) — so a
+ * overall 60% coverage floor (8 of 12 layers, equally weighted) — so a
  * test can isolate the specific arithmetic in `usedLayers` without the
  * coverage gate incidentally withholding the score it's trying to check.
  */
@@ -130,7 +130,7 @@ describe('calculateV2Scores', () => {
 
 describe('calculateV2Scores — severity weighting', () => {
   // 9 critical fails + 7 passes (of assorted lower severity), spread one
-  // per layer across all 13 layers (16 results ≥ 13 layers, so every
+  // per layer across all 12 scored layers (16 results ≥ 12 layers, so every
   // layer gets at least one, clearing the coverage floor with room to
   // spare) — deliberately shaped like the PRD's own openart.ai example: a
   // flat pass rate reads as "middling" while the real picture is "core
@@ -218,13 +218,13 @@ describe('calculateV2Scores — per-score layer coverage', () => {
   });
 
   // Report Correctness Programme PRD Part D1 — the header composite's
-  // denominator is always the full 13-layer register (ALL_V2_LAYERS),
+  // denominator is always the full 12-scored-layer register (SCORED_V2_LAYERS),
   // never however many distinct layers happened to appear in `results`
   // this run. Before this fix, a layer entirely excluded by applies_to/
   // platform_scope (so it contributes zero results, not even 'skipped')
   // silently shrank the denominator — the exact defect that showed "7 of
   // 11" for one audit and "7 of 12" for another of the same fixed rule set.
-  it('reports the header composite denominator as the fixed 13-layer register, not however many layers appeared in results', () => {
+  it('reports the header composite denominator as the fixed 12-scored-layer register, not however many layers appeared in results', () => {
     const results = [
       makeResult({ rule_id: 'A', validation_layer: 'click_id_capture', status: 'pass' }),
       makeResult({ rule_id: 'B', validation_layer: 'click_id_capture', status: 'skipped' }),
@@ -237,12 +237,12 @@ describe('calculateV2Scores — per-score layer coverage', () => {
     // click_id_capture has 1 confirmed result (scored); foundation_tags's
     // only result is skipped (0 confirmed of 1 applicable, below its own
     // threshold — not scored); every other layer has zero results at all
-    // — but the denominator is still 13.
-    expect(coverage).toEqual({ layers_tested: 1, layers_total: 13 });
+    // — but the denominator is still 12.
+    expect(coverage).toEqual({ layers_tested: 1, layers_total: 12 });
   });
 
-  it('the header composite denominator is 13 even for a completely empty result set', () => {
-    expect(calculateV2Scores([]).conversion_signal_health_coverage).toEqual({ layers_tested: 0, layers_total: 13 });
+  it('the header composite denominator is 12 even for a completely empty result set', () => {
+    expect(calculateV2Scores([]).conversion_signal_health_coverage).toEqual({ layers_tested: 0, layers_total: 12 });
   });
 });
 
@@ -326,7 +326,7 @@ describe('coverageRatio', () => {
     const decisions = layerScoringDecisions(
       ALL_V2_LAYERS.slice(0, 8).map((layer, i) => makeResult({ rule_id: `r${i}`, validation_layer: layer, status: 'pass' })),
     );
-    expect(coverageRatio(decisions)).toBeCloseTo(8 / 13, 5);
+    expect(coverageRatio(decisions)).toBeCloseTo(8 / 12, 5);
   });
 
   it('is 0 when every layer weight is 0 (degenerate, never reached with the real LAYER_WEIGHT table)', () => {
@@ -338,13 +338,13 @@ describe('coverageRatio', () => {
 
 describe('calculateV2Scores — coverage gate withholding', () => {
   it('withholds the overall score when fewer than 60% of layers are scored', () => {
-    const results = [makeResult({ rule_id: 'A', validation_layer: 'click_id_capture', status: 'pass' })]; // 1 of 13
+    const results = [makeResult({ rule_id: 'A', validation_layer: 'click_id_capture', status: 'pass' })]; // 1 of 12
     const scores = calculateV2Scores(results);
     expect(scores.conversion_signal_health).toBeNull();
     expect(scores.score_withheld_reason).toBe('INSUFFICIENT_LAYER_COVERAGE');
   });
 
-  it('does not withhold once at least 60% of layers (8 of 13) are scored', () => {
+  it('does not withhold once at least 60% of layers (8 of 12) are scored', () => {
     const results = ALL_V2_LAYERS.slice(0, 8).map((layer, i) => makeResult({ rule_id: `r${i}`, validation_layer: layer, status: 'pass' }));
     expect(coverageRatio(layerScoringDecisions(results))).toBeGreaterThanOrEqual(COVERAGE_GATE_THRESHOLD);
     const scores = calculateV2Scores(results);
@@ -371,5 +371,49 @@ describe('calculateV2Scores — coverage gate withholding', () => {
   it('withholds a 2-layer sub-score (Attribution Risk) when only one of its two layers is scored — 1 of 2 is a 0.5 ratio, always below the 0.6 gate', () => {
     const results = [makeResult({ rule_id: 'A', validation_layer: 'click_id_capture', status: 'pass' })];
     expect(calculateV2Scores(results).attribution_risk_level).toBeNull();
+  });
+});
+
+// ── L11 Reconciliation is disclosure-only (GA4 Admin / L11 / Junk Gate PRD §B.2) ──
+// Invariant, in the spirit of the PLATFORM_MATCHER_HOSTS test: the property
+// holds structurally, so a future change that lets L11 into a score fails here.
+describe('L11 Reconciliation never enters any score (disclosure-only)', () => {
+  it('SCORED_V2_LAYERS is ALL_V2_LAYERS minus reconciliation, and ALL_V2_LAYERS stays at 13', () => {
+    expect(ALL_LAYERS_INCL_L11).toHaveLength(13);
+    expect(SCORED_V2_LAYERS).toHaveLength(12);
+    expect(SCORED_V2_LAYERS).not.toContain('reconciliation');
+    expect(ALL_LAYERS_INCL_L11.filter((l) => !SCORED_V2_LAYERS.includes(l))).toEqual(['reconciliation']);
+  });
+
+  it('layerScoringDecisions defaults to the scored set — no reconciliation decision, even when L11 results exist', () => {
+    const results = [makeResult({ rule_id: 'R11', validation_layer: 'reconciliation', status: 'fail' })];
+    const decisions = layerScoringDecisions(results);
+    expect(decisions.map((d) => d.layer)).not.toContain('reconciliation');
+    expect(decisions).toHaveLength(12);
+  });
+
+  it('a fully covered run reads "12 of 12" layers', () => {
+    const results = SCORED_V2_LAYERS.map((layer, i) => makeResult({ rule_id: `R${i}`, validation_layer: layer, status: 'pass' }));
+    const scores = calculateV2Scores(results);
+    expect(scores.conversion_signal_health_coverage).toEqual({ layers_tested: 12, layers_total: 12 });
+    expect(scores.conversion_signal_health).toBe(100);
+  });
+
+  it('adding failing L11 results changes no score, coverage, numerator or denominator', () => {
+    const base = [
+      ...SCORED_V2_LAYERS.map((layer, i) => makeResult({ rule_id: `R${i}`, validation_layer: layer, status: i % 3 === 0 ? 'fail' : 'pass' })),
+    ];
+    const l11 = [
+      makeResult({ rule_id: 'RECONCILIATION_NO_CRITICAL_CONFIG_DRIFT', validation_layer: 'reconciliation', status: 'fail', severity: 'critical' }),
+      makeResult({ rule_id: 'RECONCILIATION_DELIVERY_HEALTHY', validation_layer: 'reconciliation', status: 'fail', severity: 'high' }),
+    ];
+    expect(calculateV2Scores([...base, ...l11])).toEqual(calculateV2Scores(base));
+  });
+
+  it('L11 results alone never lift a run past the coverage gate', () => {
+    const l11Only = Array.from({ length: 5 }, (_, i) => makeResult({ rule_id: `R11-${i}`, validation_layer: 'reconciliation', status: 'pass' }));
+    const scores = calculateV2Scores(l11Only);
+    expect(scores.conversion_signal_health).toBeNull();
+    expect(scores.conversion_signal_health_coverage).toEqual({ layers_tested: 0, layers_total: 12 });
   });
 });

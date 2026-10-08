@@ -37,11 +37,16 @@ function getKey(): Buffer {
 }
 
 export function encryptCredentials(creds: ProviderCredentials): string {
+  return encryptJson(creds);
+}
+
+/** Same AES-256-GCM envelope for any JSON value (used by the junk gate's held payloads). */
+export function encryptJson(value: unknown): string {
   const key = getKey();
   const iv = randomBytes(12);
   const cipher = createCipheriv('aes-256-gcm', key, iv);
 
-  const plaintext = JSON.stringify(creds);
+  const plaintext = JSON.stringify(value);
   const ciphertext = Buffer.concat([
     cipher.update(plaintext, 'utf8'),
     cipher.final(),
@@ -57,6 +62,10 @@ export function encryptCredentials(creds: ProviderCredentials): string {
 }
 
 export function decryptCredentials(encrypted: string): ProviderCredentials {
+  return decryptJson<ProviderCredentials>(encrypted);
+}
+
+export function decryptJson<T = unknown>(encrypted: string): T {
   const key = getKey();
   const envelope = JSON.parse(encrypted) as EncryptedEnvelope;
 
@@ -72,7 +81,7 @@ export function decryptCredentials(encrypted: string): ProviderCredentials {
     decipher.final(),
   ]).toString('utf8');
 
-  return JSON.parse(plaintext) as ProviderCredentials;
+  return JSON.parse(plaintext) as T;
 }
 
 /**

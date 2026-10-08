@@ -17,6 +17,9 @@ vi.mock('@/lib/api/googleTagTopologyApi', () => ({
   },
 }));
 
+// GtmPublishControl (rendered inside GoogleTagSplitFlow once a draft exists) imports ihcApi, which opens a Supabase client at import time.
+vi.mock('@/lib/api/ihcApi', () => ({ ihcApi: { publishToGtm: vi.fn(), rollbackGtmPublish: vi.fn() } }));
+
 import { googleTagTopologyApi } from '@/lib/api/googleTagTopologyApi';
 import { GoogleTagTopologyCard } from './GoogleTagTopologyCard';
 import { GoogleTagSplitFlow } from './GoogleTagSplitFlow';

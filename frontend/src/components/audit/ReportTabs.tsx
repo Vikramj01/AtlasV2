@@ -9,6 +9,7 @@ import { IssuesFixes } from '@/components/audit/ReportPages/IssuesFixes';
 import { SignalsInConflict } from '@/components/audit/ReportPages/SignalsInConflict';
 import { NotAssessed } from '@/components/audit/ReportPages/NotAssessed';
 import { WithAccess } from '@/components/audit/ReportPages/WithAccess';
+import { AgainstConnectedPlatforms } from '@/components/audit/ReportPages/AgainstConnectedPlatforms';
 import { ContentQualityWarningBanner } from '@/components/audit/ContentQualityWarningBanner';
 import { SiteSetup } from '@/components/audit/ReportPages/SiteSetup';
 import { ImplementationArchitecture } from '@/components/audit/ReportPages/ImplementationArchitecture';
@@ -40,6 +41,7 @@ export function ReportTabs({ report }: { report: ReportJSON }) {
     { label: 'Open Questions', show: (report.open_questions?.length ?? 0) > 0, render: () => <OpenQuestions report={report} /> },
     { label: 'Not Assessed', show: (report.could_not_be_assessed?.length ?? 0) > 0, render: () => <NotAssessed report={report} /> },
     { label: 'With Access', show: (report.with_access?.length ?? 0) > 0, render: () => <WithAccess report={report} /> },
+    { label: 'Against Your Connected Platforms', show: !!report.reconciliation_disclosure, render: () => <AgainstConnectedPlatforms report={report} /> },
     { label: 'Site Setup', show: true, render: () => <SiteSetup report={report} /> },
     { label: 'Implementation Architecture', show: !!report.implementation_architecture, render: () => <ImplementationArchitecture report={report} /> },
     { label: 'How to Read This Report', show: true, render: () => <HowToReadThisReport /> },

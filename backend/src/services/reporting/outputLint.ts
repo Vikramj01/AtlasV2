@@ -108,6 +108,17 @@ export function lintReportOutput(report: ReportJSON): OutputLintViolation[] {
     findViolations(`could_not_be_assessed[${i}].reason (${finding.rule_id})`, finding.reason, violations);
   });
 
+  const disclosure = report.reconciliation_disclosure;
+  if (disclosure) {
+    findViolations('reconciliation_disclosure.notice', disclosure.notice, violations);
+    disclosure.items.forEach((item, i) => {
+      findViolations(`reconciliation_disclosure.items[${i}].label (${item.rule_id})`, item.label, violations);
+      findViolations(`reconciliation_disclosure.items[${i}].summary (${item.rule_id})`, item.summary, violations);
+      item.details.forEach((line, k) => findViolations(`reconciliation_disclosure.items[${i}].details[${k}] (${item.rule_id})`, line, violations));
+    });
+    disclosure.context_notes.forEach((note, i) => findViolations(`reconciliation_disclosure.context_notes[${i}]`, note, violations));
+  }
+
   (report.open_questions ?? []).forEach((question, i) => {
     findViolations(`open_questions[${i}]`, question, violations);
   });

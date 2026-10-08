@@ -374,3 +374,40 @@ export function evaluateGoogleTagTopologyAlert(input: GoogleTagTopologyAlertInpu
 
   return existingAlertActive ? resolve : noop;
 }
+
+// ── GA4 config change (GA4 Admin / L11 / Junk Gate PRD §A.5) ──────────────────
+// One rolled-up alert per org per evaluation; per-property detail is in
+// ga4_config_snapshots. Severity is `warning`: a config change is a thing to
+// review, not by itself evidence that measurement broke.
+
+export interface Ga4ConfigChangeAlertInput {
+  /** Properties whose newest snapshot in the window differs from the one before it. */
+  changedPropertyCount: number;
+  changeTypes: string[];
+  existingAlertActive: boolean;
+}
+
+const GA4_CHANGE_LABELS: Record<string, string> = {
+  stream_ids: 'web stream measurement IDs',
+  enhanced_form_interactions: 'enhanced measurement form interactions',
+  enhanced_stream_enabled: 'enhanced measurement',
+  ads_links: 'Google Ads links',
+  currency: 'property currency',
+  time_zone: 'property time zone',
+};
+
+export function evaluateGa4ConfigChangeAlert(input: Ga4ConfigChangeAlertInput): AlertEvalResult {
+  const { changedPropertyCount, changeTypes, existingAlertActive } = input;
+  if (changedPropertyCount === 0) {
+    return existingAlertActive
+      ? { decision: 'resolve', severity: null, title: '', message: '' }
+      : { decision: 'none', severity: null, title: '', message: '' };
+  }
+  const what = changeTypes.map((t) => GA4_CHANGE_LABELS[t] ?? t).join(', ');
+  const title = 'GA4 Configuration Changed';
+  const message = `${changedPropertyCount} connected GA4 propert${changedPropertyCount !== 1 ? 'ies' : 'y'} changed configuration in the last 24 hours (${what}). Volume or alignment shifts around this change may reflect the configuration change rather than a tracking problem.`;
+  return existingAlertActive
+    ? { decision: 'update', severity: 'warning', title, message }
+    : { decision: 'open', severity: 'warning', title, message };
+}
+

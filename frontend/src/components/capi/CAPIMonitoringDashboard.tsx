@@ -21,6 +21,7 @@ import { ErrorLog } from '@/components/capi/ErrorLog';
 import { SkeletonCard } from '@/components/common/SkeletonCard';
 import { AudienceUploadTab } from '@/components/capi/AudienceUploadTab';
 import { RefundsTab } from '@/components/capi/RefundsTab';
+import { HeldConversionsTab } from '@/components/capi/HeldConversionsTab';
 import { OutcomesTab } from '@/components/capi/OutcomesTab';
 import type { CAPIProviderConfig } from '@/types/capi';
 
@@ -358,7 +359,7 @@ interface CAPIMonitoringDashboardProps {
 }
 
 type Window = 7 | 30;
-type Tab = 'delivery' | 'audience' | 'refunds' | 'crm';
+type Tab = 'delivery' | 'audience' | 'refunds' | 'crm' | 'held';
 
 export function CAPIMonitoringDashboard({ provider, onBack }: CAPIMonitoringDashboardProps) {
   const { dashboard, dashboardLoading, setDashboard, setDashboardLoading } = useCAPIStore();
@@ -421,8 +422,8 @@ export function CAPIMonitoringDashboard({ provider, onBack }: CAPIMonitoringDash
               destinations its own ladder configures, not just this one. */}
           <div className="flex items-center rounded-lg border border-[#E5E7EB] p-0.5">
             {(provider.provider === 'google'
-              ? (['delivery', 'audience', 'refunds', 'crm'] as Tab[])
-              : (['delivery', 'crm'] as Tab[])
+              ? (['delivery', 'audience', 'refunds', 'crm', 'held'] as Tab[])
+              : (['delivery', 'crm', 'held'] as Tab[])
             ).map((t) => (
               <button
                 key={t}
@@ -435,7 +436,7 @@ export function CAPIMonitoringDashboard({ provider, onBack }: CAPIMonitoringDash
                     : { color: '#9CA3AF' }
                 }
               >
-                {t === 'delivery' ? 'Delivery' : t === 'audience' ? 'Audience' : t === 'refunds' ? 'Refunds' : 'CRM Outcomes'}
+                {t === 'delivery' ? 'Delivery' : t === 'audience' ? 'Audience' : t === 'refunds' ? 'Refunds' : t === 'held' ? 'Held conversions' : 'CRM Outcomes'}
               </button>
             ))}
           </div>
@@ -488,6 +489,11 @@ export function CAPIMonitoringDashboard({ provider, onBack }: CAPIMonitoringDash
       {/* ── CRM Outcomes tab ─────────────────────────────────────────────── */}
       {tab === 'crm' && (
         <OutcomesTab />
+      )}
+
+      {/* ── Held conversions tab (junk gate) — client-scoped, shown for every provider ── */}
+      {tab === 'held' && (
+        <HeldConversionsTab />
       )}
 
       {/* ── Delivery tab ─────────────────────────────────────────────────── */}

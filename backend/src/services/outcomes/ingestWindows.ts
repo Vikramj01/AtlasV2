@@ -83,3 +83,13 @@ export const META_OFFLINE_INGEST_WINDOW_DAYS = 62;
  * this PRD.
  */
 export const LINKEDIN_INGEST_WINDOW_DAYS = 90;
+
+/**
+ * Meta Conversions API, website / non-offline action sources (junk gate hold ceiling, GA4 Admin /
+ * L11 / Junk Gate PRD C2). Meta's docs state `event_time` may be up to 7 days before the send, and
+ * that one older event fails the whole request. Verified 2026-10-07 via live web search of
+ * developers.facebook.com's Conversions API "Using the API" page (direct fetch is blocked here) —
+ * re-verify by direct fetch before a live client relies on it. Distinct from
+ * META_OFFLINE_INGEST_WINDOW_DAYS above, which applies only to physical-store/offline sources.
+ */
+export const META_WEBSITE_INGEST_WINDOW_DAYS = 7;

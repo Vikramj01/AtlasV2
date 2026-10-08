@@ -45,15 +45,27 @@ vi.mock('@/utils/logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
+// The real gate reaches Redis and the DB; its own behaviour is covered in junkGate/__tests__.
+vi.mock('@/services/capi/junkGate/gate', () => ({
+  runJunkGate: vi.fn().mockResolvedValue({ action: 'send', evaluated: false, mode: 'observe', skipped: 'out_of_scope' }),
+}));
+
 vi.mock('@/services/queue/jobQueue', () => ({
   googleDeliveryConfirmationQueue: { add: vi.fn().mockResolvedValue(undefined) },
+  junkHoldTimeoutQueue: { add: vi.fn().mockResolvedValue(undefined) },
+}));
+
+vi.mock('@/services/capi/junkGate/hold', () => ({
+  holdEventTarget: vi.fn().mockResolvedValue('held'),
 }));
 
 import * as capiQueries from '@/services/database/capiQueries';
 import * as metaDelivery from '@/services/capi/metaDelivery';
 import * as googleDelivery from '@/services/capi/googleDelivery';
-import { googleDeliveryConfirmationQueue } from '@/services/queue/jobQueue';
-import { processEvent } from '../pipeline';
+import { googleDeliveryConfirmationQueue, junkHoldTimeoutQueue } from '@/services/queue/jobQueue';
+import { holdEventTarget } from '@/services/capi/junkGate/hold';
+import { runJunkGate } from '@/services/capi/junkGate/gate';
+import { processEvent, releasePreparedEvent } from '../pipeline';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -394,5 +406,147 @@ describe('CAPI pipeline — Google delivery confirmation poll (Sprint 8)', () =>
     const loggedEvent = vi.mocked(capiQueries.createCAPIEvent).mock.calls[0][0] as any;
     expect(loggedEvent.provider_request_id).toBeNull();
     expect(googleDeliveryConfirmationQueue.add).not.toHaveBeenCalled();
+  });
+});
+
+// ── Junk gate placement (GA4 Admin / L11 / Junk Gate PRD §C.4, C1) ────────────────
+
+describe('CAPI pipeline — junk gate placement (observe-only in C1)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(runJunkGate).mockResolvedValue({ action: 'send', evaluated: false, mode: 'observe', skipped: 'out_of_scope' });
+    vi.mocked(capiQueries.isEventDuplicate).mockResolvedValue(false);
+    vi.mocked(metaDelivery.sendMetaEvents).mockResolvedValue([
+      { event_id: 'evt-001', status: 'delivered', provider_response: { events_received: 1 } },
+    ] as any);
+    vi.mocked(capiQueries.createCAPIEvent).mockResolvedValue(undefined);
+    vi.mocked(capiQueries.incrementProviderCounters).mockResolvedValue(undefined);
+  });
+
+  it('runs after the consent gate: a consent-blocked event never reaches it', async () => {
+    const event = makeEvent({ consent_state: { marketing: 'denied', analytics: 'denied' } });
+    const result = await processEvent(event as any, META_PROVIDER_CONFIG);
+    expect(result.status).toBe('consent_blocked');
+    expect(runJunkGate).not.toHaveBeenCalled();
+  });
+
+  it('runs for a consented event, with the enriched event and the provider config', async () => {
+    await processEvent(makeEvent() as any, META_PROVIDER_CONFIG);
+    expect(runJunkGate).toHaveBeenCalledOnce();
+    expect(vi.mocked(runJunkGate).mock.calls[0][1]).toBe(META_PROVIDER_CONFIG);
+  });
+
+  it('runs before dedup and delivery', async () => {
+    const order: string[] = [];
+    vi.mocked(runJunkGate).mockImplementation(async () => { order.push('gate'); return { action: 'send', evaluated: false, mode: 'observe' }; });
+    vi.mocked(capiQueries.isEventDuplicate).mockImplementation(async () => { order.push('dedup'); return false; });
+    vi.mocked(metaDelivery.sendMetaEvents).mockImplementation(async () => { order.push('deliver'); return [{ event_id: 'evt-001', status: 'delivered', provider_response: {} }] as any; });
+    await processEvent(makeEvent() as any, META_PROVIDER_CONFIG);
+    expect(order).toEqual(['gate', 'dedup', 'deliver']);
+  });
+
+  it('observe-only: a junk verdict from the gate does not change delivery', async () => {
+    vi.mocked(runJunkGate).mockResolvedValue({ action: 'send', evaluated: true, mode: 'observe', verdict: 'junk', hits: [{ rule_id: 'JC_NON_HUMAN_UA', class: 'hard', evidence: 'x' }] });
+    const flagged = await processEvent(makeEvent() as any, META_PROVIDER_CONFIG);
+    expect(flagged.status).toBe('delivered');
+    expect(metaDelivery.sendMetaEvents).toHaveBeenCalledOnce();
+  });
+
+  it('is not part of the server-sourced path (Shopify/outcomes are out of scope)', async () => {
+    const { processServerSourcedEvent } = await import('../pipeline');
+    await processServerSourcedEvent(makeEvent() as any, META_PROVIDER_CONFIG);
+    expect(runJunkGate).not.toHaveBeenCalled();
+  });
+});
+
+describe('junk gate — enforce actions (C2)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(capiQueries.createCAPIEvent).mockResolvedValue({ id: 'cap-1' } as any);
+    vi.mocked(capiQueries.isEventDuplicate).mockResolvedValue(false);
+    vi.mocked(metaDelivery.sendMetaEvents).mockResolvedValue([{ event_id: 'evt-001', status: 'delivered', provider_response: {} }] as any);
+    vi.mocked(holdEventTarget).mockResolvedValue('held');
+  });
+
+  it('hold: stores the target, schedules ONE timeout job carrying only the hold id, and delivers nothing', async () => {
+    const expires = new Date(Date.now() + 3_600_000).toISOString();
+    vi.mocked(runJunkGate).mockResolvedValue({ action: 'hold', record_id: 'hold-1', expires_at: expires, evaluated: true, mode: 'enforce', verdict: 'junk' });
+    const r = await processEvent(makeEvent() as any, META_PROVIDER_CONFIG);
+    expect(r.status).toBe('junk_held');
+    expect(holdEventTarget).toHaveBeenCalledWith('hold-1', expect.anything(), META_PROVIDER_CONFIG);
+    expect(metaDelivery.sendMetaEvents).not.toHaveBeenCalled();
+    const [data, opts] = vi.mocked(junkHoldTimeoutQueue.add).mock.calls[0] as any[];
+    expect(data).toEqual({ hold_id: 'hold-1' });
+    expect(opts.jobId).toBe('junk-hold-hold-1');
+    expect(opts.delay).toBeGreaterThan(0);
+  });
+
+  it('a hold already released by a reviewer when this provider call arrives: the event is sent', async () => {
+    vi.mocked(runJunkGate).mockResolvedValue({ action: 'hold', record_id: 'hold-1', evaluated: true, mode: 'enforce', verdict: 'junk', memoised: true });
+    vi.mocked(holdEventTarget).mockResolvedValue('send');
+    expect((await processEvent(makeEvent() as any, META_PROVIDER_CONFIG)).status).toBe('delivered');
+  });
+
+  it('a hold already rejected when this provider call arrives: the event is dropped', async () => {
+    vi.mocked(runJunkGate).mockResolvedValue({ action: 'hold', record_id: 'hold-1', evaluated: true, mode: 'enforce', verdict: 'junk', memoised: true });
+    vi.mocked(holdEventTarget).mockResolvedValue('drop');
+    expect((await processEvent(makeEvent() as any, META_PROVIDER_CONFIG)).status).toBe('junk_rejected');
+    expect(metaDelivery.sendMetaEvents).not.toHaveBeenCalled();
+  });
+
+  it('a memoised later call (no expires_at) holds without scheduling a second job', async () => {
+    vi.mocked(runJunkGate).mockResolvedValue({ action: 'hold', record_id: 'hold-1', evaluated: true, mode: 'enforce', verdict: 'junk', memoised: true });
+    const r = await processEvent(makeEvent() as any, META_PROVIDER_CONFIG);
+    expect(r.status).toBe('junk_held');
+    expect(junkHoldTimeoutQueue.add).not.toHaveBeenCalled();
+  });
+
+  it('drop: writes a junk_rejected row and delivers nothing', async () => {
+    vi.mocked(runJunkGate).mockResolvedValue({ action: 'drop', record_id: 'hold-1', evaluated: true, mode: 'enforce', verdict: 'junk' });
+    const r = await processEvent(makeEvent() as any, META_PROVIDER_CONFIG);
+    expect(r.status).toBe('junk_rejected');
+    expect(vi.mocked(capiQueries.createCAPIEvent).mock.calls[0][0]).toMatchObject({ status: 'junk_rejected', atlas_event_id: 'evt-001' });
+    expect(metaDelivery.sendMetaEvents).not.toHaveBeenCalled();
+  });
+
+  it('FAILS OPEN: if the held copy cannot be stored the event is delivered', async () => {
+    vi.mocked(runJunkGate).mockResolvedValue({ action: 'hold', record_id: 'hold-1', evaluated: true, mode: 'enforce', verdict: 'junk' });
+    vi.mocked(holdEventTarget).mockRejectedValue(new Error('db down'));
+    const r = await processEvent(makeEvent() as any, META_PROVIDER_CONFIG);
+    expect(r.status).toBe('delivered');
+    expect(metaDelivery.sendMetaEvents).toHaveBeenCalledOnce();
+  });
+
+  it('a hold action with no record id is sent, never silently lost', async () => {
+    vi.mocked(runJunkGate).mockResolvedValue({ action: 'hold', record_id: null, evaluated: true, mode: 'enforce', verdict: 'junk' });
+    expect((await processEvent(makeEvent() as any, META_PROVIDER_CONFIG)).status).toBe('delivered');
+  });
+});
+
+describe('releasePreparedEvent (release re-enters at dedup)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(capiQueries.createCAPIEvent).mockResolvedValue({ id: 'cap-2' } as any);
+    vi.mocked(capiQueries.incrementProviderCounters).mockResolvedValue(undefined);
+  });
+
+  it('delivers with the ORIGINAL event_id, event_time, consent and the hold-time identifiers (no re-hash)', async () => {
+    vi.mocked(capiQueries.isEventDuplicate).mockResolvedValue(false);
+    vi.mocked(metaDelivery.sendMetaEvents).mockResolvedValue([{ event_id: 'evt-001', status: 'delivered', provider_response: {} }] as any);
+    const event = makeEvent({ event_time: 1_700_000_000, user_data: { client_user_agent: 'Mozilla/5.0' } }) as any;
+    const ids = [{ type: 'email', value: 'a'.repeat(64), is_hashed: true }] as any;
+    const r = await releasePreparedEvent(event, ids, META_PROVIDER_CONFIG);
+    expect(r.status).toBe('delivered');
+    const args = vi.mocked(metaDelivery.sendMetaEvents).mock.calls[0];
+    expect((args[0] as any[])[0]).toMatchObject({ event_id: 'evt-001', event_time: 1_700_000_000, consent_state: { marketing: 'granted' } });
+    expect(args[1]).toEqual([ids]);
+    expect(runJunkGate).not.toHaveBeenCalled(); // a release is never re-gated
+  });
+
+  it('dedup still applies to a released event', async () => {
+    vi.mocked(capiQueries.isEventDuplicate).mockResolvedValue(true);
+    const r = await releasePreparedEvent(makeEvent() as any, [], META_PROVIDER_CONFIG);
+    expect(r.status).toBe('dedup_skipped');
+    expect(metaDelivery.sendMetaEvents).not.toHaveBeenCalled();
   });
 });

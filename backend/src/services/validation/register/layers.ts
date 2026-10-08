@@ -25,13 +25,30 @@ import type { ValidationLayerV2 } from '@/types/audit';
 // passes when the AW- ID is observed in outbound Ads hits even though no gtag.js
 // loader URL carries it (a combined Google tag), which changes verdicts and so
 // scores across the version boundary.
-export const REGISTER_VERSION = '1.4.0';
+// 1.5.0 — GA4 Admin / L11 / Junk Gate PRD Part B: L11 Reconciliation ships its
+// first five rules (disclosure-only: never scored, partitioned out of issues,
+// breakdowns and the appendix). No existing rule's verdict changes; the bump is
+// the rule-addition contract (Key Technical Decision §17).
+export const REGISTER_VERSION = '1.5.0';
 
 export const ALL_V2_LAYERS: ValidationLayerV2[] = [
   'scope_configuration', 'foundation_tags', 'click_id_capture', 'storage_durability',
   'cross_domain_continuity', 'event_firing', 'parameter_completeness', 'identity_match_quality',
   'consent', 'server_side_delivery', 'deduplication', 'reconciliation', 'hygiene_integrity',
 ];
+
+/**
+ * The layers that can enter any score or coverage fraction — `ALL_V2_LAYERS`
+ * minus L11 Reconciliation. L11 is disclosure-only (GA4 Admin / L11 / Junk
+ * Gate PRD Part B, decided 2026-09-13): its findings render in the report
+ * but never enter a numerator or a denominator. `LAYER_WEIGHT` is
+ * deliberately NOT the lever (a zero weight would still leave L11 in
+ * `layerScoringDecisions`/`coverageRatio`'s layer lists and in "N of M
+ * layers"); the layer is excluded from the layer *set* instead, so a fully
+ * covered run reads "12 of 12". `ALL_V2_LAYERS` stays the 13-layer enum
+ * order for display surfaces that list every layer.
+ */
+export const SCORED_V2_LAYERS: ValidationLayerV2[] = ALL_V2_LAYERS.filter((layer) => layer !== 'reconciliation');
 
 /**
  * Scoring & Coverage Gate (Pre-Connection Scan Confidence Tiering PRD §9).

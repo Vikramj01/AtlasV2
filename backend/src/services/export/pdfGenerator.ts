@@ -8,7 +8,7 @@
  */
 import PDFDocument from 'pdfkit';
 import type { ReportJSON, ValidationResult, ReportIssue, StepCoverage, StepUrlSource, ScoreCoverage, ImplementationPath } from '@/types/audit';
-import { ALL_V2_LAYERS, LAYER_LABELS } from '@/services/validation/register/layers';
+import { SCORED_V2_LAYERS as ALL_V2_LAYERS, LAYER_LABELS } from '@/services/validation/register/layers';
 import { PLATFORM_LABELS as DECLARED_PLATFORM_LABELS } from '@/services/validation/register/platformDetection';
 
 /** Per-step provenance label for the Scan Coverage section — see StepUrlSource's docstring in types/audit.ts. */
@@ -809,6 +809,48 @@ export function generatePDF(report: ReportJSON): Promise<Buffer> {
           doc.fillColor(C.lightText).fontSize(8.5).font('Helvetica')
             .text(entry.reveals, LEFT + 4, doc.y, { width: CONTENT_W - 8 });
           doc.moveDown(0.25);
+        }
+      }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // PAGE — Against your connected platforms (L11 Reconciliation,
+    // disclosure-only — GA4 Admin / L11 / Junk Gate PRD §B.5). Omitted
+    // entirely when L11 was skipped (no empty heading); never feeds a score.
+    // ══════════════════════════════════════════════════════════════════════
+
+    const reconciliation = report.reconciliation_disclosure;
+    if (reconciliation) {
+      doc.addPage();
+      pageHeader('Against Your Connected Platforms');
+      doc.fillColor(C.midText).fontSize(9).font('Helvetica')
+        .text(reconciliation.notice, LEFT, doc.y, { width: CONTENT_W });
+      doc.moveDown(0.3);
+      doc.fillColor(C.lightText).fontSize(8.5).font('Helvetica')
+        .text(
+          `Based on the most recent reconciliation run, completed ${reconciliation.run_completed_at.slice(0, 10)} (${reconciliation.run_age_days} day${reconciliation.run_age_days === 1 ? '' : 's'} before this report)${reconciliation.stale ? ' — older than a week, so current platform state may differ' : ''}.`,
+          LEFT, doc.y, { width: CONTENT_W },
+        );
+      doc.moveDown(0.4);
+      for (const item of reconciliation.items) {
+        if (needsNewPage(60)) { doc.addPage(); pageHeader('Against Your Connected Platforms'); }
+        doc.fillColor(C.darkText).fontSize(9.5).font('Helvetica-Bold')
+          .text(`${item.label} — ${item.outcome === 'clear' ? 'nothing unresolved observed' : 'needs attention'}`, LEFT + 4, doc.y, { width: CONTENT_W - 8 });
+        doc.fillColor(C.lightText).fontSize(8.5).font('Helvetica')
+          .text(item.summary, LEFT + 4, doc.y, { width: CONTENT_W - 8 });
+        for (const line of item.details) {
+          doc.fillColor(C.lightText).fontSize(8.5).font('Helvetica')
+            .text(`• ${line}`, LEFT + 10, doc.y, { width: CONTENT_W - 14 });
+        }
+        doc.moveDown(0.3);
+      }
+      if (reconciliation.context_notes.length > 0) {
+        if (needsNewPage(50)) { doc.addPage(); pageHeader('Against Your Connected Platforms'); }
+        sectionHeading('Context');
+        for (const note of reconciliation.context_notes) {
+          doc.fillColor(C.lightText).fontSize(8.5).font('Helvetica')
+            .text(`• ${note}`, LEFT + 4, doc.y, { width: CONTENT_W - 8 });
+          doc.moveDown(0.15);
         }
       }
     }

@@ -22,7 +22,7 @@ const VALID_SEVERITIES = new Set<Severity>(['critical', 'high', 'medium', 'low']
 const VALID_DETECTION_METHODS = new Set<DetectionMethod>(['crawl', 'second_pass', 'credentials', 'connector']);
 
 describe('REGISTER — structural integrity', () => {
-  it('carries exactly 96 rules across the 12 shipped layers (L0-L10, L12)', () => {
+  it('carries exactly 101 rules across the 13 shipped layers (L0-L12)', () => {
     // 90 + OPPREF_CAPTURED_AT_LANDING (L2.13), OPENAI_PIXEL_PRESENT (L1.17),
     // OPENAI_CONVERSION_EVENT_FIRES (L5.15) — ATLAS_OPENAI_ADS_AND_REGIONS_PRD Part A.
     // 93 + 2 — Pre-Connection Scan Confidence Tiering PRD §10.2/§10.4 splits:
@@ -30,7 +30,8 @@ describe('REGISTER — structural integrity', () => {
     // FBP_AND_FBC_COOKIES_PRESENT -> FBP_COOKIE_PRESENT + FBC_COOKIE_PRESENT.
     // 95 + CLICK_ID_CARRIED_IN_FORM_SUBMIT (L2.14) — Attribution Chain Check
     // PRD §5.2/§9 Sprint 3.
-    expect(REGISTER).toHaveLength(96);
+    // 96 + 5 L11 Reconciliation rules (disclosure-only) — GA4 Admin / L11 / Junk Gate PRD Part B.
+    expect(REGISTER).toHaveLength(101);
   });
 
   it('every rule has a unique register id (L#.#)', () => {
@@ -57,9 +58,12 @@ describe('REGISTER — structural integrity', () => {
     }
   });
 
-  it('this phase is crawl-only — every shipped rule is detectable_by crawl', () => {
-    const nonCrawl = REGISTER.filter((r) => r.detectable_by !== 'crawl');
+  it('every shipped rule is detectable_by crawl, except L11 Reconciliation, which reads connected-platform data (connector)', () => {
+    // L11 is disclosure-only and resolves its input from a reconciliation run, not the crawl —
+    // GA4 Admin / L11 / Junk Gate PRD Part B. Every other layer remains crawl-only.
+    const nonCrawl = REGISTER.filter((r) => r.detectable_by !== 'crawl' && r.layer !== 'reconciliation');
     expect(nonCrawl.map((r) => r.id)).toEqual([]);
+    expect(REGISTER.filter((r) => r.layer === 'reconciliation').every((r) => r.detectable_by === 'connector')).toBe(true);
   });
 
   it('every rule has a non-empty check description and owner', () => {

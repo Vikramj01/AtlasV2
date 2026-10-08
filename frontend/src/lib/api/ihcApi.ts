@@ -3,6 +3,8 @@ import type {
   AuditFinding,
   FindingsSummary,
   GTMContainer,
+  GtmPublishLogEntry,
+  GtmPublishResult,
   BaselineInfo,
   IHCPreferences,
 } from '@/types/ihc';
@@ -154,6 +156,33 @@ export async function deployToGtm(
   return res.data;
 }
 
+/**
+ * Publishes an Atlas-deployed draft workspace to the LIVE container. The
+ * backend refuses without `confirm: true`, so the caller must have shown the
+ * user an explicit confirmation first.
+ */
+export async function publishToGtm(connectionId: string, workspaceId: string): Promise<GtmPublishResult> {
+  const res = await apiFetch<{ data: GtmPublishResult }>('/gtm/publish', {
+    method: 'POST',
+    body: JSON.stringify({ connection_id: connectionId, workspace_id: workspaceId, confirm: true }),
+  });
+  return res.data;
+}
+
+export async function rollbackGtmPublish(logId: string): Promise<{ restored_version_id: string }> {
+  const res = await apiFetch<{ data: { restored_version_id: string } }>(`/gtm/publish/${logId}/rollback`, {
+    method: 'POST',
+    body: JSON.stringify({ confirm: true }),
+  });
+  return res.data;
+}
+
+export async function getGtmPublishLog(connectionId?: string): Promise<GtmPublishLogEntry[]> {
+  const qs = connectionId ? `?connection_id=${encodeURIComponent(connectionId)}` : '';
+  const res = await apiFetch<{ data: GtmPublishLogEntry[] }>(`/gtm/publish-log${qs}`);
+  return res.data ?? [];
+}
+
 // ── Preferences ───────────────────────────────────────────────────────────────
 
 export async function getPreferences(): Promise<IHCPreferences | null> {
@@ -206,6 +235,9 @@ export const ihcApi = {
   finalizeGtmConnection,
   uploadContainerJSON,
   deployToGtm,
+  publishToGtm,
+  rollbackGtmPublish,
+  getGtmPublishLog,
   disconnectContainer,
   getPreferences,
   savePreferences,

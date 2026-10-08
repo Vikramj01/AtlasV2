@@ -37,6 +37,27 @@ export interface GTMContainer {
   auth_method: 'oauth' | 'manual_upload';
   last_synced_at: string | null;
   created_at: string;
+  /** What this connection's stored OAuth grant allows. false/absent for manual uploads and for grants made before publishing was supported. */
+  can_deploy?: boolean;
+  can_publish?: boolean;
+}
+
+export interface GtmPublishLogEntry {
+  id: string;
+  connection_id: string;
+  action: 'publish' | 'rollback';
+  published_version_id: string;
+  previous_version_id: string | null;
+  rolled_back_at: string | null;
+  created_at: string;
+}
+
+export interface GtmPublishResult {
+  log_id: string | null;
+  published_version_id: string;
+  previous_version_id: string | null;
+  rollback_available: boolean;
+  snapshot_queued: boolean;
 }
 
 export interface BaselineInfo {

@@ -2,17 +2,7 @@ import { supabaseAdmin } from '@/services/database/supabase';
 import { resolveTokens } from '@/services/connections/tokenManager';
 import logger from '@/utils/logger';
 
-const ADMIN_API_BASE = 'https://analyticsadmin.googleapis.com/v1beta';
-
-async function adminGet(path: string, accessToken: string): Promise<unknown> {
-  const res = await fetch(`${ADMIN_API_BASE}/${path}`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  if (!res.ok) {
-    throw new Error(`GA4 Admin API ${path}: HTTP ${res.status}`);
-  }
-  return res.json();
-}
+import { ga4AdminGet as adminGet } from '@/integrations/google/ga4AdminClient';
 
 export async function syncKeyEvents(connectionId: string, orgId: string): Promise<void> {
   const tokens = await resolveTokens(connectionId);
