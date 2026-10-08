@@ -307,6 +307,19 @@ export interface GTMPlatformIds {
    * bare enableSendToServerContainer=false stub.
    */
   server_container_url?: string;
+  /**
+   * Junk gate (GA4 Admin / L11 / Junk Gate PRD §C.5b): CSS selector of a honeypot field the
+   * client's form ALREADY has. When set, the Signal Tag beacons only a boolean `honeypot_filled`
+   * (never the value). Atlas never injects a field. Invalid selectors are ignored.
+   */
+  junk_honeypot_selector?: string;
+}
+
+/** Conservative CSS-selector allowlist: the value is embedded (JSON-encoded) in generated JS. */
+export function sanitiseHoneypotSelector(raw: string | undefined): string | null {
+  if (!raw) return null;
+  const v = raw.trim();
+  return v.length > 0 && v.length <= 100 && /^[A-Za-z0-9_\-\[\]="'#.: *>]+$/.test(v) ? v : null;
 }
 
 export function generateGTMContainer(
@@ -1298,6 +1311,53 @@ src="https://px.ads.linkedin.com/collect/?pid={{CONST - LinkedIn Partner ID}}&fm
   // Uses fetch + keepalive (not sendBeacon) to support the required header.
   if (hasMeta && eventTriggerIds.size > 0) {
     const allEventTrigIds = [...eventTriggerIds.values()].flat();
+    const honeypotSelector = sanitiseHoneypotSelector(platformIds?.junk_honeypot_selector);
+
+    // Junk gate (PRD §C.5b): records the first form interaction so the Signal Tag can beacon
+    // `ms_to_submit`. sessionStorage (not a global) so it survives a post-submit page load; the
+    // Signal Tag clears it once read. Same ads-consent gate as the Signal Tag. Stores one
+    // timestamp, never a field value.
+    tags.push({
+      ...stub(),
+      tagId: tagIds.next(),
+      name: 'Atlas - Form Interaction Timer',
+      type: 'html',
+      parameter: [
+        tmpl('html', `<script>
+(function() {
+  function adsConsentGranted() {
+    var dl = window.dataLayer || [];
+    for (var i = dl.length - 1; i >= 0; i--) {
+      if (dl[i] && dl[i].event === 'consent_update') {
+        return dl[i].ads === true;
+      }
+    }
+    return false;
+  }
+  if (!adsConsentGranted() || window.__atlasFormTimerBound) return;
+  window.__atlasFormTimerBound = true;
+  document.addEventListener('focusin', function(e) {
+    try {
+      var t = e.target;
+      if (!t || !t.closest || !t.closest('form')) return;
+      if (sessionStorage.getItem('atlas_first_interaction')) return;
+      sessionStorage.setItem('atlas_first_interaction', String(Date.now()));
+    } catch (err) {}
+  }, true);
+})();
+</script>`),
+        bool('supportDocumentWrite', 'false'),
+      ],
+      firingTriggerId: [allPagesTrigId],
+      tagFiringOption: 'oncePerLoad',
+      folderId: FOLDER.CONFIG,
+      // Same consent classification as the Signal Tag it feeds (the name drives the lookup).
+      consentSettings: consentSettingsForTag('html', 'Meta - Signal Tag'),
+      fingerprint: '0',
+      tagManagerUrl: 'https://tagmanager.google.com/',
+      notes: 'Junk conversion gate: records the first form interaction time (sessionStorage) so the Signal Tag can report ms_to_submit.',
+    });
+
     tags.push({
       ...stub(),
       tagId: tagIds.next(),
@@ -1318,6 +1378,20 @@ src="https://px.ads.linkedin.com/collect/?pid={{CONST - LinkedIn Partner ID}}&fm
   }
   if (!adsConsentGranted()) return;
 
+  // Junk gate (PRD §C.5b): milliseconds from first form interaction to now, and (only when the
+  // client mapped a honeypot selector) a boolean for whether it was filled. Never a field value.
+  var junk = {};
+  try {
+    var t0 = parseInt(sessionStorage.getItem('atlas_first_interaction'), 10);
+    if (t0 > 0) {
+      var ms = Date.now() - t0;
+      if (ms >= 0) junk.ms_to_submit = ms;
+      sessionStorage.removeItem('atlas_first_interaction');
+    }
+${honeypotSelector ? `    var hp = document.querySelector(${JSON.stringify(honeypotSelector)});
+    if (hp) junk.honeypot_filled = String(hp.value || '').trim() !== '';
+` : ''}  } catch (e) {}
+
   var payload = {
     event_id:   '{{Atlas - Event ID}}',
     event_name: '{{Event}}',
@@ -1330,6 +1404,8 @@ src="https://px.ads.linkedin.com/collect/?pid={{CONST - LinkedIn Partner ID}}&fm
       currency: '{{DLV - ecommerce.currency}}',
     },
   };
+  if (junk.ms_to_submit !== undefined) payload.ms_to_submit = junk.ms_to_submit;
+  if (junk.honeypot_filled !== undefined) payload.honeypot_filled = junk.honeypot_filled;
 
   try {
     fetch('https://api.atlas.vimi.digital/api/capi/browser-event', {

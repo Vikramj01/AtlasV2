@@ -147,3 +147,23 @@ export function ruleTestValues(input: JunkRuleInput): RuleResult {
   }
   return NO_HIT('soft');
 }
+
+// ── JC_HONEYPOT_FILLED (hard) — C3 ────────────────────────────────────────────
+
+/** Only fires when the client mapped a honeypot field that their form already has (Atlas injects nothing). */
+export function ruleHoneypotFilled(input: JunkRuleInput): RuleResult {
+  return input.honeypotFilled === true
+    ? { hit: true, class: 'hard', evidence: 'a honeypot field on the form was filled in' }
+    : NO_HIT('hard');
+}
+
+// ── JC_SUBMIT_TOO_FAST (hard) — C3 ────────────────────────────────────────────
+
+export function ruleSubmitTooFast(input: JunkRuleInput, t: Pick<JunkThresholds, 'min_submit_ms'>): RuleResult {
+  const ms = input.msToSubmit;
+  // Absent, non-finite or negative = no usable measurement: the rule cannot fire (never guess).
+  if (ms === undefined || !Number.isFinite(ms) || ms < 0) return NO_HIT('hard');
+  return ms < t.min_submit_ms
+    ? { hit: true, class: 'hard', evidence: `submitted ${(ms / 1000).toFixed(1)}s after first interaction` }
+    : NO_HIT('hard');
+}

@@ -40,7 +40,10 @@ interface RawConfigRow {
   action_suspect?: JunkAction | null;
   hold_timeout_hours?: number | null;
   timeout_action?: TimeoutAction | null;
+  hold_rate_alert_pct?: number | null;
 }
+
+export const DEFAULT_HOLD_RATE_ALERT_PCT = 30;
 
 export const DEFAULT_HOLD_TIMEOUT_HOURS = 24;
 const ACTIONS: readonly JunkAction[] = ['hold', 'drop', 'send'];
@@ -59,11 +62,13 @@ export function resolveGateConfig(row: RawConfigRow | null | undefined): JunkGat
       velocity_max: pos(t.velocity_max, DEFAULT_THRESHOLDS.velocity_max),
       velocity_window_minutes: pos(t.velocity_window_minutes, DEFAULT_THRESHOLDS.velocity_window_minutes),
       suspect_soft_hits: pos(t.suspect_soft_hits, DEFAULT_THRESHOLDS.suspect_soft_hits),
+      min_submit_ms: pos(t.min_submit_ms, DEFAULT_THRESHOLDS.min_submit_ms),
     },
     action_junk: pickAction(row?.action_junk),
     action_suspect: pickAction(row?.action_suspect),
     hold_timeout_hours: Math.min(72, Math.max(1, Math.round(pos(row?.hold_timeout_hours, DEFAULT_HOLD_TIMEOUT_HOURS)))),
     // Fail open: anything but an explicit 'drop' releases.
     timeout_action: row?.timeout_action === 'drop' ? 'drop' : 'release',
+    hold_rate_alert_pct: Math.min(100, Math.max(1, pos(row?.hold_rate_alert_pct, DEFAULT_HOLD_RATE_ALERT_PCT))),
   };
 }

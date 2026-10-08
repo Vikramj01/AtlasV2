@@ -49,7 +49,8 @@ export type AlertType =
   | 'dqm_google_delivery'
   | 'dqm_outcome_sync'
   | 'dqm_google_tag_topology'
-  | 'ga4_config_changed';
+  | 'ga4_config_changed'
+  | 'dqm_junk_gate';
 
 export interface HealthAlert {
   id: string;

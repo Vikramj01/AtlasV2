@@ -38,6 +38,8 @@ export interface ClientIdentityConfig {
   gbraid_field: string;
   ttclid_field: string;
   oppref_field: string;
+  /** Junk gate (C3): path of a honeypot field the client's form ALREADY has. null = not mapped. */
+  honeypot_field: string | null;
   auto_capture_ip: boolean;
   auto_capture_ua: boolean;
   enabled_identifiers: IdentifierType[];
@@ -118,6 +120,7 @@ export interface SaveIdentityConfigRequest {
   gbraid_field?: string;
   ttclid_field?: string;
   oppref_field?: string;
+  honeypot_field?: string | null;
   auto_capture_ip?: boolean;
   auto_capture_ua?: boolean;
   enabled_identifiers?: IdentifierType[];

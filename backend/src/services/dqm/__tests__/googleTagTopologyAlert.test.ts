@@ -64,9 +64,9 @@ describe('migration 20260921003 CHECK widening (AC 15)', () => {
 
   it('health_alerts_alert_type_check allows every AlertType in types/health.ts, including dqm_google_tag_topology', () => {
     // The CHECK is re-created by each migration that adds an AlertType; the NEWEST one
-    // (20260922002, ga4_config_changed) is what must cover every type the code can write,
+    // (20260923001, dqm_junk_gate) is what must cover every type the code can write,
     // and must still keep dqm_google_tag_topology from this migration.
-    const latest = readFileSync(join(root, 'supabase/migrations/20260922002_ga4_config_alerts.sql'), 'utf8');
+    const latest = readFileSync(join(root, 'supabase/migrations/20260923001_junk_gate_monitoring.sql'), 'utf8');
     const m = /ADD CONSTRAINT health_alerts_alert_type_check\s+CHECK \(([\s\S]*?)\);/.exec(latest)!;
     const allowed = [...m[1].matchAll(/'([a-z0-9_]+)'/g)].map((x) => x[1]);
     const types = readFileSync(join(root, 'backend/src/types/health.ts'), 'utf8');

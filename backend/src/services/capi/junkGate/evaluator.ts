@@ -1,12 +1,12 @@
 /**
- * Evaluates the C.5a rules over one event's pre-resolved signals and derives the verdict
+ * Evaluates the C.5a / C.5b rules over one event's pre-resolved signals and derives the verdict
  * (GA4 Admin / L11 / Junk Gate PRD §C.5): any hard hit = junk; `suspect_soft_hits` or more soft
  * hits = suspect; otherwise clean. Thresholds and per-rule enables come from the client's config.
  * Pure and synchronous.
  */
 import {
   ruleEmailMalformed, ruleEmailDisposable, rulePhoneInvalid, ruleDuplicateSubmission,
-  ruleSubmitVelocity, ruleNonHumanUa, ruleTestValues,
+  ruleSubmitVelocity, ruleNonHumanUa, ruleTestValues, ruleHoneypotFilled, ruleSubmitTooFast,
 } from './rules';
 import type { JunkRuleId, JunkRuleInput, JunkThresholds, JunkVerdict, RuleHit, RuleResult, JunkGateConfig } from './types';
 
@@ -20,6 +20,8 @@ const RULES: Array<[JunkRuleId, RuleFn]> = [
   ['JC_SUBMIT_VELOCITY', (i, t) => ruleSubmitVelocity(i, t)],
   ['JC_NON_HUMAN_UA', (i) => ruleNonHumanUa(i)],
   ['JC_TEST_VALUES', (i) => ruleTestValues(i)],
+  ['JC_HONEYPOT_FILLED', (i) => ruleHoneypotFilled(i)],
+  ['JC_SUBMIT_TOO_FAST', (i, t) => ruleSubmitTooFast(i, t)],
 ];
 
 export interface JunkEvaluation {

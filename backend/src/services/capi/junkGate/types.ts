@@ -10,6 +10,9 @@ export const JUNK_RULE_IDS = [
   'JC_SUBMIT_VELOCITY',
   'JC_NON_HUMAN_UA',
   'JC_TEST_VALUES',
+  // C3 — need capture beyond data Atlas already receives (PRD §C.5b).
+  'JC_HONEYPOT_FILLED',
+  'JC_SUBMIT_TOO_FAST',
 ] as const;
 export type JunkRuleId = (typeof JUNK_RULE_IDS)[number];
 
@@ -38,6 +41,8 @@ export interface JunkThresholds {
   velocity_window_minutes: number;
   /** Soft hits needed for `suspect`. */
   suspect_soft_hits: number;
+  /** JC_SUBMIT_TOO_FAST: fires when first interaction → submit is shorter than this (ms). */
+  min_submit_ms: number;
 }
 
 export const DEFAULT_THRESHOLDS: JunkThresholds = {
@@ -45,6 +50,7 @@ export const DEFAULT_THRESHOLDS: JunkThresholds = {
   velocity_max: 5,
   velocity_window_minutes: 60,
   suspect_soft_hits: 2,
+  min_submit_ms: 2000,
 };
 
 export type JunkGateMode = 'off' | 'observe' | 'enforce';
@@ -65,6 +71,8 @@ export interface JunkGateConfig {
   hold_timeout_hours: number;
   /** What an unreviewed hold becomes at expiry. Default `release` (fail open). */
   timeout_action: TimeoutAction;
+  /** C3: DQM alert when the flagged share of the last 24h exceeds this percent (≥ 20 evaluated). */
+  hold_rate_alert_pct: number;
 }
 
 /**
@@ -83,4 +91,8 @@ export interface JunkRuleInput {
   duplicateOfEventId?: string | null;
   /** Submissions of this event from this IP in the velocity window, INCLUDING this one; undefined = no IP to count. */
   submissionsFromIp?: number;
+  /** C3: a mapped honeypot field held any value. Only the boolean is ever carried, never the value. */
+  honeypotFilled?: boolean;
+  /** C3: milliseconds from first form interaction to submit, as captured in the browser. */
+  msToSubmit?: number;
 }

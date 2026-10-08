@@ -8,6 +8,7 @@
  * POST /holds/:id/release      — release one hold (delivers through the normal pipeline)
  * POST /holds/:id/reject       — reject one hold (never delivered)
  * POST /holds/bulk             — release / reject up to 100 holds
+ * GET  /metrics?client_id=     — hold rate, per-rule hit + overturn rates, auto-release/drop counts
  */
 import { Router } from 'express';
 import type { Request, Response } from 'express';
@@ -18,9 +19,10 @@ import { sendInternalError } from '@/utils/apiError';
 import { resolveGateConfig } from '@/services/capi/junkGate/config';
 import { JUNK_RULE_IDS } from '@/services/capi/junkGate/types';
 import { holdCeilingHours } from '@/services/capi/junkGate/holdWindows';
+import { computeJunkMetrics } from '@/services/capi/junkGate/metrics';
 import { releaseHold, rejectHold, type HoldActionResult } from '@/services/capi/junkGate/release';
 import {
-  clientBelongsToOrg, getFullJunkGateConfig, upsertJunkGateConfig, listHolds, listProvidersForClient, type HoldRow,
+  clientBelongsToOrg, getFullJunkGateConfig, upsertJunkGateConfig, listHolds, listProvidersForClient, listMetricRows, type HoldRow,
 } from '@/services/database/junkGateQueries';
 
 export const junkGateRouter = Router();
@@ -40,11 +42,13 @@ const ConfigBody = z.object({
     velocity_max: z.number().int().positive().max(1000),
     velocity_window_minutes: z.number().positive().max(1440),
     suspect_soft_hits: z.number().int().min(1).max(10),
+    min_submit_ms: z.number().int().min(100).max(60_000),
   }).partial().optional(),
   action_junk: z.enum(['hold', 'drop', 'send']).optional(),
   action_suspect: z.enum(['hold', 'drop', 'send']).optional(),
   hold_timeout_hours: z.number().int().min(1).max(72).optional(),
   timeout_action: z.enum(['release', 'drop']).optional(),
+  hold_rate_alert_pct: z.number().int().min(1).max(100).optional(),
 }).strict();
 
 async function configView(orgId: string, clientId: string) {
@@ -163,4 +167,18 @@ junkGateRouter.post('/holds/:id/reject', async (req: Request, res: Response): Pr
   const id = z.string().uuid().safeParse(req.params.id);
   if (!id.success) return fail(res, 400, 'VALIDATION_FAILED', 'Invalid hold id');
   try { respond(res, await rejectHold(id.data, req.user!.id, req.user!.id)); } catch (err) { sendInternalError(res, err, 'Failed to reject held conversion'); }
+});
+
+junkGateRouter.get('/metrics', async (req: Request, res: Response): Promise<void> => {
+  const q = z.object({ client_id: z.string().uuid(), days: z.coerce.number().int().min(1).max(90).default(30) }).safeParse(req.query);
+  if (!q.success) return fail(res, 400, 'VALIDATION_FAILED', q.error.issues[0]?.message ?? 'client_id is required');
+  const orgId = req.user!.id;
+  try {
+    if (!(await clientBelongsToOrg(orgId, q.data.client_id))) return fail(res, 404, 'NOT_FOUND', 'Client not found');
+    const since = new Date(Date.now() - q.data.days * 86_400_000).toISOString();
+    const { rows, truncated } = await listMetricRows(orgId, q.data.client_id, since);
+    res.json({ data: computeJunkMetrics(rows, q.data.days, truncated), error: null, message: null });
+  } catch (err) {
+    sendInternalError(res, err, 'Failed to compute junk gate metrics');
+  }
 });

@@ -53,6 +53,10 @@ vi.mock('@/services/capi/pipeline', () => ({
   processEvent: vi.fn(),
 }));
 
+const saveBeaconSignals = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+vi.mock('@/services/capi/junkGate/store', () => ({
+  createDefaultStore: () => ({ saveBeaconSignals }),
+}));
 vi.mock('@/services/capi/dedupStore', () => ({
   setDedupEntry: vi.fn().mockResolvedValue(undefined),
 }));
@@ -404,5 +408,42 @@ describe('POST /api/capi/browser-event', () => {
       });
 
     expect(res.status).toBe(204);
+  });
+
+  describe('junk gate signals (C3)', () => {
+    const arrange = async () => {
+      const { supabaseAdmin } = await import('@/services/database/supabase');
+      vi.mocked(supabaseAdmin.from).mockReturnValueOnce({
+        select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: { id: 'prov-001', organization_id: 'u1', provider: 'meta' }, error: null }),
+      } as any);
+      vi.mocked(supabaseAdmin.from).mockReturnValue({
+        insert: vi.fn().mockReturnThis(), select: vi.fn().mockReturnThis(),
+        single: vi.fn().mockResolvedValue({ data: null, error: null }),
+      } as any);
+    };
+    const base = { event_id: '00000000-0000-0000-0000-000000000001', event_name: 'generate_lead', timestamp: 1700000000 };
+
+    it('stores ms_to_submit and honeypot_filled for the gate, keyed by org + event id', async () => {
+      await arrange();
+      const res = await buildApp().post('/api/capi/browser-event').set('x-atlas-provider-token', 'valid-token')
+        .send({ ...base, ms_to_submit: 850, honeypot_filled: true });
+      expect(res.status).toBe(204);
+      expect(saveBeaconSignals).toHaveBeenCalledWith('u1', base.event_id, { ms_to_submit: 850, honeypot_filled: true });
+    });
+
+    it('stores nothing when the beacon carries neither signal', async () => {
+      await arrange();
+      await buildApp().post('/api/capi/browser-event').set('x-atlas-provider-token', 'valid-token').send(base);
+      expect(saveBeaconSignals).not.toHaveBeenCalled();
+    });
+
+    it.each([[{ ms_to_submit: -1 }], [{ ms_to_submit: 1.5 }], [{ ms_to_submit: 'fast' }], [{ honeypot_filled: 'yes' }], [{ ms_to_submit: 90_000_000 }]])(
+      'rejects an invalid signal %j without storing it', async (extra) => {
+        await arrange();
+        const res = await buildApp().post('/api/capi/browser-event').set('x-atlas-provider-token', 'valid-token').send({ ...base, ...extra });
+        expect(res.status).toBe(400);
+        expect(saveBeaconSignals).not.toHaveBeenCalled();
+      });
   });
 });

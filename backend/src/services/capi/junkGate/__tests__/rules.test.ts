@@ -6,7 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   ruleEmailMalformed, ruleEmailDisposable, rulePhoneInvalid, ruleDuplicateSubmission, ruleSubmitVelocity,
-  ruleNonHumanUa, ruleTestValues, isWellFormedEmail, isPatternPhone,
+  ruleNonHumanUa, ruleTestValues, isWellFormedEmail, isPatternPhone, ruleHoneypotFilled, ruleSubmitTooFast,
 } from '../rules';
 
 const SECRET_EMAIL = 'jane.visitor@mailinator.com';
@@ -168,5 +168,38 @@ describe('evidence never carries the contact data the rules read', () => {
         expect(r.evidence).not.toContain(secret);
       }
     }
+  });
+});
+
+
+describe('C3 — JC_HONEYPOT_FILLED (hard)', () => {
+  it('fires only when the capture said a mapped honeypot was filled', () => {
+    expect(ruleHoneypotFilled({ honeypotFilled: true })).toMatchObject({ hit: true, class: 'hard' });
+    expect(ruleHoneypotFilled({ honeypotFilled: true }).evidence).toBe('a honeypot field on the form was filled in');
+  });
+  it('does not fire when absent, false, or unmapped (Atlas never injects a field)', () => {
+    expect(ruleHoneypotFilled({}).hit).toBe(false);
+    expect(ruleHoneypotFilled({ honeypotFilled: false }).hit).toBe(false);
+  });
+});
+
+describe('C3 — JC_SUBMIT_TOO_FAST (hard)', () => {
+  const t = { min_submit_ms: 2000 };
+  it('fires under the threshold, with non-PII evidence in seconds', () => {
+    const r = ruleSubmitTooFast({ msToSubmit: 1200 }, t);
+    expect(r).toMatchObject({ hit: true, class: 'hard', evidence: 'submitted 1.2s after first interaction' });
+    expect(ruleSubmitTooFast({ msToSubmit: 0 }, t).hit).toBe(true);
+    expect(ruleSubmitTooFast({ msToSubmit: 1999 }, t).hit).toBe(true);
+  });
+  it('does not fire at or over the threshold', () => {
+    expect(ruleSubmitTooFast({ msToSubmit: 2000 }, t).hit).toBe(false);
+    expect(ruleSubmitTooFast({ msToSubmit: 45_000 }, t).hit).toBe(false);
+  });
+  it('never fires on a missing or nonsensical measurement', () => {
+    for (const ms of [undefined, -5, Number.NaN, Number.POSITIVE_INFINITY]) expect(ruleSubmitTooFast({ msToSubmit: ms as number | undefined }, t).hit).toBe(false);
+  });
+  it('honours a configured threshold', () => {
+    expect(ruleSubmitTooFast({ msToSubmit: 3000 }, { min_submit_ms: 5000 }).hit).toBe(true);
+    expect(ruleSubmitTooFast({ msToSubmit: 1000 }, { min_submit_ms: 500 }).hit).toBe(false);
   });
 });

@@ -289,6 +289,8 @@ export interface AtlasEvent {
     [key: string]: unknown;
   };
   consent_state: ConsentDecisions;
+  /** Junk gate (C3): booleans derived from form capture. Never carries a field value. */
+  junk_signals?: { honeypot_filled?: boolean };
 }
 
 // --- Provider Adapter Interface ---

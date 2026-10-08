@@ -165,6 +165,16 @@ async function runInner(event: AtlasEvent, providerConfig: CAPIProviderConfig, d
     input.submissionsFromIp = await deps.store.countVelocity(scope, event.event_name, sha256(event.user_data.client_ip_address.trim()), t.velocity_window_minutes);
   }
 
+  // C3: browser-side signals. Event-level first (identity-config honeypot mapping), then the
+  // GTM Signal Tag beacon keyed by the same event id. A missing beacon (it can lose a race with
+  // /process, or the client has no Signal Tag) just means the two capture rules cannot fire.
+  if (event.junk_signals?.honeypot_filled === true) input.honeypotFilled = true;
+  const beacon = await deps.store.getBeaconSignals(orgId, event.event_id).catch(() => null);
+  if (beacon) {
+    if (beacon.honeypot_filled === true) input.honeypotFilled = true;
+    if (typeof beacon.ms_to_submit === 'number') input.msToSubmit = beacon.ms_to_submit;
+  }
+
   const { verdict, hits } = evaluateJunkRules(input, config);
 
   // What enforce mode wants done with this verdict. Observe / off / clean never act.

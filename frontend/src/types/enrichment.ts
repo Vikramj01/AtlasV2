@@ -46,6 +46,7 @@ export interface ClientIdentityConfig {
   gbraid_field: string;
   ttclid_field: string;
   oppref_field: string;
+  honeypot_field?: string | null;
   auto_capture_ip: boolean;
   auto_capture_ua: boolean;
   enabled_identifiers: IdentifierType[];
@@ -151,6 +152,7 @@ export interface SaveIdentityConfigRequest {
   wbraid_field?: string;
   gbraid_field?: string;
   ttclid_field?: string;
+  honeypot_field?: string | null;
   oppref_field?: string;
   auto_capture_ip?: boolean;
   auto_capture_ua?: boolean;

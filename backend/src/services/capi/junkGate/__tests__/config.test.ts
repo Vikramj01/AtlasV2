@@ -29,7 +29,7 @@ describe('resolveGateConfig', () => {
   it('no saved config = observe + default scope + default thresholds (PRD §C.8)', () => {
     expect(resolveGateConfig(null)).toEqual({
       mode: 'observe', event_names: [], rule_flags: {}, thresholds: DEFAULT_THRESHOLDS,
-      action_junk: 'hold', action_suspect: 'hold', hold_timeout_hours: 24, timeout_action: 'release',
+      action_junk: 'hold', action_suspect: 'hold', hold_timeout_hours: 24, timeout_action: 'release', hold_rate_alert_pct: 30,
     });
   });
   it('merges a partial row over the defaults', () => {
@@ -47,6 +47,11 @@ describe('resolveGateConfig', () => {
     const bad = resolveGateConfig({ action_junk: 'nuke' as never, hold_timeout_hours: 9999, timeout_action: 'explode' as never });
     expect(bad).toMatchObject({ action_junk: 'hold', hold_timeout_hours: 72, timeout_action: 'release' });
     expect(resolveGateConfig({ hold_timeout_hours: -3 }).hold_timeout_hours).toBe(24);
+  });
+  it('min_submit_ms defaults to 2000 and falls back on invalid values', () => {
+    expect(resolveGateConfig(null).thresholds.min_submit_ms).toBe(2000);
+    expect(resolveGateConfig({ thresholds: { min_submit_ms: 3500 } }).thresholds.min_submit_ms).toBe(3500);
+    expect(resolveGateConfig({ thresholds: { min_submit_ms: -1 } }).thresholds.min_submit_ms).toBe(2000);
   });
   it('the timeout action fails open: only an explicit drop drops', () => {
     expect(resolveGateConfig({ timeout_action: null }).timeout_action).toBe('release');
