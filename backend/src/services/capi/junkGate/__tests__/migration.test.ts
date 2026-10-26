@@ -75,3 +75,19 @@ describe('migration 20260922005', () => {
     expect('20260922005_junk_gate_enforce.sql').toMatch(/^\d{11}_[a-z_]+\.sql$/);
   });
 });
+
+describe('migration 20260924001 (honeypot selector)', () => {
+  const sql6 = readFileSync(join(root, 'supabase/migrations/20260924001_junk_gate_honeypot_selector.sql'), 'utf8');
+  it('adds a nullable, length-checked honeypot_selector guarded by IF EXISTS', () => {
+    expect(sql6).toMatch(/FROM pg_tables WHERE schemaname = 'public' AND tablename = 'client_identity_configs'/);
+    expect(sql6).toMatch(/ADD COLUMN IF NOT EXISTS honeypot_selector TEXT NULL/);
+    expect(sql6).toMatch(/char_length\(honeypot_selector\) BETWEEN 1 AND 100/);
+  });
+  it('is a separate column from honeypot_field (a data path is not a CSS selector)', () => {
+    expect(sql6).not.toMatch(/ADD COLUMN[^;]*honeypot_field/);
+  });
+  it('filename follows YYYYMMDDNNN_name.sql', () => {
+    expect('20260924001_junk_gate_honeypot_selector.sql').toMatch(/^\d{11}_[a-z_]+\.sql$/);
+  });
+});
+

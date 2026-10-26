@@ -34,6 +34,15 @@ const DEFAULT_FIELDS = {
   gbraid: { value: 'gbraid', enabled: false },
 };
 
+/**
+ * Mirrors backend `sanitiseHoneypotSelector` (services/capi/junkGate/honeypotSelector.ts) for instant
+ * feedback only — the server re-validates, and is the one that actually guards the generated script.
+ */
+const SAFE_SELECTOR = /^[A-Za-z0-9_\-[\]="'#.: *>]+$/;
+function isSafeHoneypotSelector(v: string): boolean {
+  return v.length > 0 && v.length <= 100 && SAFE_SELECTOR.test(v);
+}
+
 function computeIdentityScore(fields: typeof DEFAULT_FIELDS, autoCaptureIp: boolean, autoCaptureUa: boolean): number {
   let score = 0;
   if (fields.email.enabled && fields.email.value) score += 35;
@@ -68,6 +77,8 @@ export function IdentityConfigStep({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showAddressFields, setShowAddressFields] = useState(false);
+  const [honeypotField, setHoneypotField] = useState('');
+  const [honeypotSelector, setHoneypotSelector] = useState('');
 
   // Populate from initial config
   useEffect(() => {
@@ -86,6 +97,8 @@ export function IdentityConfigStep({
       wbraid: { value: initialConfig.wbraid_field ?? 'wbraid', enabled: initialConfig.enabled_identifiers.includes('wbraid') },
       gbraid: { value: initialConfig.gbraid_field ?? 'gbraid', enabled: initialConfig.enabled_identifiers.includes('gbraid') },
     });
+    setHoneypotField(initialConfig.honeypot_field ?? '');
+    setHoneypotSelector(initialConfig.honeypot_selector ?? '');
     setAutoCaptureIp(initialConfig.auto_capture_ip);
     setAutoCaptureUa(initialConfig.auto_capture_ua);
     if (initialConfig.first_name_field || initialConfig.last_name_field || initialConfig.postal_code_field) {
@@ -106,6 +119,11 @@ export function IdentityConfigStep({
   );
 
   const handleSave = async () => {
+    const selector = honeypotSelector.trim();
+    if (selector && !isSafeHoneypotSelector(selector)) {
+      setError('Honeypot selector can only contain letters, numbers and the characters _ - [ ] = " \' # . : * > and spaces (max 100).');
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -139,6 +157,8 @@ export function IdentityConfigStep({
         gclid_field: fields.gclid.value || 'gclid',
         wbraid_field: fields.wbraid.value || 'wbraid',
         gbraid_field: fields.gbraid.value || 'gbraid',
+        honeypot_field: honeypotField.trim() || null,
+        honeypot_selector: selector || null,
         auto_capture_ip: autoCaptureIp,
         auto_capture_ua: autoCaptureUa,
         enabled_identifiers: enabledIdentifiers,
@@ -302,6 +322,38 @@ export function IdentityConfigStep({
             />
           </div>
         )}
+
+        {/* Spam protection — junk conversion gate (honeypot) */}
+        <div className="px-4 py-3 space-y-2 border-t border-gray-100">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Spam protection (optional)</p>
+          <p className="text-xs text-gray-500">
+            If your form already has a hidden honeypot field, Atlas can flag a submission where it was filled in.
+            Atlas never adds a field to your form, and only whether it was filled is recorded — never what was typed.
+          </p>
+          <label className="block space-y-1">
+            <span className="text-sm text-gray-700">Honeypot CSS selector</span>
+            <input
+              type="text"
+              value={honeypotSelector}
+              onChange={(e) => setHoneypotSelector(e.target.value)}
+              placeholder='input[name="website"]'
+              maxLength={100}
+              className="w-full rounded border border-gray-300 px-2 py-1.5 font-mono text-sm"
+            />
+            <span className="block text-xs text-gray-500">Read in the browser by the generated GTM tag. Takes effect the next time you generate a container.</span>
+          </label>
+          <label className="block space-y-1">
+            <span className="text-sm text-gray-700">Honeypot data path</span>
+            <input
+              type="text"
+              value={honeypotField}
+              onChange={(e) => setHoneypotField(e.target.value)}
+              placeholder="form.website"
+              className="w-full rounded border border-gray-300 px-2 py-1.5 font-mono text-sm"
+            />
+            <span className="block text-xs text-gray-500">Where the same field appears in the event data your server sends. Leave blank if you don't send it.</span>
+          </label>
+        </div>
 
         {/* Auto-capture */}
         <div className="px-4 py-3 space-y-2">

@@ -8,6 +8,7 @@
  * /api/organisations/:orgId/clients/:clientId/deployments/:deploymentId/enrichment/:signalKey
  */
 
+import { sanitiseHoneypotSelector } from '@/services/capi/junkGate/honeypotSelector';
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { z } from 'zod';
@@ -57,6 +58,10 @@ async function assertClientAccess(
 
 // ─── Zod Schemas ──────────────────────────────────────────────────────────────
 
+// undefined stays undefined (field omitted = leave the stored value alone); blank/whitespace/null clears it.
+const blankToNull = (v: string | null | undefined): string | null | undefined =>
+  v === undefined ? undefined : v && v.trim() ? v.trim() : null;
+
 const IdentityConfigSchema = z.object({
   email_field: z.string().nullable().optional(),
   phone_field: z.string().nullable().optional(),
@@ -72,7 +77,12 @@ const IdentityConfigSchema = z.object({
   gbraid_field: z.string().optional(),
   ttclid_field: z.string().optional(),
   oppref_field: z.string().optional(),
-  honeypot_field: z.string().max(200).nullable().optional(),
+  honeypot_field: z.string().max(200).nullable().optional().transform(blankToNull),
+  // A blank clears it; anything else must pass the same allow-list the generator applies, so an
+  // unsafe selector is rejected at save time instead of being silently dropped at generation time.
+  honeypot_selector: z.string().max(100).nullable().optional()
+    .transform(blankToNull)
+    .refine((v) => v === undefined || v === null || sanitiseHoneypotSelector(v) !== null, { message: 'Honeypot selector contains characters that are not allowed' }),
   auto_capture_ip: z.boolean().optional(),
   auto_capture_ua: z.boolean().optional(),
   enabled_identifiers: z.array(z.string()).optional(),
