@@ -11,6 +11,7 @@
  * to USE credentials must call safeDecryptCredentials() themselves.
  */
 
+import { pickBeaconToken, type BeaconTokenCandidate } from '@/services/capi/beaconToken';
 import { supabaseAdmin as supabase } from './supabase';
 import { encryptCredentials } from '@/services/capi/credentials';
 import type {
@@ -478,4 +479,26 @@ export async function enqueueEvent(
 
   if (error) throw new Error(`Failed to enqueue CAPI event: ${error.message}`);
   return (data as { id: string }).id;
+}
+
+// ── Beacon token (generated Atlas Signal Tag) ────────────────────────────────
+
+/**
+ * The provider token the generated GTM container should embed for a client: resolved through the
+ * client's identity config → its CAPI providers (the same link `getClientIdForProvider` walks the
+ * other way). null when the client has no identity config or no provider — the caller then keeps
+ * the REPLACE_WITH_ATLAS_PROVIDER_TOKEN placeholder. Never logged: it authenticates the beacon.
+ */
+export async function getBeaconProviderTokenForClient(clientId: string): Promise<string | null> {
+  const { data: identity } = await supabase
+    .from('client_identity_configs').select('id').eq('client_id', clientId).maybeSingle();
+  const identityId = (identity as { id: string } | null)?.id;
+  if (!identityId) return null;
+
+  const { data, error } = await supabase
+    .from('capi_providers')
+    .select('provider, status, provider_token, created_at')
+    .eq('identity_config_id', identityId);
+  if (error) throw new Error(`Failed to read CAPI providers for beacon token: ${error.message}`);
+  return pickBeaconToken((data ?? []) as BeaconTokenCandidate[]);
 }

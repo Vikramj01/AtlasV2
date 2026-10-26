@@ -40,6 +40,7 @@ import {
   renderStandardEventAliasTag,
   dlvPathForParam,
 } from './renderer/gtm.renderer';
+import { sanitiseHoneypotSelector } from '@/services/capi/junkGate/honeypotSelector';
 import { buildGoogleTagInfrastructure, buildAllPagesTrigger } from './renderer/googleTagArchitecture';
 import { buildMetaCrossDomainDecoratorScript } from '../../../utils/metaCrossDomainLinker';
 
@@ -315,12 +316,8 @@ export interface GTMPlatformIds {
   junk_honeypot_selector?: string;
 }
 
-/** Conservative CSS-selector allowlist: the value is embedded (JSON-encoded) in generated JS. */
-export function sanitiseHoneypotSelector(raw: string | undefined): string | null {
-  if (!raw) return null;
-  const v = raw.trim();
-  return v.length > 0 && v.length <= 100 && /^[A-Za-z0-9_\-\[\]="'#.: *>]+$/.test(v) ? v : null;
-}
+// Shared with the config API: one definition of what a safe honeypot selector is.
+export { sanitiseHoneypotSelector };
 
 export function generateGTMContainer(
   recommendations: PlanningRecommendation[],
@@ -333,6 +330,10 @@ export function generateGTMContainer(
   const hasMeta        = platforms.includes('meta');
   const hasTikTok      = platforms.includes('tiktok');
   const hasLinkedIn    = platforms.includes('linkedin');
+  // Platforms the Atlas Signal Tag beacon can serve: /api/capi/browser-event keys its dedup entry by
+  // provider (meta/tiktok/linkedin/openai), so any of these can carry the beacon and the junk-gate
+  // capture fields. Meta-only gating stranded every other client without submit-timing signal.
+  const hasBeacon       = hasMeta || hasTikTok || hasLinkedIn;
   const secondaryDomains = session.secondary_domains ?? [];
 
   const tagIds   = new IdCounter();
@@ -378,7 +379,7 @@ export function generateGTMContainer(
   // These power the browser-first dedup flow: Event ID is generated per tag
   // fire (not per page load) and passed to Meta Pixel + the Atlas Signal Tag.
 
-  if (hasMeta) {
+  if (hasBeacon) {
     variables.push({
       ...stub(),
       variableId: varIds.next(),
@@ -1309,7 +1310,7 @@ src="https://px.ads.linkedin.com/collect/?pid={{CONST - LinkedIn Partner ID}}&fm
   // fires, so metaDelivery can look up the same event_id from Redis and include
   // it in the CAPI payload for deduplication.
   // Uses fetch + keepalive (not sendBeacon) to support the required header.
-  if (hasMeta && eventTriggerIds.size > 0) {
+  if (hasBeacon && eventTriggerIds.size > 0) {
     const allEventTrigIds = [...eventTriggerIds.values()].flat();
     const honeypotSelector = sanitiseHoneypotSelector(platformIds?.junk_honeypot_selector);
 

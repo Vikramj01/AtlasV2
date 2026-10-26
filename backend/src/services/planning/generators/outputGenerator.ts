@@ -13,6 +13,7 @@
  */
 import { generateGTMContainer } from './gtmContainerGenerator';
 import type { GTMPlatformIds } from './gtmContainerGenerator';
+import { resolveBeaconInputs } from './beaconInputs';
 import { generateDataLayerSpec } from './dataLayerSpecGenerator';
 import { generateDeveloperHandoffDoc } from './developerHandoffDoc';
 import { validateGeneration } from './validator/generation.validator';
@@ -82,7 +83,14 @@ export async function generateAllOutputs(session: PlanningSession): Promise<Gene
         if (p.platform === 'linkedin')   platformIds.linkedin    = p.measurement_id;
         if (p.platform === 'sgtm' && p.is_verified) platformIds.server_container_url = p.measurement_id;
       }
-      logger.info({ sessionId, clientId: session.client_id, platformIds }, 'Resolved platform IDs from client');
+      // Junk gate follow-up: real beacon token + the client's honeypot selector (each non-fatal).
+      Object.assign(platformIds, await resolveBeaconInputs(session.client_id));
+      // The provider token authenticates the beacon: report only whether it resolved, never its value.
+      const { provider_token: _omitToken, ...loggablePlatformIds } = platformIds;
+      logger.info(
+        { sessionId, clientId: session.client_id, platformIds: loggablePlatformIds, beaconTokenResolved: !!platformIds.provider_token },
+        'Resolved platform IDs from client',
+      );
     } catch (err) {
       logger.warn({ sessionId, err: (err as Error).message }, 'Failed to fetch client platform IDs — using placeholders');
     }

@@ -37,6 +37,7 @@ export async function upsertClientIdentityConfig(
     ...(req.ttclid_field !== undefined && { ttclid_field: req.ttclid_field }),
     ...(req.oppref_field !== undefined && { oppref_field: req.oppref_field }),
     ...(req.honeypot_field !== undefined && { honeypot_field: req.honeypot_field }),
+    ...(req.honeypot_selector !== undefined && { honeypot_selector: req.honeypot_selector }),
     ...(req.auto_capture_ip !== undefined && { auto_capture_ip: req.auto_capture_ip }),
     ...(req.auto_capture_ua !== undefined && { auto_capture_ua: req.auto_capture_ua }),
     ...(req.enabled_identifiers !== undefined && { enabled_identifiers: req.enabled_identifiers }),

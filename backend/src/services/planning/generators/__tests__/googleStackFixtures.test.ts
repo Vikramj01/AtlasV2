@@ -552,3 +552,57 @@ describe('Scenario: junk gate capture (Atlas Signal Tag + Form Interaction Timer
     expect(validateGTMContainer(withMeta).errors).toEqual([]);
   });
 });
+
+// ── Scenario G2: junk gate capture beyond Meta (follow-up to C3) ──────────────
+
+describe('Scenario: junk gate capture for non-Meta CAPI platforms', () => {
+  const recs: PlanningRecommendation[] = [
+    makeRec('r1', 'p1', 'generate_lead', 'form_submit', [], [], ['ga4']),
+  ];
+  const names = (c: GTMContainerJSON) => c.containerVersion.tag.map((t) => t.name);
+  const varNames = (c: GTMContainerJSON) => c.containerVersion.variable.map((v) => v.name);
+
+  it.each([['tiktok'], ['linkedin']])('a %s-only container gets the Signal Tag, the timer and the beacon variables', (platform) => {
+    const c = generateGTMContainer(recs, makeSession('lead_gen', ['ga4', platform]));
+    expect(names(c)).toContain('Atlas - Signal Tag');
+    expect(names(c)).toContain('Atlas - Form Interaction Timer');
+    expect(varNames(c)).toContain('Atlas - Event ID');
+    expect(varNames(c)).toContain('Atlas - Provider Token');
+    expect(validateGTMContainer(c).errors).toEqual([]);
+  });
+
+  it('the beacon carries the junk-gate fields for a non-Meta container too', () => {
+    const c = generateGTMContainer(recs, makeSession('lead_gen', ['ga4', 'linkedin']));
+    const html = flattenParams(findTagByName(c, 'Atlas - Signal Tag').parameter).html as string;
+    expect(html).toContain('payload.ms_to_submit = junk.ms_to_submit');
+    expect(html).toContain("sessionStorage.getItem('atlas_first_interaction')");
+  });
+
+  it('GA4 / Google Ads alone still get neither (no CAPI provider to authenticate the beacon)', () => {
+    for (const platforms of [['ga4'], ['ga4', 'google_ads']]) {
+      const c = generateGTMContainer(recs, makeSession('lead_gen', platforms));
+      expect(names(c)).not.toContain('Atlas - Signal Tag');
+      expect(names(c)).not.toContain('Atlas - Form Interaction Timer');
+      expect(varNames(c)).not.toContain('Atlas - Provider Token');
+    }
+  });
+
+  it('a Meta container is unchanged: exactly one Signal Tag, one timer, one Event ID and one token variable', () => {
+    const c = generateGTMContainer(recs, makeSession('lead_gen', ['ga4', 'meta', 'tiktok', 'linkedin']));
+    expect(names(c).filter((n) => n === 'Atlas - Signal Tag')).toHaveLength(1);
+    expect(names(c).filter((n) => n === 'Atlas - Form Interaction Timer')).toHaveLength(1);
+    expect(varNames(c).filter((n) => n === 'Atlas - Event ID')).toHaveLength(1);
+    expect(varNames(c).filter((n) => n === 'Atlas - Provider Token')).toHaveLength(1);
+  });
+
+  it('embeds a resolved provider token, and falls back to the placeholder only when none was resolved', () => {
+    const token = '6f1c2f64-0000-4000-8000-aaaaaaaaaaaa';
+    const withToken = generateGTMContainer(recs, makeSession('lead_gen', ['ga4', 'linkedin']), { provider_token: token });
+    const without = generateGTMContainer(recs, makeSession('lead_gen', ['ga4', 'linkedin']));
+    const tokenOf = (c: GTMContainerJSON) =>
+      flattenParams(c.containerVersion.variable.find((v) => v.name === 'Atlas - Provider Token')!.parameter).value;
+    expect(tokenOf(withToken)).toBe(token);
+    expect(tokenOf(without)).toBe('REPLACE_WITH_ATLAS_PROVIDER_TOKEN');
+  });
+});
+
