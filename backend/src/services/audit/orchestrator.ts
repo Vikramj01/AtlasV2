@@ -38,6 +38,8 @@ import { getJourneyStages } from '@/services/database/journeyQueries';
 import { extractGoogleTagObservation, observationToRows } from '@/services/google/googleTagTopology';
 import { writeTopologySnapshot } from '@/services/database/googleTagTopologyQueries';
 import logger from '@/utils/logger';
+import { contextForSite } from '@/services/google/googleEndpointMatcher';
+import { applyCaptureGtgStatus } from '@/services/database/gtgQueries';
 
 export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
   const { audit_id } = data;
@@ -297,10 +299,18 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
         // a topology write must never fail an audit.
         if (auditRow?.client_id && orgId) {
           try {
-            const topologyRows = observationToRows(extractGoogleTagObservation(auditData.networkRequests));
+            const topologyRows = observationToRows(extractGoogleTagObservation(auditData.networkRequests, contextForSite(auditData.website_url)));
             await writeTopologySnapshot({ organizationId: orgId, clientId: auditRow.client_id, rows: topologyRows, auditId: audit_id });
           } catch (err) {
             logger.warn({ audit_id, err: err instanceof Error ? err.message : String(err) }, 'Failed to write Google tag topology');
+          }
+
+          // GTG status from this capture (docs/prd/google-tag-gateway.md §5). Non-fatal;
+          // never overwrites a probe-verified, broken, legacy or operator-declared value.
+          try {
+            await applyCaptureGtgStatus(auditRow.client_id, auditData.website_url, auditData.networkRequests);
+          } catch (err) {
+            logger.warn({ audit_id, err: err instanceof Error ? err.message : String(err) }, 'Failed to update GTG status from capture');
           }
         }
 

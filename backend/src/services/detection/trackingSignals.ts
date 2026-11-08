@@ -8,6 +8,12 @@
  * detection logic without coupling one service to the other.
  */
 import type { NetworkRequest } from '@/types/audit';
+import {
+  classifyGoogleRequests,
+  extractGtmContainerIds,
+  isCountableTransport,
+  type GoogleMatchContext,
+} from '@/services/google/googleEndpointMatcher';
 
 export interface TagMatch {
   ids: string[];
@@ -50,9 +56,23 @@ function buildMatch(hits: NetworkRequest[], ids: (string | null)[]): TagMatch {
 }
 
 /** GA4 base pageview/event hits — measurement ID via the `tid` query param. */
-export function detectGa4(requests: NetworkRequest[]): TagMatch {
-  const hits = requests.filter(isGa4CollectRequest);
+export function detectGa4(requests: NetworkRequest[], ctx?: GoogleMatchContext): TagMatch {
+  const hits = ctx ? ga4HitRequests(requests, ctx) : requests.filter(isGa4CollectRequest);
   return buildMatch(hits, hits.map((r) => searchParam(r.url, 'tid')));
+}
+
+/**
+ * GA4 collect hits by SHAPE, not hostname (Google tag gateway serves some hits
+ * from the advertiser's own domain — docs/prd/google-tag-gateway.md §4). A hit
+ * counts when Google served it or it sits under a gateway path seen in this
+ * capture; same-site traffic we cannot attribute is not counted. The old
+ * hostname test is kept as a floor so nothing previously detected is lost.
+ */
+export function ga4HitRequests(requests: NetworkRequest[], ctx: GoogleMatchContext): NetworkRequest[] {
+  const classified = classifyGoogleRequests(requests, ctx);
+  return classified
+    .filter((c) => isGa4CollectRequest(c.request) || (c.kind === 'ga4_hit' && isCountableTransport(c.transport)))
+    .map((c) => c.request);
 }
 
 /**
@@ -108,10 +128,14 @@ export function detectMetaConversionEvent(requests: NetworkRequest[]): TagMatch 
 }
 
 /** Google Ads conversion pixel — googleadservices.com/pagead/conversion or google.com/pagead/conversion. */
-export function detectGoogleAds(requests: NetworkRequest[]): TagMatch {
-  const hits = requests.filter(
-    (r) => r.url.includes('googleadservices.com/pagead/conversion') || r.url.includes('google.com/pagead/conversion'),
-  );
+export function detectGoogleAds(requests: NetworkRequest[], ctx?: GoogleMatchContext): TagMatch {
+  const legacy = (r: NetworkRequest): boolean =>
+    r.url.includes('googleadservices.com/pagead/conversion') || r.url.includes('google.com/pagead/conversion');
+  const hits = ctx
+    ? classifyGoogleRequests(requests, ctx)
+        .filter((c) => legacy(c.request) || (c.kind === 'ads_hit' && isCountableTransport(c.transport)))
+        .map((c) => c.request)
+    : requests.filter(legacy);
   return buildMatch(hits, []);
 }
 
@@ -183,9 +207,11 @@ export function detectPinterest(requests: NetworkRequest[]): TagMatch {
  * Given raw <script src> attribute values collected from the live page,
  * extract GTM container IDs (GTM-XXXXXXX) from the gtm.js loader script.
  */
-export function extractGtmContainerIdsFromScriptSrcs(srcs: string[]): string[] {
-  const ids = srcs
+export function extractGtmContainerIdsFromScriptSrcs(srcs: string[], ctx?: GoogleMatchContext): string[] {
+  const legacy = srcs
     .filter((src) => src.includes('googletagmanager.com/gtm.js'))
     .map((src) => searchParam(src, 'id'));
-  return [...new Set(ids.filter((id): id is string => !!id))];
+  // Shape-based pass catches a container served through a gateway path.
+  const byShape = ctx ? extractGtmContainerIds(srcs, ctx) : [];
+  return [...new Set([...legacy.filter((id): id is string => !!id), ...byShape])];
 }

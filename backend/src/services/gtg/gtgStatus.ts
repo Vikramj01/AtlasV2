@@ -107,3 +107,47 @@ export function aggregateGtgStatus(statuses: readonly GtgStatus[]): GtgStatus {
 
   return 'partial';
 }
+
+// ── Capture-derived status (Sprint 2) ────────────────────────────────────────
+
+/** The subset of a Google capture summary the status derivation reads. */
+export interface GtgCaptureEvidence {
+  /** Loader requests (GTM container / Google tag) served via a gateway path or unattributable same-site path. */
+  hasFirstPartyLoad: boolean;
+  /** Loader requests served from a Google-owned host. */
+  hasGoogleDirectLoad: boolean;
+  /** True when a first-party loader is attributed to a gateway rather than merely same-site. */
+  firstPartyIsGateway: boolean;
+}
+
+/**
+ * Statuses a CAPTURE alone may set (PRD §5.1). Verification ('verified',
+ * 'verified_no_geo', 'broken') needs the Sprint 3 probe, and 'not_applicable'
+ * and 'legacy' need an operator or a verified setup page, so a capture never
+ * derives those.
+ */
+export const CAPTURE_DERIVABLE_STATUSES: readonly GtgStatus[] = ['unknown', 'detected_unverified', 'not_detected', 'partial'];
+
+/**
+ * - first-party loads AND Google-direct loads  → 'partial'
+ * - first-party loads only                     → 'detected_unverified'
+ * - Google-direct loads only                   → 'not_detected'
+ * - no loader seen at all                      → 'unknown' (absence of evidence is not "not detected")
+ */
+export function gtgStatusFromCapture(e: GtgCaptureEvidence): GtgStatus {
+  if (e.hasFirstPartyLoad && e.hasGoogleDirectLoad) return 'partial';
+  if (e.hasFirstPartyLoad) return e.firstPartyIsGateway ? 'detected_unverified' : 'unknown';
+  if (e.hasGoogleDirectLoad) return 'not_detected';
+  return 'unknown';
+}
+
+/**
+ * Whether a capture-derived status may replace the stored one. A capture never
+ * overwrites a probe-verified, broken, legacy or operator-declared value, and a
+ * derived 'unknown' never overwrites anything.
+ */
+export function mayApplyCaptureStatus(current: GtgStatus, derived: GtgStatus): boolean {
+  if (derived === 'unknown') return false;
+  if (!CAPTURE_DERIVABLE_STATUSES.includes(current)) return false;
+  return current !== derived;
+}

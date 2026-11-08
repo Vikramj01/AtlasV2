@@ -12,6 +12,7 @@ import { simplifyDOM, extractInteractiveElements, extractForms } from './domSimp
 import { uploadScreenshot } from '@/services/database/supabase';
 import type { PageCapture, ExistingTrackingDetection } from '@/types/planning';
 import logger from '@/utils/logger';
+import { contextForSite, detectGoogleFromSources } from '@/services/google/googleEndpointMatcher';
 
 // Playwright types we actually use (duck-typed to avoid importing playwright in tests)
 interface PlaywrightBrowser {
@@ -121,7 +122,7 @@ export async function capturePage(
     ]);
 
     // ── Existing tracking detection ──────────────────────────────────────────
-    const existing_tracking = await detectExistingTracking(page, networkUrls);
+    const existing_tracking = await detectExistingTracking(page, networkUrls, url);
 
     const page_load_time_ms = Date.now() - startTime;
 
@@ -174,9 +175,10 @@ export async function capturePage(
  * Detect which tracking platforms are already installed on the page.
  * Uses script_patterns and network_patterns from PLATFORM_SCHEMAS.
  */
-async function detectExistingTracking(
+export async function detectExistingTracking(
   page: PlaywrightPage,
   networkUrls: string[],
+  siteUrl?: string,
 ): Promise<ExistingTrackingDetection> {
   // Get all script src attributes and inline script snippets
   const scriptSources = await page.evaluate(() => {
@@ -186,7 +188,7 @@ async function detectExistingTracking(
     }
     // Also check first 200 chars of inline scripts for GTM container IDs
     for (const s of Array.from(document.querySelectorAll('script:not([src])'))) {
-      const text = (s.textContent ?? '').slice(0, 200);
+      const text = (s.textContent ?? '').slice(0, 1500);
       if (text.includes('GTM-') || text.includes('gtm.js')) srcs.push(`inline:${text}`);
     }
     return srcs;
@@ -247,11 +249,28 @@ async function detectExistingTracking(
     }
   }
 
-  // GTM detection (check scripts + look for GTM container ID)
+  // Google tags by SHAPE, not hostname: with Google tag gateway the GTM container,
+  // Google tag and some hits come from the site's own domain, so a hostname test
+  // reports GTM/GA4 "not detected" and Planning would recommend installing them
+  // (docs/prd/google-tag-gateway.md §1.3 defect 4). The schema loop above stays
+  // as the floor; this only ever adds detections.
   const gtmMatch = allSources.find((s) => s.includes('googletagmanager.com/gtm'));
   if (gtmMatch) {
     detection.gtm_detected = true;
     detection.gtm_container_id = extractId([gtmMatch], /GTM-[A-Z0-9]+/);
+  }
+  const google = detectGoogleFromSources(allSources, contextForSite(siteUrl));
+  if (google.gtmDetected) {
+    detection.gtm_detected = true;
+    detection.gtm_container_id = detection.gtm_container_id ?? google.gtmContainerId ?? undefined;
+  }
+  if (google.ga4Detected && !detection.ga4_detected) {
+    detection.ga4_detected = true;
+    detection.ga4_measurement_id = detection.ga4_measurement_id ?? google.ga4MeasurementId ?? undefined;
+  }
+  if (google.googleAdsDetected && !detection.google_ads_detected) {
+    detection.google_ads_detected = true;
+    detection.google_ads_id = detection.google_ads_id ?? google.googleAdsId ?? undefined;
   }
 
   // WalkerOS detection

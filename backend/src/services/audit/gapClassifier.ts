@@ -25,6 +25,7 @@
 import type { ValidationSpec, StageValidationSpec, Gap, StageStatus } from '@/types/journey';
 import type { StageCapture } from './stageSimulator';
 import { getPlatformSchema } from '@/services/journey/platformSchemas';
+import { classifyGoogleRequests, contextForSite, isCountableTransport } from '@/services/google/googleEndpointMatcher';
 
 export interface StageGapResult {
   stage_order: number;
@@ -50,6 +51,44 @@ function detectNetworkRequest(
   return networkRequests.some((r) =>
     endpointPatterns.some((pattern) => r.url.includes(pattern)),
   );
+}
+
+/**
+ * Google traffic by SHAPE, not hostname. Behind Google tag gateway the GTM
+ * container, Google tag and some measurement hits are served from the site's
+ * own domain, so a pattern list of Google hostnames reads a correct deployment
+ * as "GTM not loaded" and raises false base-tag-missing gaps
+ * (docs/prd/google-tag-gateway.md §1.3 defect 4). The hostname patterns stay
+ * as the floor at every call site; this only ever adds detections.
+ */
+interface GoogleShape {
+  containerLoaded: boolean;
+  tagLoaded: boolean;
+  ga4Hit: boolean;
+  adsHit: boolean;
+}
+
+function googleShape(capture: StageCapture): GoogleShape {
+  const classified = classifyGoogleRequests(capture.network_requests, contextForSite(capture.url_navigated))
+    .filter((c) => isCountableTransport(c.transport));
+  return {
+    containerLoaded: classified.some((c) => c.kind === 'gtm_container_load'),
+    tagLoaded: classified.some((c) => c.kind === 'google_tag_load'),
+    ga4Hit: classified.some((c) => c.kind === 'ga4_hit'),
+    adsHit: classified.some((c) => c.kind === 'ads_hit'),
+  };
+}
+
+/** Does the shape-based view confirm this platform's delivery endpoint received a request? */
+function shapeDeliveryHit(platform: string, shape: GoogleShape): boolean {
+  if (platform === 'ga4') return shape.ga4Hit;
+  if (platform === 'google_ads') return shape.adsHit;
+  return false;
+}
+
+/** Does the shape-based view confirm this platform's own script loaded? */
+function shapeScriptLoaded(platform: string, shape: GoogleShape): boolean {
+  return (platform === 'ga4' || platform === 'google_ads') && shape.tagLoaded;
 }
 
 function checkRequiredParams(
@@ -88,7 +127,7 @@ function buildFixCode(actionKey: string, platform: string, subType: string): str
   return `// Review your ${platform} implementation for the ${actionKey} event`;
 }
 
-function classifyStageGaps(
+export function classifyStageGaps(
   stageSpec: StageValidationSpec,
   capture: StageCapture,
 ): Gap[] {
@@ -97,6 +136,8 @@ function classifyStageGaps(
   if (capture.skipped || !capture.navigation_success) {
     return gaps; // Stage was skipped or failed to load — no gaps to classify
   }
+
+  const shape = googleShape(capture);
 
   // ── Check expected events ─────────────────────────────────────────────────
   for (const expectedEvent of stageSpec.expected_events) {
@@ -122,7 +163,8 @@ function classifyStageGaps(
       // Network endpoint: did the platform actually receive a request?
       const hasNetworkEndpoints = !!(schema && schema.delivery.endpoint_patterns.length > 0);
       const networkHit = hasNetworkEndpoints
-        ? detectNetworkRequest(capture.network_requests, schema!.delivery.endpoint_patterns)
+        ? detectNetworkRequest(capture.network_requests, schema!.delivery.endpoint_patterns) ||
+          shapeDeliveryHit(platform, shape)
         : null; // null = "no network endpoint to check"
 
       // Event is tracked if:
@@ -215,10 +257,13 @@ function classifyStageGaps(
   //  (a) the platform's own script in network requests, OR
   //  (b) GTM container loaded + platform delivery endpoint seen
   //     (meaning GTM is acting as the platform loader)
-  const gtmLoaded = detectNetworkRequest(capture.network_requests, [
-    'googletagmanager.com/gtm.js',
-    'googletagmanager.com/gtag/js',
-  ]);
+  const gtmLoaded =
+    detectNetworkRequest(capture.network_requests, [
+      'googletagmanager.com/gtm.js',
+      'googletagmanager.com/gtag/js',
+    ]) ||
+    shape.containerLoaded ||
+    shape.tagLoaded;
 
   for (const expectedPlatform of stageSpec.expected_platforms) {
     if (!expectedPlatform.must_detect_tag) continue;
@@ -226,17 +271,17 @@ function classifyStageGaps(
     if (!schema) continue;
 
     // Direct script detection
-    const directScriptLoaded = detectNetworkRequest(
-      capture.network_requests,
-      schema.detection.script_patterns,
-    );
+    const directScriptLoaded =
+      detectNetworkRequest(capture.network_requests, schema.detection.script_patterns) ||
+      shapeScriptLoaded(expectedPlatform.platform, shape);
 
     // GTM-mediated: GTM is present AND the platform endpoint received a request
     // (confirms GTM loaded and fired the platform tag, even if base script is
     //  loaded asynchronously and merged into GTM's own bundle)
     const deliveryHit =
       schema.delivery.endpoint_patterns.length > 0 &&
-      detectNetworkRequest(capture.network_requests, schema.delivery.endpoint_patterns);
+      (detectNetworkRequest(capture.network_requests, schema.delivery.endpoint_patterns) ||
+        shapeDeliveryHit(expectedPlatform.platform, shape));
 
     const tagDetected = directScriptLoaded || (gtmLoaded && deliveryHit);
 

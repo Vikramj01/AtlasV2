@@ -12,6 +12,7 @@
  */
 
 import * as cheerio from 'cheerio';
+import { contextForSite, detectGoogleFromSources } from '@/services/google/googleEndpointMatcher';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -83,7 +84,7 @@ export async function detectSite(rawUrl: string): Promise<SiteDetection> {
 
   const siteTitle = $('title').first().text().trim() || resolvedUrl;
   const detectedPlatform = detectPlatform($, html);
-  const existingTracking = detectTracking($, html);
+  const existingTracking = detectTracking($, html, resolvedUrl);
   const { businessType, confidence } = inferBusinessType($, html, detectedPlatform);
   const detectedCurrency = detectCurrency($, html);
   const detectedLanguage = detectLanguage($);
@@ -163,19 +164,36 @@ function detectPlatform(
 
 // ── Tracking detection ────────────────────────────────────────────────────────
 
-function detectTracking(
+export function detectTracking(
   $: cheerio.CheerioAPI,
   html: string,
+  siteUrl?: string,
 ): ExistingTrackingQuick {
+  // Google tags are read by SHAPE from every <script src> and inline snippet,
+  // not by Google's hostname: behind Google tag gateway the container loads from
+  // the site's own domain and a hostname test would report GTM missing
+  // (docs/prd/google-tag-gateway.md §1.3 defect 4). The hostname tests below
+  // stay as the floor so nothing previously detected is lost.
+  const scriptSources: string[] = [];
+  $('script[src]').each((_, el) => {
+    const src = $(el).attr('src');
+    if (src) scriptSources.push(src);
+  });
+  $('script:not([src])').each((_, el) => {
+    const text = $(el).html() ?? '';
+    if (text.includes('GTM-')) scriptSources.push(`inline:${text.slice(0, 1500)}`);
+  });
+  const google = detectGoogleFromSources(scriptSources, contextForSite(siteUrl));
+
   // GTM
   const gtmMatch = html.match(/googletagmanager\.com\/gtm\.js[^'"]*[?&]id=(GTM-[A-Z0-9]+)/);
-  const gtmDetected = gtmMatch !== null || html.includes('googletagmanager.com/gtm.js');
-  const gtmContainerId = gtmMatch ? gtmMatch[1] : null;
+  const gtmDetected = gtmMatch !== null || html.includes('googletagmanager.com/gtm.js') || google.gtmDetected;
+  const gtmContainerId = gtmMatch ? gtmMatch[1] : google.gtmContainerId;
 
   // GA4 (gtag.js)
   const ga4Match = html.match(/gtag\('config',\s*'(G-[A-Z0-9]+)'\)/);
-  const ga4Detected = html.includes('googletagmanager.com/gtag/js') || ga4Match !== null;
-  const ga4MeasurementId = ga4Match ? ga4Match[1] : null;
+  const ga4Detected = html.includes('googletagmanager.com/gtag/js') || ga4Match !== null || google.ga4Detected;
+  const ga4MeasurementId = ga4Match ? ga4Match[1] : google.ga4MeasurementId;
 
   // Meta Pixel
   const metaMatch = html.match(/fbq\('init',\s*'(\d{10,20})'\)/);
@@ -185,7 +203,8 @@ function detectTracking(
   // Google Ads
   const googleAdsDetected =
     html.includes('googleadservices.com') ||
-    /gtag\('config',\s*'AW-/.test(html);
+    /gtag\('config',\s*'AW-/.test(html) ||
+    google.googleAdsDetected;
 
   // TikTok
   const tiktokDetected = html.includes('analytics.tiktok.com');

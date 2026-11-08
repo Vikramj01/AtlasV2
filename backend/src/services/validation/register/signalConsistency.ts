@@ -95,7 +95,7 @@ function checkConf01(auditData: AuditData, results: ValidationResult[]): SignalC
     source_a: 'DL',
     reading_a: `gtag('config', '${configCall.target}') observed in dataLayer`,
     source_b: 'NET',
-    reading_b: 'GA4_CONFIG_TAG_PRESENT found no request to google-analytics.com/g/collect or analytics.google.com/g/collect',
+    reading_b: 'GA4_CONFIG_TAG_PRESENT found no GA4 collect request (from a Google host or from the site own domain)',
     affected_rule_ids: ['GA4_CONFIG_TAG_PRESENT'],
   };
 }
@@ -115,7 +115,7 @@ function checkConf02(auditData: AuditData, results: ValidationResult[]): SignalC
     source_a: 'DL',
     reading_a: `gtag('${anyGtagCall.verb}', '${anyGtagCall.target}') observed in dataLayer — only gtag.js's own runtime pushes arguments positionally like this`,
     source_b: 'NET',
-    reading_b: 'GTAG_LOADER_PRESENT found no request to googletagmanager.com/gtag/js',
+    reading_b: 'GTAG_LOADER_PRESENT found no gtag.js loader request (from a Google host or from the site own domain)',
     affected_rule_ids: ['GTAG_LOADER_PRESENT'],
   };
 }
@@ -135,7 +135,7 @@ function checkConf04(auditData: AuditData, results: ValidationResult[]): SignalC
     source_a: 'DL',
     reading_a: `gtag('config', '${configCall.target}') observed in dataLayer`,
     source_b: 'NET',
-    reading_b: 'GOOGLE_ADS_AW_ID_PRESENT found no googletagmanager.com/gtag/js?id=AW-... request',
+    reading_b: 'GOOGLE_ADS_AW_ID_PRESENT found no Google tag loader request carrying an AW- ID',
     affected_rule_ids: ['GOOGLE_ADS_AW_ID_PRESENT'],
   };
 }

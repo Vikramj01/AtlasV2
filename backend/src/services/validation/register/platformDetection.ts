@@ -20,6 +20,7 @@
  * a different host.
  */
 import type { AuditData, DeclaredPlatform, NetworkRequest } from '@/types/audit';
+import { classifyGoogleRequests, contextForSite, isCountableTransport } from '../../google/googleEndpointMatcher';
 
 type HostMatcher = (req: NetworkRequest) => boolean;
 
@@ -74,12 +75,29 @@ export const PLATFORM_LABELS: Record<DeclaredPlatform, string> = {
 
 /** True if platform's base tag/pixel was observed firing anywhere during the crawl. */
 export function platformTagDetected(platform: DeclaredPlatform, auditData: AuditData): boolean {
-  const matcher = PLATFORM_MATCHERS[platform];
-  return auditData.networkRequests.some(matcher);
+  return platformTagRequests(platform, auditData).length > 0;
+}
+
+/**
+ * Google Ads requests by SHAPE, so Ads traffic served from the site's own
+ * domain through Google tag gateway counts (docs/prd/google-tag-gateway.md §4).
+ * The hostname matcher in PLATFORM_MATCHER_HOSTS stays as a floor.
+ */
+function googleAdsShapedRequests(auditData: AuditData): NetworkRequest[] {
+  return classifyGoogleRequests(auditData.networkRequests, contextForSite(auditData.website_url))
+    .filter(
+      (c) =>
+        isCountableTransport(c.transport) &&
+        (c.kind === 'ads_hit' || (c.kind === 'google_tag_load' && (c.tagId ?? '').startsWith('AW-'))),
+    )
+    .map((c) => c.request);
 }
 
 /** Every request that matched platform's signature, for evidence. */
 export function platformTagRequests(platform: DeclaredPlatform, auditData: AuditData): NetworkRequest[] {
   const matcher = PLATFORM_MATCHERS[platform];
-  return auditData.networkRequests.filter(matcher);
+  const byHost = auditData.networkRequests.filter(matcher);
+  if (platform !== 'google_ads') return byHost;
+  const seen = new Set(byHost);
+  return [...byHost, ...googleAdsShapedRequests(auditData).filter((r) => !seen.has(r))];
 }

@@ -14,6 +14,7 @@
 import { createBrowserbaseSession, getCDPUrl } from '@/services/browserbase/client';
 import { logUsage } from '@/services/usage/usageLogger';
 import logger from '@/utils/logger';
+import { contextForSite, detectGoogleFromSources } from '@/services/google/googleEndpointMatcher';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -128,7 +129,7 @@ export async function runQuickCheck(url: string, orgId?: string): Promise<QuickC
         }
         // Also inspect short inline scripts for GTM container markers
         for (const s of Array.from(document.querySelectorAll('script:not([src])'))) {
-          const text = (s.textContent ?? '').slice(0, 300);
+          const text = (s.textContent ?? '').slice(0, 1500);
           if (text.includes('GTM-') || text.includes('gtm.js')) srcs.push(`inline:${text}`);
         }
         return srcs;
@@ -138,17 +139,25 @@ export async function runQuickCheck(url: string, orgId?: string): Promise<QuickC
     const all = [...scriptSources, ...networkUrls];
 
     // ── Signal detection ───────────────────────────────────────────────────────
+    // Google tags by SHAPE as well as hostname: a Google tag gateway serves the
+    // container and tag from the site's own domain (docs/prd/google-tag-gateway.md
+    // §1.3 defect 4). The hostname tests stay as the floor.
+    const google = detectGoogleFromSources(all, contextForSite(url));
     const gtmSource = all.find((s) => s.includes('googletagmanager.com/gtm'));
-    const gtm = !!gtmSource;
-    const gtm_container_id = gtmSource ? extractId([gtmSource], /GTM-[A-Z0-9]+/) : undefined;
+    const gtm = !!gtmSource || google.gtmDetected;
+    const gtm_container_id = gtmSource
+      ? extractId([gtmSource], /GTM-[A-Z0-9]+/) ?? google.gtmContainerId ?? undefined
+      : google.gtmContainerId ?? undefined;
 
-    const ga4 = all.some(
-      (s) =>
-        s.includes('googletagmanager.com') ||
-        s.includes('google-analytics.com') ||
-        s.includes('gtag/js'),
-    );
-    const ga4_measurement_id = extractId(all, /G-[A-Z0-9]+/);
+    const ga4 =
+      google.ga4Detected ||
+      all.some(
+        (s) =>
+          s.includes('googletagmanager.com') ||
+          s.includes('google-analytics.com') ||
+          s.includes('gtag/js'),
+      );
+    const ga4_measurement_id = extractId(all, /G-[A-Z0-9]+/) ?? google.ga4MeasurementId ?? undefined;
 
     const meta_pixel = all.some(
       (s) => s.includes('connect.facebook.net') || s.includes('fbevents.js'),
@@ -157,10 +166,9 @@ export async function runQuickCheck(url: string, orgId?: string): Promise<QuickC
       extractId(networkUrls, /id=(\d{15,16})/) ??
       extractId(scriptSources, /fbq\('init',\s*['"](\d{15,16})['"]\)/);
 
-    const google_ads = all.some(
-      (s) =>
-        s.includes('googleadservices') || s.includes('/pagead/') || /AW-[0-9]+/.test(s),
-    );
+    const google_ads =
+      google.googleAdsDetected ||
+      all.some((s) => s.includes('googleadservices') || s.includes('/pagead/') || /AW-[0-9]+/.test(s));
 
     const tracking: QuickCheckTracking = {
       gtm,

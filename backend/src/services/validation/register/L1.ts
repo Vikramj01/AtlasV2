@@ -29,15 +29,48 @@ import type { AuditData, ValidationRule, ValidationResult, RuleStatus, NetworkRe
 import * as trackingSignals from '@/services/detection/trackingSignals';
 import { detectPossibleServerSideGtm } from '../../audit/siteSetupDetector';
 import { PLATFORM_LABELS, platformTagDetected } from './platformDetection';
-import { destinationOfHit } from '../../google/googleTagTopology';
+import { extractGoogleTagObservation } from '../../google/googleTagTopology';
+import {
+  classifyGoogleRequests,
+  contextForSite,
+  isCountableTransport,
+  type GoogleMatchContext,
+} from '../../google/googleEndpointMatcher';
 
 function gtmScriptSrcs(auditData: AuditData): string[] {
   return (auditData.pageMetadata?.gtm_script_srcs as string[] | undefined) ?? [];
 }
 
+/**
+ * Match context for this audit: the audited hostname (so a Google tag served
+ * from the site's own domain through Google tag gateway is recognised by shape,
+ * docs/prd/google-tag-gateway.md §4) plus the client's verified sGTM endpoint.
+ */
+function matchContext(auditData: AuditData): GoogleMatchContext {
+  const sgtm = auditData.client_sgtm_endpoint_url;
+  return contextForSite(auditData.website_url, sgtm ? { knownSgtmOrigins: [sgtm] } : {});
+}
+
+/** Every Google tag (gtag) loader request, whichever host served it, with its tag ID where one was parseable. */
+function googleTagLoads(auditData: AuditData): Array<{ request: NetworkRequest; tagId: string | null }> {
+  const seen = new Set<NetworkRequest>();
+  const out: Array<{ request: NetworkRequest; tagId: string | null }> = [];
+  for (const c of classifyGoogleRequests(auditData.networkRequests, matchContext(auditData))) {
+    if (c.kind === 'google_tag_load' && isCountableTransport(c.transport)) {
+      seen.add(c.request);
+      out.push({ request: c.request, tagId: c.tagId });
+    }
+  }
+  // Floor: anything the pre-gateway hostname test accepted is still accepted.
+  for (const r of auditData.networkRequests) {
+    if (!seen.has(r) && r.url.includes('googletagmanager.com/gtag/js')) out.push({ request: r, tagId: null });
+  }
+  return out;
+}
+
 /** Same check GTAG_LOADER_PRESENT (L1.5) uses — reused here rather than duplicated, see GTM_CONTAINER_LOADED's P0-04 conditional-severity logic below. */
 function gtagLoaderPresent(auditData: AuditData): boolean {
-  return auditData.networkRequests.some((r) => r.url.includes('googletagmanager.com/gtag/js'));
+  return googleTagLoads(auditData).length > 0;
 }
 
 /** Declared platforms with zero observed tag/pixel evidence anywhere in the crawl — independent of whether GTM specifically carries them. */
@@ -90,7 +123,7 @@ export const GTM_CONTAINER_LOADED: ValidationRule = {
    *    severity onto itself, it just points at what's actually missing.
    */
   test(auditData: AuditData): ValidationResult {
-    const ids = trackingSignals.extractGtmContainerIdsFromScriptSrcs(gtmScriptSrcs(auditData));
+    const ids = trackingSignals.extractGtmContainerIdsFromScriptSrcs(gtmScriptSrcs(auditData), matchContext(auditData));
     const found = ids.length > 0;
 
     if (found) {
@@ -189,7 +222,7 @@ export const CONTAINER_ID_MATCHES_DECLARED: ValidationRule = {
       };
     }
 
-    const ids = trackingSignals.extractGtmContainerIdsFromScriptSrcs(gtmScriptSrcs(auditData));
+    const ids = trackingSignals.extractGtmContainerIdsFromScriptSrcs(gtmScriptSrcs(auditData), matchContext(auditData));
     const matches = ids.includes(declared);
     const status: RuleStatus = ids.length === 0 ? 'fail' : matches ? 'pass' : 'fail';
 
@@ -268,7 +301,7 @@ export const GA4_CONFIG_TAG_PRESENT: ValidationRule = {
   client_question: 'We did not see a GA4 configuration tag firing during the crawl. Is GA4 handled through a different property, delivered server-side, or genuinely not implemented yet?',
 
   test(auditData: AuditData): ValidationResult {
-    const match = trackingSignals.detectGa4(auditData.networkRequests);
+    const match = trackingSignals.detectGa4(auditData.networkRequests, matchContext(auditData));
     const found = match.hitCount > 0;
 
     return {
@@ -312,7 +345,7 @@ export const GTAG_LOADER_PRESENT: ValidationRule = {
   remediation: 'Add the Google gtag.js loader (googletagmanager.com/gtag/js) via GTM\'s Google Tag or a direct gtag.js snippet, firing on every page — every downstream Google Ads/GA4 gtag-based tag needs this loader present first.',
 
   test(auditData: AuditData): ValidationResult {
-    const hits = auditData.networkRequests.filter((r) => r.url.includes('googletagmanager.com/gtag/js'));
+    const hits = googleTagLoads(auditData).map((l) => l.request);
     const found = hits.length > 0;
 
     return {
@@ -323,7 +356,7 @@ export const GTAG_LOADER_PRESENT: ValidationRule = {
       technical_details: {
         found: found ? `gtag.js loader loaded (${hits.length} request(s))` : 'No gtag.js loader detected',
         expected: 'gtag.js loads',
-        evidence: found ? hits.map((r) => r.url) : ['No googletagmanager.com/gtag/js request found'],
+        evidence: found ? hits.map((r) => r.url) : ['No Google tag (gtag.js) loader request found, from Google or from the site\'s own domain'],
       },
     };
   },
@@ -358,9 +391,9 @@ export const GOOGLE_ADS_AW_ID_PRESENT: ValidationRule = {
   // components that, worded identically, look like a contradiction. Names
   // which of the two is actually missing.
   test(auditData: AuditData): ValidationResult {
-    const hits = auditData.networkRequests.filter(
-      (r) => r.url.includes('googletagmanager.com/gtag/js') && r.url.includes('AW-'),
-    );
+    const hits = googleTagLoads(auditData)
+      .filter((l) => (l.tagId ?? '').startsWith('AW-') || (l.request.url.includes('googletagmanager.com/gtag/js') && l.request.url.includes('AW-')))
+      .map((l) => l.request);
     const found = hits.length > 0;
     const gtagPresent = gtagLoaderPresent(auditData);
 
@@ -371,11 +404,8 @@ export const GOOGLE_ADS_AW_ID_PRESENT: ValidationRule = {
     // report a critical gap on a client that is measuring (and, via CONF_04,
     // raise a conflict against the dataLayer's own config(AW-*) call).
     if (!found) {
-      const adsHitIds = [...new Set(
-        auditData.networkRequests
-          .map((r) => destinationOfHit(r.url))
-          .filter((id): id is string => id !== null && id.startsWith('AW-')),
-      )];
+      const adsHitIds = extractGoogleTagObservation(auditData.networkRequests, matchContext(auditData))
+        .destination_ids.filter((id) => id.startsWith('AW-'));
       if (adsHitIds.length > 0) {
         return {
           rule_id: this.rule_id,
@@ -406,7 +436,7 @@ export const GOOGLE_ADS_AW_ID_PRESENT: ValidationRule = {
             ? 'A gtag loader is present but carries no AW- conversion ID'
             : 'No gtag.js loader detected, so no AW- conversion ID either',
         expected: 'gtag.js loads with an Ads conversion ID (id=AW-XXXXXXXXX)',
-        evidence: found ? hits.map((r) => r.url) : ['No googletagmanager.com/gtag/js?id=AW-... request found'],
+        evidence: found ? hits.map((r) => r.url) : ['No Google tag loader request carrying an AW- conversion ID found'],
       },
     };
   },
@@ -578,7 +608,7 @@ export const NO_DUPLICATE_CONTAINER: ValidationRule = {
   },
 
   test(auditData: AuditData): ValidationResult {
-    const ids = trackingSignals.extractGtmContainerIdsFromScriptSrcs(gtmScriptSrcs(auditData));
+    const ids = trackingSignals.extractGtmContainerIdsFromScriptSrcs(gtmScriptSrcs(auditData), matchContext(auditData));
 
     if (ids.length === 0) {
       return {
@@ -619,8 +649,8 @@ export const NO_DUPLICATE_CONTAINER: ValidationRule = {
 // as not evaluable at the ID level from crawl data alone, rather than
 // silently assumed clean.
 
-const ID_BEARING_PLATFORMS: Array<{ label: string; detect: (r: NetworkRequest[]) => trackingSignals.TagMatch }> = [
-  { label: 'GA4', detect: trackingSignals.detectGa4 },
+const ID_BEARING_PLATFORMS: Array<{ label: string; detect: (r: NetworkRequest[], ctx: GoogleMatchContext) => trackingSignals.TagMatch }> = [
+  { label: 'GA4', detect: (r, ctx) => trackingSignals.detectGa4(r, ctx) },
   { label: 'Meta', detect: trackingSignals.detectMetaPixel },
   { label: 'Microsoft', detect: trackingSignals.detectMicrosoftUet },
 ];
@@ -652,7 +682,7 @@ export const NO_DUPLICATE_BASE_TAG: ValidationRule = {
     const clean: string[] = [];
 
     for (const { label, detect } of ID_BEARING_PLATFORMS) {
-      const match = detect(auditData.networkRequests);
+      const match = detect(auditData.networkRequests, matchContext(auditData));
       if (match.ids.length > 1) {
         violations.push(`${label}: ${match.ids.length} distinct IDs firing (${match.ids.join(', ')})`);
       } else if (match.ids.length === 1) {

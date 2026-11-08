@@ -18,6 +18,7 @@ import type {
 } from '@/types/audit';
 import * as trackingSignals from '@/services/detection/trackingSignals';
 import type { TagMatch } from '@/services/detection/trackingSignals';
+import { classifyGoogleRequests, contextForSite } from '../google/googleEndpointMatcher';
 
 const MAX_EVIDENCE_URLS = 5;
 const DATALAYER_META_KEYS = new Set(['event', 'timestamp', 'step', '__step', '__timestamp']);
@@ -126,7 +127,17 @@ export function detectPossibleServerSideGtm(
   }
 
   // Heuristic 2: first-party host forwarding requests shaped like GA4 Measurement Protocol.
+  // A hit under a Google tag gateway path (a gateway loader seen in this same
+  // capture, docs/prd/google-tag-gateway.md §4.2) is NOT evidence of sGTM.
+  // Same-site hits we cannot attribute stay "possible", which is why the
+  // caveat below names both explanations.
+  const gatewayHits = new Set(
+    classifyGoogleRequests(requests, contextForSite(websiteHostname))
+      .filter((c) => c.transport === 'gtg')
+      .map((c) => c.request),
+  );
   const mpHits = requests.filter((r) => {
+    if (gatewayHits.has(r)) return false;
     const host = safeHostname(r.url);
     if (!isSameSite(host, websiteHostname)) return false;
     if (KNOWN_ANALYTICS_HOSTS_SUFFIXES.some((suffix) => host.endsWith(suffix))) return false;
@@ -160,7 +171,7 @@ export function detectPossibleServerSideGtm(
     matched_heuristics: matched,
     evidence_urls: evidenceUrls,
     caveat: detected
-      ? 'This is a best-effort heuristic based on request path/hostname shape, not a confirmed server-side GTM installation. Verify manually if this signal is business-critical.'
+      ? 'This is a best-effort heuristic based on request path/hostname shape, not a confirmed installation. First-party Google traffic can be server-side GTM or Google tag gateway, and a crawl alone cannot always tell them apart. Verify manually if this signal is business-critical.'
       : '',
   };
 }
@@ -204,15 +215,16 @@ export function buildSiteSetupSummary(
 ): SiteSetupSummary {
   const { dataLayer, networkRequests, website_url, commerce_platform } = auditData;
   const hostname = safeHostname(website_url);
-  const gtmIds = trackingSignals.extractGtmContainerIdsFromScriptSrcs(gtmScriptSrcs);
+  const ctx = contextForSite(website_url);
+  const gtmIds = trackingSignals.extractGtmContainerIdsFromScriptSrcs(gtmScriptSrcs, ctx);
 
   return {
     generated_at: new Date().toISOString(),
     datalayer_inventory: buildDataLayerInventory(dataLayer),
     tags: [
-      toTagSignal('ga4', trackingSignals.detectGa4(networkRequests)),
+      toTagSignal('ga4', trackingSignals.detectGa4(networkRequests, ctx)),
       toTagSignal('meta_pixel', trackingSignals.detectMetaPixel(networkRequests)),
-      toTagSignal('google_ads', trackingSignals.detectGoogleAds(networkRequests)),
+      toTagSignal('google_ads', trackingSignals.detectGoogleAds(networkRequests, ctx)),
       toTagSignal('linkedin_insight', trackingSignals.detectLinkedInInsight(networkRequests)),
       toTagSignal('tiktok_pixel', trackingSignals.detectTikTokPixel(networkRequests)),
       toTagSignal('microsoft_uet', trackingSignals.detectMicrosoftUet(networkRequests)),

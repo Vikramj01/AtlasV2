@@ -7,6 +7,7 @@
 import type { DataLayerEvent, NetworkRequest, CookieSnapshot, LocalStorageSnapshot, DetailedCookie, ConsoleError, RequestInitiator, RequestInitiatorType } from '@/types/audit';
 import { PLATFORM_MATCHER_HOSTS } from '@/services/validation/register/platformDetection';
 import logger from '@/utils/logger';
+import { looksLikeGoogleRequestShape } from '../google/googleEndpointMatcher';
 
 // URLs we want to capture (ad/analytics platforms). Built as a superset of
 // PLATFORM_MATCHER_HOSTS (every host any declared-platform matcher looks
@@ -30,7 +31,11 @@ export const TRACKED_URL_PATTERNS = [
 ];
 
 export function shouldCaptureUrl(url: string): boolean {
-  return TRACKED_URL_PATTERNS.some((pattern) => url.includes(pattern));
+  // The shape check has no site context on purpose: a Google tag gateway serves
+  // loads and hits from the advertiser's own domain, and over-capturing is
+  // cheap whereas missing them makes a correct gateway look absent. Whether a
+  // captured request really is Google's is decided later, with the hostname.
+  return TRACKED_URL_PATTERNS.some((pattern) => url.includes(pattern)) || looksLikeGoogleRequestShape(url);
 }
 
 /**

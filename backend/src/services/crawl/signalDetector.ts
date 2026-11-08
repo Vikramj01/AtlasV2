@@ -14,6 +14,7 @@ import { createBrowserbaseSession, getCDPUrl } from '@/services/browserbase/clie
 import type { DetectedSignal, PageScanResult, PageToScan, SignalIssue } from '@/types/crawl';
 import { extractGoogleTagObservation } from '@/services/google/googleTagTopology';
 import logger from '@/utils/logger';
+import { contextForSite, extractGtmContainerIds } from '@/services/google/googleEndpointMatcher';
 
 // Duck-typed Playwright interfaces — avoids hard dependency on playwright types
 interface PlaywrightBrowser {
@@ -28,6 +29,8 @@ interface PlaywrightPage {
   goto(url: string, opts?: object): Promise<{ status(): number } | null>;
   evaluate<T>(fn: () => T): Promise<T>;
   waitForTimeout(ms: number): Promise<void>;
+  /** Current page URL (always present on a real Playwright page; optional so test doubles need not supply it). */
+  url?(): string;
   on(event: 'request', handler: (req: PlaywrightRequest) => void): void;
   close(): Promise<void>;
 }
@@ -153,16 +156,18 @@ export async function detectSignalsOnPage(
   const signals: DetectedSignal[] = [];
 
   // ── GTM Container ────────────────────────────────────────────────────────────
-  const gtmIds = await page.evaluate(() => {
-    const scripts = Array.from(document.querySelectorAll('script[src]'));
-    return scripts
-      .map(s => s.getAttribute('src') ?? '')
-      .filter(src => src.includes('googletagmanager.com/gtm.js'))
-      .map(src => {
-        try { return new URL(src).searchParams.get('id'); } catch { return null; }
-      })
-      .filter((id): id is string => id !== null);
+  // Collected unfiltered and classified in Node by shape, so a container served
+  // through Google tag gateway (docs/prd/google-tag-gateway.md §4) is found too.
+  const scriptSources = await page.evaluate(() => {
+    const srcs = Array.from(document.querySelectorAll('script[src]')).map(s => s.getAttribute('src') ?? '');
+    for (const s of Array.from(document.querySelectorAll('script:not([src])'))) {
+      const text = (s.textContent ?? '').slice(0, 1500);
+      if (text.includes('GTM-')) srcs.push(`inline:${text}`);
+    }
+    return srcs;
   });
+  const matchCtx = contextForSite(page.url?.());
+  const gtmIds = extractGtmContainerIds(scriptSources, matchCtx);
 
   for (const gtmId of gtmIds) {
     signals.push({
@@ -315,7 +320,7 @@ export async function detectSignalsOnPage(
   // A destination with no loaded tag carrying its ID is recorded as
   // unattributable (loaded_tag_id null) — never grouped with a tag from
   // co-occurrence alone.
-  const googleObs = extractGoogleTagObservation(networkRequests);
+  const googleObs = extractGoogleTagObservation(networkRequests, matchCtx);
   for (const destId of googleObs.destination_ids) {
     const attributedTo = googleObs.attributed.find(a => a.destination_id === destId)?.loaded_tag_id ?? null;
     signals.push({

@@ -14,6 +14,12 @@
  * strength 'assumed', never anything stronger (PRD acceptance criterion 9).
  */
 import { kindFromGoogleId, type GoogleDestinationKind } from './googleTagClassifier';
+import {
+  classifyGoogleRequest,
+  classifyGoogleRequests,
+  isCountableTransport,
+  type GoogleMatchContext,
+} from './googleEndpointMatcher';
 
 export type TopologySource = 'gtm_api' | 'runtime_observed' | 'operator_declared';
 export type TopologyVerdict = 'SPLIT' | 'COMBINED' | 'COMBINED_ADS_PRIMARY' | 'UNKNOWN';
@@ -57,49 +63,30 @@ export interface GoogleTagObservation {
   unattributed_destination_ids: string[];
 }
 
-const GTAG_JS = /googletagmanager\.com\/gtag\/js/i;
-
-function tryUrl(raw: string): URL | null {
-  try {
-    return new URL(raw);
-  } catch {
-    return null;
-  }
-}
-
-/** Destination ID a single outbound Google hit targets, or null. */
-export function destinationOfHit(rawUrl: string): string | null {
-  const u = tryUrl(rawUrl);
-  if (!u) return null;
-  const host = u.hostname.toLowerCase();
-  const path = u.pathname;
-
-  // GA4 collect: tid=G-XXXX
-  if ((host.endsWith('google-analytics.com') || host === 'analytics.google.com') && /\/g\/collect/.test(path)) {
-    const tid = u.searchParams.get('tid');
-    return tid && kindFromGoogleId(tid) === 'ga4' ? tid : null;
-  }
-
-  // Google Ads conversion / view-through / remarketing: .../pagead/(conversion|viewthroughconversion|1p-conversion|1p-user-list)/<AW-ID digits>
-  if (host.endsWith('googleadservices.com') || host.endsWith('doubleclick.net') || host.endsWith('google.com')) {
-    const m = /\/pagead\/(?:1p-)?(?:conversion|viewthroughconversion|user-list)\/(\d{6,})/.exec(path);
-    if (m) return `AW-${m[1]}`;
-  }
+/**
+ * Destination ID a single outbound Google hit targets, or null. Classified by
+ * shape (docs/prd/google-tag-gateway.md §4): a hit served from the site's own
+ * domain counts when `ctx` registers its gateway path. Without a gateway path
+ * known to this single call, only Google-served hits resolve — use
+ * `extractGoogleTagObservation` for capture-level gateway inference.
+ */
+export function destinationOfHit(rawUrl: string, ctx: GoogleMatchContext = {}): string | null {
+  const c = classifyGoogleRequest(rawUrl, ctx);
+  if ((c.kind === 'ga4_hit' || c.kind === 'ads_hit') && c.tagId && isCountableTransport(c.transport)) return c.tagId;
   return null;
 }
 
-export function extractGoogleTagObservation(requests: RequestLike[]): GoogleTagObservation {
+export function extractGoogleTagObservation(requests: RequestLike[], ctx: GoogleMatchContext = {}): GoogleTagObservation {
   const loaded = new Set<string>();
   const destinations = new Set<string>();
 
-  for (const r of requests) {
-    if (GTAG_JS.test(r.url)) {
-      const id = tryUrl(r.url)?.searchParams.get('id');
-      if (id && kindFromGoogleId(id) !== 'unknown') loaded.add(id);
-      continue;
+  for (const c of classifyGoogleRequests(requests, ctx)) {
+    if (!isCountableTransport(c.transport) || !c.tagId) continue;
+    if (c.kind === 'google_tag_load') {
+      if (kindFromGoogleId(c.tagId) !== 'unknown') loaded.add(c.tagId);
+    } else if (c.kind === 'ga4_hit' || c.kind === 'ads_hit') {
+      destinations.add(c.tagId);
     }
-    const dest = destinationOfHit(r.url);
-    if (dest) destinations.add(dest);
   }
 
   const loaded_tag_ids = [...loaded];

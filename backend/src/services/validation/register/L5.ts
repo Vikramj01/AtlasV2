@@ -26,6 +26,7 @@
 import type { AuditData, ValidationResult, ValidationRule, RuleStatus, DataLayerEvent } from '@/types/audit';
 import * as trackingSignals from '@/services/detection/trackingSignals';
 import { validateEventName, DEFAULT_CONVENTION } from '@/services/signals/namingConvention';
+import { contextForSite } from '../../google/googleEndpointMatcher';
 
 function primaryConversionName(auditData: AuditData): string | undefined {
   return auditData.declared_conversions?.find((c) => c.kind === 'primary')?.name;
@@ -223,8 +224,10 @@ export const GA4_CONVERSION_EVENT_FIRES: ValidationRule = {
       };
     }
 
+    // Shape-based (gateway-aware) hit set, classified over the whole capture once.
+    const ga4Hits = new Set(trackingSignals.ga4HitRequests(auditData.networkRequests, contextForSite(auditData.website_url)));
     const hits = auditData.networkRequests.filter(
-      (r) => trackingSignals.detectGa4([r]).hitCount > 0 && trackingSignals.ga4RequestParam(r, 'en') === name,
+      (r) => ga4Hits.has(r) && trackingSignals.ga4RequestParam(r, 'en') === name,
     );
     const found = hits.length > 0;
 
@@ -479,9 +482,10 @@ export const PAGE_VIEW_FIRES_ON_EVERY_ROUTE: ValidationRule = {
       };
     }
 
+    const ga4Hits = new Set(trackingSignals.ga4HitRequests(auditData.networkRequests, contextForSite(auditData.website_url)));
     const stepHasPageView = (step: string) =>
       auditData.dataLayer.some((e) => e.event === 'page_view' && e.step === step) ||
-      auditData.networkRequests.some((r) => trackingSignals.detectGa4([r]).hitCount > 0 && r.step === step);
+      auditData.networkRequests.some((r) => ga4Hits.has(r) && r.step === step);
 
     const missing = steps.filter((step) => !stepHasPageView(step));
 

@@ -86,3 +86,45 @@ describe('aggregateGtgStatus', () => {
     expect(shouldCapScore(s)).toBe(false);
   });
 });
+
+import { gtgStatusFromCapture, mayApplyCaptureStatus } from '../gtgStatus';
+
+describe('gtgStatusFromCapture', () => {
+  const ev = (over: Partial<Parameters<typeof gtgStatusFromCapture>[0]>) => ({
+    hasFirstPartyLoad: false, hasGoogleDirectLoad: false, firstPartyIsGateway: false, ...over,
+  });
+  it('gateway loads only → detected_unverified (never verified: that needs the probe)', () => {
+    expect(gtgStatusFromCapture(ev({ hasFirstPartyLoad: true, firstPartyIsGateway: true }))).toBe('detected_unverified');
+  });
+  it('Google-direct loads only → not_detected', () => {
+    expect(gtgStatusFromCapture(ev({ hasGoogleDirectLoad: true }))).toBe('not_detected');
+  });
+  it('both → partial', () => {
+    expect(gtgStatusFromCapture(ev({ hasFirstPartyLoad: true, firstPartyIsGateway: true, hasGoogleDirectLoad: true }))).toBe('partial');
+  });
+  it('no loader seen → unknown, not not_detected', () => {
+    expect(gtgStatusFromCapture(ev({}))).toBe('unknown');
+  });
+  it('same-site loader that cannot be told from sGTM → unknown, not detected', () => {
+    expect(gtgStatusFromCapture(ev({ hasFirstPartyLoad: true, firstPartyIsGateway: false }))).toBe('unknown');
+  });
+});
+
+describe('mayApplyCaptureStatus', () => {
+  it('never lets a capture overwrite verified, broken, legacy, verified_no_geo or not_applicable', () => {
+    for (const current of ['verified', 'verified_no_geo', 'broken', 'legacy', 'not_applicable'] as const) {
+      expect(mayApplyCaptureStatus(current, 'not_detected')).toBe(false);
+      expect(mayApplyCaptureStatus(current, 'detected_unverified')).toBe(false);
+    }
+  });
+  it('a derived unknown never overwrites anything', () => {
+    expect(mayApplyCaptureStatus('not_detected', 'unknown')).toBe(false);
+    expect(mayApplyCaptureStatus('unknown', 'unknown')).toBe(false);
+  });
+  it('allows moves among capture-derived states, but not a no-op', () => {
+    expect(mayApplyCaptureStatus('unknown', 'not_detected')).toBe(true);
+    expect(mayApplyCaptureStatus('not_detected', 'detected_unverified')).toBe(true);
+    expect(mayApplyCaptureStatus('detected_unverified', 'partial')).toBe(true);
+    expect(mayApplyCaptureStatus('not_detected', 'not_detected')).toBe(false);
+  });
+});
