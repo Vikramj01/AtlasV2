@@ -1,3 +1,5 @@
+import type { GtgStatus } from '@/lib/gtgStatus';
+
 export interface HealthScore {
   id: string;
   user_id: string;
@@ -9,6 +11,7 @@ export interface HealthScore {
   tag_firing_rate: number;
   platform_acceptance_score: number | null;
   gtg_active: boolean;
+  gtg_status?: GtgStatus | null;
   dma_coverage_score: number | null;
   last_audit_id: string | null;
   last_audit_at: string | null;

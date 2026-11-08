@@ -58,7 +58,7 @@ export function Step2_6GTGPreflight({ onNext, onBack }: Step2_6GTGPreflightProps
       <div>
         <h2 className="text-xl font-semibold tracking-tight">Google Tag Gateway (GTG) check</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Optional CDN-side configuration that improves signal quality.
+          Optional CDN-side configuration that serves Google tags from your own domain.
         </p>
       </div>
 
@@ -66,15 +66,16 @@ export function Step2_6GTGPreflight({ onNext, onBack }: Step2_6GTGPreflightProps
       <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
         <p className="text-sm font-medium">What is Google Tag Gateway?</p>
         <p className="text-sm text-muted-foreground">
-          Google Tag Gateway runs gtag.js through your CDN rather than google.com, reducing
-          ITP-related cookie restrictions and adding ~11% signal uplift. It's free to deploy.
+          Google Tag Gateway runs gtag.js through your CDN rather than google.com, so
+          measurement requests can travel through your own domain. Google states this helps with
+          browser cookie restrictions; Atlas has not measured any uplift for your site.
         </p>
       </div>
 
       {/* GTG status */}
       <div className="flex items-center gap-2 text-sm">
         <span className="font-medium">Status:</span>
-        <span className="text-muted-foreground">Not yet detected</span>
+        <span className="text-muted-foreground">Not checked yet</span>
       </div>
 
       {/* CDN deployment guide */}

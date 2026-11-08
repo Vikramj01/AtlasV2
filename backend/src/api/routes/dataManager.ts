@@ -3,13 +3,19 @@ import type { Request, Response } from 'express';
 import { authMiddleware } from '@/api/middleware/authMiddleware';
 import { planGuard } from '@/api/middleware/planGuard';
 import { supabaseAdmin } from '@/services/database/supabase';
+import {
+  gtgNeedsActionFlags,
+  isGtgActive,
+  normaliseGtgStatus,
+  type GtgStatus,
+} from '@/services/gtg/gtgStatus';
 
 export const dataManagerRouter = Router();
 dataManagerRouter.use(authMiddleware, planGuard('agency'));
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type ClientRow = { id: string; name: string; website_url: string };
+type ClientRow = { id: string; name: string; website_url: string; gtg_status?: string | null };
 
 type DMAStateRow = {
   upload_success_rate: number | null;
@@ -23,9 +29,10 @@ type TrendRow = { matched_count: number | null; record_count: number; created_at
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function computeNeedsAction(gtgActive: boolean, dma: DMAStateRow | null): string[] {
-  const flags: string[] = [];
-  if (!gtgActive) flags.push('gtg_not_deployed');
+function computeNeedsAction(gtgStatus: GtgStatus, dma: DMAStateRow | null): string[] {
+  // GTG flags come from verified per-client status, never from a GTM connection
+  // (docs/prd/google-tag-gateway.md §5.3). 'unknown' raises nothing.
+  const flags: string[] = [...gtgNeedsActionFlags(gtgStatus)];
   if (!dma?.last_successful_at) flags.push('dma_not_connected');
   if (dma?.avg_match_rate !== null && dma?.avg_match_rate !== undefined && dma.avg_match_rate < 20)
     flags.push('low_match_rate');
@@ -33,17 +40,12 @@ function computeNeedsAction(gtgActive: boolean, dma: DMAStateRow | null): string
 }
 
 async function buildClientSummary(client: ClientRow) {
-  const [dmaState, gtgConn, enricherTrend] = await Promise.all([
+  const [dmaState, enricherTrend] = await Promise.all([
     supabaseAdmin
       .from('dqm_dma_poll_state')
       .select('upload_success_rate, avg_match_rate, total_members_30d, destination_count, last_successful_at')
       .eq('org_id', client.id)
       .maybeSingle(),
-    supabaseAdmin
-      .from('gtm_container_connections')
-      .select('id')
-      .eq('organization_id', client.id)
-      .limit(1),
     supabaseAdmin
       .from('enricher_runs')
       .select('matched_count, record_count, created_at')
@@ -54,7 +56,7 @@ async function buildClientSummary(client: ClientRow) {
   ]);
 
   const dma = dmaState.data as DMAStateRow | null;
-  const gtgActive = (gtgConn.data?.length ?? 0) > 0;
+  const gtgStatus = normaliseGtgStatus(client.gtg_status);
   const trend = (enricherTrend.data ?? []) as TrendRow[];
 
   const trendPoints = trend.map((r) => ({
@@ -69,40 +71,34 @@ async function buildClientSummary(client: ClientRow) {
     client_id: client.id,
     client_name: client.name,
     website_url: client.website_url,
-    gtg_active: gtgActive,
+    gtg_active: isGtgActive(gtgStatus),
+    gtg_status: gtgStatus,
     avg_match_rate: dma?.avg_match_rate ?? null,
     upload_success_rate: dma?.upload_success_rate ?? null,
     total_members_30d: dma?.total_members_30d ?? 0,
     destination_count: dma?.destination_count ?? 0,
     last_dma_activity: dma?.last_successful_at ?? null,
     trend_points: trendPoints,
-    needs_action: computeNeedsAction(gtgActive, dma),
+    needs_action: computeNeedsAction(gtgStatus, dma),
   };
 }
 
 async function buildClientCsvRow(client: ClientRow): Promise<string> {
-  const [dmaState, gtgConn] = await Promise.all([
-    supabaseAdmin
-      .from('dqm_dma_poll_state')
-      .select('upload_success_rate, avg_match_rate, total_members_30d, destination_count, last_successful_at')
-      .eq('org_id', client.id)
-      .maybeSingle(),
-    supabaseAdmin
-      .from('gtm_container_connections')
-      .select('id')
-      .eq('organization_id', client.id)
-      .limit(1),
-  ]);
+  const dmaState = await supabaseAdmin
+    .from('dqm_dma_poll_state')
+    .select('upload_success_rate, avg_match_rate, total_members_30d, destination_count, last_successful_at')
+    .eq('org_id', client.id)
+    .maybeSingle();
 
   const dma = dmaState.data as DMAStateRow | null;
-  const gtgActive = (gtgConn.data?.length ?? 0) > 0;
-  const needsAction = computeNeedsAction(gtgActive, dma);
+  const gtgStatus = normaliseGtgStatus(client.gtg_status);
+  const needsAction = computeNeedsAction(gtgStatus, dma);
 
   const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
   return [
     escape(client.name),
     escape(client.website_url),
-    gtgActive ? 'yes' : 'no',
+    gtgStatus,
     dma?.avg_match_rate?.toFixed(1) ?? '',
     dma?.upload_success_rate?.toFixed(1) ?? '',
     String(dma?.total_members_30d ?? 0),
@@ -119,7 +115,7 @@ dataManagerRouter.get('/:orgId/clients', async (req: Request, res: Response) => 
 
   const { data: clients, error: clientsError } = await supabaseAdmin
     .from('clients')
-    .select('id, name, website_url')
+    .select('id, name, website_url, gtg_status')
     .eq('organisation_id', orgId);
 
   if (clientsError) {
@@ -143,11 +139,11 @@ dataManagerRouter.get('/:orgId/export/csv', async (req: Request, res: Response) 
 
   const { data: clients } = await supabaseAdmin
     .from('clients')
-    .select('id, name, website_url')
+    .select('id, name, website_url, gtg_status')
     .eq('organisation_id', orgId);
 
   const header =
-    'client_name,website_url,gtg_active,avg_match_rate,upload_success_rate,total_members_30d,destination_count,last_dma_activity,needs_action';
+    'client_name,website_url,gtg_status,avg_match_rate,upload_success_rate,total_members_30d,destination_count,last_dma_activity,needs_action';
 
   if (!clients || clients.length === 0) {
     res.set('Content-Type', 'text/csv');

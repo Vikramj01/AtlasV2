@@ -14,6 +14,13 @@
 import { supabaseAdmin } from '@/services/database/supabase';
 import type { ComputedMetrics } from '@/types/health';
 import type { ReportJSON } from '@/types/audit';
+import {
+  aggregateGtgStatus,
+  isGtgActive,
+  normaliseGtgStatus,
+  shouldCapScore,
+  type GtgStatus,
+} from '@/services/gtg/gtgStatus';
 
 // ── Data fetchers ─────────────────────────────────────────────────────────────
 
@@ -86,13 +93,22 @@ async function fetchConsentCoverage(userId: string): Promise<number> {
   return (data?.length ?? 0) > 0 ? 100 : 0;
 }
 
-async function fetchGTGActive(orgId: string): Promise<boolean> {
-  const { data } = await supabaseAdmin
-    .from('gtm_container_connections')
-    .select('id')
-    .eq('organization_id', orgId)
-    .limit(1);
-  return (data?.length ?? 0) > 0;
+/**
+ * Org-level GTG status, rolled up from per-client `clients.gtg_status`.
+ * A GTM OAuth connection is NOT evidence of a gateway (PRD §1.3 defect 1), so
+ * `gtm_container_connections` is deliberately not consulted here. Any read
+ * failure resolves to 'unknown', which never caps the score.
+ */
+export async function fetchGTGStatus(orgId: string): Promise<GtgStatus> {
+  const { data, error } = await supabaseAdmin
+    .from('clients')
+    .select('gtg_status')
+    .eq('organisation_id', orgId)
+    .neq('status', 'archived');
+  if (error || !data) return 'unknown';
+  return aggregateGtgStatus(
+    (data as Array<{ gtg_status: unknown }>).map((r) => normaliseGtgStatus(r.gtg_status)),
+  );
 }
 
 async function fetchDMACoverageScore(orgId: string): Promise<number | null> {
@@ -182,13 +198,13 @@ export async function fetchPlatformAcceptanceScore(orgId: string): Promise<numbe
 
 // ── Overall score formula ─────────────────────────────────────────────────────
 
-function computeOverallScore(
+export function computeOverallScore(
   signalHealth: number,
   capiDelivery: number,
   consent: number,
   daysSince: number | null,
   platformAcceptance: number | null,
-  gtgActive: boolean,
+  gtgStatus: GtgStatus,
   dmaCoverageScore: number | null,
 ): number {
   const capiContribution = capiDelivery === -1
@@ -224,8 +240,9 @@ function computeOverallScore(
       platformAcceptance * 0.1667;
   }
 
-  // Apply 85-cap when GTG is not deployed (before the 100 ceiling)
-  if (!gtgActive) rawScore = Math.min(rawScore, 85);
+  // 85-cap only when the gateway is applicable-but-absent or broken (PRD D1).
+  // 'unknown' / 'not_applicable' never cap.
+  if (shouldCapScore(gtgStatus)) rawScore = Math.min(rawScore, 85);
 
   return Math.round(Math.min(100, Math.max(0, rawScore)));
 }
@@ -238,12 +255,12 @@ export async function computeHealthMetrics(userId: string, websiteUrl?: string):
 }> {
   const orgId = await fetchOrgId(userId);
 
-  const [auditData, capiRate, consent, platformAcceptance, gtgActive, dmaCoverage] = await Promise.all([
+  const [auditData, capiRate, consent, platformAcceptance, gtgStatus, dmaCoverage] = await Promise.all([
     fetchLatestAuditScore(userId, websiteUrl),
     fetchCAPIDeliveryRate(userId),
     fetchConsentCoverage(userId),
     orgId ? fetchPlatformAcceptanceScore(orgId) : Promise.resolve(null),
-    orgId ? fetchGTGActive(orgId) : Promise.resolve(false),
+    orgId ? fetchGTGStatus(orgId) : Promise.resolve<GtgStatus>('unknown'),
     orgId ? fetchDMACoverageScore(orgId) : Promise.resolve(null),
   ]);
 
@@ -253,7 +270,8 @@ export async function computeHealthMetrics(userId: string, websiteUrl?: string):
     consent_coverage:         consent,
     tag_firing_rate:          auditData.signal_health, // derived from same audit
     platform_acceptance_score: platformAcceptance,
-    gtg_active:               gtgActive,
+    gtg_active:               isGtgActive(gtgStatus),
+    gtg_status:               gtgStatus,
     dma_coverage_score:       dmaCoverage,
     last_audit_id:            auditData.last_audit_id,
     last_audit_at:            auditData.last_audit_at,
@@ -266,7 +284,7 @@ export async function computeHealthMetrics(userId: string, websiteUrl?: string):
     consent,
     auditData.days_since_audit,
     platformAcceptance,
-    gtgActive,
+    gtgStatus,
     dmaCoverage,
   );
 

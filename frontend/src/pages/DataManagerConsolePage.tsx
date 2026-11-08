@@ -5,6 +5,7 @@ import { PlanGate } from '@/components/common/PlanGate';
 import { dataManagerApi } from '@/lib/api/dataManagerApi';
 import type { ClientDMARow } from '@/lib/api/dataManagerApi';
 import { supabase } from '@/lib/supabase';
+import { GTG_STATUS_LABELS, gtgTone, normaliseGtgStatus, type GtgTone } from '@/lib/gtgStatus';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
 
@@ -80,10 +81,20 @@ function successRateColour(rate: number | null): string {
   return 'text-red-600 font-semibold';
 }
 
+const GTG_BADGE: Record<GtgTone, string> = {
+  good: 'bg-emerald-50 text-emerald-700',
+  warning: 'bg-amber-50 text-amber-700',
+  critical: 'bg-red-50 text-red-700',
+  neutral: 'bg-gray-100 text-gray-600',
+};
+
 // ── Action chip labels ────────────────────────────────────────────────────────
 
 const ACTION_LABELS: Record<string, string> = {
   gtg_not_deployed: 'Deploy GTG',
+  gtg_broken: 'Fix GTG path',
+  gtg_geo_missing: 'GTG location headers',
+  gtg_partial: 'GTG partly routed',
   dma_not_connected: 'Reconnect DMA',
   low_match_rate: 'Low match rate',
 };
@@ -313,15 +324,11 @@ function DataManagerConsoleInner() {
 
                     {/* GTG status */}
                     <td className="px-4 py-3 whitespace-nowrap">
-                      {client.gtg_active ? (
-                        <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700">
-                          Active
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700">
-                          Not deployed
-                        </span>
-                      )}
+                      <span
+                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${GTG_BADGE[gtgTone(client.gtg_status)]}`}
+                      >
+                        {GTG_STATUS_LABELS[normaliseGtgStatus(client.gtg_status)]}
+                      </span>
                     </td>
 
                     {/* Match rate */}

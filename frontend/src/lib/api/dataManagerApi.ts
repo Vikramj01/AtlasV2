@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import type { GtgStatus } from '@/lib/gtgStatus';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
 
@@ -32,6 +33,7 @@ export interface ClientDMARow {
   client_name: string;
   website_url: string;
   gtg_active: boolean;
+  gtg_status: GtgStatus;
   avg_match_rate: number | null;
   upload_success_rate: number | null;
   total_members_30d: number;

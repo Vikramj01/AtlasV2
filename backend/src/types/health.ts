@@ -1,3 +1,5 @@
+import type { GtgStatus } from '@/services/gtg/gtgStatus';
+
 // ── Health Dashboard Types ─────────────────────────────────────────────────────
 
 export interface HealthScore {
@@ -10,7 +12,8 @@ export interface HealthScore {
   consent_coverage: number;      // 0 or 100 (configured = 100)
   tag_firing_rate: number;       // 0–100 % (alias of signal_health for display)
   platform_acceptance_score: number | null;  // 0–100 composite from reconciliation findings
-  gtg_active: boolean;           // true if sGTM / GTG container connection exists
+  gtg_active: boolean;           // compat: gtg_status IN ('verified','verified_no_geo')
+  gtg_status: GtgStatus | null;  // per docs/prd/google-tag-gateway.md §5.1 (null on rows pre-dating it)
   dma_coverage_score: number | null;  // 0–100 avg match rate from enricher_runs (30d)
   last_audit_id: string | null;
   last_audit_at: string | null;
@@ -91,6 +94,7 @@ export interface ComputedMetrics {
   tag_firing_rate: number;
   platform_acceptance_score: number | null;
   gtg_active: boolean;
+  gtg_status: GtgStatus;
   dma_coverage_score: number | null;
   last_audit_id: string | null;
   last_audit_at: string | null;

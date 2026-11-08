@@ -143,3 +143,56 @@ describe('GET /api/data-manager/:orgId/export/csv', () => {
     expect(res.text).toContain('client_name');
   });
 });
+
+
+// ── GTG status (docs/prd/google-tag-gateway.md §5) ────────────────────────────
+
+describe('GTG status in Data Manager Console', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  function mockClient(extra: Record<string, unknown>) {
+    vi.mocked(supabaseAdmin.from).mockImplementation((table: string) => {
+      if (table === 'clients') return makeChain([{ ...MOCK_CLIENT, ...extra }]) as any;
+      if (table === 'gtm_container_connections') throw new Error('GTG must not read GTM connections');
+      return makeChain([], null) as any;
+    });
+  }
+
+  it('does not report GTG for a client with no stored status (unknown, no flag)', async () => {
+    mockClient({});
+    const res = await buildApp().get('/api/data-manager/org-001/clients');
+    const c = res.body.clients[0];
+    expect(c.gtg_status).toBe('unknown');
+    expect(c.gtg_active).toBe(false);
+    expect(c.needs_action).not.toContain('gtg_not_deployed');
+  });
+
+  it('flags gtg_not_deployed only for an observed not_detected', async () => {
+    mockClient({ gtg_status: 'not_detected' });
+    const res = await buildApp().get('/api/data-manager/org-001/clients');
+    expect(res.body.clients[0].needs_action).toContain('gtg_not_deployed');
+  });
+
+  it('reports verified as active with no GTG flag', async () => {
+    mockClient({ gtg_status: 'verified' });
+    const res = await buildApp().get('/api/data-manager/org-001/clients');
+    const c = res.body.clients[0];
+    expect(c.gtg_active).toBe(true);
+    expect(c.needs_action.filter((f: string) => f.startsWith('gtg_'))).toEqual([]);
+  });
+
+  it('raises gtg_geo_missing for verified_no_geo (still active)', async () => {
+    mockClient({ gtg_status: 'verified_no_geo' });
+    const res = await buildApp().get('/api/data-manager/org-001/clients');
+    expect(res.body.clients[0].gtg_active).toBe(true);
+    expect(res.body.clients[0].needs_action).toContain('gtg_geo_missing');
+  });
+
+  it('exports gtg_status in the CSV', async () => {
+    mockClient({ gtg_status: 'broken' });
+    const res = await buildApp().get('/api/data-manager/org-001/export/csv');
+    expect(res.text.split('\n')[0]).toContain('gtg_status');
+    expect(res.text).toContain('broken');
+    expect(res.text).toContain('gtg_broken');
+  });
+});

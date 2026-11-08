@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import type { HealthScore } from '@/types/health';
 import { InfoTooltip } from '@/components/common/InfoTooltip';
 import { TOOLTIPS } from '@/lib/ui-copy';
+import { GTG_STATUS_LABELS, GTG_STATUS_SUBTEXT, gtgTone, normaliseGtgStatus } from '@/lib/gtgStatus';
 
 // ── Severity config (matches SummaryBar pattern from Sprint 1) ────────────────
 
@@ -81,10 +82,6 @@ function consentStatus(v: number): CellStatus {
   return v >= 100 ? 'good' : 'warning';
 }
 
-function gtgStatus(active: boolean): CellStatus {
-  return active ? 'good' : 'warning';
-}
-
 function dmaStatus(v: number | null): CellStatus {
   if (v === null) return 'neutral';
   if (v >= 70) return 'good';
@@ -99,6 +96,9 @@ interface KeyMetricsRowProps {
 }
 
 export function KeyMetricsRow({ score }: KeyMetricsRowProps) {
+  // Scores saved before gtg_status existed carry only the old GTM-connection boolean,
+  // which never measured a gateway, so they read as 'unknown' rather than 'Active'.
+  const gtgState = normaliseGtgStatus(score.gtg_status);
   const lastAuditText = score.last_audit_at
     ? `Last audit: ${new Date(score.last_audit_at).toLocaleDateString()}`
     : 'No audit yet';
@@ -141,9 +141,9 @@ export function KeyMetricsRow({ score }: KeyMetricsRowProps) {
       />
       <MetricCell
         label="GTG Status"
-        value={score.gtg_active ? 'Active' : 'Not deployed'}
-        subtext={score.gtg_active ? '+11% signal uplift' : 'Deploy to recover signal'}
-        status={gtgStatus(score.gtg_active)}
+        value={GTG_STATUS_LABELS[gtgState]}
+        subtext={GTG_STATUS_SUBTEXT[gtgState]}
+        status={gtgTone(gtgState)}
       />
       <MetricCell
         label="DMA Coverage"

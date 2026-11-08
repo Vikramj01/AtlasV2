@@ -38,6 +38,7 @@ export async function upsertHealthScore(
         tag_firing_rate: metrics.tag_firing_rate,
         platform_acceptance_score: metrics.platform_acceptance_score ?? null,
         gtg_active: metrics.gtg_active,
+        gtg_status: metrics.gtg_status,
         dma_coverage_score: metrics.dma_coverage_score ?? null,
         last_audit_id: metrics.last_audit_id,
         last_audit_at: metrics.last_audit_at,
