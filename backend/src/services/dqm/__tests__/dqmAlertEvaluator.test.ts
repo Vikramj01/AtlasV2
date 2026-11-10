@@ -10,67 +10,55 @@ import { describe, it, expect } from 'vitest';
 import { evaluateGTGAlert, evaluateDMAAlert, evaluateSgtmAlert, evaluateGoogleDeliveryAlert, evaluateOutcomeSyncAlert } from '../dqmAlertEvaluator';
 import type { OutcomeSyncAlertInput } from '../dqmAlertEvaluator';
 
-// ── evaluateGTGAlert ──────────────────────────────────────────────────────────
+// ── evaluateGTGAlert (Google tag gateway, per-client status roll-up) ──────────
 
 describe('evaluateGTGAlert', () => {
+  const none = { brokenCount: 0, noGeoCount: 0, partialCount: 0 };
+
   describe('no existing alert', () => {
-    it('fail → open critical', () => {
-      const r = evaluateGTGAlert({ status: 'fail', existingAlertActive: false });
+    it('broken → opens a critical alert', () => {
+      const r = evaluateGTGAlert({ ...none, brokenCount: 1, existingAlertActive: false });
       expect(r.decision).toBe('open');
       expect(r.severity).toBe('critical');
+      expect(r.title).toMatch(/Path Failing/);
     });
-
-    it('timeout → open critical', () => {
-      const r = evaluateGTGAlert({ status: 'timeout', existingAlertActive: false });
-      expect(r.decision).toBe('open');
-      expect(r.severity).toBe('critical');
-    });
-
-    it('degraded → open warning', () => {
-      const r = evaluateGTGAlert({ status: 'degraded', existingAlertActive: false });
+    it('verified_no_geo → opens a warning (medium) alert', () => {
+      const r = evaluateGTGAlert({ ...none, noGeoCount: 2, existingAlertActive: false });
       expect(r.decision).toBe('open');
       expect(r.severity).toBe('warning');
+      expect(r.message).toMatch(/location/i);
     });
-
-    it('pass → none (nothing to open)', () => {
-      const r = evaluateGTGAlert({ status: 'pass', existingAlertActive: false });
-      expect(r.decision).toBe('none');
-      expect(r.severity).toBeNull();
+    it('partial → opens an info (low) alert', () => {
+      const r = evaluateGTGAlert({ ...none, partialCount: 1, existingAlertActive: false });
+      expect(r.decision).toBe('open');
+      expect(r.severity).toBe('info');
     });
-
-    it('error (no GTM connection) → none', () => {
-      const r = evaluateGTGAlert({ status: 'error', existingAlertActive: false });
-      expect(r.decision).toBe('none');
-    });
-
-    it('skipped-backoff → none (never alerts)', () => {
-      const r = evaluateGTGAlert({ status: 'skipped-backoff', existingAlertActive: false });
-      expect(r.decision).toBe('none');
+    it('all clear → no alert', () => {
+      expect(evaluateGTGAlert({ ...none, existingAlertActive: false }).decision).toBe('none');
     });
   });
 
-  describe('existing alert active (dedup)', () => {
-    it('fail with existing alert → update, not open', () => {
-      const r = evaluateGTGAlert({ status: 'fail', existingAlertActive: true });
-      expect(r.decision).toBe('update');
-      expect(r.severity).toBe('critical');
-    });
+  it('worst wins: broken beats no-geo beats partial', () => {
+    expect(evaluateGTGAlert({ brokenCount: 1, noGeoCount: 3, partialCount: 2, existingAlertActive: false }).severity).toBe('critical');
+    expect(evaluateGTGAlert({ brokenCount: 0, noGeoCount: 3, partialCount: 2, existingAlertActive: false }).severity).toBe('warning');
+  });
 
-    it('degraded with existing alert → update warning', () => {
-      const r = evaluateGTGAlert({ status: 'degraded', existingAlertActive: true });
+  it('pluralises the client count', () => {
+    expect(evaluateGTGAlert({ ...none, brokenCount: 1, existingAlertActive: false }).message).toMatch(/^1 client has/);
+    expect(evaluateGTGAlert({ ...none, brokenCount: 3, existingAlertActive: false }).message).toMatch(/^3 clients have/);
+  });
+
+  describe('existing alert active (dedup)', () => {
+    it('still failing → update, never a second open', () => {
+      expect(evaluateGTGAlert({ ...none, brokenCount: 1, existingAlertActive: true }).decision).toBe('update');
+    });
+    it('severity follows the current worst state while the alert stays open', () => {
+      const r = evaluateGTGAlert({ ...none, noGeoCount: 1, existingAlertActive: true });
       expect(r.decision).toBe('update');
       expect(r.severity).toBe('warning');
     });
-
-    it('pass with existing alert → resolve (recovery)', () => {
-      const r = evaluateGTGAlert({ status: 'pass', existingAlertActive: true });
-      expect(r.decision).toBe('resolve');
-      expect(r.severity).toBeNull();
-    });
-
-    it('skipped-backoff with existing alert → none (backoff does not clear or update)', () => {
-      const r = evaluateGTGAlert({ status: 'skipped-backoff', existingAlertActive: true });
-      expect(r.decision).toBe('none');
+    it('all clear → resolve', () => {
+      expect(evaluateGTGAlert({ ...none, existingAlertActive: true }).decision).toBe('resolve');
     });
   });
 });

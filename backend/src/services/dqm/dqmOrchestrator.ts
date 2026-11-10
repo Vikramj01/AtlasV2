@@ -1,6 +1,6 @@
 // DQM Orchestrator — runs all DQM checks for a single org
 
-import { probeGTGPath, saveGTGCheck } from './gtgProbe';
+import { runGtgChecks } from './gtgGatewayMonitor';
 import { probeSgtmHealth, saveSgtmCheck } from './sgtmProbe';
 import { pollDMADiagnostics, upsertDMAPollState, updateDMABackoff, getDMAPollState } from './dmaPolling';
 import { pollMetaEmqForOrg, saveMetaEmqOutcome } from './metaEmqPolling';
@@ -17,6 +17,7 @@ import {
   incrementAlertOk,
   resolveAlert,
 } from '@/services/database/healthQueries';
+import { getOrgGtgStatusCounts } from '@/services/database/gtgQueries';
 import { supabaseAdmin } from '@/services/database/supabase';
 import logger from '@/utils/logger';
 
@@ -131,25 +132,37 @@ export async function runDQMForOrg(
     getDMAPollState(orgId),
   ]);
 
-  // ── GTG probe ────────────────────────────────────────────────────────────────
-  const gtgResult = await probeGTGPath(orgId, config.degradedLatencyThresholdMs)
-    .then(async (r) => {
-      if (r.gtagUrl) await saveGTGCheck(orgId, r.gtagUrl, r);
-      return r;
-    })
-    .catch((err) => {
-      logger.error({ err, orgId }, 'DQM: GTG probe failed');
+  // ── Google tag gateway — probe each client's REGISTERED path, then alert on the
+  // clients' combined status (docs/prd/google-tag-gateway.md §6). The previous
+  // probe checked Google's CDN, so this alert tracked Google, not the client.
+  // One rolled-up alert per org; per-client state lives on clients.gtg_status.
+  const gtgRun = await runGtgChecks(orgId, config.degradedLatencyThresholdMs).catch((err) => {
+    logger.error({ err, orgId }, 'DQM: GTG probe failed');
+    return null;
+  });
+
+  if (gtgRun) {
+    const existingGTGAlert = await getAlertByType(orgId, 'dqm_gtg');
+    const gtgCounts = await getOrgGtgStatusCounts(orgId).catch((err) => {
+      logger.error({ err, orgId }, 'DQM: GTG status roll-up failed');
       return null;
     });
 
-  if (gtgResult) {
-    const existingGTGAlert = await getAlertByType(orgId, 'dqm_gtg');
-    const gtgDecision = evaluateGTGAlert({
-      status: gtgResult.checkStatus,
-      existingAlertActive: !!existingGTGAlert,
-    });
-    const gtgAction = await applyAlertDecision(orgId, 'gtg', gtgDecision);
-    await writeDQMRunLog(orgId, 'gtg', gtgResult.checkStatus, gtgResult.responseMs, triggeredBy, gtgAction);
+    // A failed roll-up is not evidence of health: leave the alert exactly as it is.
+    if (gtgCounts) {
+      const gtgDecision = evaluateGTGAlert({
+        brokenCount: gtgCounts.broken,
+        noGeoCount: gtgCounts.noGeo,
+        partialCount: gtgCounts.partial,
+        existingAlertActive: !!existingGTGAlert,
+      });
+      if (gtgDecision.decision !== 'none') {
+        const gtgAction = await applyAlertDecision(orgId, 'gtg', gtgDecision);
+        const worstMs = gtgRun.results.reduce<number | null>((w, r) => (r.responseMs !== null && (w === null || r.responseMs > w) ? r.responseMs : w), null);
+        const label = gtgCounts.broken > 0 ? 'broken' : gtgCounts.noGeo > 0 ? 'verified_no_geo' : gtgCounts.partial > 0 ? 'partial' : 'ok';
+        await writeDQMRunLog(orgId, 'gtg', label, worstMs, triggeredBy, gtgAction);
+      }
+    }
   }
 
   // ── sGTM probe — one HEAD check per client with a verified endpoint ──────────

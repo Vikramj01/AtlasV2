@@ -16,6 +16,25 @@ async function resolveOrgId(userId: string): Promise<string> {
   return (profile as { organization_id?: string } | null)?.organization_id ?? userId;
 }
 
+const GTG_STATUS_RANK: Record<string, number> = { pass: 0, error: 1, degraded: 2, timeout: 3, fail: 4 };
+
+/**
+ * Worst of each endpoint's most recent check ('unknown' when nothing has been
+ * probed). The list is newest-first, so the first row seen per endpoint is its latest.
+ */
+export function worstLatestGtgStatus(rows: Array<{ check_status: string; endpoint_id: string | null }>): string {
+  if (rows.length === 0) return 'unknown';
+  const seen = new Set<string>();
+  let worst = 'pass';
+  for (const r of rows) {
+    const key = r.endpoint_id ?? `row:${seen.size}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if ((GTG_STATUS_RANK[r.check_status] ?? 1) > (GTG_STATUS_RANK[worst] ?? 0)) worst = r.check_status;
+  }
+  return worst;
+}
+
 // GET /api/dqm/status — returns current DQM state for the authenticated org
 dqmRouter.get('/status', authMiddleware, async (req, res) => {
   const orgId = await resolveOrgId(req.user!.id);
@@ -23,10 +42,13 @@ dqmRouter.get('/status', authMiddleware, async (req, res) => {
   const [gtgRows, dmaRow, metaEmqRows] = await Promise.all([
     supabaseAdmin
       .from('dqm_gtg_checks')
-      .select('check_status, http_status, response_ms, error_message, checked_at')
+      .select('check_status, geo_status, http_status, response_ms, error_message, checked_at, endpoint_id, client_id')
       .eq('org_id', orgId)
+      // Rows with no client_id are the old probe of Google's own CDN: history only,
+      // never a statement about a client's gateway (docs/prd/google-tag-gateway.md §6.1).
+      .not('client_id', 'is', null)
       .order('checked_at', { ascending: false })
-      .limit(10),
+      .limit(30),
     supabaseAdmin
       .from('dqm_dma_poll_state')
       .select('last_polled_at, last_successful_at, upload_success_rate, avg_match_rate, total_members_30d, destination_count, error_categories, backoff_until, consecutive_failures, updated_at')
@@ -37,6 +59,9 @@ dqmRouter.get('/status', authMiddleware, async (req, res) => {
 
   type GTGRow = {
     check_status: string;
+    geo_status: string | null;
+    endpoint_id: string | null;
+    client_id: string | null;
     http_status: number | null;
     response_ms: number | null;
     error_message: string | null;
@@ -56,7 +81,7 @@ dqmRouter.get('/status', authMiddleware, async (req, res) => {
   };
 
   const checks = (gtgRows.data ?? []) as GTGRow[];
-  const latestStatus = checks[0]?.check_status ?? 'unknown';
+  const latestStatus = worstLatestGtgStatus(checks);
 
   const dma = dmaRow.data as DMARow | null;
   const backoffUntil = dma?.backoff_until ?? null;
@@ -66,7 +91,7 @@ dqmRouter.get('/status', authMiddleware, async (req, res) => {
     data: {
       gtg: {
         latest_status: latestStatus,
-        recent_checks: checks,
+        recent_checks: checks.slice(0, 10),
       },
       dma: dma
         ? {

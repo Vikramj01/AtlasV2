@@ -226,3 +226,18 @@ describe('getClientSummaries', () => {
     expect(byId.c2.health_level).toBe('critical');
   });
 });
+
+// ── gtgStatusSeverity (Google tag gateway, Sprint 3) ──────────────────────────
+import { gtgStatusSeverity } from '../dashboardSummaryService';
+
+describe('gtgStatusSeverity', () => {
+  it('broken → high, missing location headers → medium', () => {
+    expect(gtgStatusSeverity('broken')).toBe('high');
+    expect(gtgStatusSeverity('verified_no_geo')).toBe('medium');
+  });
+  it('everything else raises nothing: a healthy, partial, unknown or absent gateway is not a DQM severity here', () => {
+    for (const s of ['verified', 'partial', 'unknown', 'not_detected', 'not_applicable', 'detected_unverified', 'legacy', undefined, null]) {
+      expect(gtgStatusSeverity(s as string | undefined)).toBeNull();
+    }
+  });
+});

@@ -8,6 +8,7 @@ import { planningRouter } from '@/api/routes/planning';
 import { shareRouter, devRouter } from '@/api/routes/developer';
 import { organisationsRouter } from '@/api/routes/organisations';
 import { clientsRouter } from '@/api/routes/clients';
+import { gtgRouter } from '@/api/routes/gtg';
 import { signalsRouter } from '@/api/routes/signals';
 import { consentRouter } from '@/api/routes/consent';
 import { capiRouter } from '@/api/routes/capi';
@@ -152,6 +153,7 @@ app.use('/api/dev', devRouter);
 // Composable signals & agency workspaces
 app.use('/api/organisations', organisationsRouter);
 app.use('/api/organisations', clientsRouter);
+app.use('/api/organisations', gtgRouter);
 app.use('/api/signals', signalsRouter);
 app.use('/api/consent', consentRouter);
 app.use('/api/capi', capiRouter);

@@ -2,7 +2,7 @@
  * DQM service unit tests
  *
  * Covers:
- *  - gtgProbe: degraded classification, pass, fail, timeout
+ *  - (gtgProbe now has its own file, gtgProbe.test.ts)
  *  - dmaPolling: skipped-backoff sentinel, backoff set on failure,
  *    backoff cleared on success, consecutive_failures tracking
  */
@@ -39,84 +39,7 @@ function makeChain(resolvedData: unknown = null, resolvedError: unknown = null) 
   return chain as any;
 }
 
-// ── gtgProbe ──────────────────────────────────────────────────────────────────
-
-describe('probeGTGPath', () => {
-  beforeEach(() => { vi.clearAllMocks(); });
-
-  function mockGTMConnection(containerId = 'GTM-TEST') {
-    vi.mocked(supabaseAdmin.from).mockReturnValueOnce(
-      makeChain([{ container_id: containerId }]) as any,
-    );
-  }
-
-  it('2xx within threshold → pass', async () => {
-    mockGTMConnection();
-    global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200 }) as any;
-
-    const { probeGTGPath } = await import('../gtgProbe');
-    const result = await probeGTGPath('org-1', 2000);
-
-    expect(result.checkStatus).toBe('pass');
-    expect(result.httpStatus).toBe(200);
-  });
-
-  it('2xx but latency above threshold → degraded', async () => {
-    mockGTMConnection();
-
-    // Simulate slow response by advancing Date.now during the fetch
-    let callCount = 0;
-    const realDateNow = Date.now;
-    vi.spyOn(Date, 'now').mockImplementation(() => {
-      callCount++;
-      return callCount === 1 ? 1000 : 1000 + 2500; // 2500ms elapsed
-    });
-
-    global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200 }) as any;
-
-    const { probeGTGPath } = await import('../gtgProbe');
-    const result = await probeGTGPath('org-1', 2000);
-
-    expect(result.checkStatus).toBe('degraded');
-    expect(result.responseMs).toBeGreaterThan(2000);
-
-    vi.spyOn(Date, 'now').mockRestore();
-    Date.now = realDateNow;
-  });
-
-  it('non-2xx response → fail', async () => {
-    mockGTMConnection();
-    global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 503 }) as any;
-
-    const { probeGTGPath } = await import('../gtgProbe');
-    const result = await probeGTGPath('org-1', 2000);
-
-    expect(result.checkStatus).toBe('fail');
-    expect(result.httpStatus).toBe(503);
-  });
-
-  it('fetch aborted → timeout', async () => {
-    mockGTMConnection();
-    const abortErr = new Error('The operation was aborted');
-    abortErr.name = 'AbortError';
-    global.fetch = vi.fn().mockRejectedValue(abortErr) as any;
-
-    const { probeGTGPath } = await import('../gtgProbe');
-    const result = await probeGTGPath('org-1', 2000);
-
-    expect(result.checkStatus).toBe('timeout');
-  });
-
-  it('no GTM connection → error with message', async () => {
-    vi.mocked(supabaseAdmin.from).mockReturnValueOnce(makeChain([]) as any);
-
-    const { probeGTGPath } = await import('../gtgProbe');
-    const result = await probeGTGPath('org-1', 2000);
-
-    expect(result.checkStatus).toBe('error');
-    expect(result.errorMessage).toMatch(/No GTM connection/);
-  });
-});
+// gtgProbe moved to gtgProbe.test.ts (per-endpoint gateway probe, docs/prd/google-tag-gateway.md §6.3).
 
 // ── dmaPolling ────────────────────────────────────────────────────────────────
 

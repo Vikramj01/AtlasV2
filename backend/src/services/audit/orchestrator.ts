@@ -39,7 +39,7 @@ import { extractGoogleTagObservation, observationToRows } from '@/services/googl
 import { writeTopologySnapshot } from '@/services/database/googleTagTopologyQueries';
 import logger from '@/utils/logger';
 import { contextForSite } from '@/services/google/googleEndpointMatcher';
-import { applyCaptureGtgStatus } from '@/services/database/gtgQueries';
+import { applyCaptureGtgStatus, discoverGtgEndpointsFromCapture } from '@/services/database/gtgQueries';
 
 export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
   const { audit_id } = data;
@@ -308,9 +308,13 @@ export async function runAuditOrchestrator(data: AuditJobData): Promise<void> {
           // GTG status from this capture (docs/prd/google-tag-gateway.md §5). Non-fatal;
           // never overwrites a probe-verified, broken, legacy or operator-declared value.
           try {
+            // Register any gateway path this capture revealed first, so the probe can check it
+            // (PRD §6.2). Only a loader under a reserved path yields an endpoint; an
+            // unattributable same-site loader has no path to register.
+            if (orgId) await discoverGtgEndpointsFromCapture(orgId, auditRow.client_id, auditData.website_url, auditData.networkRequests);
             await applyCaptureGtgStatus(auditRow.client_id, auditData.website_url, auditData.networkRequests);
           } catch (err) {
-            logger.warn({ audit_id, err: err instanceof Error ? err.message : String(err) }, 'Failed to update GTG status from capture');
+            logger.warn({ audit_id, err: err instanceof Error ? err.message : String(err) }, 'Failed to update GTG status / endpoints from capture');
           }
         }
 

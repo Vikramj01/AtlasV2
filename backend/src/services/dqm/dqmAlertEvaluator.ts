@@ -9,8 +9,20 @@ export type DMAStatus = 'ok' | 'warning' | 'critical' | 'skipped-backoff';
 
 export type AlertDecision = 'none' | 'open' | 'update' | 'resolve';
 
+/**
+ * Google tag gateway alert input (docs/prd/google-tag-gateway.md §6.4). Counts
+ * come from the clients' combined `gtg_status`, not from one probe, so a
+ * `partial` (a capture-derived state) can alert alongside probe-derived ones.
+ * One rolled-up alert per org (health_alerts has no client dimension; the sGTM
+ * precedent) — per-client state lives on clients.gtg_status and dqm_gtg_checks.
+ */
 export interface GTGAlertInput {
-  status: GTGStatus;
+  /** Clients whose gateway path is failing its health check. */
+  brokenCount: number;
+  /** Clients whose path routes but is not receiving visitor-location headers. */
+  noGeoCount: number;
+  /** Clients with only some tags routed through the gateway. */
+  partialCount: number;
   existingAlertActive: boolean;
 }
 
@@ -47,51 +59,38 @@ export interface AlertEvalResult {
 // ── GTG evaluation ────────────────────────────────────────────────────────────
 
 export function evaluateGTGAlert(input: GTGAlertInput): AlertEvalResult {
-  const { status, existingAlertActive } = input;
+  const { brokenCount, noGeoCount, partialCount, existingAlertActive } = input;
+  const open = (severity: AlertSeverity, title: string, message: string): AlertEvalResult =>
+    ({ decision: existingAlertActive ? 'update' : 'open', severity, title, message });
+  const plural = (n: number): string => (n === 1 ? 'client' : 'clients');
 
-  // Backoff-skip is expected behaviour — never open or update an alert for it.
-  if (status === 'skipped-backoff') {
-    return { decision: 'none', severity: null, title: '', message: '' };
+  // Worst wins: broken > missing location headers > partly routed.
+  if (brokenCount > 0) {
+    return open(
+      'critical',
+      'Google Tag Gateway Path Failing',
+      `${brokenCount} ${plural(brokenCount)} ha${brokenCount === 1 ? 's' : 've'} a registered Google tag gateway path that is failing its health check. A failing gateway can stop the tag container from loading, so measurement data may be lost for ${brokenCount === 1 ? 'that client' : 'those clients'}.`,
+    );
   }
 
-  if (status === 'fail' || status === 'timeout') {
-    if (existingAlertActive) {
-      return {
-        decision: 'update',
-        severity: 'critical',
-        title: 'GTG Path Unavailable',
-        message: `Your Google Tag (GTG) path is returning ${status === 'timeout' ? 'no response (timeout)' : 'a failure response'}. First-party tracking data may be lost.`,
-      };
-    }
-    return {
-      decision: 'open',
-      severity: 'critical',
-      title: 'GTG Path Unavailable',
-      message: `Your Google Tag (GTG) path is returning ${status === 'timeout' ? 'no response (timeout)' : 'a failure response'}. First-party tracking data may be lost.`,
-    };
+  if (noGeoCount > 0) {
+    return open(
+      'warning',
+      'Google Tag Gateway Missing Location Headers',
+      `${noGeoCount} ${plural(noGeoCount)} ${noGeoCount === 1 ? 'has' : 'have'} a gateway path that routes, but the CDN is not forwarding visitor location. Google would receive the proxy's location instead of the visitor's. This is easy to miss because nothing visibly fails.`,
+    );
   }
 
-  if (status === 'degraded') {
-    if (existingAlertActive) {
-      return {
-        decision: 'update',
-        severity: 'warning',
-        title: 'GTG Path Responding Slowly',
-        message: 'Your Google Tag (GTG) path is responding, but latency is above the 2s threshold. This may indicate a server-side performance issue.',
-      };
-    }
-    return {
-      decision: 'open',
-      severity: 'warning',
-      title: 'GTG Path Responding Slowly',
-      message: 'Your Google Tag (GTG) path is responding, but latency is above the 2s threshold. This may indicate a server-side performance issue.',
-    };
+  if (partialCount > 0) {
+    return open(
+      'info',
+      'Google Tag Gateway Only Partly Applied',
+      `${partialCount} ${plural(partialCount)} ${partialCount === 1 ? 'routes' : 'route'} some Google tags through the gateway while others still load from Google directly.`,
+    );
   }
 
-  // pass or error (error = no GTM connection, not a true failure)
-  if (existingAlertActive) {
-    return { decision: 'resolve', severity: null, title: '', message: '' };
-  }
+  // Nothing wrong: close any open alert (applyAlertDecision needs two consecutive OK runs).
+  if (existingAlertActive) return { decision: 'resolve', severity: null, title: '', message: '' };
   return { decision: 'none', severity: null, title: '', message: '' };
 }
 

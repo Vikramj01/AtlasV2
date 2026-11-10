@@ -16,6 +16,7 @@ import { EnrichmentWarningBanner } from '@/components/enrichment/EnrichmentWarni
 import { IdentityConfigStep } from '@/components/enrichment/IdentityConfigStep';
 import { CampaignSignalValidatorTab } from '@/components/campaignSignalValidator/CampaignSignalValidatorTab';
 import { GoogleTagTopologyCard } from '@/components/googleTag/GoogleTagTopologyCard';
+import { GtgEndpointsCard } from '@/components/googleTag/GtgEndpointsCard';
 import { SectionErrorBoundary } from '@/components/common/ErrorBoundary';
 import type { ClientWithDetails, ClientDeployment, ClientOutput } from '@/types/organisation';
 import type { StrategyBriefRecord } from '@/types/strategy';
@@ -484,6 +485,13 @@ export function ClientDetailPage() {
           {orgId && clientId && (
             <SectionErrorBoundary>
               <GoogleTagTopologyCard orgId={orgId} clientId={clientId} />
+            </SectionErrorBoundary>
+          )}
+          {orgId && clientId && (
+            <SectionErrorBoundary>
+              <div className="mt-4">
+                <GtgEndpointsCard orgId={orgId} clientId={clientId} />
+              </div>
             </SectionErrorBoundary>
           )}
         </TabsContent>

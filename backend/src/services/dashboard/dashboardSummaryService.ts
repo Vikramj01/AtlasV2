@@ -16,7 +16,7 @@ const HEALTH_LEVEL_RANK: Record<'healthy' | 'warning' | 'critical', number> = {
   healthy: 0, warning: 1, critical: 2,
 };
 
-// dqm_gtg_checks / dqm_sgtm_checks check_status -> severity.
+// dqm_sgtm_checks check_status -> severity.
 // 'fail' means the endpoint is confirmed down (critical); 'timeout'/'error' are
 // usually transient/infra issues rather than a confirmed break (high, not critical);
 // 'degraded' (sgtm only) means it's working but slow (medium).
@@ -58,6 +58,17 @@ export function topologySeverity(status: string | undefined): DqmSeverity | null
   if (status === 'fail') return 'critical';
   if (status === 'degraded') return 'medium';
   return null; // 'pass' / 'error' (couldn't check) / no check yet
+}
+
+// Google tag gateway: severity from the client's combined gtg_status
+// (docs/prd/google-tag-gateway.md §6.4). A failing registered path is 'high'
+// (not 'critical': a probe from Atlas's server is one vantage point); missing
+// location headers is 'medium'. The PRD's 'low' for `partial` has no tier here
+// (DqmSeverity has no 'low' rank), so it surfaces only as the info-level alert.
+export function gtgStatusSeverity(status: string | undefined | null): DqmSeverity | null {
+  if (status === 'broken') return 'high';
+  if (status === 'verified_no_geo') return 'medium';
+  return null;
 }
 
 export function worstDqmSeverity(...severities: (DqmSeverity | null)[]): DqmSeverity | null {
@@ -337,7 +348,7 @@ export async function getClientSummaries(orgId: string): Promise<DashboardClient
   const clientIds = clients.map((c: { id: string }) => c.id);
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
-  const [platformRows, deploymentRows, ihcCountRows, reconCountRows, sgtmRows, gtgRows, dmaRows, identityConfigRows, outcomeSyncRows, topologyRows] = await Promise.all([
+  const [platformRows, deploymentRows, ihcCountRows, reconCountRows, sgtmRows, gtgStatusRows, dmaRows, identityConfigRows, outcomeSyncRows, topologyRows] = await Promise.all([
     supabase
       .from('client_platforms')
       .select('client_id, platform')
@@ -372,14 +383,14 @@ export async function getClientSummaries(orgId: string): Promise<DashboardClient
       .in('client_id', clientIds)
       .order('checked_at', { ascending: false }),
 
-    // dqm_gtg_checks/dqm_dma_poll_state use a loose org_id column (no FK) that
-    // agency flows already populate with client.id — same convention the
-    // Data Manager Console (dataManager.ts) relies on for these two tables.
+    // Per-client GTG status. Best-effort and separate from the main client query: the
+    // column arrives with migration 20260925001, and a missing column must cost this
+    // signal, not the whole summary. (dqm_dma_poll_state below keeps the loose
+    // org_id-as-client_id convention the Data Manager Console relies on.)
     supabase
-      .from('dqm_gtg_checks')
-      .select('org_id, check_status, checked_at')
-      .in('org_id', clientIds)
-      .order('checked_at', { ascending: false }),
+      .from('clients')
+      .select('id, gtg_status')
+      .in('id', clientIds),
 
     supabase
       .from('dqm_dma_poll_state')
@@ -419,10 +430,10 @@ export async function getClientSummaries(orgId: string): Promise<DashboardClient
     if (!sgtmLatestByClient[r.client_id]) sgtmLatestByClient[r.client_id] = r.check_status;
   }
 
-  const gtgLatestByClient: Record<string, string> = {};
-  for (const row of gtgRows.data ?? []) {
-    const r = row as { org_id: string; check_status: string };
-    if (!gtgLatestByClient[r.org_id]) gtgLatestByClient[r.org_id] = r.check_status;
+  const gtgStatusByClient: Record<string, string> = {};
+  for (const row of gtgStatusRows.data ?? []) {
+    const r = row as { id: string; gtg_status: string | null };
+    if (r.gtg_status) gtgStatusByClient[r.id] = r.gtg_status;
   }
 
   const dmaByClient: Record<string, { consecutive_failures: number; avg_match_rate: number | null }> = {};
@@ -523,12 +534,13 @@ export async function getClientSummaries(orgId: string): Promise<DashboardClient
 
     const dqmWorstSeverity = worstDqmSeverity(
       checkStatusSeverity(sgtmLatestByClient[c.id]),
-      checkStatusSeverity(gtgLatestByClient[c.id]),
+      gtgStatusSeverity(gtgStatusByClient[c.id]),
       dmaSeverity(dmaByClient[c.id]),
       outcomeSyncSeverity(outcomeSyncByClient[c.id]),
       topologySeverity(topologyLatestByClient[c.id]),
     );
-    const dqmAlertCount = [sgtmLatestByClient[c.id], gtgLatestByClient[c.id]].filter((s) => checkStatusSeverity(s) !== null).length
+    const dqmAlertCount = (checkStatusSeverity(sgtmLatestByClient[c.id]) !== null ? 1 : 0)
+      + (gtgStatusSeverity(gtgStatusByClient[c.id]) !== null ? 1 : 0)
       + (dmaSeverity(dmaByClient[c.id]) !== null ? 1 : 0)
       + (outcomeSyncSeverity(outcomeSyncByClient[c.id]) !== null ? 1 : 0)
       + (topologySeverity(topologyLatestByClient[c.id]) !== null ? 1 : 0);

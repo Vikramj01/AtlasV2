@@ -121,14 +121,6 @@ export interface GtgCaptureEvidence {
 }
 
 /**
- * Statuses a CAPTURE alone may set (PRD §5.1). Verification ('verified',
- * 'verified_no_geo', 'broken') needs the Sprint 3 probe, and 'not_applicable'
- * and 'legacy' need an operator or a verified setup page, so a capture never
- * derives those.
- */
-export const CAPTURE_DERIVABLE_STATUSES: readonly GtgStatus[] = ['unknown', 'detected_unverified', 'not_detected', 'partial'];
-
-/**
  * - first-party loads AND Google-direct loads  → 'partial'
  * - first-party loads only                     → 'detected_unverified'
  * - Google-direct loads only                   → 'not_detected'
@@ -141,13 +133,99 @@ export function gtgStatusFromCapture(e: GtgCaptureEvidence): GtgStatus {
   return 'unknown';
 }
 
+// ── Probe-derived status (Sprint 3) ──────────────────────────────────────────
+
+/** One endpoint's verdict from a probe run. 'inconclusive' = the probe could not decide (rate limit, network, unexpected body, geo not checked). */
+export type EndpointProbeVerdict = 'ok' | 'no_geo' | 'broken' | 'inconclusive';
+/** A client's probes rolled up. 'none' = no endpoint was probed at all. */
+export type ProbeSummary = 'none' | 'inconclusive' | 'broken' | 'ok' | 'no_geo';
+
+export const PROBE_SUMMARIES: readonly ProbeSummary[] = ['none', 'inconclusive', 'broken', 'ok', 'no_geo'];
+
+export function normaliseProbeSummary(value: unknown): ProbeSummary {
+  return typeof value === 'string' && (PROBE_SUMMARIES as readonly string[]).includes(value)
+    ? (value as ProbeSummary)
+    : 'none';
+}
+
+/** The probe outcome the per-endpoint verdict is derived from. */
+export interface ProbeOutcome {
+  pathStatus: 'pass' | 'degraded' | 'fail' | 'timeout' | 'error';
+  geoStatus: 'pass' | 'fail' | 'skipped';
+}
+
 /**
- * Whether a capture-derived status may replace the stored one. A capture never
- * overwrites a probe-verified, broken, legacy or operator-declared value, and a
- * derived 'unknown' never overwrites anything.
+ * - /healthy failed or timed out        → broken (the registered path does not route to the gateway)
+ * - /healthy 'error' (rate limit, network, body not understood) → inconclusive, never broken
+ * - /healthy passed, geo failed         → no_geo (routing works, location headers missing)
+ * - /healthy passed, geo skipped        → inconclusive (cannot claim verified without the geo check)
+ * - both passed                         → ok
  */
-export function mayApplyCaptureStatus(current: GtgStatus, derived: GtgStatus): boolean {
-  if (derived === 'unknown') return false;
-  if (!CAPTURE_DERIVABLE_STATUSES.includes(current)) return false;
-  return current !== derived;
+export function endpointVerdict(o: ProbeOutcome): EndpointProbeVerdict {
+  if (o.pathStatus === 'fail' || o.pathStatus === 'timeout') return 'broken';
+  if (o.pathStatus === 'error') return 'inconclusive';
+  if (o.geoStatus === 'fail') return 'no_geo';
+  if (o.geoStatus === 'skipped') return 'inconclusive';
+  return 'ok';
+}
+
+/** any broken → broken; else any inconclusive → inconclusive; else any no_geo → no_geo; else ok; none probed → none. */
+export function summariseProbes(verdicts: readonly EndpointProbeVerdict[]): ProbeSummary {
+  if (verdicts.length === 0) return 'none';
+  if (verdicts.includes('broken')) return 'broken';
+  if (verdicts.includes('inconclusive')) return 'inconclusive';
+  if (verdicts.includes('no_geo')) return 'no_geo';
+  return 'ok';
+}
+
+/** PRD §5.1: `verified` needs a pass within the last 24 hours. An older probe is treated as inconclusive. */
+export const PROBE_FRESH_HOURS = 24;
+
+export function effectiveProbeSummary(summary: ProbeSummary, checkedAt: string | null, now: Date = new Date()): ProbeSummary {
+  if (summary === 'none' || summary === 'inconclusive') return summary;
+  if (!checkedAt) return 'inconclusive';
+  const ageMs = now.getTime() - new Date(checkedAt).getTime();
+  return Number.isFinite(ageMs) && ageMs <= PROBE_FRESH_HOURS * 3_600_000 ? summary : 'inconclusive';
+}
+
+export interface CombineInput {
+  /** The stored clients.gtg_status. */
+  current: GtgStatus;
+  /** Last capture-derived status ('unknown' when no capture has seen a loader). */
+  capture: GtgStatus;
+  /** Probe summary, already passed through effectiveProbeSummary(). */
+  probe: ProbeSummary;
+}
+
+/**
+ * The one place a client's gtg_status is decided from its two evidence streams
+ * (PRD §5.1). A capture says what the PAGE loads; a probe says whether the
+ * registered PATH works. `verified` needs both.
+ *
+ * - an operator-declared 'not_applicable' is never overwritten here
+ * - a failing registered path is 'broken' whatever the page does (it can cost the container)
+ * - a working path with a capture that shows the page using it → verified / verified_no_geo
+ * - a working path but the page still loads from Google       → not_detected (applicable, absent)
+ * - a working path with a partly-routed page                   → partial
+ * - a working path with no capture yet                         → unknown (cannot claim the page uses it)
+ * - an inconclusive probe never regresses a verified/broken value; it falls back to the capture otherwise
+ */
+export function combineGtgStatus({ current, capture, probe }: CombineInput): GtgStatus {
+  if (current === 'not_applicable') return 'not_applicable';
+  if (current === 'legacy') return 'legacy';
+
+  if (probe === 'broken') return 'broken';
+
+  if (probe === 'ok' || probe === 'no_geo') {
+    if (capture === 'detected_unverified') return probe === 'ok' ? 'verified' : 'verified_no_geo';
+    if (capture === 'partial') return 'partial';
+    if (capture === 'not_detected') return 'not_detected';
+    return 'unknown';
+  }
+
+  if (probe === 'inconclusive') {
+    return current === 'verified' || current === 'verified_no_geo' || current === 'broken' ? current : capture;
+  }
+
+  return capture; // no endpoint registered or probed: the capture decides, as in Sprint 2
 }

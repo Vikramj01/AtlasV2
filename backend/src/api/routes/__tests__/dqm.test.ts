@@ -36,7 +36,7 @@ import { dqmRouter } from '../dqm';
 
 function makeChain(listData: unknown = [], singleData: unknown = null): any {
   const chain: any = {};
-  for (const m of ['select', 'eq', 'order', 'insert']) {
+  for (const m of ['select', 'eq', 'not', 'order', 'insert']) {
     chain[m] = vi.fn().mockReturnValue(chain);
   }
   chain.limit       = vi.fn().mockResolvedValue({ data: listData, error: null });
@@ -61,6 +61,19 @@ function buildApp() {
 
 describe('GET /api/dqm/status', () => {
   beforeEach(() => { vi.clearAllMocks(); });
+
+  it('reads only per-client gateway rows: the old probe of Google\'s own CDN (no client_id) is never reported as a client status', async () => {
+    const gtgChain = makeChain([]);
+    vi.mocked(supabaseAdmin.from).mockImplementation((table: string) => {
+      if (table === 'profiles') return makeChain([], { organization_id: 'org-1' }) as any;
+      if (table === 'dqm_gtg_checks') return gtgChain as any;
+      return makeChain() as any;
+    });
+    const res = await buildApp().get('/api/dqm/status');
+    expect(res.status).toBe(200);
+    expect(gtgChain.not).toHaveBeenCalledWith('client_id', 'is', null);
+    expect(res.body.data.gtg.latest_status).toBe('unknown');
+  });
 
   it('returns { data: { gtg, dma } } envelope', async () => {
     vi.mocked(supabaseAdmin.from).mockImplementation((table: string) => {
