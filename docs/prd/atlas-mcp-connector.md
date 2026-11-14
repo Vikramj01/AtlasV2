@@ -350,7 +350,10 @@ interface HelpOffer {
 ```
 
 - **Free review**: a ViMi signal engineer reviews the scan (plus any recorded account checks) and replies with a prioritised fix plan. Turnaround text comes from config (`MCP_REVIEW_TURNAROUND_TEXT`, initial value "within 24 hours") so ViMi controls the promise.
-- **Call**: link to ViMi's booking page (`MCP_BOOKING_URL`). The booking form has a **Scan ID** field; Atlas appends the scan ID to the link so that field is pre-filled (`MCP_BOOKING_SCAN_ID_PARAM`, the query parameter name for that field, confirmed once the booking tool is known).
+- **Call**: ViMi's Google Calendar appointment booking page (`MCP_BOOKING_URL` = `https://calendar.app.google/XYtLkuYZHGXvu7jv6`). The booking form has a **Scan ID** field, but Google Calendar appointment schedules do not document pre-filling booking-form fields from the URL, so Atlas does not rely on it. Instead:
+  1. `atlas_request_review` with `choice: 'call'` is the primary link: it logs the request with the scan ID and the user's email and notifies ViMi **before** the user books, so the booking can be matched to the scan by email.
+  2. The tool result returns the booking URL together with a short `scan_reference` (the first 8 characters of the scan ID, uppercase) and tells the assistant to show it and ask the user to paste it into the Scan ID field.
+  3. If ViMi later moves to a booking tool that supports URL pre-fill (Calendly, Cal.com), set `MCP_BOOKING_SCAN_ID_PARAM` and Atlas appends `?<param>=<scan_reference>` automatically. Leave it unset for Google Calendar.
 - **Campaign Signal Validator**: the existing paid diagnostic via the existing Stripe Checkout flow, pre-filled with the scanned URL.
 
 ### 9.4 `atlas_request_review`
@@ -539,7 +542,7 @@ The headline metric for this connector is **qualified review requests per 100 co
 
 1. **Middle tier**: deferred until four weeks of data (D4).
 2. **Plan naming**: code uses `free/pro/agency`; pricing PRD uses Business/Agency/Enterprise. Connector follows code.
-3. **Booking link**: `MCP_BOOKING_URL` and the query parameter that pre-fills its Scan ID field, pending the link.
+3. ~~Booking link~~ resolved: Google Calendar appointment page; Scan ID matched by email and a pasted `scan_reference` (§9.3), since Google Calendar booking forms are not known to support URL pre-fill. Re-check if the booking tool changes.
 4. **Turnaround basis**: whether "within 24 hours" means calendar hours or working hours; the config text should say which.
 5. ~~Test email~~ resolved: `info@vimi.digital`. ~~Lead inbox~~ resolved: `vikram@vimi.digital`.
 6. **Benchmark size**: whether 30 sites qualify enough rules for a useful free result; decide after the first run.
