@@ -81,7 +81,7 @@ The authoritative rule-to-test mapping lives in code (`services/mcp/method/testM
 
 | Conversion type | How it is exercised | Limits stated in every result |
 |---|---|---|
-| **Lead form** (lead_gen sites) | The existing lead-gen form fill and submit, using a fixed, identifiable synthetic email (`atlas-scan@vimi.digital` or similar, config) and a synthetic click ID per platform. Only with the user's explicit `allow_test_submission: true`. | A test lead will reach their form handler or CRM, clearly labelled. Without permission, lead tests that need a submit are `not_verified`. |
+| **Lead form** (lead_gen sites) | The existing lead-gen form fill and submit, using the fixed test identity `info@vimi.digital` (config `MCP_TEST_SUBMISSION_EMAIL`), a name field of "Atlas test submission" and a synthetic click ID per platform. Only with the user's explicit `allow_test_submission: true`. | A test lead will reach their form handler or CRM, clearly labelled. Without permission, lead tests that need a submit are `not_verified`. |
 | **Purchase** (ecommerce sites) | The journey runs to product, cart and checkout. **No order is ever placed.** | T1 to T3 for the purchase event itself are `not_verified` from the website; checks up to checkout are reported. The purchase event is covered by T7 account checks (compare platform-reported purchases with real orders). |
 | **Sign-up / trial** (plg_saas) | Runs as today where a sign-up surface is reachable without real credentials. | Same honesty rules. |
 
@@ -349,8 +349,8 @@ interface HelpOffer {
 }
 ```
 
-- **Free review**: a ViMi signal engineer reviews the scan (plus any recorded account checks) and replies with a prioritised fix plan. Turnaround text comes from config (`MCP_REVIEW_TURNAROUND_TEXT`) so ViMi controls the promise.
-- **Call**: link to ViMi's booking page (`MCP_BOOKING_URL`), with the scan ID passed as a parameter where the booking tool supports it.
+- **Free review**: a ViMi signal engineer reviews the scan (plus any recorded account checks) and replies with a prioritised fix plan. Turnaround text comes from config (`MCP_REVIEW_TURNAROUND_TEXT`, initial value "within 24 hours") so ViMi controls the promise.
+- **Call**: link to ViMi's booking page (`MCP_BOOKING_URL`). The booking form has a **Scan ID** field; Atlas appends the scan ID to the link so that field is pre-filled (`MCP_BOOKING_SCAN_ID_PARAM`, the query parameter name for that field, confirmed once the booking tool is known).
 - **Campaign Signal Validator**: the existing paid diagnostic via the existing Stripe Checkout flow, pre-filled with the scanned URL.
 
 ### 9.4 `atlas_request_review`
@@ -375,7 +375,7 @@ Behaviour:
 
 - Refuses unless `consent_to_contact` is `true`. The tool description tells the assistant to ask the user for consent in plain words and never to set it on the user's behalf.
 - Writes `mcp_review_requests` (§12) with the scan, recorded account checks, qualifying profile fields and the user's choice.
-- Notifies **ViMi consulting** (D10) via a dedicated destination: email to `VIMI_CONSULTING_LEADS_EMAIL` and optional Slack webhook `VIMI_CONSULTING_LEADS_SLACK_WEBHOOK`, reusing `services/usage/alertDelivery.ts` / `emailService` patterns. The notification includes a link to the scan in Atlas's admin view, the headline, failed tests, bidding impacts, account check outcomes and the user's message. Never the raw evidence payloads.
+- Notifies **ViMi consulting** (D10) via a dedicated destination: email to `VIMI_CONSULTING_LEADS_EMAIL` (initial value `vikram@vimi.digital`) and optional Slack webhook `VIMI_CONSULTING_LEADS_SLACK_WEBHOOK`, reusing `services/usage/alertDelivery.ts` / `emailService` patterns. The notification includes a link to the scan in Atlas's admin view, the headline, failed tests, bidding impacts, account check outcomes and the user's message. Never the raw evidence payloads.
 - Sends the user a confirmation email (existing email service) restating what they asked for and that ViMi will respond.
 - For `call`, returns the booking URL as well, so the user can book immediately.
 - One open request per user per scan; repeat calls update the existing request.
@@ -539,9 +539,9 @@ The headline metric for this connector is **qualified review requests per 100 co
 
 1. **Middle tier**: deferred until four weeks of data (D4).
 2. **Plan naming**: code uses `free/pro/agency`; pricing PRD uses Business/Agency/Enterprise. Connector follows code.
-3. **Synthetic test email domain**: confirm the address and that ViMi owns the domain, so test leads are recognisable and replies land somewhere controlled.
-4. **Review turnaround**: ViMi to set the turnaround text shown to users (config only).
-5. **Booking tool**: which tool hosts `MCP_BOOKING_URL`, and does it accept a scan ID parameter?
+3. **Booking link**: `MCP_BOOKING_URL` and the query parameter that pre-fills its Scan ID field, pending the link.
+4. **Turnaround basis**: whether "within 24 hours" means calendar hours or working hours; the config text should say which.
+5. ~~Test email~~ resolved: `info@vimi.digital`. ~~Lead inbox~~ resolved: `vikram@vimi.digital`.
 6. **Benchmark size**: whether 30 sites qualify enough rules for a useful free result; decide after the first run.
 7. **Scan region**: disclosed always; region choice for paid users is out of scope for v1.
 
