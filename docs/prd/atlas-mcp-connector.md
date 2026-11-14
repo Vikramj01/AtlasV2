@@ -1,435 +1,583 @@
-# PRD · Atlas MCP Connector · Distribution through Claude's Connectors Directory
+# PRD · Atlas MCP Connector · The Atlas Method inside Claude
 
 **Intended repo path** · `docs/prd/atlas-mcp-connector.md`
-**Status** · Draft for build
+**Status** · Draft for build (revision 2)
 **Author** · ViMi Digital
-**Date** · 12 November 2026
-**Related** · `api/routes/publicAudit.ts`, `services/validation/register/`, `services/reporting/outputLint.ts`, `services/reporting/withAccessRegistry.ts`, `services/dashboard/dashboardSummaryService.ts`, `services/dqm/`, `services/reconciliation/`, `services/air/`, Campaign Signal Validator, `docs/prd/pre-connection-scan-confidence-tiering.md`
+**Date** · 14 November 2026
+**Related** · `api/routes/publicAudit.ts`, `services/validation/register/`, `services/attribution/`, `services/reporting/outputLint.ts`, `services/reporting/withAccessRegistry.ts`, `services/dashboard/dashboardSummaryService.ts`, `services/dqm/`, `services/reconciliation/`, `services/air/`, Campaign Signal Validator, `docs/prd/pre-connection-scan-confidence-tiering.md`, `docs/prd/attribution-chain-check.md`
+
+**Revision 2 changes** · The connector is now organised around one question, "are my conversions firing properly?", answered with a defined method (§5). Adds per-conversion results, bidding implications, proactive ad-account checks the user's own Claude can run through their other connectors (§8), and a consented route for the user to ask ViMi consulting for help, with a choice of free review, call or paid diagnostic (§9). Scope is both ecommerce and lead-gen.
 
 ---
 
 ## 1. Problem
 
-Atlas's growth is held back by two things: distribution (people who would benefit do not find it) and ease of use (getting value means logging in to a dashboard and learning a new surface).
+Atlas's growth is held back by distribution (people who would benefit do not find it) and ease of use (getting value means logging in to a dashboard and learning a new surface).
 
-Meanwhile, the people Atlas sells to, agencies and in-house performance teams, increasingly run their ad accounts from inside Claude. Meta ships an official read-write Ads MCP server and Google ships an official read-only Google Ads MCP server. Those tools report performance. None of them can tell the user whether the conversion signal feeding the bidding is correct. When a user asks Claude "why did my CPA jump?", a broken signal is frequently the real answer, and today Atlas is not in that conversation.
+The people Atlas serves increasingly run their ad accounts from inside Claude. Meta ships an official read-write Ads MCP server and Google an official read-only Google Ads MCP server. Those tools report performance. None of them tells the user whether the conversions feeding the bidding are real, counted once, valued correctly and matchable. When a user asks "why did my CPA jump?", a broken signal is often the answer, and Atlas is not in that conversation.
 
-An Atlas remote MCP server, listed in Claude's Connectors Directory, puts Atlas at the moment the problem appears and removes the dashboard as a precondition for getting value.
+Today a prospect who would benefit from ViMi's signal engineering work has no contact with ViMi at all. The connector must create that first contact.
 
 ## 2. Goals
 
-- A user in Claude can install Atlas, sign in with an email, and get a useful, honest signal finding about their own site within minutes.
-- Paying customers can query portfolio health, DQM alerts, reconciliation gaps and anomaly insights from Claude without opening the dashboard.
-- The free tier generates qualified sign-ups and converts to paid without founder follow-up on every account.
-- Nothing Atlas returns through the connector asserts more than the scan actually observed, even after the user's Claude has rephrased it.
-- The connector passes directory review on first submission.
+- A user in Claude can ask "are my conversions firing properly?" and get a clear, honest answer against a defined standard (the Atlas method, §5) for both purchases and lead forms.
+- Every result explains what it means for the user's bidding, not just what is technically wrong.
+- Atlas proactively tells the user which checks to run inside their ad accounts, so their Claude can complete the picture using the Meta, Google Ads or GA4 tools they already have connected, without Atlas needing account access.
+- Users whose problems need specialist work have an easy, consented way to reach ViMi consulting, with a choice of free review, a call, or the paid Campaign Signal Validator.
+- Paying Atlas customers can query portfolio health, DQM alerts, reconciliation and anomalies from Claude.
+- Nothing Atlas returns asserts more than the scan observed, even after the user's Claude has rephrased it.
+- Passes Connectors Directory review on first submission.
 
 ## 3. Non-goals (v1)
 
-- **No write actions against client systems.** No GTM container publish, no draft workspace deploy, no CAPI provider changes, no audience pushes. These come later under a separate PRD with explicit approval flows.
-- No new detection rules. The connector exposes existing Check Register v2 output; it does not add checks.
-- No new billing tier. The middle step between free and Pro (starter tier or pay-per-scan) is deliberately deferred until sign-up data exists (§16).
-- No MCP Apps UI in v1 (interactive cards inside Claude). Planned for Phase 4.
-- No ChatGPT or Cursor specific work. The server is standard MCP and should work there, but v1 is tested and listed only for Claude.
+- **No write actions.** No GTM publish or draft deploy, no CAPI changes, no audience pushes. Later, separate PRD.
+- **Atlas does not read the user's ad accounts in the free tier.** Account-side checks are run by the user's own Claude through connectors the user already has (§8). Atlas never receives those connectors' credentials.
+- **No real purchases.** The scan never completes a paid order (§5.3).
+- No new detection rules beyond the static mappings in §6.4 and §9.2. The connector exposes Check Register v2 and Attribution Chain Check output.
+- No new billing tier. The middle step between free and Pro is deferred until sign-up data exists.
+- No MCP Apps UI in v1 (planned for Phase 4).
+- No ChatGPT or Cursor specific work; v1 is tested and listed for Claude only.
 
 ## 4. Decisions already made
 
 | # | Decision | Source |
 |---|---|---|
-| D1 | Free tier exists: small, rate-limited, requires a verified email sign-in. Anything larger needs a proper paid account. | Founder decision, 12 Nov 2026 |
-| D2 | Free scan **detects** (what, how serious, rough cost). Paid **diagnoses and fixes** (root cause, fix plan, generated containers, pre-spend validation). The Campaign Signal Validator becomes the paid upgrade from the free scan, not a competitor to it. | Founder decision |
-| D3 | Free suits in-house D2C teams. Agency needs (multi-client, portfolio, per-client access) are paid only. | Founder decision |
-| D4 | Founder follow-up is not scaled yet. Capture qualifying data at sign-in, measure sign-ups, decide the middle tier later. | Founder decision |
-| D5 | Trust over reach: the free tier only runs checks with proven accuracy; every finding carries its evidence and observation limits; the response contract stops the user's Claude overstating results; users can dispute findings; misfiring rules can be switched off without a release. | Founder decision |
-| D6 | Pricing principle: one-off checks can be free; anything continuous (monitoring, reconciliation, alerts, portfolio) is paid. | Founder decision |
-| D7 | Read and write tools are always separate tools. v1 ships read tools only (plus one non-destructive dispute tool). | Directory requirement + D5 |
+| D1 | Free tier: small, rate-limited, requires a verified email sign-in. Larger use needs a paid account. | Founder, 12 Nov 2026 |
+| D2 | Free **detects** (what, how serious, what it means for bidding). Paid and ViMi consulting **diagnose and fix**. The Campaign Signal Validator is an upgrade from the free scan, not a competitor to it. | Founder |
+| D3 | Agency needs (multi-client, portfolio) are paid only. | Founder |
+| D4 | Measure sign-ups first, then decide the middle tier. | Founder |
+| D5 | Trust over reach: free-tier allowlist, evidence on every finding, response contract that stops overstatement, disputes, per-rule kill switch. | Founder |
+| D6 | One-off checks can be free; anything continuous is paid. | Founder |
+| D7 | Read and write tools are always separate; v1 ships read tools plus two non-destructive tools (dispute, review request). | Directory requirement + D5 |
+| D8 | Scope covers both ecommerce purchases and lead-gen forms. | Founder, 14 Nov 2026 |
+| D9 | When the user wants help, they choose: free review of their scan, a booked call, or the paid Campaign Signal Validator. | Founder, 14 Nov 2026 |
+| D10 | Help requests go to ViMi consulting. | Founder, 14 Nov 2026 |
+| D11 | Atlas is proactive: every scan result includes specific account-side checks for the user's Claude to run with the user's own ad platform connectors. | Founder, 14 Nov 2026 |
 
-## 5. Users and jobs
+## 5. The Atlas method · what "firing properly" means
 
-| User | Plan | Job in Claude |
+A conversion fires properly when the ad platform receives a signal it can use for bidding. The method is six tests applied to each conversion, in order. A failure early in the chain makes everything after it unreliable, and results say so.
+
+### 5.1 The six tests (checked from the website)
+
+| # | Test | Question | Register coverage (examples, not exhaustive) |
+|---|---|---|---|
+| T1 | **Right action** | Does it fire on the real conversion, not on intent, a page load or a refreshable thank-you page? | L1 tags present (`GTM_CONTAINER_LOADED`, `META_PIXEL_PRESENT`, ...), L5 `PRIMARY_CONVERSION_EVENT_FIRES`, platform `*_CONVERSION_EVENT_FIRES`, `FIRES_ON_COMPLETION_NOT_ON_INTENT`, `NO_CONVERSION_FIRES_ON_NON_CONVERSION_PAGES` |
+| T2 | **Counted once** | Is it counted exactly once across pixel, CAPI, duplicate containers and duplicate tags? | L5 `EVENT_FIRES_EXACTLY_ONCE`, L6 `TRANSACTION_ID_PRESENT`/`EVENT_ID_PRESENT`, L10 `EVENT_ID_CONSISTENT_CLIENT_TO_SERVER`/`EVENT_ID_FORWARDED_TO_PLATFORM_REQUESTS`, L12 duplicate container/base tag rules |
+| T3 | **Right value** | Does it carry a plausible value and valid currency that reflect what happened? | L6 `CONVERSION_VALUE_PRESENT`, `VALUE_NON_ZERO_AND_PLAUSIBLE`, `VALUE_DIFFERENTIATES_OUTCOMES`, `CURRENCY_PRESENT_AND_VALID`, `LEAD_QUALITY_INDICATOR` |
+| T4 | **Matchable** | Can the platform tie it to a click and a person? Click IDs captured on arrival, persisted, carried to the conversion; customer data normalised and hashed. | L2 click-ID capture rules, L2.14 `CLICK_ID_CARRIED_IN_FORM_SUBMIT`, L3 persistence rules, L7 identity rules; Attribution Chain Check links 1 to 3 for lead-gen |
+| T5 | **Consent-correct** | Does it fire when it should, stop when it should, with Consent Mode signalled so platforms can model the gaps? | L8 consent rules |
+| T6 | **Survives the journey** | Does the chain hold across checkout or booking domains, iframes and SPA routes? | L4 cross-domain rules, `PAGE_VIEW_FIRES_ON_EVERY_ROUTE`, iframe/shadow-DOM capture |
+
+L9 (server-side delivery) and L0 (scope) results feed T2 and T4 where relevant and are also reported in the scan-level summary. L11 is disclosure-only and never appears in the free tier.
+
+The authoritative rule-to-test mapping lives in code (`services/mcp/method/testMap.ts`), not in this table. Every rule in `REGISTER` must map to exactly one test or to `not_in_method` (enforced by a unit test, so a new rule cannot be added without a decision).
+
+### 5.2 The seventh test (checked in the ad account)
+
+**T7 · Received and used.** Did the platform actually receive and attribute the conversion, and is it the conversion the account optimises for? This cannot be seen from the website. Atlas does not read the account in the free tier; instead it hands the user's Claude a specific list of account checks (§8).
+
+### 5.3 What the scan can and cannot do per conversion type
+
+| Conversion type | How it is exercised | Limits stated in every result |
 |---|---|---|
-| In-house D2C or lead-gen marketer, no Atlas account | free | "Is my conversion tracking healthy?", "why don't Meta and GA4 match?", "check my checkout tracking before we scale spend" |
-| Freelance media buyer | free → pro | Same as above for a client site, then deeper checks once convinced |
-| Agency account lead | agency | "Which of my clients have signal problems this week?", "what changed on client X?", "any DQM alerts I should know about before the Monday call?" |
-| Existing Atlas customer (pro) | pro | Ask about their own client's health, reconciliation and anomalies without opening the dashboard |
+| **Lead form** (lead_gen sites) | The existing lead-gen form fill and submit, using a fixed, identifiable synthetic email (`atlas-scan@vimi.digital` or similar, config) and a synthetic click ID per platform. Only with the user's explicit `allow_test_submission: true`. | A test lead will reach their form handler or CRM, clearly labelled. Without permission, lead tests that need a submit are `not_verified`. |
+| **Purchase** (ecommerce sites) | The journey runs to product, cart and checkout. **No order is ever placed.** | T1 to T3 for the purchase event itself are `not_verified` from the website; checks up to checkout are reported. The purchase event is covered by T7 account checks (compare platform-reported purchases with real orders). |
+| **Sign-up / trial** (plg_saas) | Runs as today where a sign-up surface is reachable without real credentials. | Same honesty rules. |
 
-## 6. Architecture
+### 5.4 Test status
 
-### 6.1 Placement
+Each (conversion × platform × test) cell resolves to one status:
 
-- The MCP server is a new Express router inside the existing backend (`backend/src/api/routes/mcp.ts` plus `backend/src/services/mcp/`). It is **not** a separate service. It calls existing services directly (no HTTP hop to `/api/*`).
-- Transport: MCP **Streamable HTTP**, stateless mode, using the official TypeScript SDK (`@modelcontextprotocol/sdk`). Verify the current SDK version and its Express integration against the live package docs before coding (Key Technical Decision §14 applies: do not trust training-data assumptions about third-party schemas).
-- Public URL: a dedicated hostname, proposed `https://mcp.atlas.vimi.digital/mcp`. The protected resource metadata `resource` value must equal this URL exactly, including the path.
-- Mount order in `app.ts`: register `/mcp` and its `/.well-known/oauth-protected-resource` route **outside** the `/api` global limiter and before any router whose path could prefix it (Key Technical Decision §26 hazard class). Confirm how the SDK transport expects the request body (pre-parsed JSON vs raw stream) and place `express.json()` accordingly.
-- CORS / Origin: requests come server-to-server from Anthropic's egress range (`160.79.104.0/21`). Validate the `Origin` header if present (directory technical requirement), reject browser origins that are not allowlisted.
+| Status | Rule |
+|---|---|
+| `pass` | Every applicable rule in the test resolved `PASS`, and at least one with `DIRECT` or `PRESENCE` evidence. |
+| `fail` | At least one rule `FAIL` with `DIRECT` evidence (a `confirmed` finding). |
+| `at_risk` | At least one `likely` finding and no confirmed one. |
+| `not_verified` | Not enough resolved to say either way, or the step was not exercised (§5.3). |
+| `not_applicable` | No rule in the test applies to this platform or site type. |
 
-### 6.2 Module layout
+A test is never shown as `pass` when most of it was not verified. If an earlier test is `fail`, later tests on the same conversion carry `depends_on_failed_test: "T1"` so the user's Claude explains the chain, mirroring the Attribution Chain Check cascade rule.
 
-```
-backend/src/
-├── api/routes/mcp.ts                  # Express router: /mcp transport + /.well-known/oauth-protected-resource
-├── api/middleware/mcpAuth.ts          # Bearer token verification → req.user (reuses authMiddleware's profile/plan lookup)
-├── api/middleware/mcpQuota.ts         # per-user / per-IP / per-domain quota checks (§9)
-└── services/mcp/
-    ├── server.ts                      # builds the McpServer, registers tools
-    ├── tools/                         # one file per tool (§8)
-    ├── contract/
-    │   ├── findingMapper.ts           # ReportJSON → McpFinding[] (§7)
-    │   ├── presentationRules.ts       # static narration guidance strings
-    │   └── mcpOutputLint.ts           # BANNED_TOKENS gate over every outgoing string (§7.4)
-    ├── accuracy/
-    │   ├── freeTierAllowlist.ts       # versioned rule allowlist (§10)
-    │   └── ruleOverrides.ts           # reads mcp_rule_overrides kill switch (§10.3)
-    ├── scanCache.ts                   # per-domain result cache (§9.2)
-    └── telemetry.ts                   # mcp_tool_calls writes (§12)
-```
+## 6. Response contract (the honesty layer)
 
-### 6.3 Scan execution
+In a connector, Atlas does not control the final wording. The contract makes overstatement structurally hard.
 
-- A connector scan reuses the **same pipeline** as the authenticated and public scans: `auditQueue → runAuditOrchestrator → journeySimulator → runRegister()`. No new scan engine.
-- The audit row is user-owned (`user_id` set, `is_public` false) with a new `origin = 'mcp'` value (§11). Scan Inputs not supplied by the user are inferred via `siteDetectionService` with `declaration_source: 'INFERRED_FROM_SITE'`, exactly as `publicAudit.ts` does. Extract that inference into a shared helper rather than duplicating it.
-- Scans take longer than a tool call should block. Claude allows up to 300 seconds per call, but the tool must not rely on that. `atlas_scan_site` enqueues and returns a `scan_id` immediately; `atlas_get_scan_result` returns status or results. The tool descriptions tell Claude to poll with a short wait.
-
-## 7. Response contract (the honesty layer)
-
-This is the most important section. In a connector, Atlas does not control the final wording: the user's Claude narrates the findings and will tend to state them more confidently than the data supports. The contract makes overstatement structurally hard.
-
-### 7.1 Three result types
-
-Every finding returned through the connector is mapped to exactly one `result_type`:
+### 6.1 Finding result types
 
 | `result_type` | Source in Check Register v2 | Meaning |
 |---|---|---|
-| `confirmed` | verdict `FAIL` with `evidence_class` `DIRECT` | Seen directly in this scan (for example a duplicate purchase event fired in the browser) |
-| `likely` | verdict `FAIL` with `evidence_class` `INFERRED` / `DERIVED` | Strong indirect evidence, not directly observed |
-| `cannot_verify` | verdict `NOT_OBSERVED` / `INCONCLUSIVE`, any `could_not_be_assessed` entry, any `with_access` entry | Not observable from the browser; needs account access to check |
-| `conflict` | verdict `CONFLICT`, any `signal_conflicts` entry | Two detectors disagree; both readings returned, no winner |
+| `confirmed` | verdict `FAIL`, `evidence_class` `DIRECT` | Seen directly in this scan |
+| `likely` | verdict `FAIL`, `evidence_class` `INFERRED`/`DERIVED` | Strong indirect evidence |
+| `cannot_verify` | `NOT_OBSERVED`/`INCONCLUSIVE`, any `could_not_be_assessed`, any `with_access` entry | Not observable from the website |
+| `conflict` | `CONFLICT`, any `signal_conflicts` entry | Two detectors disagree; both readings returned |
 
-`PRESENCE` / `PRESENCE_INVERSE` rules map by verdict the same way. Passing checks are returned only as a count plus a short list, not as findings.
+`PRESENCE`/`PRESENCE_INVERSE` rules map by verdict the same way.
 
-### 7.2 Finding shape
+### 6.2 Scan result shape
+
+```ts
+interface McpScanResult {
+  scan_id: string;
+  site: { url: string; site_type: SiteType; site_type_source: 'declared' | 'inferred' };
+  run_quality: 'COMPLETE' | 'PROVISIONAL' | 'INSUFFICIENT';
+  method_version: string;                 // MCP_METHOD_VERSION, bumped with testMap/biddingImpact changes
+  register_version: string;
+  free_allowlist_version?: string;
+
+  headline: {                             // one-paragraph answer to "are my conversions firing properly?"
+    verdict: 'healthy' | 'issues_found' | 'serious_issues' | 'could_not_complete';
+    summary: string;                      // lint-gated, no numbers that are not in the data
+  };
+
+  conversions: Array<{
+    conversion: 'purchase' | 'lead' | 'sign_up' | 'other';
+    exercised: 'fully' | 'up_to_checkout' | 'not_exercised';
+    platforms: Array<{
+      platform: DeclaredPlatform;         // google_ads, ga4, meta, tiktok, linkedin, microsoft, openai, ...
+      detected: boolean;
+      tests: Array<{
+        test: 'T1' | 'T2' | 'T3' | 'T4' | 'T5' | 'T6';
+        status: 'pass' | 'fail' | 'at_risk' | 'not_verified' | 'not_applicable';
+        depends_on_failed_test?: string;
+        finding_ids: string[];
+      }>;
+    }>;
+  }>;
+
+  findings: McpFinding[];                 // §6.3
+  account_checks: AccountCheck[];         // §8
+  observation_limits_global: string[];    // server-side CAPI invisible; GTG first-party serving; consent varies by region (scan region named); no real purchase placed
+  presentation_rules: string[];           // §6.6
+  help: HelpOffer;                        // §9
+}
+```
+
+### 6.3 Finding shape
 
 ```ts
 interface McpFinding {
-  finding_id: string;            // stable: `${audit_id}:${rule_id}:${step ?? 'site'}`
+  finding_id: string;                    // `${audit_id}:${rule_id}:${step ?? 'site'}`
   rule_id: string;
-  register_version: string;
+  test: 'T1' | 'T2' | 'T3' | 'T4' | 'T5' | 'T6';
+  platforms: DeclaredPlatform[];
   result_type: 'confirmed' | 'likely' | 'cannot_verify' | 'conflict';
-  severity: 'critical' | 'high' | 'medium' | 'low';   // existing severity ceilings for PARTIAL confidence still apply
-  title: string;                 // lint-gated
-  what_we_saw: string;           // plain description of the observation, lint-gated
-  observation_limits: string[];  // what the scan could NOT see that bears on this finding
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  title: string;
+  what_we_saw: string;
+  observation_limits: string[];
   evidence: {
     page_url?: string;
-    request_url?: string;        // redacted of query-string PII
+    request_url?: string;                 // query-string PII redacted
     event_name?: string;
-    payload_excerpt?: Record<string, unknown>;  // PII-stripped, max ~2KB
+    payload_excerpt?: Record<string, unknown>;   // PII-stripped, max ~2KB
     datalayer_excerpt?: Record<string, unknown>;
   };
-  impact: {
-    category: 'bidding_signal_loss' | 'attribution_loss' | 'duplicate_counting' | 'consent_loss' | 'data_quality' | 'other';
-    estimate?: { low: number; high: number; unit: 'percent_of_conversions'; assumptions: string[] };
-    // estimate is OMITTED unless an existing, data-backed source produces it (Implementation Rule 12). Never a single point value.
+  bidding_impact: {                       // §6.4
+    effect: 'overstated_conversions' | 'understated_conversions' | 'wrong_value' | 'unmatched_conversions'
+          | 'consent_loss' | 'journey_break' | 'wrong_optimisation_target' | 'data_quality';
+    explanation: string;                  // plain English, what this does to Smart Bidding / Advantage+ / tCPA / tROAS
+    what_not_to_do?: string;              // e.g. "Don't raise budgets based on reported ROAS until this is fixed."
   };
-  verify_with_access?: {         // present for cannot_verify, and for likely where access would confirm
-    what_access: string;         // e.g. "Connect your Meta Business account"
-    plan_required: 'free' | 'pro' | 'agency';
+  fix: {
+    complexity: 'settings_change' | 'tag_change' | 'implementation' | 'specialist';   // §9.2
+    diy_guidance?: string;                // only for settings_change and tag_change
   };
-  dispute_hint: string;          // "If this is wrong, call atlas_report_incorrect_finding with finding_id."
+  verify_in_account?: string[];           // account_check ids that would confirm or refute this finding
+  dispute_hint: string;
 }
 ```
 
-### 7.3 Scan-level fields
+### 6.4 Bidding implications
 
-Every scan result also returns:
+- `services/mcp/method/biddingImpact.ts`: a static, versioned map from `rule_id` (or rule family) to `effect`, `explanation` template and optional `what_not_to_do`. Written by ViMi, reviewed like copy, linted.
+- Examples of the register this should take:
+  - T2 fail: "Purchases are counted more than once, so Smart Bidding sees more conversions and higher ROAS than you really have. Don't scale budgets on reported ROAS until this is fixed."
+  - T4 fail (lead-gen): "Click IDs are lost before the form is submitted, so Google cannot link leads back to clicks. tCPA and Maximise Conversions campaigns are optimising on partial data."
+  - T3 at risk: "Every lead carries the same value, so value-based bidding cannot tell a good lead from a poor one."
+- No numeric impact is ever stated unless an existing data-backed source produces it, and then only as a range with assumptions (Implementation Rule 12).
 
-- `run_quality` (`COMPLETE` / `PROVISIONAL` / `INSUFFICIENT`). For `INSUFFICIENT`, return **no findings**, only a statement that the scan could not reach enough of the site, with the reason. Do not return a score.
-- `score` only when Check Register v2 produced one; when `score_withheld_reason` is set, return the reason and no number.
-- `coverage`: layers assessed out of 13 (`ALL_V2_LAYERS`), pages reached.
-- `observation_limits_global`: standing limits of any browser-side scan, at minimum: server-side CAPI is invisible; Google tag gateway can serve tags first-party; consent behaviour varies by visitor region and this scan ran from one location (state which).
-- `presentation_rules`: a fixed array of strings for the assistant (§7.5).
-- `next_steps`: upgrade and paid diagnostic options (§9.4).
+### 6.5 Output lint
 
-### 7.4 Output lint
+- `mcpOutputLint.ts` scans every string field of every tool response against `outputLint.ts`'s `BANNED_TOKENS` (reuse the export).
+- A violation in a `cannot_verify` or `likely` finding, a `not_verified` test, or any `bidding_impact.explanation` is a hard failure: the response is replaced by an error result and logged at `error`.
 
-- `mcpOutputLint.ts` scans **every string field** of every tool response (not just report narrative) against `outputLint.ts`'s `BANNED_TOKENS`. Reuse the export; do not copy the list.
-- A violation in a `cannot_verify` or `likely` finding is a hard failure: the response is replaced by an error result and the violation is logged at `error` level. This mirrors the existing v2 report gate.
-- Unit tests must cover every tool's response builder.
+### 6.6 Presentation rules sent to the assistant
 
-### 7.5 Presentation rules sent to the assistant
+Returned in `presentation_rules` and repeated in tool descriptions:
 
-Returned in `presentation_rules` on every scan result and repeated in the tool descriptions:
+1. Lead with `headline.summary`, then walk through each conversion by test, in order T1 to T6.
+2. Only describe `confirmed` findings and `fail` tests as problems that exist. Describe `likely` and `at_risk` as probable.
+3. Never describe `cannot_verify` or `not_verified` as missing, broken or absent. Say it could not be checked from the website and name the account check that would check it.
+4. When a test depends on an earlier failed test, explain that fixing the earlier one comes first.
+5. Always include the `bidding_impact` for each problem. Never state a single-number impact.
+6. Present `conflict` findings with both readings.
+7. After the results, offer the `account_checks` (§8). Ask the user before using any of their other connectors.
+8. Mention the `help` offer once, after the results, only if `help.offer_shown` is true. Do not repeat it or press it.
+9. If `run_quality` is `INSUFFICIENT`, say the scan could not complete and list no findings.
 
-1. Only describe `confirmed` findings as problems that exist.
-2. Describe `likely` findings as probable, with the stated evidence.
-3. Never describe a `cannot_verify` item as missing, broken or absent. Say it could not be checked from outside the site and name the access that would check it.
-4. Present `conflict` findings with both readings; do not choose one.
-5. Never state a single-number impact. If `impact.estimate` is present, give the range and its assumptions; if absent, describe the impact category only.
-6. If `run_quality` is `INSUFFICIENT`, say the scan could not complete and do not list findings.
-7. Show the user the evidence for any finding they question, and offer `atlas_report_incorrect_finding`.
+## 7. Architecture
 
-## 8. Tools
+### 7.1 Placement
 
-All tool names are prefixed `atlas_`. Every tool carries a `title` and the applicable `readOnlyHint` / `destructiveHint` annotations (directory requirement). Input schemas are Zod, converted for MCP. All responses include `structuredContent` plus a short text summary.
+- New Express router inside the existing backend (`backend/src/api/routes/mcp.ts` plus `backend/src/services/mcp/`). Calls existing services directly.
+- Transport: MCP Streamable HTTP, stateless, official TypeScript SDK (`@modelcontextprotocol/sdk`). Verify the current SDK version and Express integration against live docs before coding (Key Technical Decision §14).
+- Public URL: proposed `https://mcp.atlas.vimi.digital/mcp`; protected resource metadata `resource` must equal it exactly.
+- Mount `/mcp` and `/.well-known/oauth-protected-resource` outside the `/api` global limiter and before any router whose path could prefix them (Key Technical Decision §26). Confirm the SDK's body-parsing expectation and place `express.json()` accordingly.
+- Validate the `Origin` header if present; traffic arrives from Anthropic's egress range (`160.79.104.0/21`).
 
-### 8.1 Free tier (any signed-in user)
+### 7.2 Module layout
 
-| Tool | Annotations | Purpose | Backed by |
-|---|---|---|---|
-| `atlas_get_account_status` | readOnly | Plan, remaining scans this period, what each paid plan unlocks, upgrade URL | `profiles.plan`, `mcp_scan_requests` |
-| `atlas_scan_site` | readOnly: false, destructive: false, idempotent: false | Start a signal scan of a public URL. Returns `scan_id`, `status`, `cached` flag, expected wait | shared scan helper (§6.3), quota (§9), cache (§9.2) |
-| `atlas_get_scan_result` | readOnly | Poll status; when complete, return the §7 contract | `getReport` + `findingMapper` |
-| `atlas_explain_finding` | readOnly | Plain explanation of a `rule_id`: why it matters for bidding, generic fix direction, what Atlas Pro would add | register rule metadata (static, no scan, no Browserbase cost) |
-| `atlas_report_incorrect_finding` | readOnly: false, destructive: false | Log a dispute against a `finding_id` with a reason enum and optional note | `mcp_finding_disputes` (§10.4) |
+```
+backend/src/
+├── api/routes/mcp.ts
+├── api/middleware/mcpAuth.ts
+├── api/middleware/mcpQuota.ts
+└── services/mcp/
+    ├── server.ts
+    ├── tools/                       # one file per tool (§10)
+    ├── method/
+    │   ├── testMap.ts               # rule_id → T1..T6 | not_in_method (§5.1)
+    │   ├── testStatus.ts            # rollup to pass/fail/at_risk/not_verified (§5.4)
+    │   ├── biddingImpact.ts         # §6.4
+    │   ├── fixComplexity.ts         # §9.2
+    │   └── accountChecks.ts         # §8 catalogue + selector
+    ├── contract/
+    │   ├── resultBuilder.ts         # ReportJSON (+ AttributionChainResult) → McpScanResult
+    │   ├── presentationRules.ts
+    │   └── mcpOutputLint.ts
+    ├── help/
+    │   ├── offerSelector.ts         # §9.2
+    │   └── reviewRequest.ts         # §9.3, lead routing to ViMi consulting
+    ├── accuracy/
+    │   ├── freeTierAllowlist.ts
+    │   └── ruleOverrides.ts
+    ├── scanCache.ts
+    └── telemetry.ts
+```
 
-**`atlas_scan_site` input**
+### 7.3 Scan execution
+
+- Reuse `auditQueue → runAuditOrchestrator → journeySimulator → runRegister()`. Audit row user-owned with `origin = 'mcp'`. Inferred Scan Inputs via `siteDetectionService` (`declaration_source: 'INFERRED_FROM_SITE'`); extract `publicAudit.ts`'s inference into a shared helper.
+- For lead-gen sites with `allow_test_submission: true`, pass the synthetic test email/phone so the existing form fill and Attribution Chain Check (`chainOrchestration.ts`'s `deriveAttributionChain()`) run, and include the chain in the result (it populates T4 for the `lead` conversion).
+- Ecommerce journeys never submit payment. Confirm `journeySimulator.ts`'s ecommerce template stops before any payment submit; add a hard guard if not.
+- `atlas_scan_site` enqueues and returns a `scan_id`; `atlas_get_scan_result` polls.
+
+## 8. Proactive account checks (the bridge to the ad account)
+
+### 8.1 Concept
+
+Many users have Meta, Google Ads or GA4 tools connected in the same Claude conversation. Atlas cannot see those accounts, but it knows exactly what to look for given the scan. Every scan result therefore includes `account_checks`: specific, prioritised checks the user's Claude can run with the user's own tools, or the user can do by hand.
+
+Atlas never names or depends on a particular third-party connector or tool name. It describes the check, the platform, where it lives and what a good or bad answer looks like. The user's Claude decides whether it has a tool that can answer it, and asks the user first (presentation rule 7).
+
+### 8.2 Shape
+
+```ts
+interface AccountCheck {
+  check_id: string;                       // stable, e.g. 'META_EMQ_PURCHASE'
+  platform: 'meta' | 'google_ads' | 'ga4' | 'tiktok' | 'linkedin' | 'microsoft';
+  priority: 'high' | 'medium' | 'low';
+  question: string;                       // "What is the Event Match Quality for the Purchase event?"
+  why: string;                            // tied to this scan's findings
+  where: string;                          // "Meta Events Manager > Data sources > [dataset] > Overview"
+  good_answer: string;                    // "6.0 or higher"
+  bad_answer_means: string;               // "Meta is struggling to match purchases to people; see finding X"
+  linked_finding_ids: string[];
+  completes_test: 'T7' | 'T2' | 'T3' | 'T4';  // which test this check confirms or refutes
+}
+```
+
+### 8.3 Catalogue (v1, maintained by ViMi in `accountChecks.ts`)
+
+Selected per scan by platform detected, conversion type and findings. Initial set:
+
+| Platform | Check | Selected when |
+|---|---|---|
+| Google Ads | Is the conversion action for this event set as **primary** and included in the bid strategy's goal? | Google Ads detected (always) |
+| Google Ads | Lead actions counted **one per click**, purchases **every**? | Lead or purchase conversion present |
+| Google Ads | Conversion action **status** and diagnostics (recording, no recent conversions, unverified) | Always |
+| Google Ads | **Enhanced conversions** status and coverage for the action | T4 finding on identity, or lead-gen |
+| Google Ads | Platform-reported conversions vs real orders/leads for the last 7 days roughly match | T2 fail/at_risk, or purchase `up_to_checkout` |
+| Google Ads | Auto-tagging enabled | T4 click-ID finding |
+| Meta | **Event Match Quality** for the main conversion event | Meta detected |
+| Meta | Browser and server events **deduplicated** (Events Manager shows both, with dedup) | CAPI suspected or T2 finding |
+| Meta | Ad sets **optimise for** the event Atlas checked, not a proxy | Meta detected |
+| Meta | Diagnostics tab warnings for the dataset | Always |
+| GA4 | Event marked as a **key event** | GA4 detected |
+| GA4 | Google Ads **link** present and the key event imported to Ads | GA4 + Google Ads detected |
+| GA4 | Unwanted referrals / cross-domain configured for the checkout or booking domain | T6 finding |
+| TikTok / LinkedIn / Microsoft | Event received in the platform's events tool and used for optimisation | Platform detected |
+
+### 8.4 Bringing results back
+
+`atlas_record_account_check` (non-destructive) lets the user's Claude store what it found against a `scan_id`: `check_id`, `outcome` (`good` / `bad` / `unclear`), short note. No account IDs beyond the platform name, no PII, no copied report data beyond the answer. Stored results:
+
+- update the scan's T7 status per conversion and platform, and
+- are attached to any later review request (§9), so ViMi sees the full picture.
+
+Notes are length-limited (500 chars) and PII-stripped before insert.
+
+## 9. Help route to ViMi consulting
+
+### 9.1 Principle
+
+The connector exists to put Atlas in front of people who would never otherwise contact ViMi. Contact must be easy, consented and never pushy. The scan answers the question fully on its own; the offer is a clearly labelled option after the results.
+
+### 9.2 When the offer appears
+
+`offerSelector.ts` sets `help.offer_shown = true` when any of these hold:
+
+- any `confirmed` or `likely` finding with `fix.complexity` of `implementation` or `specialist`;
+- a lead-gen Attribution Chain break at Tier 3 or above;
+- two or more tests `fail` on the same conversion;
+- the user explicitly asks how to fix something or asks for help (the tool is always callable).
+
+`fixComplexity.ts` maps each rule to `settings_change` (a toggle in a platform or CMP), `tag_change` (GTM edit), `implementation` (developer work: dataLayer, CAPI, form changes) or `specialist` (cross-domain, CRM click-ID carriage, server-side, consent architecture). Self-serve findings get `diy_guidance` and no offer unless other conditions hold.
+
+### 9.3 The choice (D9)
+
+```ts
+interface HelpOffer {
+  offer_shown: boolean;
+  reason?: string;                       // "2 issues need implementation work (T2, T4)"
+  options: Array<
+    | { kind: 'free_review'; label: string; description: string; turnaround_text: string }   // turnaround from config, not promised in code
+    | { kind: 'call';        label: string; description: string; booking_url: string }
+    | { kind: 'validator';   label: string; description: string; price_text: string; checkout_url: string }
+  >;
+}
+```
+
+- **Free review**: a ViMi signal engineer reviews the scan (plus any recorded account checks) and replies with a prioritised fix plan. Turnaround text comes from config (`MCP_REVIEW_TURNAROUND_TEXT`) so ViMi controls the promise.
+- **Call**: link to ViMi's booking page (`MCP_BOOKING_URL`), with the scan ID passed as a parameter where the booking tool supports it.
+- **Campaign Signal Validator**: the existing paid diagnostic via the existing Stripe Checkout flow, pre-filled with the scanned URL.
+
+### 9.4 `atlas_request_review`
+
+Non-destructive tool. Inputs:
 
 ```ts
 {
-  url: string;                       // validated via utils/urlValidator (SSRF rules as publicAudit)
-  site_type?: SiteType;              // optional; inferred if absent
-  declared_platforms?: DeclaredPlatform[];
-  confirm_site_relationship: 'own_site' | 'client_site' | 'other';  // asked, logged, not enforced
+  scan_id: string;
+  choice: 'free_review' | 'call';        // validator returns a checkout link via the help block, no lead form needed
+  name: string;
+  email?: string;                         // defaults to the signed-in email
+  company?: string;
+  role?: string;
+  phone?: string;
+  message?: string;                       // what they want help with, max 1,000 chars
+  consent_to_contact: true;               // required literal; the tool refuses without it
 }
 ```
 
-`confirm_site_relationship` exists to qualify leads and to support abuse review. It does not block the scan.
+Behaviour:
 
-### 8.2 Paid tier (`pro` and above unless stated)
+- Refuses unless `consent_to_contact` is `true`. The tool description tells the assistant to ask the user for consent in plain words and never to set it on the user's behalf.
+- Writes `mcp_review_requests` (§12) with the scan, recorded account checks, qualifying profile fields and the user's choice.
+- Notifies **ViMi consulting** (D10) via a dedicated destination: email to `VIMI_CONSULTING_LEADS_EMAIL` and optional Slack webhook `VIMI_CONSULTING_LEADS_SLACK_WEBHOOK`, reusing `services/usage/alertDelivery.ts` / `emailService` patterns. The notification includes a link to the scan in Atlas's admin view, the headline, failed tests, bidding impacts, account check outcomes and the user's message. Never the raw evidence payloads.
+- Sends the user a confirmation email (existing email service) restating what they asked for and that ViMi will respond.
+- For `call`, returns the booking URL as well, so the user can book immediately.
+- One open request per user per scan; repeat calls update the existing request.
 
-All paid tools enforce `planGuard` semantics in `mcpAuth`/tool handlers and return a structured `plan_required` error (with upgrade URL) rather than a bare 403, so Claude can explain the upgrade.
+### 9.5 Lead handling in Atlas
 
-| Tool | Plan | Annotations | Purpose | Backed by |
-|---|---|---|---|---|
-| `atlas_list_clients` | pro | readOnly | Clients in the user's org with computed `health_level` and open issue counts | `getClientSummaries(orgId)` |
-| `atlas_get_client_health` | pro | readOnly | One client: open IHC + reconciliation findings, DQM alert severity, CAPI match quality, dedup rate | `dashboardSummaryService`, `ihc` queries, DQM queries |
-| `atlas_get_dqm_alerts` | pro | readOnly | Recent DQM alerts for a client or the org, filterable by severity and window | DQM alert tables |
-| `atlas_get_reconciliation` | pro | readOnly | Latest reconciliation run findings for a client, with `platform_discontinuities` annotations | `reconciliation_runs` / `reconciliation_findings` |
-| `atlas_get_insights` | pro | readOnly | AIR anomalies and correlations as **structured data** (not the narrated text), so the user's Claude narrates | `air_anomalies`, `air_insight_correlations` |
-| `atlas_get_portfolio_summary` | agency | readOnly | Cross-client rollup sorted by severity (fixes the alphabetical-only limitation of `ClientHealthList` for this surface) | `getClientSummaries` + sort |
-| `atlas_get_scan_history` | pro | readOnly | Previous scans for a domain/client and what changed between them, using `rule_confirmations` and `coverage_fingerprint` to avoid false regressions | audits + register comparator |
+- Super-admin list at `GET /api/admin/mcp/review-requests` with status (`new`, `contacted`, `qualified`, `closed`), assignee and notes; minimal table in the admin page.
+- `PATCH /api/admin/mcp/review-requests/:id` to update status.
+- Leads are ViMi consulting's; no automatic sync to any CRM in v1.
 
-Client-scoped tools take `client_id` (or a client name, resolved to an id with a disambiguation error if ambiguous). Every query is scoped by the caller's `organization_id` resolved per Key Technical Decision §10. No tool accepts an org id from the caller.
+## 10. Tools
 
-Paid tools apply the same §7 rules where they return findings (IHC, reconciliation): map to `result_type`, lint every string.
+All names prefixed `atlas_`. Every tool has a `title` and `readOnlyHint` / `destructiveHint` annotations. Zod input schemas. Responses include `structuredContent` plus a short text summary.
 
-### 8.3 Explicitly deferred (Phase 4, separate PRD)
+### 10.1 Free tier
 
-`atlas_generate_fix` (returns a GTM container / CAPI config for review, no deploy), `atlas_deploy_gtm_draft`, `atlas_hold_junk_conversion`, any CAPI configuration change. Each will be a separate tool with `destructiveHint: true` where it changes client systems.
+| Tool | Annotations | Purpose |
+|---|---|---|
+| `atlas_get_account_status` | readOnly | Plan, remaining scans, what paid adds |
+| `atlas_check_conversions` (alias of scan start) | readOnly: false, destructive: false | Start a scan of a URL against the Atlas method. Inputs: `url`, optional `site_type`, `declared_platforms`, `conversions_of_interest` (`purchase`/`lead`/`sign_up`), `allow_test_submission` (default false, explained in description), `site_relationship`. Returns `scan_id`. |
+| `atlas_get_scan_result` | readOnly | Poll; when complete returns `McpScanResult` (§6.2) |
+| `atlas_explain_finding` | readOnly | Plain explanation of a finding or test, why it matters for bidding, DIY guidance where applicable |
+| `atlas_record_account_check` | readOnly: false, destructive: false | Store the outcome of an account check (§8.4) |
+| `atlas_request_review` | readOnly: false, destructive: false | Send a consented help request to ViMi consulting (§9.4) |
+| `atlas_report_incorrect_finding` | readOnly: false, destructive: false | Dispute a finding (§11.4) |
 
-## 9. Quotas, cost control and upgrade path
+`atlas_check_conversions` is the primary tool name because it matches how users phrase the question. Its description is written around "are my conversions firing properly / is my tracking working / why don't Meta and GA4 agree".
 
-### 9.1 Limits (initial values, all config not code)
+### 10.2 Paid tier (`pro`+ unless stated)
+
+| Tool | Plan | Purpose | Backed by |
+|---|---|---|---|
+| `atlas_list_clients` | pro | Clients with health level and open issue counts | `getClientSummaries(orgId)` |
+| `atlas_get_client_health` | pro | One client's findings, DQM severity, match quality, dedup rate, mapped to the Atlas method tests | dashboard, IHC, DQM queries |
+| `atlas_get_dqm_alerts` | pro | Recent DQM alerts | DQM tables |
+| `atlas_get_reconciliation` | pro | Platform vs GA4 vs outcome gaps; answers T7 from real data for connected clients | reconciliation tables |
+| `atlas_get_insights` | pro | AIR anomalies and correlations as structured data | `air_anomalies`, `air_insight_correlations` |
+| `atlas_get_portfolio_summary` | agency | Cross-client rollup sorted by severity | `getClientSummaries` + sort |
+| `atlas_get_scan_history` | pro | What changed between scans, using `rule_confirmations` and `coverage_fingerprint` | audits + comparator |
+
+Paid tools return a structured `plan_required` result with upgrade URL to free users. Every query is scoped to the caller's resolved org (Key Technical Decision §10). Paid findings follow §6.
+
+### 10.3 Deferred (Phase 4, separate PRD)
+
+`atlas_get_connect_link` (deep link into Atlas Platform Connections), `atlas_generate_fix`, write tools with approval flows, MCP Apps cards.
+
+## 11. Quotas, cost and accuracy
+
+### 11.1 Limits (config, `config/mcpLimits.ts`)
 
 | Limit | Free | Pro | Agency |
 |---|---|---|---|
-| New scans per user per calendar month | 3 | 50 | 300 |
+| New scans per user per month | 3 | 50 | 300 |
 | Distinct domains per user per month | 2 | unlimited within scans | unlimited within scans |
-| Max pages per scan | existing public scan cap | existing authenticated cap | existing authenticated cap |
 | Concurrent scans per user | 1 | 3 | 10 |
-| Scans per IP per day (all accounts) | 10 | n/a | n/a |
-| Scans per target domain per day (all free accounts) | 5 (cache serves the rest) | n/a | n/a |
-| Tool calls per user per minute (all tools) | 30 | 120 | 300 |
+| Scans per IP per day | 10 | n/a | n/a |
+| Scans per target domain per day (free, all accounts) | 5 (cache serves the rest) | n/a | n/a |
+| Test submissions per target domain per day | 2 | 5 | 10 |
+| Review requests per user per day | 3 | 3 | 3 |
+| Tool calls per user per minute | 30 | 120 | 300 |
 
-Values live in `config/mcpLimits.ts`, overridable by env vars. IP addresses are stored only as salted hashes (same rule as `publicAuditLimiter`). Use the shared Redis for counters, not in-memory windows (the backend may run more than one instance).
+Counters in Redis; IPs stored only as salted hashes.
 
-### 9.2 Result cache
+### 11.2 Cache
 
-- Key: normalised registrable domain + `REGISTER_VERSION` + inferred `site_type`.
-- TTL: 72 hours (config).
-- A cached hit returns the existing result, does **not** consume the user's monthly scan quota, and does not touch Browserbase. Response sets `cached: true` and `scanned_at`.
-- Cache is bypassed for paid users who pass `force_rescan: true`.
-- Cache scope is across users for public-site scans only. Nothing from a paid, connected-account context is ever cached across orgs.
+Key: registrable domain + `REGISTER_VERSION` + `MCP_METHOD_VERSION` + site_type + `allow_test_submission`. TTL 72 hours. Cached hits cost no quota and no Browserbase. Paid users may `force_rescan`. Account check results are per user and never cached across users.
 
-### 9.3 Cost tracking
+### 11.3 Cost
 
-- Every non-cached scan logs Browserbase usage via the existing `usageLogger` with `origin = 'mcp'`, so cost per free scan is reportable from existing operator monitoring.
-- Operator alert when free-tier Browserbase spend in a rolling 7 days exceeds a configured ceiling (`MCP_FREE_WEEKLY_COST_CEILING`). On breach, free scans return a polite "temporarily at capacity" result and cached results continue to serve.
+Non-cached scans logged via `usageLogger` with `origin = 'mcp'`. Operator alert and graceful "at capacity" response when free-tier Browserbase spend over 7 days exceeds `MCP_FREE_WEEKLY_COST_CEILING`.
 
-### 9.4 Limits as the upgrade prompt
+### 11.4 Accuracy controls
 
-When any limit is hit, the tool returns a normal result (not a protocol error) containing:
+- **Free-tier allowlist** (`freeTierAllowlist.ts`, versioned): only listed rules can produce `confirmed`/`likely` for free users; others return `cannot_verify`. Qualification via `scripts/mcpBenchmark.ts` against a hand-labelled ground-truth set of at least 30 sites (both ecommerce and lead-gen, mixed stacks), false-positive rate at or below 5% with at least 10 applicable sites. No accuracy figure is ever published (Key Technical Decision §20).
+- **Kill switch**: `mcp_rule_overrides`; disabled rules disappear from responses within 60 seconds. `PATCH /api/admin/mcp/rules/:ruleId`.
+- **Disputes**: `mcp_finding_disputes`; weekly digest; 3+ disputes from distinct users in 7 days triggers an operator alert. Never auto-writes `REFUTED` to `rule_confirmations`.
 
-- which limit was reached and when it resets;
-- what a paid account adds, in two or three lines specific to the user's last scan (for example "3 checks on this site could not be verified without account access; Pro connects your Meta and Google accounts to confirm them");
-- `next_steps`: Pro plan checkout URL, and the Campaign Signal Validator one-off diagnostic URL (existing Stripe flow) for users who want a single deep check without subscribing.
+## 12. Data model
 
-The same `next_steps` block appears on every free scan result, framed by D2: free detects, paid diagnoses and fixes.
-
-## 10. Accuracy controls
-
-### 10.1 Free-tier rule allowlist
-
-- Only rules on `freeTierAllowlist.ts` may produce `confirmed` or `likely` findings in free-tier responses. Every other rule's failures are returned as `cannot_verify` with `verify_with_access` set, or omitted if they have no meaningful outside reading.
-- The allowlist is a versioned constant (`MCP_FREE_ALLOWLIST_VERSION`), stamped on every response, and must be reconsidered whenever `REGISTER_VERSION` bumps.
-- Paid tiers use the full register output, still under §7.
-
-### 10.2 How rules get onto the allowlist
-
-- Build a benchmark set: sites where the true setup is known (ViMi client sites and past audits where the client confirmed the setup). Target at least 30 sites spanning ecommerce, lead-gen and PLG SaaS, Shopify and custom stacks, with and without sGTM / GTG / server-side CAPI.
-- `scripts/mcpBenchmark.ts`: runs the register against the benchmark set and compares each rule's verdict with a hand-labelled ground-truth file (`scripts/mcp-benchmark/ground-truth.json`, labelled by ViMi, not generated).
-- A rule qualifies when its false-positive rate on the benchmark is at or below the threshold in config (initial: 5%) with at least 10 applicable sites. Rules with fewer applicable sites stay off the allowlist.
-- Do **not** publish or display an accuracy figure anywhere. Per Key Technical Decision §20, read `pre-connection-scan-confidence-tiering.md` §15 (sample-size reasoning) before computing any accuracy metric from `rule_confirmations`. The benchmark output is an internal gate only.
-
-### 10.3 Kill switch
-
-- Table `mcp_rule_overrides` (§11). A row with `disabled = true` removes that rule from all MCP responses (free and paid) on the next request, without a release.
-- Super-admin route: `PATCH /api/admin/mcp/rules/:ruleId` (`adminMiddleware`), plus a minimal list view in the existing admin page.
-- Overrides are cached in-process for at most 60 seconds.
-
-### 10.4 Disputes
-
-- `atlas_report_incorrect_finding` writes to `mcp_finding_disputes` with `finding_id`, `rule_id`, `register_version`, domain, reason (`tag_present_server_side`, `tag_present_other_method`, `consent_regional`, `site_changed`, `other`), optional note (max 1,000 chars, PII-stripped before insert).
-- Response to the user acknowledges the dispute and states it will be reviewed. It does not promise a timeline.
-- Weekly digest of new disputes to the operator alert channel (reuse `services/usage/alertDelivery.ts`).
-- A rule with 3+ disputes in 7 days from distinct users triggers an operator alert suggesting the kill switch.
-- Disputes never auto-write `REFUTED` to `rule_confirmations` (preserves Key Technical Decision §20's one-directional rule). A human operator may convert a reviewed dispute into an `operator`-source confirmation.
-
-## 11. Data model
-
-Migration: `supabase/migrations/20261113001_mcp_connector.sql` (11-digit version, per Key Technical Decision §21). RLS on every table; service-role access from the backend. Use `org_id` naming to match recent tables.
+Migration `supabase/migrations/20261115001_mcp_connector.sql` (11-digit version, Key Technical Decision §21). RLS on every table; `org_id` naming.
 
 ```sql
--- audits: record where a scan came from (guarded per Key Technical Decision §9)
--- add column audits.origin TEXT CHECK (origin IN ('app','public','mcp')) DEFAULT 'app' if not present
+-- audits.origin TEXT CHECK (origin IN ('app','public','mcp')) DEFAULT 'app'  (guarded, KTD §9)
 
-mcp_scan_requests (
-  id UUID PK, org_id UUID, user_id UUID, audit_id UUID NULL,
-  normalised_domain TEXT, cache_hit BOOLEAN, site_relationship TEXT,
-  ip_hash TEXT, client_surface TEXT,            -- 'claude_ai' | 'claude_code' | 'other' (from OAuth client id)
-  plan_at_request TEXT, created_at TIMESTAMPTZ
-)
+mcp_scan_requests (id, org_id, user_id, audit_id NULL, normalised_domain, cache_hit,
+                   site_relationship, allow_test_submission BOOLEAN, conversions_of_interest TEXT[],
+                   ip_hash, client_surface, plan_at_request, created_at)
 
-mcp_finding_disputes (
-  id UUID PK, org_id UUID, user_id UUID, audit_id UUID, finding_id TEXT,
-  rule_id TEXT, register_version TEXT, normalised_domain TEXT,
-  reason TEXT, note TEXT NULL, status TEXT DEFAULT 'open',   -- open | upheld | rejected
-  reviewed_by UUID NULL, reviewed_at TIMESTAMPTZ NULL, created_at TIMESTAMPTZ
-)
+mcp_account_check_results (id, org_id, user_id, audit_id, check_id, platform,
+                           outcome ['good'|'bad'|'unclear'], note TEXT NULL, created_at,
+                           UNIQUE (user_id, audit_id, check_id))
 
-mcp_rule_overrides (
-  rule_id TEXT PK, disabled BOOLEAN, reason TEXT,
-  updated_by UUID, updated_at TIMESTAMPTZ
-)
+mcp_review_requests (id, org_id, user_id, audit_id, choice ['free_review'|'call'],
+                     name, email, company NULL, role NULL, phone NULL, message NULL,
+                     consent_to_contact BOOLEAN NOT NULL CHECK (consent_to_contact),
+                     consent_text_version TEXT, status ['new'|'contacted'|'qualified'|'closed'] DEFAULT 'new',
+                     assignee UUID NULL, internal_notes TEXT NULL,
+                     created_at, updated_at, UNIQUE (user_id, audit_id))
 
-mcp_tool_calls (
-  id BIGSERIAL PK, org_id UUID, user_id UUID, tool TEXT, plan TEXT,
-  outcome TEXT,                                  -- ok | quota | plan_required | error
-  latency_ms INT, created_at TIMESTAMPTZ
-)
+mcp_finding_disputes (id, org_id, user_id, audit_id, finding_id, rule_id, register_version,
+                      normalised_domain, reason, note NULL, status DEFAULT 'open',
+                      reviewed_by NULL, reviewed_at NULL, created_at)
 
-profiles: add qualifying fields if not present
-  ad_platforms TEXT[] NULL, monthly_ad_spend_band TEXT NULL, signup_source TEXT NULL  -- 'mcp' for connector sign-ups
+mcp_rule_overrides (rule_id PK, disabled, reason, updated_by, updated_at)
+
+mcp_tool_calls (id, org_id, user_id, tool, plan, outcome, latency_ms, created_at)   -- no PII, 180-day retention
+
+profiles: ad_platforms TEXT[] NULL, monthly_ad_spend_band TEXT NULL, signup_source TEXT NULL
 ```
 
-No PII in `mcp_tool_calls`. Retain `mcp_tool_calls` for 180 days (scheduled cleanup job).
+`mcp_review_requests` holds contact data the user chose to give. Readable only by super-admins and the requesting user; excluded from every analytics export; included in the privacy policy and deletion flow.
 
-## 12. Authentication and sign-up
+## 13. Authentication and sign-up
 
-### 12.1 Approach
+Unchanged from revision 1, summarised:
 
-Every tool requires an authenticated user (D1: verified email). Lazy authentication (some tools without sign-in) was considered and rejected for v1 because it removes the qualification and abuse controls the free tier depends on.
+- Every tool requires sign-in (D1). Supabase Auth OAuth 2.1 server on the existing project; magic link or Google sign-in; new users get a free org via `handle_new_user()`; `signup_source = 'mcp'`.
+- Optional qualifying questions on the consent page (ad platforms, spend band). Never blocking.
+- Claude requirements: 401 with `WWW-Authenticate: Bearer resource_metadata=...`; protected resource metadata with `resource` equal to the MCP URL and the Supabase issuer first in `authorization_servers`; PKCE S256; redirect URIs `https://claude.ai/api/mcp/auth_callback` plus port-agnostic loopback for Claude Code; form-urlencoded token endpoint, `invalid_grant` on dead refresh tokens, rotation for public clients; endpoints under 10 s (30 s refresh).
+- Registration: prefer CIMD or Anthropic-held credentials over DCR for a high-traffic listing. Phase 0 confirms what Supabase supports and how to verify its tokens (`supabaseAdmin.auth.getUser` vs JWKS with audience check).
+- Consent page (`OAuthConsentPage.tsx`): client name, redirect URI hostname, scopes in plain English, approve/deny, revocation link; Settings gains "Connected AI apps".
 
-- Authorisation server: **Supabase Auth's OAuth 2.1 server** on the existing project, so connector users are ordinary Atlas users and every existing plan, org and RLS assumption holds.
-- Sign-in: email magic link (verification by construction) or existing Google sign-in. New users get a free org through the existing `handle_new_user()` trigger path, as the Shopify acquisition flow already does.
-- After first sign-in from the connector, show two optional qualifying questions (ad platforms used, rough monthly spend band) on the consent page. Never block on them.
+## 14. Directory listing
 
-### 12.2 Requirements Claude imposes (verify against live docs during Phase 0)
+- **Name**: "Atlas by ViMi". **Tagline** built on the user's question: "Check whether your ad conversions are firing properly."
+- **Description** names the method in plain words: fires on the right action, counted once, right value, matchable, consent-correct, survives the journey, plus the account checks to confirm it was received. Cross-platform: Google Ads, GA4, Meta, TikTok, LinkedIn, Microsoft.
+- **Use cases**: pre-spend tracking check; "why did my CPA jump?"; lead-gen click-ID check; agency weekly signal health review.
+- **Submission package**: production deployment, OAuth with PKCE, annotations on every tool, public docs page (`vimi.digital/atlas/claude`) with the method, tools, limits, example prompts and an explanation of test submissions; privacy policy covering scan data, account check notes and review requests; support contact; icon; test account on `pro` with a demo org, two demo clients (one ecommerce, one lead-gen) with realistic findings, DQM alerts and a reconciliation run.
+- Test as a custom connector in claude.ai, Desktop and Claude Code before submitting; run the directory's pre-submission checklist.
 
-- Unauthenticated `/mcp` requests return **401** with `WWW-Authenticate: Bearer resource_metadata="https://mcp.atlas.vimi.digital/.well-known/oauth-protected-resource"`. Claude ignores this header on a 200.
-- Protected resource metadata (RFC 9728): `resource` equals the MCP URL exactly; `authorization_servers` lists the Supabase issuer **first** (Claude uses only the first entry).
-- PKCE S256 supported and advertised.
-- Redirect URIs: `https://claude.ai/api/mcp/auth_callback` for claude.ai, Desktop, mobile; port-agnostic loopback (`http://localhost/callback`, `http://127.0.0.1/callback`) for Claude Code.
-- Token endpoint accepts `application/x-www-form-urlencoded`; refresh failures return `invalid_grant`; refresh tokens rotate for public clients.
-- Discovery, registration and token endpoints respond within 10 seconds (30 for refresh).
-- Client registration: Claude supports DCR, CIMD and Anthropic-held client credentials. For a high-traffic directory listing, prefer CIMD or Anthropic-held credentials over DCR (DCR registers a new client per connection). Phase 0 decides which of these Supabase supports cleanly; the expected outcome is Anthropic-held credentials for the hosted apps plus DCR (or CIMD if supported) for Claude Code and custom-connector testing.
+## 15. Telemetry and success metrics
 
-### 12.3 Consent page
+Weekly, from the MCP tables, `profiles` and Stripe:
 
-- New frontend route for Supabase's OAuth authorisation UI (exact path from Supabase's getting-started guide), e.g. `frontend/src/pages/OAuthConsentPage.tsx`, wrapped in `SectionErrorBoundary`, using operator console tokens.
-- Shows: client name, redirect URI **hostname** (MCP spec requirement), requested scopes in plain English, approve and deny, a link to revoke later.
-- Settings page gains a "Connected AI apps" section listing granted OAuth clients with revoke.
+1. Connector sign-ups
+2. First scan completed (not `INSUFFICIENT`), split by ecommerce / lead-gen
+3. Scans with at least one `fail` test
+4. Account checks recorded (shows the bridge is used), by platform
+5. Help offers shown
+6. Review requests by choice (free review / call), and Validator checkouts from the help block
+7. Review requests that ViMi marks `qualified`
+8. Pro / Agency conversions from MCP users
+9. Cost per completed free scan; cache hit rate
+10. Disputes per 100 findings, by rule
 
-### 12.4 Token verification
+The headline metric for this connector is **qualified review requests per 100 completed scans**. Targets set after four weeks of data.
 
-- `mcpAuth.ts` verifies the bearer token as a Supabase-issued access token (confirm in Phase 0 whether `supabaseAdmin.auth.getUser(token)` accepts OAuth-server-issued tokens or whether JWKS verification with audience = MCP resource is required), then performs the same `profiles.plan` and super-admin resolution as `authMiddleware`.
-- Reject tokens whose audience does not match the MCP resource.
-
-## 13. Directory listing
-
-- **Connector name:** "Atlas by ViMi" (avoids the naming collision with unrelated Atlas brands). Tagline and description written around the problems users type: "Is my conversion tracking healthy?", "Why don't Meta and GA4 agree?", "Is broken tracking hurting my bidding?". Neutral cross-platform positioning (Meta, Google, GA4, TikTok, LinkedIn), not single-platform.
-- **Use cases** in the listing: pre-spend tracking check; diagnose a sudden CPA rise; agency weekly signal health review.
-- **Submission package** (all mandatory per directory review): production deployment; OAuth with PKCE; every tool annotated with title and read-only or destructive hint; read and write separated; public documentation page (`vimi.digital/atlas/claude`) with setup, tools, limits and example prompts; privacy policy URL that covers connector data (what is stored, retention, no use of conversation content beyond the tool call); support contact; icon; a test account on the `pro` plan seeded with a demo org and two demo clients with realistic findings, DQM alerts and a reconciliation run.
-- Confirm in Phase 3 which ViMi Claude organisation submits (the portal sits in organisation admin settings; check current plan requirements before submitting).
-- Before submission, run the directory's pre-submission checklist and test the server as a custom connector in claude.ai, Desktop and Claude Code.
-
-## 14. Telemetry and success metrics
-
-Funnel, reported weekly from `mcp_scan_requests`, `mcp_tool_calls`, `profiles` and Stripe:
-
-1. Connector sign-ups (`signup_source = 'mcp'`)
-2. First scan started, first scan completed with `run_quality` not `INSUFFICIENT`
-3. Second session within 14 days
-4. Hit a free limit
-5. Campaign Signal Validator purchases attributed to MCP users
-6. Pro / Agency conversions attributed to MCP users
-7. Cost per completed free scan; cache hit rate
-8. Disputes per 100 findings, by rule
-
-Initial targets are set after four weeks of data (D4), not in this PRD.
-
-## 15. Phases
+## 16. Phases
 
 | Phase | Scope | Exit criteria |
 |---|---|---|
-| **0 · Spike** (2 to 3 days) | SDK + Streamable HTTP in Express; Supabase OAuth server enabled on a branch; protected resource metadata; one `atlas_ping` tool; consent page skeleton. Answer: CIMD support, token verification method, body-parser placement. | Ping tool works as a custom connector from claude.ai and Claude Code with a real sign-in. Findings written back into this PRD §12. |
-| **1 · Free tier** | §8.1 tools; §7 contract, mapper, lint; §9 quotas, cache, cost tracking, upgrade prompts; §10 allowlist, benchmark script, kill switch, disputes; migration; telemetry. | All §17 Phase 1 criteria pass. Benchmark run complete and allowlist committed. |
-| **2 · Paid read tools** | §8.2 tools, plan errors, agency portfolio sort. | All §17 Phase 2 criteria pass. |
-| **3 · Listing** | Docs page, privacy policy update, test account, listing copy, submission. | Submitted; review feedback tracked in submissions dashboard. |
-| **4 · Later** (separate PRD) | `atlas_generate_fix`, write tools with approval flows, MCP Apps UI cards for scan results and portfolio health. | n/a |
+| **0 · Spike** | SDK + Streamable HTTP; Supabase OAuth on a branch; metadata; `atlas_ping`; consent page skeleton. | Ping works as a custom connector from claude.ai and Claude Code with real sign-in; §13 open points answered in this PRD. |
+| **1a · Method and contract** | `testMap`, `testStatus`, `biddingImpact`, `fixComplexity`, `resultBuilder`, lint; benchmark script and allowlist. | Every register rule mapped; contract snapshot tests pass for ecommerce and lead-gen fixtures. ViMi has reviewed all bidding-impact copy. |
+| **1b · Free tools** | Free tools except review; quotas, cache, cost; disputes, kill switch; migration; telemetry. | §18 Phase 1 criteria pass. |
+| **1c · Account checks and help** | `accountChecks` catalogue and selector, `atlas_record_account_check`, `offerSelector`, `atlas_request_review`, lead notifications, admin list, confirmation email. | A test lead reaches ViMi consulting's inbox and Slack with the full context; consent refusal path tested. |
+| **2 · Paid tools** | §10.2. | §18 Phase 2 criteria pass. |
+| **3 · Listing** | Docs page, privacy policy, test account, listing copy, submission. | Submitted. |
+| **4 · Later** | Connect links, fix generation, write tools, MCP Apps. | Separate PRD. |
 
-## 16. Open questions
+## 17. Open questions
 
-1. **Middle tier.** Starter plan, pay-per-scan, or Campaign Signal Validator as the only step between free and Pro? Deferred until four weeks of sign-up data (D4).
-2. **Plan naming.** Code uses `free / pro / agency`; the pricing PRD uses Business / Agency / Enterprise. The connector follows code. Mapping to be settled in the pricing work, not here.
-3. **Free limits.** Initial values in §9.1 are a starting point; revisit after the first month of cost and conversion data.
-4. **Scan region.** Should paid users choose the scan region (for consent behaviour in EU vs GCC vs SEA)? Out of scope for v1; the region used is always disclosed.
-5. **Benchmark size.** Is 30 sites enough to qualify a meaningful share of rules for the free tier? If too few rules qualify, the free scan becomes thin; decide after the first benchmark run whether to widen the set before launch.
+1. **Middle tier**: deferred until four weeks of data (D4).
+2. **Plan naming**: code uses `free/pro/agency`; pricing PRD uses Business/Agency/Enterprise. Connector follows code.
+3. **Synthetic test email domain**: confirm the address and that ViMi owns the domain, so test leads are recognisable and replies land somewhere controlled.
+4. **Review turnaround**: ViMi to set the turnaround text shown to users (config only).
+5. **Booking tool**: which tool hosts `MCP_BOOKING_URL`, and does it accept a scan ID parameter?
+6. **Benchmark size**: whether 30 sites qualify enough rules for a useful free result; decide after the first run.
+7. **Scan region**: disclosed always; region choice for paid users is out of scope for v1.
 
-## 17. Acceptance criteria
+## 18. Acceptance criteria
 
 ### Phase 1
 
-- [ ] Unauthenticated call to `/mcp` returns 401 with a correct `resource_metadata` pointer; full sign-in completes from claude.ai and Claude Code.
-- [ ] New connector sign-up creates a free org via the existing trigger and records `signup_source = 'mcp'`.
-- [ ] `atlas_scan_site` returns within 5 seconds with a `scan_id`; scans run through the existing register pipeline with `audits.origin = 'mcp'`.
-- [ ] Every finding has exactly one `result_type`, mapped per §7.1; unit tests cover every verdict and evidence class combination.
-- [ ] A rule not on the free allowlist never produces `confirmed` or `likely` for a free user.
-- [ ] `INSUFFICIENT` runs return no findings and no score; withheld scores return the reason and no number.
-- [ ] No impact estimate is ever a single number; no estimate is returned without a data-backed source.
-- [ ] `mcpOutputLint` runs on every tool response; a test injects each banned token into each string field and asserts rejection.
-- [ ] Quotas enforced from Redis per user, IP hash and target domain; cached results do not consume quota or call Browserbase.
-- [ ] Limit responses are normal tool results containing reset time, scan-specific upgrade value, and both upgrade URLs.
-- [ ] Disabling a rule via `mcp_rule_overrides` removes it from responses within 60 seconds without a deploy.
-- [ ] Disputes persist, trigger the 3-in-7-days alert, and never write `REFUTED` to `rule_confirmations`.
-- [ ] Every tool has a title and correct read-only / destructive annotation.
-- [ ] No PII in logs, queue payloads or `mcp_tool_calls` (Implementation Rules 3 and Key Technical Decision §5).
+- [ ] Unauthenticated `/mcp` returns 401 with a correct `resource_metadata` pointer; full sign-in completes from claude.ai and Claude Code.
+- [ ] Every rule in `REGISTER` maps to exactly one of T1 to T6 or `not_in_method` (unit test fails on an unmapped rule).
+- [ ] Test status rollup follows §5.4; a test is never `pass` when its applicable rules are mostly unresolved.
+- [ ] Ecommerce scans never submit payment; purchase tests that need an order are `not_verified` and say why.
+- [ ] Lead-gen test submissions only happen with `allow_test_submission: true`, use the configured synthetic identity, and respect the per-domain daily limit.
+- [ ] Every finding has a `bidding_impact`; none states a single-number impact.
+- [ ] `mcpOutputLint` runs on every tool response; injected banned tokens in any string field are rejected.
+- [ ] `INSUFFICIENT` runs return no findings, no tests and no score.
+- [ ] Every result includes `account_checks` selected per §8.3, each with `where`, `good_answer` and `bad_answer_means`.
+- [ ] `atlas_record_account_check` updates T7 status and rejects notes over 500 chars; PII is stripped.
+- [ ] `help.offer_shown` follows §9.2; self-serve-only results show DIY guidance and no offer.
+- [ ] `atlas_request_review` refuses without `consent_to_contact: true`, writes one request per user per scan, notifies ViMi consulting by email (and Slack if configured) without raw evidence payloads, and sends the user a confirmation.
+- [ ] Quotas, cache, kill switch and disputes behave as in revision 1.
+- [ ] No PII in logs, queue payloads or `mcp_tool_calls`.
 
 ### Phase 2
 
-- [ ] Free users calling a paid tool get a structured `plan_required` result with upgrade URL, not a protocol error.
-- [ ] Every paid tool is scoped to the caller's resolved org; a test with two orgs proves no cross-org reads.
-- [ ] `atlas_get_insights` returns structured anomalies and correlations, not `narratorService` text.
+- [ ] Free users calling paid tools get a structured `plan_required` result.
+- [ ] No cross-org reads (two-org test).
+- [ ] `atlas_get_reconciliation` reports T7 from real data for connected clients.
 - [ ] `atlas_get_portfolio_summary` sorts by severity, then open issue count.
-- [ ] Paid tools returning findings apply §7 mapping and lint.
 
-## 18. Testing
+## 19. Testing
 
-- Vitest unit tests for `findingMapper`, `mcpOutputLint`, quota logic, cache keys, allowlist and override resolution.
-- Supertest integration tests for the `/mcp` endpoint: 401 handshake, metadata document, tool listing with annotations, each tool's happy path and error path with mocked services.
-- Contract snapshot tests: one fixture `ReportJSON` per `run_quality` value and per evidence class, asserting the exact MCP output.
-- Manual: connect as a custom connector in claude.ai, Desktop and Claude Code; run the §5 jobs as prompts; check that Claude's narration follows §7.5 (record transcripts in `docs/prd/atlas-mcp-connector-qa.md`).
+- Unit: `testMap` coverage, `testStatus` rollup matrix, `biddingImpact`/`fixComplexity` coverage, `offerSelector` conditions, account-check selection, lint, quotas, cache keys, allowlist/override resolution, consent refusal.
+- Integration (Supertest): 401 handshake, metadata, tool listing with annotations, each tool's happy and error paths.
+- Contract snapshots: ecommerce fixture (`up_to_checkout`), lead-gen fixture with an Attribution Chain break, `INSUFFICIENT` fixture.
+- Manual: connect in claude.ai, Desktop and Claude Code; with and without Meta/Google connectors present; confirm Claude follows §6.6, asks before using other connectors, and shows the help offer once. Record transcripts in `docs/prd/atlas-mcp-connector-qa.md`.
 
-## 19. Update CLAUDE.md
+## 20. Update CLAUDE.md
 
-On merge of each phase, add the connector to the Features list, the route to the Backend API Routes table, the new tables to the schema section, and a Key Technical Decision covering the §7 response contract and the free-tier allowlist rule.
+On merge of each phase: add the connector to Features, the route to Backend API Routes, new tables to the schema section, and a Key Technical Decision covering the Atlas method mapping, the response contract and the consent rule for review requests.
